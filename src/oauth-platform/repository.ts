@@ -70,16 +70,24 @@ interface AuthorizationCodeRow extends ClientRow {
     user_id: string;
     redirect_uri: string;
     code_challenge: string;
-    expires_at: Date;
-    consumed_at: Date | null;
+    expires_at: Date | string;
+    consumed_at: Date | string | null;
 }
 
 interface RefreshTokenRow extends ClientRow {
     token_family_id: string;
     user_id: string;
-    expires_at: Date;
-    consumed_at: Date | null;
-    revoked_at: Date | null;
+    expires_at: Date | string;
+    consumed_at: Date | string | null;
+    revoked_at: Date | string | null;
+}
+
+interface InternalTokenPair {
+    familyId: string;
+    access: ReturnType<typeof issueOpaqueToken>;
+    refresh: ReturnType<typeof issueOpaqueToken>;
+    accessExpiresAt: Date;
+    refreshExpiresAt: Date;
 }
 
 const AUTHORIZATION_SESSION_TTL_SECONDS = 10 * 60;
@@ -89,6 +97,10 @@ const REFRESH_TOKEN_TTL_SECONDS = 90 * 24 * 60 * 60;
 
 function futureDate(seconds: number): Date {
     return new Date(Date.now() + seconds * 1000);
+}
+
+function toDate(value: Date | string): Date {
+    return value instanceof Date ? value : new Date(value);
 }
 
 function validateClientName(value: unknown): string | null {
@@ -114,7 +126,7 @@ function validateState(value: string): string {
     return value;
 }
 
-function stateHash(value: string): Buffer {
+function hashState(value: string): Buffer {
     return createHash("sha256").update(value, "utf8").digest();
 }
 
@@ -123,10 +135,11 @@ function assertClientAuthentication(
     suppliedSecret: string | undefined,
 ): void {
     if (client.token_endpoint_auth_method === "none") return;
-    if (!suppliedSecret || !client.client_secret_hash) {
-        throw new Error("invalid_client");
-    }
-    if (!tokenHashMatches(suppliedSecret, client.client_secret_hash)) {
+    if (
+        !suppliedSecret ||
+        !client.client_secret_hash ||
+        !tokenHashMatches(suppliedSecret, client.client_secret_hash)
+    ) {
         throw new Error("invalid_client");
     }
 }
@@ -154,14 +167,11 @@ export async function registerOAuthClient(input: {
 }): Promise<RegisteredOAuthClient> {
     const clientName = validateClientName(input.clientName);
     const redirectUris = validateRedirectUris(input.redirectUris);
-    const tokenEndpointAuthMethod = validateAuthMethod(
-        input.tokenEndpointAuthMethod,
-    );
+    const authMethod = validateAuthMethod(input.tokenEndpointAuthMethod);
     const clientId = `munch_${issueOpaqueToken(24).token}`;
-    const issuedSecret =
-        tokenEndpointAuthMethod === "client_secret_post"
-            ? issueOpaqueToken(32)
-            : null;
+    const secret =
+        authMethod === "client_secret_post" ? issueOpaqueToken(32) : null;
+    const redirectUrisJson = JSON.stringify(redirectUris);
 
     await withAuthDatabase(async (tx) => {
         await tx`
@@ -173,20 +183,23 @@ export async function registerOAuthClient(input: {
                 token_endpoint_auth_method
             ) values (
                 ${clientId},
-                ${issuedSecret?.hash ?? null},
+                ${secret?.hash ?? null},
                 ${clientName},
-                ${redirectUris},
-                ${tokenEndpointAuthMethod}
+                (
+                    select array_agg(value)
+                    from jsonb_array_elements_text(${redirectUrisJson}::jsonb)
+                ),
+                ${authMethod}
             )
         `;
     });
 
     return {
         clientId,
-        ...(issuedSecret ? { clientSecret: issuedSecret.token } : {}),
+        ...(secret ? { clientSecret: secret.token } : {}),
         ...(clientName ? { clientName } : {}),
         redirectUris,
-        tokenEndpointAuthMethod,
+        tokenEndpointAuthMethod: authMethod,
     };
 }
 
@@ -207,12 +220,7 @@ export async function createAuthorizationSession(input: {
             throw new Error("invalid_redirect_uri");
         }
 
-        const rows = await tx<
-            Array<{
-                id: string;
-                expires_at: Date;
-            }>
-        >`
+        const rows = await tx<Array<{ id: string; expires_at: Date | string }>>`
             insert into munch.oauth_authorization_sessions (
                 client_id,
                 redirect_uri,
@@ -224,7 +232,7 @@ export async function createAuthorizationSession(input: {
             ) values (
                 ${client.client_id},
                 ${redirectUri},
-                ${stateHash(state)},
+                ${hashState(state)},
                 ${state},
                 ${codeChallenge},
                 'S256',
@@ -243,7 +251,7 @@ export async function createAuthorizationSession(input: {
             state,
             codeChallenge,
             userId: null,
-            expiresAt: created.expires_at,
+            expiresAt: toDate(created.expires_at),
             authorizedAt: null,
         };
     });
@@ -262,8 +270,8 @@ export async function getAuthorizationSession(
                 state_value: string;
                 code_challenge: string;
                 user_id: string | null;
-                expires_at: Date;
-                authorized_at: Date | null;
+                expires_at: Date | string;
+                authorized_at: Date | string | null;
             }>
         >`
             select
@@ -293,8 +301,10 @@ export async function getAuthorizationSession(
                   state: row.state_value,
                   codeChallenge: row.code_challenge,
                   userId: row.user_id,
-                  expiresAt: row.expires_at,
-                  authorizedAt: row.authorized_at,
+                  expiresAt: toDate(row.expires_at),
+                  authorizedAt: row.authorized_at
+                      ? toDate(row.authorized_at)
+                      : null,
               }
             : null;
     });
@@ -308,11 +318,12 @@ export async function authorizeSession(
         const rows = await tx<Array<{ id: string }>>`
             update munch.oauth_authorization_sessions session
             set user_id = ${userId},
-                authorized_at = now()
+                authorized_at = coalesce(session.authorized_at, now())
             from munch.users users
             where session.id = ${sessionId}
               and users.id = ${userId}
               and users.status = 'active'
+              and (session.user_id is null or session.user_id = ${userId})
               and session.expires_at > now()
               and session.completed_at is null
               and session.denied_at is null
@@ -350,7 +361,7 @@ export async function issueAuthorizationCode(
     sessionId: string,
     userId: string,
 ): Promise<IssuedAuthorizationCode> {
-    const issued = issueOpaqueToken(32);
+    const code = issueOpaqueToken(32);
     const expiresAt = futureDate(AUTHORIZATION_CODE_TTL_SECONDS);
 
     return withAuthDatabase(async (tx) => {
@@ -385,7 +396,7 @@ export async function issueAuthorizationCode(
                 expires_at,
                 issued_from_session_id
             ) values (
-                ${issued.hash},
+                ${code.hash},
                 ${userId},
                 ${session.client_id},
                 ${session.redirect_uri},
@@ -394,7 +405,6 @@ export async function issueAuthorizationCode(
                 ${sessionId}
             )
         `;
-
         await tx`
             update munch.oauth_authorization_sessions
             set completed_at = now()
@@ -402,7 +412,7 @@ export async function issueAuthorizationCode(
         `;
 
         return {
-            code: issued.token,
+            code: code.token,
             state: session.state_value,
             redirectUri: session.redirect_uri,
             expiresAt,
@@ -410,13 +420,7 @@ export async function issueAuthorizationCode(
     });
 }
 
-function tokenPair(familyId = randomUUID()): {
-    familyId: string;
-    access: ReturnType<typeof issueOpaqueToken>;
-    refresh: ReturnType<typeof issueOpaqueToken>;
-    accessExpiresAt: Date;
-    refreshExpiresAt: Date;
-} {
+function createTokenPair(familyId = randomUUID()): InternalTokenPair {
     return {
         familyId,
         access: issueOpaqueToken(32),
@@ -428,15 +432,9 @@ function tokenPair(familyId = randomUUID()): {
 
 async function insertTokenPair(
     tx: SQL,
-    input: {
-        userId: string;
-        clientId: string;
-        familyId: string;
-        access: ReturnType<typeof issueOpaqueToken>;
-        refresh: ReturnType<typeof issueOpaqueToken>;
-        accessExpiresAt: Date;
-        refreshExpiresAt: Date;
-    },
+    userId: string,
+    clientId: string,
+    pair: InternalTokenPair,
 ): Promise<void> {
     await tx`
         insert into munch.oauth_access_tokens (
@@ -446,11 +444,11 @@ async function insertTokenPair(
             client_id,
             expires_at
         ) values (
-            ${input.access.hash},
-            ${input.familyId},
-            ${input.userId},
-            ${input.clientId},
-            ${input.accessExpiresAt}
+            ${pair.access.hash},
+            ${pair.familyId},
+            ${userId},
+            ${clientId},
+            ${pair.accessExpiresAt}
         )
     `;
     await tx`
@@ -461,18 +459,16 @@ async function insertTokenPair(
             client_id,
             expires_at
         ) values (
-            ${input.refresh.hash},
-            ${input.familyId},
-            ${input.userId},
-            ${input.clientId},
-            ${input.refreshExpiresAt}
+            ${pair.refresh.hash},
+            ${pair.familyId},
+            ${userId},
+            ${clientId},
+            ${pair.refreshExpiresAt}
         )
     `;
 }
 
-function publicTokenPair(
-    pair: ReturnType<typeof tokenPair>,
-): OAuthTokenPair {
+function exposeTokenPair(pair: InternalTokenPair): OAuthTokenPair {
     return {
         accessToken: pair.access.token,
         accessTokenExpiresAt: pair.accessExpiresAt,
@@ -492,7 +488,7 @@ export async function exchangeAuthorizationCode(input: {
     const codeHash = hashOpaqueToken(input.code);
     const redirectUri = validateRedirectUri(input.redirectUri);
     validateCodeVerifier(input.codeVerifier);
-    const pair = tokenPair();
+    const pair = createTokenPair();
 
     return withAuthDatabase(async (tx) => {
         const rows = await tx<Array<AuthorizationCodeRow>>`
@@ -516,7 +512,7 @@ export async function exchangeAuthorizationCode(input: {
         if (
             !authorizationCode ||
             authorizationCode.consumed_at ||
-            authorizationCode.expires_at.getTime() <= Date.now() ||
+            toDate(authorizationCode.expires_at).getTime() <= Date.now() ||
             authorizationCode.client_id !== input.clientId ||
             authorizationCode.redirect_uri !== redirectUri
         ) {
@@ -538,12 +534,13 @@ export async function exchangeAuthorizationCode(input: {
             set consumed_at = now()
             where code_hash = ${codeHash}
         `;
-        await insertTokenPair(tx, {
-            userId: authorizationCode.user_id,
-            clientId: authorizationCode.client_id,
-            ...pair,
-        });
-        return publicTokenPair(pair);
+        await insertTokenPair(
+            tx,
+            authorizationCode.user_id,
+            authorizationCode.client_id,
+            pair,
+        );
+        return exposeTokenPair(pair);
     });
 }
 
@@ -567,7 +564,7 @@ export async function rotateRefreshToken(input: {
 }): Promise<OAuthTokenPair> {
     const refreshHash = hashOpaqueToken(input.refreshToken);
 
-    return withAuthDatabase(async (tx) => {
+    const result = await withAuthDatabase(async (tx) => {
         const rows = await tx<Array<RefreshTokenRow>>`
             select
                 refresh.token_family_id,
@@ -593,26 +590,30 @@ export async function rotateRefreshToken(input: {
 
         if (current.consumed_at) {
             await revokeTokenFamily(tx, current.token_family_id);
-            throw new Error("refresh_token_reuse_detected");
+            return { kind: "reuse" as const };
         }
-        if (current.revoked_at || current.expires_at.getTime() <= Date.now()) {
+        if (
+            current.revoked_at ||
+            toDate(current.expires_at).getTime() <= Date.now()
+        ) {
             throw new Error("invalid_grant");
         }
 
-        const pair = tokenPair(current.token_family_id);
+        const pair = createTokenPair(current.token_family_id);
         await tx`
             update munch.oauth_refresh_tokens
             set consumed_at = now(),
                 replaced_by_hash = ${pair.refresh.hash}
             where token_hash = ${refreshHash}
         `;
-        await insertTokenPair(tx, {
-            userId: current.user_id,
-            clientId: current.client_id,
-            ...pair,
-        });
-        return publicTokenPair(pair);
+        await insertTokenPair(tx, current.user_id, current.client_id, pair);
+        return { kind: "ok" as const, pair };
     });
+
+    if (result.kind === "reuse") {
+        throw new Error("refresh_token_reuse_detected");
+    }
+    return exposeTokenPair(result.pair);
 }
 
 export async function resolveAccessToken(
@@ -625,7 +626,7 @@ export async function resolveAccessToken(
             Array<{
                 user_id: string;
                 client_id: string;
-                expires_at: Date;
+                expires_at: Date | string;
             }>
         >`
             select token.user_id, token.client_id, token.expires_at
@@ -642,7 +643,7 @@ export async function resolveAccessToken(
                   status: "valid",
                   userId: row.user_id,
                   clientId: row.client_id,
-                  expiresAt: row.expires_at,
+                  expiresAt: toDate(row.expires_at),
               }
             : { status: "invalid" };
     });
@@ -653,14 +654,17 @@ export async function revokeOAuthConnection(
     clientId: string,
 ): Promise<void> {
     await withAuthDatabase(async (tx) => {
-        const families = await tx<Array<{ token_family_id: string }>>`
-            select distinct token_family_id
-            from munch.oauth_refresh_tokens
+        await tx`
+            update munch.oauth_access_tokens
+            set revoked_at = coalesce(revoked_at, now())
             where user_id = ${userId}
               and client_id = ${clientId}
         `;
-        for (const family of families) {
-            await revokeTokenFamily(tx, family.token_family_id);
-        }
+        await tx`
+            update munch.oauth_refresh_tokens
+            set revoked_at = coalesce(revoked_at, now())
+            where user_id = ${userId}
+              and client_id = ${clientId}
+        `;
     });
 }
