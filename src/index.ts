@@ -97,6 +97,11 @@ app.route("/", createAccountRouter());
 app.route("/", createBillingRouter());
 
 if (railwayAuthEnabled) {
+    app.use("/token", async (c, next) => {
+        await next();
+        c.header("Cache-Control", "no-store");
+        c.header("Pragma", "no-cache");
+    });
     app.route("/", createPlatformOAuthRouter());
 } else {
     app.route("/", createOAuthRouter());
