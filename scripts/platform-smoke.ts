@@ -18,6 +18,7 @@ import {
     resolveAccessToken,
     rotateRefreshToken,
 } from "../src/oauth-platform/repository.js";
+import { closePlatformDatabase } from "../src/platform/database.js";
 
 if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL is required for the platform smoke test");
@@ -168,4 +169,5 @@ if (await resolveWebSession(session.sessionToken)) {
     throw new Error("Revoked web session remained valid");
 }
 
+await closePlatformDatabase();
 console.log("Munch platform and OAuth smoke test passed.");
