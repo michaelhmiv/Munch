@@ -1,4 +1,5 @@
 const STRIPE_API_BASE = "https://api.stripe.com/v1";
+const MUNCH_TRIAL_DAYS = 7;
 
 interface StripeErrorEnvelope {
     error?: {
@@ -99,6 +100,7 @@ export async function createStripeCheckoutSession(
         client_reference_id: input.userId,
         "metadata[munch_user_id]": input.userId,
         "subscription_data[metadata][munch_user_id]": input.userId,
+        "subscription_data[trial_period_days]": String(MUNCH_TRIAL_DAYS),
         allow_promotion_codes: "true",
     });
 
