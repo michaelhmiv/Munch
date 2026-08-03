@@ -21,6 +21,11 @@ export interface AggregatedFoodSearchResult {
     failures: FoodProviderFailure[];
 }
 
+interface ProviderCallResult<T> {
+    provider: FoodProviderName;
+    value: T;
+}
+
 export class FoodProviderRegistry {
     private readonly providers: Map<FoodProviderName, FoodProvider>;
 
@@ -42,23 +47,30 @@ export class FoodProviderRegistry {
         const query = input.query.trim();
         if (!query) return { candidates: [], failures: [] };
         const limit = Math.max(1, Math.min(25, input.limit ?? 10));
+        const providers = [...this.providers.values()];
         const settled = await Promise.allSettled(
-            [...this.providers.values()].map(async (provider) => ({
-                provider,
-                candidates: await provider.search({ ...input, query, limit }),
-            })),
+            providers.map(async (provider): Promise<ProviderCallResult<FoodCandidate[]>> => {
+                try {
+                    return {
+                        provider: provider.name,
+                        value: await provider.search({ ...input, query, limit }),
+                    };
+                } catch (error) {
+                    throw asFoodProviderError(error, provider.name);
+                }
+            }),
         );
 
         const candidates: FoodCandidate[] = [];
         const failures: FoodProviderFailure[] = [];
         for (const result of settled) {
             if (result.status === "fulfilled") {
-                candidates.push(...result.value.candidates);
+                candidates.push(...result.value.value);
                 continue;
             }
             const error = asFoodProviderError(result.reason);
             failures.push({
-                provider: (error.provider ?? "usda") as FoodProviderName,
+                provider: error.provider as FoodProviderName,
                 code: error.code,
                 message: error.message,
                 retryAfterSeconds: error.retryAfterSeconds,
@@ -77,7 +89,11 @@ export class FoodProviderRegistry {
     ): Promise<FoodCandidate | null> {
         const provider = this.providers.get(providerName);
         if (!provider?.getDetails) return null;
-        return provider.getDetails(input);
+        try {
+            return await provider.getDetails(input);
+        } catch (error) {
+            throw asFoodProviderError(error, provider.name);
+        }
     }
 
     async lookupBarcode(
@@ -87,20 +103,26 @@ export class FoodProviderRegistry {
             (provider) => provider.lookupBarcode,
         );
         const settled = await Promise.allSettled(
-            providers.map(async (provider) => ({
-                provider,
-                candidate: await provider.lookupBarcode!(input),
-            })),
+            providers.map(async (provider): Promise<ProviderCallResult<FoodCandidate | null>> => {
+                try {
+                    return {
+                        provider: provider.name,
+                        value: await provider.lookupBarcode!(input),
+                    };
+                } catch (error) {
+                    throw asFoodProviderError(error, provider.name);
+                }
+            }),
         );
         const candidates: FoodCandidate[] = [];
         const failures: FoodProviderFailure[] = [];
         for (const result of settled) {
             if (result.status === "fulfilled") {
-                if (result.value.candidate) candidates.push(result.value.candidate);
+                if (result.value.value) candidates.push(result.value.value);
             } else {
                 const error = asFoodProviderError(result.reason);
                 failures.push({
-                    provider: (error.provider ?? "open_food_facts") as FoodProviderName,
+                    provider: error.provider as FoodProviderName,
                     code: error.code,
                     message: error.message,
                     retryAfterSeconds: error.retryAfterSeconds,
@@ -108,10 +130,7 @@ export class FoodProviderRegistry {
             }
         }
         return {
-            candidates: rankCandidates(
-                { query: input.barcode },
-                candidates,
-            ),
+            candidates: rankCandidates({ query: input.barcode }, candidates),
             failures,
         };
     }
