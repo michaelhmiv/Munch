@@ -1,7 +1,6 @@
 import { decodeEscapeSequences } from "../normalize.js";
 import { withUserDatabase } from "../platform/database.js";
 import { zonedDayStartUtc, zonedNextDayStartUtc } from "../tz.js";
-import { toStoredInteger } from "../units.js";
 import {
     deriveIdempotencyKey,
     isoTimestamp,
@@ -40,11 +39,15 @@ export async function insertWeight(
     userId: string,
     input: WeightInput,
 ): Promise<WeightInsertResult> {
-    const weightG = toStoredInteger(input.weight_g);
     const loggedAt = input.logged_at ?? new Date().toISOString();
     const idempotencyKey =
         input.idempotency_key ??
-        deriveIdempotencyKey([userId, weightG, input.notes, loggedAt]);
+        deriveIdempotencyKey([
+            userId,
+            input.weight_g,
+            input.notes,
+            loggedAt,
+        ]);
 
     return withUserDatabase(userId, async (tx) => {
         const inserted = await tx<Array<WeightRow>>`
@@ -56,7 +59,7 @@ export async function insertWeight(
                 idempotency_key
             ) values (
                 ${userId},
-                ${weightG},
+                ${input.weight_g},
                 ${loggedAt},
                 ${input.notes ?? null},
                 ${idempotencyKey}
@@ -162,7 +165,7 @@ export async function updateWeight(
         const rows = await tx<Array<WeightRow>>`
             update munch.weight_logs
             set weight_g = case
-                    when ${weightProvided} then ${weightProvided ? toStoredInteger(fields.weight_g!) : null}
+                    when ${weightProvided} then ${fields.weight_g ?? null}
                     else weight_g
                 end,
                 logged_at = case
