@@ -93,7 +93,14 @@ interface UsdaFoodPortion {
     };
 }
 
-interface UsdaFoodDetails extends UsdaSearchFood {
+interface UsdaFoodDetails {
+    fdcId?: number;
+    description?: string;
+    dataType?: string;
+    brandOwner?: string;
+    brandName?: string;
+    gtinUpc?: string;
+    publishedDate?: string;
     foodNutrients?: UsdaDetailNutrient[];
     foodPortions?: UsdaFoodPortion[];
 }
@@ -149,8 +156,7 @@ function normalizeSearchNutrients(
             number: nutrient.nutrientNumber,
             name: nutrient.nutrientName,
         });
-        if (!key || nutrient.value === undefined) continue;
-        values[key] = nutrient.value;
+        if (key && nutrient.value !== undefined) values[key] = nutrient.value;
     }
     return normalizeNutrients(values);
 }
@@ -165,8 +171,7 @@ function normalizeDetailNutrients(
             number: item.nutrient?.number,
             name: item.nutrient?.name,
         });
-        if (!key || item.amount === undefined) continue;
-        values[key] = item.amount;
+        if (key && item.amount !== undefined) values[key] = item.amount;
     }
     return normalizeNutrients(values);
 }
@@ -190,7 +195,12 @@ function confidenceFor(input: {
     hasBrand: boolean;
     hasPortion: boolean;
 }): number {
-    const base = input.kind === "generic" ? 0.82 : input.kind === "packaged" ? 0.78 : 0.7;
+    const base =
+        input.kind === "generic"
+            ? 0.82
+            : input.kind === "packaged"
+              ? 0.78
+              : 0.7;
     const score =
         base +
         nutrientCompleteness(input.nutrients) * 0.12 +
