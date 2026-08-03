@@ -12,10 +12,19 @@ function databaseUrl(): string {
     return value;
 }
 
+function poolSize(): number {
+    const parsed = Number(process.env.MUNCH_DB_POOL_SIZE ?? 10);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 50) {
+        throw new Error("MUNCH_DB_POOL_SIZE must be an integer between 1 and 50");
+    }
+    return parsed;
+}
+
 export function getPlatformDatabase(): SQL {
     if (!database) {
-        database = new SQL(databaseUrl(), {
-            max: Number(process.env.MUNCH_DB_POOL_SIZE ?? 10),
+        database = new SQL({
+            url: databaseUrl(),
+            max: poolSize(),
             idleTimeout: 30,
             connectionTimeout: 10,
         });
@@ -23,7 +32,10 @@ export function getPlatformDatabase(): SQL {
     return database;
 }
 
-async function setRole(tx: SQL, role: "munch_app" | "munch_auth" | "munch_billing" | "munch_support") {
+async function setRole(
+    tx: SQL,
+    role: "munch_app" | "munch_auth" | "munch_billing" | "munch_support",
+) {
     switch (role) {
         case "munch_app":
             await tx`set local role munch_app`;
@@ -44,7 +56,11 @@ export async function withUserDatabase<T>(
     userId: string,
     callback: (tx: DatabaseTransaction) => Promise<T>,
 ): Promise<T> {
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId)) {
+    if (
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+            userId,
+        )
+    ) {
         throw new Error("Invalid user ID");
     }
 
