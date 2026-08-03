@@ -34,7 +34,7 @@ export async function recordStripeWebhookEvent(input: {
 
     return withBillingDatabase(async (tx) => {
         const rows = await tx<Array<{ stripe_event_id: string }>>`
-            insert into munch.stripe_webhook_events (
+            insert into munch.stripe_webhook_events as existing (
                 stripe_event_id,
                 event_type,
                 livemode,
@@ -48,12 +48,12 @@ export async function recordStripeWebhookEvent(input: {
                 1
             )
             on conflict (stripe_event_id) do update
-            set attempts = munch.stripe_webhook_events.attempts + 1,
+            set attempts = existing.attempts + 1,
                 processing_error_code = null
-            where munch.stripe_webhook_events.processed_at is null
-              and munch.stripe_webhook_events.payload_sha256 = excluded.payload_sha256
-              and munch.stripe_webhook_events.event_type = excluded.event_type
-              and munch.stripe_webhook_events.livemode = excluded.livemode
+            where existing.processed_at is null
+              and existing.payload_sha256 = excluded.payload_sha256
+              and existing.event_type = excluded.event_type
+              and existing.livemode = excluded.livemode
             returning stripe_event_id
         `;
         return Boolean(rows[0]);
@@ -64,14 +64,15 @@ export async function markStripeWebhookProcessed(
     eventId: string,
     errorCode?: string,
 ): Promise<void> {
+    const normalizedErrorCode = errorCode ?? null;
     await withBillingDatabase(async (tx) => {
         await tx`
             update munch.stripe_webhook_events
             set processed_at = case
-                    when ${errorCode ?? null} is null then now()
+                    when ${normalizedErrorCode}::text is null then now()
                     else null
                 end,
-                processing_error_code = ${errorCode ?? null}
+                processing_error_code = ${normalizedErrorCode}::text
             where stripe_event_id = ${eventId}
         `;
     });
