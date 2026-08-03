@@ -2,17 +2,30 @@
 
 ## Health endpoints
 
-Railway must use `GET /health/ready` as the deployment health check.
-
 - `/health/live` proves the Bun process can serve HTTP.
-- `/health/ready` validates startup configuration, PostgreSQL connectivity, migration coverage, required database roles, and forced RLS on every user-owned nutrition table.
+- `/health/ready` validates configuration, PostgreSQL connectivity, migration coverage, required database roles, and forced RLS on every user-owned nutrition table.
 - `/health` is a compatibility alias for liveness.
+
+The repository keeps Railway on `/health/live` while the inherited backend remains available. During the controlled Railway cutover:
+
+1. configure all Railway, Stripe, login-delivery, Open Food Facts, and USDA variables;
+2. enable both Railway backend flags in staging;
+3. confirm `/health/ready` returns 200;
+4. complete MCP certification;
+5. set `MUNCH_STRICT_STARTUP_VALIDATION=true`;
+6. change the production Railway health check to `/health/ready`.
 
 Readiness responses never contain secrets, user identities, meal contents, or database connection strings.
 
 ## Startup validation
 
-Production startup fails before the server is exposed when any of these conditions is true:
+Strict production startup enforcement is enabled only when:
+
+```text
+MUNCH_STRICT_STARTUP_VALIDATION=true
+```
+
+Once enabled, startup fails before the server is exposed when any of these conditions is true:
 
 - Railway authentication and data flags do not match.
 - The public application origin is missing, malformed, contains a path, or does not use HTTPS.
@@ -22,7 +35,7 @@ Production startup fails before the server is exposed when any of these conditio
 - the login-delivery endpoint does not use HTTPS.
 - the database pool size is outside the allowed range.
 
-This is deliberate. Do not bypass startup validation to force a deployment healthy.
+Do not enable strict validation until staging readiness is green. Once production uses the Railway backend, do not disable it merely to force an unhealthy deployment online.
 
 ## Scheduled maintenance
 
@@ -60,7 +73,7 @@ The cron service requires only `DATABASE_URL`; use the same private Railway Post
 
 Alert on:
 
-- `/health/ready` returning 503;
+- `/health/ready` returning 503 after the Railway cutover;
 - repeated container restarts;
 - failed migration pre-deploy commands;
 - Stripe webhook 5xx responses;
