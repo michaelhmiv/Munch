@@ -1,6 +1,5 @@
 import { withUserDatabase } from "../platform/database.js";
 import { zonedDayStartUtc, zonedNextDayStartUtc } from "../tz.js";
-import { toStoredInteger } from "../units.js";
 import {
     deriveIdempotencyKey,
     isoTimestamp,
@@ -39,11 +38,15 @@ export async function insertWater(
     userId: string,
     input: WaterInput,
 ): Promise<WaterInsertResult> {
-    const amountMl = toStoredInteger(input.amount_ml);
     const loggedAt = input.logged_at ?? new Date().toISOString();
     const idempotencyKey =
         input.idempotency_key ??
-        deriveIdempotencyKey([userId, amountMl, input.notes, loggedAt]);
+        deriveIdempotencyKey([
+            userId,
+            input.amount_ml,
+            input.notes,
+            loggedAt,
+        ]);
 
     return withUserDatabase(userId, async (tx) => {
         const inserted = await tx<Array<WaterRow>>`
@@ -55,7 +58,7 @@ export async function insertWater(
                 idempotency_key
             ) values (
                 ${userId},
-                ${amountMl},
+                ${input.amount_ml},
                 ${loggedAt},
                 ${input.notes ?? null},
                 ${idempotencyKey}
