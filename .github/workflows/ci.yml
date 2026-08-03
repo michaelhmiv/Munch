@@ -35,6 +35,9 @@ jobs:
       - name: Typecheck server
         run: bun run typecheck
 
+      - name: Typecheck migration tools
+        run: bun run typecheck:migration
+
       - name: Run tests
         run: bun test
 
@@ -101,6 +104,9 @@ jobs:
 
       - name: Exercise readiness endpoints and maintenance
         run: bun scripts/operations-smoke.ts
+
+      - name: Exercise synthetic legacy import, re-import, and verification
+        run: bun scripts/migration/migration-smoke.ts
 
   container:
     runs-on: ubuntu-latest

@@ -1,0 +1,14 @@
+{
+    "extends": "../../tsconfig.json",
+    "compilerOptions": {
+        "allowJs": false
+    },
+    "include": [
+        "./common.ts",
+        "./export-supabase.ts",
+        "./import-railway.ts",
+        "./verify-migration.ts",
+        "./migration-smoke.ts",
+        "./common.test.ts"
+    ]
+}
