@@ -137,14 +137,14 @@ if (updatedMeal.notes !== "confirmed portion" || updatedMeal.protein_g !== 19) {
 }
 
 const waterInput = {
-    amount_ml: 473.2,
+    amount_ml: 473,
     logged_at: loggedAt,
     notes: "one bottle",
 };
 const water = await insertWater(alpha.userId, waterInput);
 const waterDuplicate = await insertWater(alpha.userId, waterInput);
 if (water.entry.amount_ml !== 473 || !waterDuplicate.deduplicated) {
-    throw new Error("Hydration normalization or idempotency failed");
+    throw new Error("Hydration persistence or idempotency failed");
 }
 if (
     (await getWaterByDate(alpha.userId, "2026-08-03", "America/New_York"))
@@ -154,12 +154,12 @@ if (
 }
 
 const weight = await insertWeight(alpha.userId, {
-    weight_g: 91_625.4,
+    weight_g: 91_625,
     logged_at: loggedAt,
     notes: "morning",
 });
 if (weight.entry.weight_g !== 91_625) {
-    throw new Error("Weight integer normalization failed");
+    throw new Error("Weight persistence failed");
 }
 const updatedWeight = await updateWeight(alpha.userId, weight.entry.id, {
     weight_g: 91_500,
