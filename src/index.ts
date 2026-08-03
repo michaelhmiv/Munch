@@ -45,7 +45,7 @@ app.use("*", async (c, next) => {
     if (!c.res.headers.get("Content-Security-Policy")) {
         c.header(
             "Content-Security-Policy",
-            "default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self'; frame-ancestors 'none'",
+            "default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; frame-ancestors 'none'",
         );
     }
 });
@@ -187,20 +187,18 @@ app.get("/tools", async (c) =>
 );
 app.get("/tools/", (c) => c.redirect("/tools", 301));
 
-const ALT_PAGES: Record<string, string> = {
-    "/alternatives": "alternatives/index.html",
-    "/myfitnesspal-mcp": "alternatives/myfitnesspal.html",
-    "/cronometer-mcp": "alternatives/cronometer.html",
-    "/lose-it-mcp": "alternatives/lose-it.html",
-    "/macrofactor-mcp": "alternatives/macrofactor.html",
-    "/yazio-mcp": "alternatives/yazio.html",
-    "/lifesum-mcp": "alternatives/lifesum.html",
-};
-for (const [route, file] of Object.entries(ALT_PAGES)) {
-    app.get(route, async (c) =>
-        c.html(await Bun.file(`./public/${file}`).text()),
-    );
-    app.get(`${route}/`, (c) => c.redirect(route, 301));
+const LEGACY_PUBLIC_ROUTES = [
+    "/alternatives",
+    "/myfitnesspal-mcp",
+    "/cronometer-mcp",
+    "/lose-it-mcp",
+    "/macrofactor-mcp",
+    "/yazio-mcp",
+    "/lifesum-mcp",
+];
+for (const route of LEGACY_PUBLIC_ROUTES) {
+    app.get(route, (c) => c.redirect("/tools", 301));
+    app.get(`${route}/`, (c) => c.redirect("/tools", 301));
 }
 
 app.get("/styles.css", async (c) =>
