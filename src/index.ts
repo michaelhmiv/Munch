@@ -13,18 +13,13 @@ import { getLandingStats, type LandingStats } from "./supabase.js";
 import { registerDiscoveryRoutes } from "./discovery.js";
 import { maskIp } from "./net.js";
 import { warmWidgets } from "./widgets.js";
+import { createBillingRouter } from "./billing/routes.js";
 
 const app = new Hono();
 
-// Access log — records every non-health HTTP request (method, path, status,
-// duration, masked client subnet) so traffic that never reaches a tool handler
-// — and is therefore invisible to tool analytics — is still attributable in the
-// runtime logs: unauthenticated /mcp probes (401), rate-limited hits (429),
-// OAuth discovery crawls, vuln scanners. Registered first so it runs outermost
-// and observes the final response status. /health is skipped to keep the
-// platform's frequent health checks from evicting real traffic from the buffer.
-// Requests from IPs banned for repeated auth failures are skipped too — they are
-// announced once by a [ban] line and would otherwise dominate the log.
+// Access log — records route-level operational metadata only. It deliberately
+// excludes request and response bodies so nutrition records, account details,
+// Stripe payloads, and OAuth credentials never enter routine logs.
 app.use("*", async (c, next) => {
     const path = new URL(c.req.url).pathname;
     if (path === "/health") return next();
@@ -38,7 +33,7 @@ app.use("*", async (c, next) => {
     );
 });
 
-// Security headers
+// Security headers. Munch does not load advertising or behavioral analytics.
 app.use("*", async (c, next) => {
     await next();
     c.header("X-Content-Type-Options", "nosniff");
@@ -46,7 +41,7 @@ app.use("*", async (c, next) => {
     if (!c.res.headers.get("Content-Security-Policy")) {
         c.header(
             "Content-Security-Policy",
-            "default-src 'self'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com; connect-src 'self' https://www.google-analytics.com https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://api.github.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' https://www.googletagmanager.com; frame-ancestors 'none'",
+            "default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self'; frame-ancestors 'none'",
         );
     }
     c.header("Referrer-Policy", "no-referrer");
@@ -86,6 +81,7 @@ app.use(
             "Mcp-Protocol-Version",
             "Last-Event-ID",
             "Accept",
+            "Stripe-Signature",
         ],
         exposeHeaders: [
             "Mcp-Session-Id",
@@ -102,16 +98,12 @@ app.use(
 // variants clients derive from the /mcp endpoint. See src/discovery.ts.
 registerDiscoveryRoutes(app);
 
-// Glama connector ownership verification. Glama polls this file and matches the
-// maintainer email against the Glama account email to claim the listing.
-app.get("/.well-known/glama.json", (c) => {
-    return c.json({
-        $schema: "https://glama.ai/mcp/schemas/connector.json",
-        maintainers: [{ email: "akutishevsky@gmail.com" }],
-    });
-});
+// Commercial platform routes. Checkout and portal endpoints are added after the
+// Munch web-session middleware lands; the signed Stripe webhook is active now.
+app.route("/", createBillingRouter());
 
-// OAuth routes
+// Inherited OAuth routes remain active until the Railway-native identity and MCP
+// OAuth cutover is complete.
 app.route("/", createOAuthRouter());
 
 // MCP endpoint (protected). banRepeatAuthFailures runs first so a client stuck
@@ -125,7 +117,8 @@ app.all(
 );
 
 // Aggregate landing-page stats, cached in-memory so page views don't each hit
-// the DB. The numbers move slowly, so a stale value for a few minutes is fine.
+// the DB. This inherited Supabase-backed route is removed during persistence
+// cutover.
 const STATS_TTL_MS = 5 * 60 * 1000;
 let statsCache: { data: LandingStats; expiresAt: number } | null = null;
 
@@ -140,9 +133,8 @@ app.get("/api/stats", async (c) => {
         return c.json(statsCache.data, 200, {
             "Cache-Control": "public, max-age=300",
         });
-    } catch (err) {
-        console.error("Failed to load landing stats:", err);
-        // Serve the last good value if we have one, even if expired.
+    } catch {
+        console.error("Failed to load landing stats");
         if (statsCache) return c.json(statsCache.data);
         return c.json({ error: "stats_unavailable" }, 503);
     }
@@ -186,8 +178,6 @@ app.get("/sitemap.xml", async (c) => {
         "Content-Type": "application/xml",
     });
 });
-// llms.txt — curated site map for LLMs / AI agents (llmstxt.org). Relevant here
-// because this is an MCP server: Anthropic and OpenAI agents are a real referrer.
 app.get("/llms.txt", async (c) => {
     return c.body(await Bun.file("./public/llms.txt").text(), 200, {
         "Content-Type": "text/plain; charset=utf-8",
@@ -217,10 +207,7 @@ app.get("/tools", async (c) => {
 });
 app.get("/tools/", (c) => c.redirect("/tools", 301));
 
-// SEO comparison / "alternative to X" landing pages. Each targets long-tail
-// queries like "myfitnesspal mcp" or "connect myfitnesspal to claude" and is a
-// static HTML file under public/alternatives. Kept data-driven so adding a page
-// is one entry here plus the file and a sitemap.xml line.
+// Inherited comparison pages remain until the Munch public site is replaced.
 const ALT_PAGES: Record<string, string> = {
     "/alternatives": "alternatives/index.html",
     "/myfitnesspal-mcp": "alternatives/myfitnesspal.html",
@@ -234,8 +221,6 @@ for (const [path, file] of Object.entries(ALT_PAGES)) {
     app.get(path, async (c) =>
         c.html(await Bun.file(`./public/${file}`).text()),
     );
-    // Redirect the trailing-slash variant to the canonical no-slash URL so a
-    // stray "/myfitnesspal-mcp/" link doesn't 404.
     app.get(`${path}/`, (c) => c.redirect(path, 301));
 }
 
@@ -262,23 +247,22 @@ app.get("/health", (c) => c.text("ok"));
 
 // Error handler
 app.onError((_err, c) => {
-    console.error("Unhandled error:", _err);
+    console.error("Unhandled application error");
     return c.json({ error: "internal_server_error" }, 500);
 });
 
 const port = parseInt(process.env.PORT || "8080");
 
-console.log(`Nutrition MCP server listening on 0.0.0.0:${port}`);
+console.log(`Munch server listening on 0.0.0.0:${port}`);
 
 // Assemble every MCP Apps widget from its source partials up front, so a broken
 // @include/partial fails fast at boot rather than on a client's first tool call.
 await warmWidgets();
 
-// Periodically delete expired meal-export files from the storage bucket.
+// Periodically delete expired meal-export files from the inherited storage
+// implementation. This is replaced during Railway persistence cutover.
 startExportCleanup();
 
-// Exit cleanly on shutdown signals (e.g. deploys). /mcp is stateless — no
-// server-side sessions are held, so there is nothing to tear down; just exit.
 let shuttingDown = false;
 function shutdown(signal: string): void {
     if (shuttingDown) return;
@@ -292,9 +276,6 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 export default {
     port,
     hostname: "0.0.0.0",
-    // Long-lived MCP streams (StreamableHTTP GET/SSE) can idle between events;
-    // Bun's 10s default closes them and logs "request timed out after 10
-    // seconds". Raise it so legitimate streaming connections aren't severed.
     idleTimeout: 120,
     fetch: app.fetch,
 };
