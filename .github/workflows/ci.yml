@@ -35,6 +35,9 @@ jobs:
       - name: Typecheck server
         run: bun run typecheck
 
+      - name: Typecheck migration tools
+        run: bun run typecheck:migration
+
       - name: Run tests
         run: bun test
 
