@@ -1,9 +1,7 @@
 {
     "extends": "../../tsconfig.json",
     "compilerOptions": {
-        "allowJs": false,
-        "noUnusedLocals": true,
-        "noUnusedParameters": true
+        "allowJs": false
     },
     "include": [
         "./common.ts",
