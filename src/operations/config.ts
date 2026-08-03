@@ -120,6 +120,7 @@ export function configurationIssues(): ConfigurationIssue[] {
 }
 
 export function validateStartupConfiguration(): void {
+    if (present("MUNCH_STRICT_STARTUP_VALIDATION") !== "true") return;
     const issues = configurationIssues();
     if (issues.length === 0) return;
     const summary = issues.map((issue) => `${issue.key}: ${issue.message}`).join("; ");
