@@ -61,7 +61,7 @@ function parseEvent(rawPayload: string): StripeEventEnvelope {
         !data ||
         !("object" in data)
     ) {
-        throw new Error("Invalid Stripe event envelope");
+        throw new Error("invalid_event_envelope");
     }
 
     return {
@@ -85,7 +85,7 @@ function subscriptionStatus(value: string): SubscriptionStatus {
         "paused",
     ];
     if (!allowed.includes(value as SubscriptionStatus)) {
-        throw new Error("Unsupported Stripe subscription status");
+        throw new Error("unsupported_subscription_status");
     }
     return value as SubscriptionStatus;
 }
@@ -107,7 +107,7 @@ function userIdFromMetadata(
             value,
         )
     ) {
-        throw new Error("Stripe object is missing a valid Munch user ID");
+        throw new Error("missing_user_mapping");
     }
     return value;
 }
@@ -115,7 +115,7 @@ function userIdFromMetadata(
 async function processCheckoutCompleted(value: unknown): Promise<void> {
     const checkout = value as StripeCheckoutObject;
     if (!checkout || typeof checkout.id !== "string") {
-        throw new Error("Invalid Stripe Checkout Session object");
+        throw new Error("invalid_checkout_object");
     }
     const userId = userIdFromMetadata(
         checkout.metadata,
@@ -137,7 +137,7 @@ async function processSubscription(
         typeof subscription.customer !== "string" ||
         typeof subscription.status !== "string"
     ) {
-        throw new Error("Invalid Stripe Subscription object");
+        throw new Error("invalid_subscription_object");
     }
 
     const userId = userIdFromMetadata(subscription.metadata);
@@ -162,17 +162,31 @@ async function processSubscription(
     });
 }
 
+function processingErrorCode(error: unknown): string {
+    if (error instanceof SyntaxError) return "invalid_json";
+    if (!(error instanceof Error)) return "unknown_error";
+
+    const allowed = new Set([
+        "invalid_event_envelope",
+        "unsupported_subscription_status",
+        "missing_user_mapping",
+        "invalid_checkout_object",
+        "invalid_subscription_object",
+    ]);
+    return allowed.has(error.message) ? error.message : "database_write_failed";
+}
+
 export async function processStripeWebhook(
     rawPayload: string,
 ): Promise<"processed" | "duplicate" | "ignored"> {
     const event = parseEvent(rawPayload);
-    const inserted = await recordStripeWebhookEvent({
+    const claimed = await recordStripeWebhookEvent({
         eventId: event.id,
         eventType: event.type,
         livemode: event.livemode,
         rawPayload,
     });
-    if (!inserted) return "duplicate";
+    if (!claimed) return "duplicate";
 
     try {
         if (event.type === "checkout.session.completed") {
@@ -187,13 +201,7 @@ export async function processStripeWebhook(
         await markStripeWebhookProcessed(event.id);
         return "processed";
     } catch (error) {
-        const errorCode =
-            error instanceof SyntaxError
-                ? "invalid_json"
-                : error instanceof Error
-                  ? error.message.slice(0, 120)
-                  : "unknown_error";
-        await markStripeWebhookProcessed(event.id, errorCode);
+        await markStripeWebhookProcessed(event.id, processingErrorCode(error));
         throw error;
     }
 }
