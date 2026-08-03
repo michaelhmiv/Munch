@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { buildReadinessReport, type ReadinessReport } from "./readiness.js";
 
 const READINESS_CACHE_MS = 10_000;
@@ -17,7 +17,7 @@ async function readiness(): Promise<ReadinessReport> {
 export function createOperationsRouter(): Hono {
     const operations = new Hono();
 
-    const live = (c: Parameters<Parameters<Hono["get"]>[1]>[0]) => {
+    const live = (c: Context) => {
         c.set("suppressAccessLog", true);
         return c.json(
             {
