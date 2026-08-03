@@ -21,11 +21,28 @@ interface LoginRequestBody {
     returnTo?: unknown;
 }
 
+function loginErrorPage(message: string): string {
+    const safeMessage = message
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+
+    return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign-in problem — Munch</title><link rel="icon" href="/favicon.ico"><link rel="stylesheet" href="/styles.css"></head>
+<body class="auth-page"><main class="auth-main"><section class="auth-card"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">M</span><span>Munch</span></a><h1 class="spacer-top">This sign-in link cannot be used.</h1><p>${safeMessage}</p><div class="hero-actions"><a class="button button-primary" href="/account/login">Request a new link</a><a class="button button-secondary" href="/">Return home</a></div></section></main></body></html>`;
+}
+
 export function createAccountRouter(): Hono {
     const account = new Hono();
 
     account.use("/account/login/request", rateLimitAuth);
     account.use("/account/login/consume", rateLimitAuth);
+
+    account.get("/account/login", async (c) =>
+        c.html(await Bun.file("./public/login.html").text()),
+    );
 
     account.post(
         "/account/login/request",
@@ -84,20 +101,22 @@ export function createAccountRouter(): Hono {
     account.get("/account/login/consume", async (c) => {
         const token = c.req.query("token");
         if (!token) {
-            return c.json({ error: "login_token_required" }, 400);
+            return c.html(loginErrorPage("The sign-in token is missing."), 400);
         }
 
         const session = await consumeLoginChallenge(token);
         if (!session) {
-            return c.json(
-                { error: "invalid_or_expired_login_token" },
+            return c.html(
+                loginErrorPage(
+                    "The link may have expired or already been used. Request a new single-use link to continue.",
+                ),
                 400,
             );
         }
 
         setWebSessionCookie(c, session);
         return c.redirect(
-            safeLocalRedirectPath(c.req.query("return_to")),
+            safeLocalRedirectPath(c.req.query("return_to"), "/account/portal"),
             303,
         );
     });
