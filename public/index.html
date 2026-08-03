@@ -3,253 +3,80 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Munch — Nutrition tracking that lives in ChatGPT</title>
-    <meta name="description" content="Log meals, scan packaged foods, track macros, hydration, weight, and nutrition trends through natural conversation with ChatGPT.">
-    <meta name="theme-color" content="#6f3ff5">
-    <meta property="og:title" content="Munch — Nutrition tracking that lives in ChatGPT">
-    <meta property="og:description" content="Talk naturally. Munch turns the conversation into a structured nutrition history you control.">
+    <title>Munch — Persistent nutrition for ChatGPT</title>
+    <meta name="description" content="Give ChatGPT secure, structured nutrition memory with meal logging, verified food data, trends, water, weight, export, and account controls.">
+    <meta name="theme-color" content="#0B8F4D">
+    <meta property="og:title" content="Munch — Persistent nutrition for ChatGPT">
+    <meta property="og:description" content="ChatGPT provides the conversation. Munch provides the nutrition memory, data, and tools.">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://munch-production-de3a.up.railway.app/">
+    <meta property="og:image" content="https://munch-production-de3a.up.railway.app/og.png">
     <link rel="canonical" href="https://munch-production-de3a.up.railway.app/">
     <link rel="icon" href="/favicon.ico">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <link rel="stylesheet" href="/styles.css">
     <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "SoftwareApplication",
-      "name": "Munch",
-      "applicationCategory": "HealthApplication",
-      "operatingSystem": "ChatGPT and compatible MCP clients",
-      "description": "A conversational nutrition tracker for meals, macros, hydration, weight, and food history.",
-      "url": "https://munch-production-de3a.up.railway.app/"
-    }
+    {"@context":"https://schema.org","@type":"SoftwareApplication","name":"Munch","applicationCategory":"HealthApplication","operatingSystem":"ChatGPT and compatible MCP clients","offers":{"@type":"Offer","price":"4.99","priceCurrency":"USD"},"description":"A persistent nutrition data and tool layer for ChatGPT."}
     </script>
 </head>
 <body class="site-shell">
 <header class="site-header">
     <div class="container nav-inner">
-        <a class="brand" href="/" aria-label="Munch home">
-            <span class="brand-mark" aria-hidden="true">M</span>
-            <span>Munch</span>
-        </a>
+        <a class="brand" href="/" aria-label="Munch home"><span class="brand-mark" aria-hidden="true">M</span><span>Munch</span></a>
         <button class="nav-toggle" id="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false">☰</button>
         <nav class="nav-links" id="nav-links" aria-label="Primary navigation">
-            <a href="#features">Features</a>
-            <a href="#how">How it works</a>
-            <a href="#sources">Food data</a>
-            <a href="/tools">Tools</a>
-            <a href="/privacy">Privacy</a>
-            <a class="button button-primary button-small" href="#connect">Connect Munch</a>
+            <a href="#how">How it works</a><a href="#features">Features</a><a href="#privacy">Privacy</a><a href="#pricing">Pricing</a><a href="/account/login">Sign in</a>
+            <a class="button button-primary button-small" href="/account/login?return_to=/account/portal">Start free trial</a>
         </nav>
     </div>
 </header>
 
 <main>
-    <section class="hero">
-        <div class="container hero-grid">
-            <div>
-                <p class="eyebrow">Nutrition tracking, without the tedious app</p>
-                <h1>Just tell ChatGPT <span>what you ate.</span></h1>
-                <p class="hero-lead">Munch turns everyday conversation into a structured nutrition history—meals, macros, water, weight, goals, and trends—without making you live inside another tracking app.</p>
-                <div class="hero-actions">
-                    <a class="button button-primary" href="#connect">Add Munch to ChatGPT</a>
-                    <a class="button button-secondary" href="#features">Explore the product</a>
-                </div>
-                <div class="hero-proof" aria-label="Product highlights">
-                    <span class="proof-pill">USDA FoodData Central</span>
-                    <span class="proof-pill">Open Food Facts</span>
-                    <span class="proof-pill">Private account history</span>
-                    <span class="proof-pill">Export anytime</span>
-                </div>
-            </div>
-
-            <div class="demo-wrap" aria-label="Example Munch conversation">
-                <div class="demo-card">
-                    <div class="demo-top">
-                        <div class="demo-user"><span class="demo-avatar">M</span> Munch</div>
-                        <span class="status-dot" title="Connected"></span>
+<section class="hero">
+    <div class="container hero-grid">
+        <div>
+            <p class="eyebrow">Persistent nutrition for ChatGPT</p>
+            <h1>Give ChatGPT a nutrition history that <span>actually persists.</span></h1>
+            <p class="hero-lead">ChatGPT handles the conversation and reasoning. Munch supplies secure nutrition storage, verified food search, saved foods, account controls, and tools ChatGPT can call when you ask.</p>
+            <div class="hero-actions"><a class="button button-primary" href="/account/login?return_to=/account/portal">Start 7-day free trial</a><a class="button button-secondary" href="#how">See how it works</a></div>
+            <div class="hero-proof"><span class="proof-pill">$4.99/month after trial</span><span class="proof-pill">Cancel anytime</span><span class="proof-pill">No advertising analytics</span></div>
+        </div>
+        <div class="demo-wrap" aria-label="Example Munch conversation">
+            <div class="demo-card">
+                <div class="demo-top"><div class="demo-user"><span class="demo-avatar">M</span>Munch</div><span class="status-dot" title="Connected"></span></div>
+                <div class="chat">
+                    <div class="bubble bubble-user">Log a peanut butter sandwich and a green apple for lunch.</div>
+                    <div class="bubble bubble-munch">Lunch logged from your saved sandwich and a verified apple result.
+                        <div class="nutrition-card"><div class="nutrition-head"><div><div class="kcal">510</div><p>calories</p></div><span class="proof-pill">USDA + saved food</span></div><div class="macro-row"><div class="macro"><strong>16g</strong><span>protein</span></div><div class="macro"><strong>71g</strong><span>carbs</span></div><div class="macro"><strong>20g</strong><span>fat</span></div></div></div>
                     </div>
-                    <div class="chat">
-                        <div class="bubble bubble-user">Lunch was a turkey sandwich with cheddar, mustard, and an apple.</div>
-                        <div class="bubble bubble-munch">
-                            I found a close match for the sandwich. Was that two slices of bread and one slice of cheddar?
-                        </div>
-                        <div class="bubble bubble-user">Yep.</div>
-                        <div class="bubble bubble-munch">
-                            Logged. Here is where lunch puts you today.
-                            <div class="nutrition-card">
-                                <div class="nutrition-head">
-                                    <div><div class="kcal">515</div><p>estimated calories</p></div>
-                                    <span class="proof-pill">Lunch</span>
-                                </div>
-                                <div class="macro-row">
-                                    <div class="macro"><strong>31g</strong><span>protein</span></div>
-                                    <div class="macro"><strong>65g</strong><span>carbs</span></div>
-                                    <div class="macro"><strong>15g</strong><span>fat</span></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                    <div class="bubble bubble-user">How much protein do I have left today?</div>
+                    <div class="bubble bubble-munch">You have 54 grams remaining based on your current goal and everything Munch has logged today.</div>
                 </div>
             </div>
         </div>
-    </section>
+    </div>
+</section>
 
-    <section class="section section-soft" id="features">
-        <div class="container">
-            <div class="section-head">
-                <p class="section-kicker">Built around real life</p>
-                <h2>Fast enough to use every day. Detailed enough to matter.</h2>
-                <p class="section-copy">Munch handles the structure behind the scenes while ChatGPT handles the conversation, follow-up questions, and photo understanding.</p>
-            </div>
-            <div class="feature-grid">
-                <article class="feature-card"><div class="feature-icon">01</div><h3>Natural meal logging</h3><p>Say what you ate in your own words. Munch stores the meal, time, nutrients, source, and assumptions.</p></article>
-                <article class="feature-card"><div class="feature-icon">02</div><h3>Better food matches</h3><p>Search USDA, Open Food Facts, barcodes, saved foods, and your own history instead of trusting one generic estimate.</p></article>
-                <article class="feature-card"><div class="feature-icon">03</div><h3>Confirmation before logging</h3><p>Ambiguous meals become drafts. Munch asks the highest-impact questions and waits for confirmation before committing the record.</p></article>
-                <article class="feature-card"><div class="feature-icon">04</div><h3>Useful daily context</h3><p>See calories, protein, carbs, fat, fiber, sugar, water, weight, goals, streaks, and longer-term patterns.</p></article>
-                <article class="feature-card"><div class="feature-icon">05</div><h3>Your usuals get easier</h3><p>Save foods and recurring meals so “log my usual breakfast” becomes faster and more accurate over time.</p></article>
-                <article class="feature-card"><div class="feature-icon">06</div><h3>Your data stays portable</h3><p>Import prior history, export your records, revoke ChatGPT connections, and permanently delete the account from one portal.</p></article>
-            </div>
-        </div>
-    </section>
+<section class="section section-soft" id="how"><div class="container"><div class="section-head center"><p class="section-kicker">Simple by design</p><h2>Nutrition tracking in three steps</h2></div><div class="steps"><article class="step"><h3>Connect Munch</h3><p>Authorize your Munch account from ChatGPT or another compatible MCP client.</p></article><article class="step"><h3>Talk normally</h3><p>Describe food, share a photo, scan a barcode, or ask ChatGPT to use a verified result.</p></article><article class="step"><h3>Ask about progress</h3><p>Review meals, macros, hydration, weight, saved foods, and trends through the conversation.</p></article></div></div></section>
 
-    <section class="section" id="how">
-        <div class="container">
-            <div class="section-head center">
-                <p class="section-kicker">How it works</p>
-                <h2>Conversation in. Structured history out.</h2>
-            </div>
-            <div class="steps">
-                <article class="step"><h3>Connect once</h3><p>Add the Munch MCP endpoint in ChatGPT and authorize your account through the secure connection flow.</p></article>
-                <article class="step"><h3>Talk normally</h3><p>Describe a meal, upload a food photo, scan a barcode, or ask how your day and trends are looking.</p></article>
-                <article class="step"><h3>Stay in control</h3><p>Review uncertain estimates before they are saved. Update, delete, export, or revoke access whenever you need to.</p></article>
-            </div>
-        </div>
-    </section>
+<section class="section" id="features"><div class="container"><div class="section-head"><p class="section-kicker">What Munch adds</p><h2>The structured layer ChatGPT does not provide by itself</h2><p class="section-copy">Munch does not try to replace ChatGPT. It gives ChatGPT durable nutrition context and specialized tools.</p></div><div class="feature-grid"><article class="feature-card"><div class="feature-icon">01</div><h3>Persistent meal history</h3><p>Meals remain available across conversations instead of disappearing with one chat.</p></article><article class="feature-card"><div class="feature-icon">02</div><h3>Verified food search</h3><p>Search USDA FoodData Central and Open Food Facts, including barcode records.</p></article><article class="feature-card"><div class="feature-icon">03</div><h3>Saved foods and usuals</h3><p>Reuse foods and meals you have already confirmed.</p></article><article class="feature-card"><div class="feature-icon">04</div><h3>Transparent estimates</h3><p>Uncertain meals can remain drafts with sources and assumptions shown before saving.</p></article><article class="feature-card"><div class="feature-icon">05</div><h3>Long-term context</h3><p>Track calories, macros, water, weight, goals, and trends over time.</p></article><article class="feature-card"><div class="feature-icon">06</div><h3>Portable and deletable</h3><p>Export your history, revoke connections, or permanently delete the account.</p></article></div></div></section>
 
-    <section class="section section-soft" id="sources">
-        <div class="container source-grid">
-            <div>
-                <p class="section-kicker">Food data with provenance</p>
-                <h2>Use the strongest source available.</h2>
-                <p class="section-copy">Munch keeps the source and confidence attached to each structured meal item. Published data is preferred; estimates remain clearly identified as estimates.</p>
-            </div>
-            <div class="source-stack">
-                <article class="source-card"><div class="source-badge">US</div><div><strong>USDA FoodData Central</strong><small>Generic foods, branded foods, portions, and nutrient detail</small></div><span class="source-check">✓</span></article>
-                <article class="source-card"><div class="source-badge">OF</div><div><strong>Open Food Facts</strong><small>Barcode lookup and community-maintained packaged-food data</small></div><span class="source-check">✓</span></article>
-                <article class="source-card"><div class="source-badge">ME</div><div><strong>Your confirmed history</strong><small>Saved foods, recurring meals, and the versions you actually eat</small></div><span class="source-check">✓</span></article>
-                <article class="source-card"><div class="source-badge">AI</div><div><strong>Conversation estimate</strong><small>Used when no reliable published match exists, with assumptions shown</small></div><span class="source-check">✓</span></article>
-            </div>
-        </div>
-    </section>
+<section class="section section-soft"><div class="container source-grid"><div><p class="section-kicker">Food data provenance</p><h2>Verified when possible. Transparent when estimated.</h2><p class="section-copy">Munch prioritizes structured nutrition data and your confirmed history. ChatGPT may assist with estimates, but the source and assumptions remain visible.</p></div><div class="source-stack"><article class="source-card"><div class="source-badge">US</div><div><strong>USDA FoodData Central</strong><small>Generic foods, portions, and branded records</small></div><span class="source-check">✓</span></article><article class="source-card"><div class="source-badge">OF</div><div><strong>Open Food Facts</strong><small>Packaged foods and barcode lookup</small></div><span class="source-check">✓</span></article><article class="source-card"><div class="source-badge">ME</div><div><strong>Your confirmed history</strong><small>Saved foods and meals you have approved</small></div><span class="source-check">✓</span></article><article class="source-card"><div class="source-badge">AI</div><div><strong>AI-assisted estimate</strong><small>Used when stronger structured data is unavailable</small></div><span class="source-check">!</span></article></div></div></section>
 
-    <section class="section section-purple" id="connect">
-        <div class="container connect-panel">
-            <div class="connect-grid">
-                <div>
-                    <p class="section-kicker">Early access connection</p>
-                    <h2>Connect Munch to ChatGPT.</h2>
-                    <p class="section-copy">Marketplace installation will come later. For now, add Munch as a custom MCP app and authorize your account.</p>
-                </div>
-                <div>
-                    <ol class="install-list">
-                        <li><span class="install-number">1</span><span>Open ChatGPT settings and go to <strong>Apps</strong>.</span></li>
-                        <li><span class="install-number">2</span><span>Create a custom app using this MCP endpoint:</span></li>
-                    </ol>
-                    <div class="endpoint" aria-label="Munch MCP endpoint">
-                        <code id="mcp-endpoint">https://munch-production-de3a.up.railway.app/mcp</code>
-                        <button class="button button-primary button-small" id="copy-endpoint" type="button">Copy</button>
-                    </div>
-                    <ol class="install-list spacer-top" start="3">
-                        <li><span class="install-number">3</span><span>Choose OAuth, connect, sign in to Munch, and approve the requested access.</span></li>
-                    </ol>
-                </div>
-            </div>
-        </div>
-    </section>
+<section class="section" id="privacy"><div class="container"><div class="section-head center"><p class="section-kicker">Clear data boundaries</p><h2>Munch does not train models on your nutrition data.</h2><p class="section-copy">Munch stores the information needed to provide your account and nutrition tools. It does not sell nutrition data, use it for advertising, or use it to train a Munch AI model.</p></div><div class="trust-grid"><article class="trust-card"><h3>What Munch controls</h3><p>Account isolation, nutrition storage, food-source requests, OAuth connections, Stripe entitlement state, exports, deletion, and restricted production access.</p></article><article class="trust-card"><h3>What ChatGPT controls</h3><p>Your conversation is processed by OpenAI before or while ChatGPT calls Munch. OpenAI's retention, training, and privacy choices are governed by your ChatGPT plan and settings—not by Munch.</p></article></div><div class="hero-actions" style="justify-content:center"><a class="button button-secondary" href="/privacy">Read the full privacy policy</a></div></div></section>
 
-    <section class="section" id="privacy">
-        <div class="container source-grid">
-            <div>
-                <p class="section-kicker">Privacy by product design</p>
-                <h2>No advertising analytics. No separate AI model.</h2>
-                <p class="section-copy">ChatGPT interprets your conversation. Munch authenticates the request, retrieves food data, validates the record, and stores only what is needed to provide the service.</p>
-                <div class="hero-actions"><a class="button button-secondary" href="/privacy">Read the privacy policy</a></div>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">✓</div>
-                <h3>Operational boundaries</h3>
-                <p>No Google Analytics or advertising trackers. Nutrition records are isolated by account and are not exposed through normal billing or support screens. You can export or delete your data from Munch.</p>
-            </div>
-        </div>
-    </section>
+<section class="section section-soft" id="pricing"><div class="container"><div class="section-head center"><p class="section-kicker">One simple plan</p><h2>Everything Munch provides. No tiers.</h2></div><article class="pricing-card"><p>7-day free trial</p><div class="price">$4.99 <small>/ month after trial</small></div><ul class="pricing-list"><li>Conversational meal logging</li><li>Verified food and barcode search</li><li>Saved foods and recurring meals</li><li>Macros, hydration, weight, and trends</li><li>ChatGPT connection controls</li><li>Export and permanent deletion</li></ul><a class="button button-primary" href="/account/login?return_to=/account/portal">Start free trial</a><p class="tiny spacer-top">Payment information is collected by Stripe. Cancel anytime through the Stripe-hosted billing portal.</p></article></div></section>
 
-    <section class="section section-soft" id="credits">
-        <div class="narrow">
-            <div class="credit-card">
-                <div class="credit-mark">OSS</div>
-                <div>
-                    <h3>Built on a strong open-source foundation</h3>
-                    <p>Munch began as a fork of <a href="https://github.com/akutishevsky/nutrition-mcp" target="_blank" rel="noopener noreferrer">Nutrition MCP by Alexander Kutishevsky</a>. The original project is MIT-licensed. Munch is an independent product and is not presented as an endorsement by the original developer.</p>
-                </div>
-            </div>
-        </div>
-    </section>
+<section class="section section-dark"><div class="container connect-panel"><div class="connect-grid"><div><p class="section-kicker">Built for ChatGPT</p><h2>Connect once, then use Munch through conversation.</h2><p class="section-copy">Official ChatGPT marketplace distribution is the target. During early access, Munch can also be authorized as a compatible MCP connection.</p></div><div><p><strong>MCP endpoint</strong></p><div class="endpoint spacer-top"><code id="mcp-endpoint">https://munch-production-de3a.up.railway.app/mcp</code><button class="button button-primary button-small" id="copy-endpoint" type="button">Copy</button></div></div></div></div></section>
 
-    <section class="section" id="faq">
-        <div class="narrow">
-            <div class="section-head center"><p class="section-kicker">Questions</p><h2>What people need to know.</h2></div>
-            <div class="faq">
-                <details><summary>Does Munch run its own AI model?</summary><p>No. ChatGPT handles language and image understanding. Munch provides the authenticated tools, food-source lookups, deterministic validation, and nutrition storage.</p></details>
-                <details><summary>Can Munch see my conversations?</summary><p>Munch only receives the tool arguments ChatGPT sends when it calls Munch. It does not receive unrelated conversation content. Tool requests can include nutrition details needed to perform the requested action.</p></details>
-                <details><summary>What happens when a food match is uncertain?</summary><p>Munch can create a draft, ask follow-up questions, show assumptions, and require confirmation before the meal becomes part of your history.</p></details>
-                <details><summary>Can I move or delete my data?</summary><p>Yes. Munch supports export and permanent account deletion. Active MCP connections can also be revoked from the account portal.</p></details>
-                <details><summary>Is Munch medical advice?</summary><p>No. Munch is a consumer wellness and tracking product. Nutrition estimates can be incomplete or inaccurate and should not replace a clinician or registered dietitian.</p></details>
-            </div>
-        </div>
-    </section>
+<section class="section section-soft"><div class="narrow"><div class="credit-card"><div class="credit-mark">OSS</div><div><h3>Built from strong open-source foundations</h3><p>Munch began as a fork of Nutrition MCP, created by Alexander Kutishevsky. Munch preserves the original MIT license and attribution while operating as an independent hosted product.</p></div></div></div></section>
+
+<section class="section"><div class="narrow"><div class="section-head center"><p class="section-kicker">Questions</p><h2>Frequently asked</h2></div><div class="faq"><details><summary>Does Munch replace ChatGPT?</summary><p>No. ChatGPT supplies the language, reasoning, photo interpretation, recipe ideas, and planning. Munch supplies persistent nutrition records and callable tools.</p></details><details><summary>Does Munch train on my data?</summary><p>No. Munch does not train a model on nutrition records. OpenAI separately controls how ChatGPT conversation data is handled according to the user's plan and settings.</p></details><details><summary>Is payment required during the trial?</summary><p>Stripe collects payment information when the trial starts. The subscription begins charging $4.99 per month after seven days unless canceled.</p></details><details><summary>Is Munch medical advice?</summary><p>No. Munch is a consumer wellness product. Food data and estimates can be incomplete or inaccurate.</p></details></div></div></section>
 </main>
 
-<footer class="site-footer">
-    <div class="container footer-grid">
-        <div>
-            <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">M</span><span>Munch</span></a>
-            <p class="footer-note">Conversational nutrition tracking through ChatGPT. Munch is an independent fork built from the MIT-licensed Nutrition MCP project.</p>
-        </div>
-        <nav class="footer-links" aria-label="Footer navigation">
-            <a href="/tools">Tools</a>
-            <a href="/privacy">Privacy</a>
-            <a href="/terms">Terms</a>
-            <a href="https://github.com/michaelhmiv/Munch" target="_blank" rel="noopener noreferrer">GitHub</a>
-        </nav>
-    </div>
-</footer>
-
+<footer class="site-footer"><div class="container footer-grid"><div><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">M</span><span>Munch</span></a><p class="footer-note">Persistent nutrition tools and memory for ChatGPT.</p></div><nav class="footer-links" aria-label="Footer navigation"><a href="/tools">Tools</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/account/login">Sign in</a><a href="https://github.com/michaelhmiv/Munch" target="_blank" rel="noopener noreferrer">GitHub</a></nav></div></footer>
 <script>
-(function () {
-    const toggle = document.getElementById('nav-toggle');
-    const links = document.getElementById('nav-links');
-    toggle?.addEventListener('click', function () {
-        const open = links.getAttribute('data-open') === 'true';
-        links.setAttribute('data-open', String(!open));
-        toggle.setAttribute('aria-expanded', String(!open));
-    });
-    links?.querySelectorAll('a').forEach(function (link) {
-        link.addEventListener('click', function () { links.setAttribute('data-open', 'false'); });
-    });
-    const endpoint = document.getElementById('mcp-endpoint');
-    if (endpoint) endpoint.textContent = window.location.origin + '/mcp';
-    document.getElementById('copy-endpoint')?.addEventListener('click', async function () {
-        const value = endpoint?.textContent || '';
-        try {
-            await navigator.clipboard.writeText(value);
-            this.textContent = 'Copied';
-            setTimeout(() => { this.textContent = 'Copy'; }, 1600);
-        } catch {
-            window.prompt('Copy the Munch MCP endpoint:', value);
-        }
-    });
-})();
+(function(){const toggle=document.getElementById('nav-toggle');const links=document.getElementById('nav-links');toggle?.addEventListener('click',()=>{const open=links.getAttribute('data-open')==='true';links.setAttribute('data-open',String(!open));toggle.setAttribute('aria-expanded',String(!open));});links?.querySelectorAll('a').forEach(link=>link.addEventListener('click',()=>links.setAttribute('data-open','false')));const endpoint=document.getElementById('mcp-endpoint');if(endpoint)endpoint.textContent=window.location.origin+'/mcp';document.getElementById('copy-endpoint')?.addEventListener('click',async function(){const value=endpoint?.textContent||'';try{await navigator.clipboard.writeText(value);this.textContent='Copied';setTimeout(()=>this.textContent='Copy',1600);}catch{window.prompt('Copy the Munch MCP endpoint:',value);}});})();
 </script>
 </body>
 </html>
