@@ -1,8 +1,11 @@
 import { Hono, type Context } from "hono";
 import { getCookie } from "hono/cookie";
-import { createLoginChallenge, resolveWebSession } from "../accounts/repository.js";
-import { deliverLoginLink } from "../accounts/login-delivery.js";
 import { requireSameOrigin } from "../accounts/csrf.js";
+import { deliverLoginLink } from "../accounts/login-delivery.js";
+import {
+    createLoginChallenge,
+    resolveWebSession,
+} from "../accounts/repository.js";
 import {
     MUNCH_SESSION_COOKIE,
     requireWebSession,
@@ -11,6 +14,7 @@ import { createCheckoutForUser } from "../billing/checkout-service.js";
 import { decideEntitlement } from "../billing/entitlements.js";
 import { getSubscriptionSnapshot } from "../billing/repository.js";
 import { rateLimitAuth } from "../middleware.js";
+import { getRefreshTokenSubject } from "./refresh-subject.js";
 import {
     authorizeSession,
     createAuthorizationSession,
@@ -92,7 +96,9 @@ function consentPage(input: {
 </form></main></body></html>`;
 }
 
-function tokenResponse(pair: Awaited<ReturnType<typeof exchangeAuthorizationCode>>) {
+function tokenResponse(
+    pair: Awaited<ReturnType<typeof exchangeAuthorizationCode>>,
+) {
     const now = Date.now();
     return {
         access_token: pair.accessToken,
@@ -272,9 +278,7 @@ export function createPlatformOAuthRouter(): Hono {
                     ...challenge,
                     returnTo: `/oauth/continue?session_id=${encodeURIComponent(sessionId)}`,
                 });
-                return c.html(
-                    checkEmailPage(delivery.developmentLoginUrl),
-                );
+                return c.html(checkEmailPage(delivery.developmentLoginUrl));
             } catch {
                 return c.json({ error: "login_delivery_unavailable" }, 503);
             }
@@ -321,7 +325,12 @@ export function createPlatformOAuthRouter(): Hono {
                 await getSubscriptionSnapshot(userId),
             );
             if (!entitlement.canUseProtectedTools) {
-                return oauthError(c, 400, "access_denied", "Subscription required");
+                return oauthError(
+                    c,
+                    400,
+                    "access_denied",
+                    "Subscription required",
+                );
             }
 
             const code = await issueAuthorizationCode(sessionId, userId);
@@ -336,7 +345,10 @@ export function createPlatformOAuthRouter(): Hono {
         const body = await c.req.parseBody();
         const grantType = body.grant_type;
         const clientId = body.client_id;
-        const clientSecret = body.client_secret;
+        const clientSecret =
+            typeof body.client_secret === "string"
+                ? body.client_secret
+                : undefined;
 
         if (typeof clientId !== "string") {
             return oauthError(c, 401, "invalid_client");
@@ -356,10 +368,7 @@ export function createPlatformOAuthRouter(): Hono {
                     clientId,
                     redirectUri: body.redirect_uri,
                     codeVerifier: body.code_verifier,
-                    clientSecret:
-                        typeof clientSecret === "string"
-                            ? clientSecret
-                            : undefined,
+                    clientSecret,
                 });
                 return c.json(tokenResponse(pair));
             }
@@ -368,20 +377,36 @@ export function createPlatformOAuthRouter(): Hono {
                 if (typeof body.refresh_token !== "string") {
                     return oauthError(c, 400, "invalid_request");
                 }
+
+                const userId = await getRefreshTokenSubject({
+                    refreshToken: body.refresh_token,
+                    clientId,
+                    clientSecret,
+                });
+                const entitlement = decideEntitlement(
+                    await getSubscriptionSnapshot(userId),
+                );
+                if (!entitlement.canUseProtectedTools) {
+                    return oauthError(
+                        c,
+                        400,
+                        "invalid_grant",
+                        "Subscription required",
+                    );
+                }
+
                 const pair = await rotateRefreshToken({
                     refreshToken: body.refresh_token,
                     clientId,
-                    clientSecret:
-                        typeof clientSecret === "string"
-                            ? clientSecret
-                            : undefined,
+                    clientSecret,
                 });
                 return c.json(tokenResponse(pair));
             }
 
             return oauthError(c, 400, "unsupported_grant_type");
         } catch (error) {
-            const message = error instanceof Error ? error.message : "invalid_grant";
+            const message =
+                error instanceof Error ? error.message : "invalid_grant";
             if (message === "invalid_client") {
                 return oauthError(c, 401, "invalid_client");
             }
