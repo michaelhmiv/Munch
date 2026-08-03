@@ -14,6 +14,10 @@ interface RefreshSubjectRow {
     token_endpoint_auth_method: TokenEndpointAuthMethod;
 }
 
+function timestamp(value: Date | string): number {
+    return value instanceof Date ? value.getTime() : new Date(value).getTime();
+}
+
 export async function getRefreshTokenSubject(input: {
     refreshToken: string;
     clientId: string;
@@ -39,7 +43,7 @@ export async function getRefreshTokenSubject(input: {
             !row ||
             row.client_id !== input.clientId ||
             row.revoked_at ||
-            new Date(row.expires_at).getTime() <= Date.now()
+            timestamp(row.expires_at) <= Date.now()
         ) {
             throw new Error("invalid_grant");
         }
