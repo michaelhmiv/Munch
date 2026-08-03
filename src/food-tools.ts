@@ -5,6 +5,7 @@ import {
     getFoodSearchService,
     summarizeFoodCandidate,
 } from "./food-providers/service.js";
+import type { FoodProviderFailure } from "./food-providers/registry.js";
 import type {
     FoodCandidate,
     NutrientValues,
@@ -161,14 +162,7 @@ function formatCandidate(candidate: FoodCandidate, index?: number): string {
     return `${prefix}${title}\n   ${portion?.label ?? "No declared serving"}: ${macros}\n   Source: ${summary.provider_label} · candidate_id: ${summary.candidate_id}`;
 }
 
-function serializeFailures(
-    failures: Array<{
-        provider: "usda" | "open_food_facts";
-        code: string;
-        message: string;
-        retryAfterSeconds?: number;
-    }>,
-) {
+function serializeFailures(failures: FoodProviderFailure[]) {
     return failures.map((failure) => ({
         provider: failure.provider,
         code: failure.code,
@@ -196,11 +190,11 @@ export function registerFoodTools(server: McpServer, userId: string): void {
                 query: z.string().min(1).max(200),
                 limit: z.coerce.number().int().min(1).max(25).optional(),
             },
-            outputSchema: z.object({
+            outputSchema: {
                 query: z.string(),
                 candidates: z.array(candidateSummarySchema),
                 provider_failures: z.array(providerFailureSchema),
-            }),
+            },
         },
         async ({ query, limit }) =>
             withAnalytics(
@@ -254,10 +248,10 @@ export function registerFoodTools(server: McpServer, userId: string): void {
             inputSchema: {
                 candidate_id: z.string().min(3).max(300),
             },
-            outputSchema: z.object({
+            outputSchema: {
                 found: z.boolean(),
                 food: fullCandidateSchema.nullable(),
-            }),
+            },
         },
         async ({ candidate_id }) =>
             withAnalytics(
@@ -301,11 +295,11 @@ export function registerFoodTools(server: McpServer, userId: string): void {
             inputSchema: {
                 barcode: z.string().min(8).max(40),
             },
-            outputSchema: z.object({
+            outputSchema: {
                 barcode: z.string(),
                 candidates: z.array(fullCandidateSchema),
                 provider_failures: z.array(providerFailureSchema),
-            }),
+            },
         },
         async ({ barcode }) =>
             withAnalytics(
