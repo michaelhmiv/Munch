@@ -1,6 +1,6 @@
+import * as inherited from "./inherited-supabase.js";
 import * as railwayNutrition from "./nutrition-platform/index.js";
 import * as railwayService from "./service-platform/repository.js";
-import * as inherited from "./supabase.js";
 
 export const railwayDataEnabled =
     process.env.MUNCH_RAILWAY_DATA_ENABLED === "true";
@@ -174,4 +174,4 @@ export type {
     Profile,
     WaterEntry,
     WeightEntry,
-} from "./supabase.js";
+} from "./inherited-supabase.js";
