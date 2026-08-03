@@ -12,7 +12,8 @@ if (!databaseUrl) {
 }
 
 const migrationsDirectory = path.resolve("db/migrations");
-const database = new SQL(databaseUrl, {
+const database = new SQL({
+    url: databaseUrl,
     max: 1,
     idleTimeout: 20,
     connectionTimeout: 10,
@@ -102,4 +103,5 @@ for (const fileName of files) {
     });
 }
 
+await database.close();
 console.log("Database migrations are current.");
