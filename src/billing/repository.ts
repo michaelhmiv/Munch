@@ -18,6 +18,10 @@ export interface StripeSubscriptionRecord {
     graceExpiresAt?: Date | null;
 }
 
+// Claim a Stripe event for processing. A successfully processed event is a
+// duplicate and returns false. A previously failed event remains unprocessed and
+// can be claimed again when Stripe retries it. The stored digest must match so a
+// reused event ID cannot replace the original payload.
 export async function recordStripeWebhookEvent(input: {
     eventId: string;
     eventType: string;
@@ -43,7 +47,13 @@ export async function recordStripeWebhookEvent(input: {
                 ${payloadSha256},
                 1
             )
-            on conflict (stripe_event_id) do nothing
+            on conflict (stripe_event_id) do update
+            set attempts = munch.stripe_webhook_events.attempts + 1,
+                processing_error_code = null
+            where munch.stripe_webhook_events.processed_at is null
+              and munch.stripe_webhook_events.payload_sha256 = excluded.payload_sha256
+              and munch.stripe_webhook_events.event_type = excluded.event_type
+              and munch.stripe_webhook_events.livemode = excluded.livemode
             returning stripe_event_id
         `;
         return Boolean(rows[0]);
@@ -57,9 +67,11 @@ export async function markStripeWebhookProcessed(
     await withBillingDatabase(async (tx) => {
         await tx`
             update munch.stripe_webhook_events
-            set processed_at = case when ${errorCode ?? null} is null then now() else processed_at end,
-                processing_error_code = ${errorCode ?? null},
-                attempts = attempts + 1
+            set processed_at = case
+                    when ${errorCode ?? null} is null then now()
+                    else null
+                end,
+                processing_error_code = ${errorCode ?? null}
             where stripe_event_id = ${eventId}
         `;
     });
