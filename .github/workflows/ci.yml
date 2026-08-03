@@ -102,6 +102,9 @@ jobs:
       - name: Exercise readiness endpoints and maintenance
         run: bun scripts/operations-smoke.ts
 
+      - name: Exercise synthetic legacy import, re-import, and verification
+        run: bun scripts/migration/migration-smoke.ts
+
   container:
     runs-on: ubuntu-latest
     timeout-minutes: 15
