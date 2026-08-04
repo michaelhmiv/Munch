@@ -33,7 +33,8 @@ try {
         `oauth-http-${suffix}@example.test`,
     );
     const webSession = await consumeLoginChallenge(challenge.token);
-    if (!webSession) throw new Error("Unable to activate OAuth HTTP smoke user");
+    if (!webSession)
+        throw new Error("Unable to activate OAuth HTTP smoke user");
 
     const nowSeconds = Math.floor(Date.now() / 1000);
     const customerId = `cus_http_${suffix}`;
