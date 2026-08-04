@@ -69,9 +69,9 @@ describe("Better Auth magic-link delivery", () => {
             async () => new Response(null, { status: 200 }),
         ) as unknown as typeof fetch;
 
-        await expect(
-            sendBetterAuthMagicLink(input, fetchImpl),
-        ).rejects.toThrow("RESEND_API_KEY is required");
+        await expect(sendBetterAuthMagicLink(input, fetchImpl)).rejects.toThrow(
+            "RESEND_API_KEY is required",
+        );
         expect(fetchImpl).not.toHaveBeenCalled();
     });
 
@@ -82,9 +82,9 @@ describe("Better Auth magic-link delivery", () => {
             async () => new Response(null, { status: 200 }),
         ) as unknown as typeof fetch;
 
-        await expect(
-            sendBetterAuthMagicLink(input, fetchImpl),
-        ).rejects.toThrow("MUNCH_EMAIL_FROM is required");
+        await expect(sendBetterAuthMagicLink(input, fetchImpl)).rejects.toThrow(
+            "MUNCH_EMAIL_FROM is required",
+        );
     });
 
     test("does not expose Resend response details on failure", async () => {
@@ -97,8 +97,8 @@ describe("Better Auth magic-link delivery", () => {
                 ),
         ) as unknown as typeof fetch;
 
-        await expect(
-            sendBetterAuthMagicLink(input, fetchImpl),
-        ).rejects.toThrow("Resend rejected the magic-link email request");
+        await expect(sendBetterAuthMagicLink(input, fetchImpl)).rejects.toThrow(
+            "Resend rejected the magic-link email request",
+        );
     });
 });
