@@ -10,7 +10,10 @@ const {
     listHouseholdMembers,
     removeHouseholdMember,
 } = await import("../src/households/repository.js");
-const { closePlatformDatabase } = await import("../src/platform/database.js");
+const { deleteAllUserData } =
+    await import("../src/nutrition-platform/account.js");
+const { closePlatformDatabase, withAuthDatabase } =
+    await import("../src/platform/database.js");
 
 if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL is required for household smoke tests");
@@ -25,8 +28,29 @@ async function createUser(prefix: string) {
     return { userId: challenge.userId, email };
 }
 
+async function inviteAndAccept(input: {
+    ownerUserId: string;
+    householdId: string;
+    user: { userId: string; email: string };
+    role: "member" | "viewer";
+    displayName: string;
+}) {
+    const invitation = await createHouseholdInvitation({
+        userId: input.ownerUserId,
+        householdId: input.householdId,
+        email: input.user.email,
+        role: input.role,
+    });
+    return acceptHouseholdInvitation({
+        userId: input.user.userId,
+        token: invitation.rawToken,
+        displayName: input.displayName,
+    });
+}
+
 const owner = await createUser("household-owner");
 const member = await createUser("household-member");
+const departing = await createUser("household-departing");
 const outsider = await createUser("household-outsider");
 const household = await createHousehold({
     userId: owner.userId,
@@ -62,8 +86,16 @@ try {
 }
 if (!reused) throw new Error("Household invitation was reusable");
 
+await inviteAndAccept({
+    ownerUserId: owner.userId,
+    householdId: household.householdId,
+    user: departing,
+    role: "viewer",
+    displayName: "Former Member",
+});
+
 const members = await listHouseholdMembers(owner.userId, household.householdId);
-if (members.length !== 2 || members[0]?.displayName !== "Mom") {
+if (members.length !== 3 || members[0]?.displayName !== "Mom") {
     throw new Error("Household member listing was incorrect");
 }
 if (
@@ -76,7 +108,40 @@ if ((await getActiveHouseholdContext(member.userId))?.displayName !== "Dad") {
     throw new Error("Joined member could not resolve shared context");
 }
 
-const memberRow = members.find((entry) => entry.userId === member.userId);
+let ownerDeletionBlocked = false;
+try {
+    await deleteAllUserData(owner.userId);
+} catch (error) {
+    ownerDeletionBlocked =
+        error instanceof Error && error.message.includes("Transfer or dissolve");
+}
+if (!ownerDeletionBlocked) {
+    throw new Error("Household owner deletion was not explicitly blocked");
+}
+
+await deleteAllUserData(departing.userId);
+const retained = await withAuthDatabase(async (tx) =>
+    tx<Array<{ user_id: string | null; display_name: string; status: string }>>`
+        select user_id, display_name, status
+        from munch.household_memberships
+        where household_id = ${household.householdId}
+          and display_name = 'Former Member'
+        limit 1
+    `,
+);
+if (
+    retained[0]?.user_id !== null ||
+    retained[0]?.status !== "left" ||
+    retained[0]?.display_name !== "Former Member"
+) {
+    throw new Error("Deleted member attribution was not retained safely");
+}
+
+const activeMembers = await listHouseholdMembers(
+    owner.userId,
+    household.householdId,
+);
+const memberRow = activeMembers.find((entry) => entry.userId === member.userId);
 if (!memberRow) throw new Error("Joined member row was missing");
 if (
     !(await removeHouseholdMember({
@@ -93,5 +158,5 @@ if (await getActiveHouseholdContext(member.userId)) {
 
 await closePlatformDatabase();
 console.log(
-    "Munch household membership, invitation, and RLS smoke test passed.",
+    "Munch household membership, invitation, deletion lifecycle, and RLS smoke test passed.",
 );
