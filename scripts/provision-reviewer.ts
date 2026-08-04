@@ -22,17 +22,18 @@ if (password.length < 16 || password.length > 128) {
 const expiresAt = process.env.MUNCH_REVIEWER_EXPIRES_AT
     ? new Date(process.env.MUNCH_REVIEWER_EXPIRES_AT)
     : new Date(Date.now() + 180 * 24 * 60 * 60 * 1_000);
-if (!Number.isFinite(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
+if (
+    !Number.isFinite(expiresAt.getTime()) ||
+    expiresAt.getTime() <= Date.now()
+) {
     throw new Error("MUNCH_REVIEWER_EXPIRES_AT must be a future ISO date");
 }
 
 const { Pool } = await import("pg");
 const { getMunchBetterAuth } = await import("../src/auth/auth.js");
 const { grantPremiumOverride } = await import("../src/billing/override.js");
-const {
-    createHousehold,
-    getActiveHouseholdContext,
-} = await import("../src/households/repository.js");
+const { createHousehold, getActiveHouseholdContext } =
+    await import("../src/households/repository.js");
 const { saveRecipeAndPlan } = await import("../src/planning/repository.js");
 const { closePlatformDatabase } = await import("../src/platform/database.js");
 
