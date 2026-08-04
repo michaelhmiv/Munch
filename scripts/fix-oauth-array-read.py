@@ -1,5 +1,6 @@
 from pathlib import Path
 
+# Convert PostgreSQL text arrays to JSON arrays at the query boundary.
 path = Path(__file__).resolve().parents[1] / "src/oauth-platform/repository.ts"
 text = path.read_text()
 replacements = {
