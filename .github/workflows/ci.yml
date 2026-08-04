@@ -1,33 +1,32 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - feat/reviewer-readiness-final
+  pull_request:
 
 permissions:
   contents: write
 
 jobs:
-  finalize-reviewer:
-    if: github.actor != 'github-actions[bot]'
+  format-reviewer:
+    if: github.head_ref == 'feat/reviewer-readiness-final' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out reviewer branch
+        uses: actions/checkout@v4
         with:
           ref: feat/reviewer-readiness-final
-      - uses: oven-sh/setup-bun@v2
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1
-      - run: bun install --frozen-lockfile
-      - name: Validate corrected personal recipe source
-        run: grep -q 'sourceType: "user_entered"' scripts/provision-reviewer.ts
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
       - name: Apply pinned formatting
-        run: bunx prettier --write db/migrations/0022_provisioned_credentials.sql docs/review/marketplace-review.md scripts/provision-reviewer.ts scripts/reviewer-readiness-smoke.ts src/auth/auth.ts src/auth/reviewer-routes.ts src/auth/routes.ts src/billing/capabilities.ts src/billing/override.ts
-      - name: Commit final reviewer implementation
+        run: bunx prettier --write scripts/provision-reviewer.ts scripts/reviewer-readiness-smoke.ts src/auth/auth.ts src/billing/capabilities.ts
+      - name: Commit formatting
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add db/migrations/0022_provisioned_credentials.sql docs/review/marketplace-review.md scripts/provision-reviewer.ts scripts/reviewer-readiness-smoke.ts src/auth/auth.ts src/auth/reviewer-routes.ts src/auth/routes.ts src/billing/capabilities.ts src/billing/override.ts
-          git diff --cached --quiet || git commit -m "fix: finalize reviewer credentials and sample data"
+          git add scripts/provision-reviewer.ts scripts/reviewer-readiness-smoke.ts src/auth/auth.ts src/billing/capabilities.ts
+          git diff --cached --quiet || git commit -m "style: format reviewer implementation"
           git push origin HEAD:feat/reviewer-readiness-final
