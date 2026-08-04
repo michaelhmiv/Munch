@@ -223,7 +223,7 @@ export async function exportAccountData(
         };
     });
 
-    const recordCount = Object.values(data).reduce(
+    const recordCount = Object.values(data).reduce<number>(
         (count, value) => count + (Array.isArray(value) ? value.length : 0),
         0,
     );
