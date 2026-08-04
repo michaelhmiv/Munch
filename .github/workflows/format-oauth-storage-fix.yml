@@ -1,0 +1,44 @@
+name: Format OAuth Storage Fix
+
+on:
+  push:
+    branches:
+      - fix/oauth-storage-types
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: "${{ !contains(github.event.head_commit.message, 'style: apply pinned Prettier') }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/oauth-storage-types
+          fetch-depth: 0
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Format focused files
+        run: bunx prettier --write scripts/better-auth-oauth-http-smoke.ts scripts/better-auth-schema-smoke.ts docs/incidents/dynamic-client-registration-array-storage.md
+
+      - name: Remove one-use workflow and commit
+        run: |
+          rm .github/workflows/format-oauth-storage-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "style: apply pinned Prettier"
+          git push origin HEAD:fix/oauth-storage-types
