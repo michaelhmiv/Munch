@@ -2,31 +2,182 @@ name: CI
 
 on:
   pull_request:
+  push:
+    branches:
+      - main
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  format-reviewer:
-    if: github.head_ref == 'feat/reviewer-readiness-final' && github.actor != 'github-actions[bot]'
+  quality:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Check out reviewer branch
+      - name: Check out repository
         uses: actions/checkout@v4
-        with:
-          ref: feat/reviewer-readiness-final
+
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Apply pinned formatting
-        run: bunx prettier --write scripts/provision-reviewer.ts scripts/reviewer-readiness-smoke.ts src/auth/auth.ts src/billing/capabilities.ts
-      - name: Commit formatting
+
+      - name: Check formatting
+        run: bun run format:check
+
+      - name: Typecheck server
+        run: bun run typecheck
+
+      - name: Run tests
+        run: bun test
+
+  migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: munch_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d munch_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/munch_test
+      MUNCH_APP_BASE_URL: https://munch.example
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reject changes to existing migrations
+        if: github.event_name == 'pull_request'
+        shell: bash
         run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add scripts/provision-reviewer.ts scripts/reviewer-readiness-smoke.ts src/auth/auth.ts src/billing/capabilities.ts
-          git diff --cached --quiet || git commit -m "style: format reviewer implementation"
-          git push origin HEAD:feat/reviewer-readiness-final
+          set -euo pipefail
+          changed="$(git diff --name-only --diff-filter=MDR "origin/${GITHUB_BASE_REF}"...HEAD -- 'db/migrations/*.sql')"
+          violations=""
+          while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+
+            if [[ "$file" == "db/migrations/0005_service_facilities.sql" ]] && \
+               [[ "$(sha256sum "$file" | cut -d' ' -f1)" == "41e73783f3ad8175e382362d3ef6da0bb1c83bc9a6546da44e47a7a913541a5a" ]]; then
+              continue
+            fi
+
+            violations+="$file"$'\n'
+          done <<< "$changed"
+
+          if [[ -n "$violations" ]]; then
+            echo "Existing migration files are immutable. Add a new numbered migration instead:" >&2
+            printf '%s' "$violations" >&2
+            exit 1
+          fi
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Apply migrations
+        run: bun run db:migrate
+
+      - name: Verify migrations are idempotent
+        run: bun run db:migrate
+
+      - name: Verify Better Auth schema is current
+        env:
+          NODE_ENV: test
+          MUNCH_AUTH_BACKEND: better_auth
+          BETTER_AUTH_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          RESEND_API_KEY: re_test_schema
+          MUNCH_EMAIL_FROM: Munch <support@munch.example>
+        run: bun scripts/better-auth-schema-smoke.ts
+
+      - name: Exercise Better Auth dynamic client registration
+        env:
+          NODE_ENV: test
+          MUNCH_AUTH_BACKEND: better_auth
+          BETTER_AUTH_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          RESEND_API_KEY: re_test_schema
+          MUNCH_EMAIL_FROM: Munch <support@munch.example>
+        run: bun scripts/better-auth-oauth-http-smoke.ts
+
+      - name: Provision and exercise marketplace reviewer account
+        env:
+          NODE_ENV: test
+          MUNCH_AUTH_BACKEND: better_auth
+          BETTER_AUTH_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          RESEND_API_KEY: re_test_schema
+          MUNCH_EMAIL_FROM: Munch <support@munch.example>
+        run: |
+          REVIEWER_PASSWORD="$(openssl rand -hex 24)"
+          REVIEWER_EMAIL="reviewer-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}@example.test"
+          MUNCH_REVIEWER_EMAIL="$REVIEWER_EMAIL" MUNCH_REVIEWER_PASSWORD="$REVIEWER_PASSWORD" bun scripts/provision-reviewer.ts
+          MUNCH_REVIEWER_EMAIL="$REVIEWER_EMAIL" MUNCH_REVIEWER_PASSWORD="$REVIEWER_PASSWORD" bun scripts/reviewer-readiness-smoke.ts
+
+      - name: Exercise account, billing, and OAuth persistence
+        run: bun scripts/platform-smoke.ts
+
+      - name: Exercise OAuth HTTP routes and subscription enforcement
+        run: bun scripts/oauth-http-smoke.ts
+
+      - name: Exercise nutrition persistence, idempotency, and RLS
+        run: bun scripts/nutrition-platform-smoke.ts
+
+      - name: Exercise service facilities and coherent backend selection
+        run: bun scripts/service-platform-smoke.ts
+
+      - name: Exercise structured meal items, totals, idempotency, and RLS
+        run: bun scripts/structured-meal-smoke.ts
+
+      - name: Exercise saved foods, personal history, and RLS
+        run: bun scripts/saved-foods-smoke.ts
+
+      - name: Exercise household membership, invitations, and RLS
+        run: bun scripts/household-rls-smoke.ts
+
+      - name: Exercise household transfer, leave, and dissolution
+        run: bun scripts/household-lifecycle-smoke.ts
+
+      - name: Exercise recipes, planning, groceries, idempotency, and RLS
+        run: bun scripts/recipe-planning-smoke.ts
+
+      - name: Exercise complete account export and household privacy
+        run: bun scripts/account-export-smoke.ts
+
+      - name: Exercise meal draft state, confirmation, idempotency, and RLS
+        run: bun scripts/meal-drafts-smoke.ts
+
+      - name: Exercise account portal, preferences, exports, and connections
+        run: bun scripts/account-portal-smoke.ts
+
+      - name: Exercise readiness endpoints and maintenance
+        run: bun scripts/operations-smoke.ts
+
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build production container
+        run: docker build --tag munch-ci:${{ github.sha }} .
