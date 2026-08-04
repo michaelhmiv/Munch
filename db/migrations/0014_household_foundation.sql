@@ -16,7 +16,9 @@ create table munch.households (
 create table munch.household_memberships (
     id uuid primary key default gen_random_uuid(),
     household_id uuid not null references munch.households(id) on delete cascade,
-    user_id uuid not null references munch.users(id) on delete cascade,
+    -- The membership row and display name remain after a non-owner deletes their
+    -- account so shared-resource attribution is not silently erased.
+    user_id uuid references munch.users(id) on delete set null,
     display_name text not null,
     role text not null,
     status text not null default 'active',
@@ -27,21 +29,23 @@ create table munch.household_memberships (
     constraint household_memberships_role
         check (role in ('owner', 'member', 'viewer')),
     constraint household_memberships_status
-        check (status in ('active', 'removed', 'left'))
+        check (status in ('active', 'removed', 'left')),
+    constraint household_memberships_active_user_present
+        check (status <> 'active' or user_id is not null)
 );
 
 create unique index household_memberships_active_user_unique
     on munch.household_memberships (user_id)
-    where status = 'active';
+    where status = 'active' and user_id is not null;
 create unique index household_memberships_active_household_user_unique
     on munch.household_memberships (household_id, user_id)
-    where status = 'active';
+    where status = 'active' and user_id is not null;
 create unique index household_memberships_active_owner_unique
     on munch.household_memberships (household_id)
-    where status = 'active' and role = 'owner';
+    where status = 'active' and role = 'owner' and user_id is not null;
 create index household_memberships_household_active_idx
     on munch.household_memberships (household_id, joined_at)
-    where status = 'active';
+    where status = 'active' and user_id is not null;
 
 create table munch.household_invitations (
     id uuid primary key default gen_random_uuid(),
@@ -98,7 +102,7 @@ as $$
 declare
     active_count integer;
 begin
-    if new.status <> 'active' then
+    if new.status <> 'active' or new.user_id is null then
         return new;
     end if;
 
@@ -106,6 +110,7 @@ begin
     from munch.household_memberships membership
     where membership.household_id = new.household_id
       and membership.status = 'active'
+      and membership.user_id is not null
       and membership.id <> new.id;
 
     if active_count >= 6 then
@@ -116,7 +121,7 @@ end
 $$;
 
 create trigger household_memberships_limit_trigger
-before insert or update of status, household_id
+before insert or update of status, user_id, household_id
 on munch.household_memberships
 for each row execute function munch.enforce_household_member_limit();
 
@@ -132,6 +137,18 @@ begin
     select owner_user_id into expected_owner
     from munch.households
     where id = new.household_id;
+
+    -- Foreign-key ON DELETE SET NULL preserves a former member's attribution.
+    -- Active owner rows are never allowed to become detached; ownership must be
+    -- transferred or the household dissolved first.
+    if new.user_id is null then
+        if old.role = 'owner' and old.status = 'active' then
+            raise exception 'household_owner_transfer_required' using errcode = '23514';
+        end if;
+        new.status := 'left';
+        new.updated_at := now();
+        return new;
+    end if;
 
     if new.role = 'owner' and new.user_id <> expected_owner then
         raise exception 'household_owner_membership_mismatch' using errcode = '23514';
@@ -222,5 +239,5 @@ grant select, insert, update, delete on
     to munch_app, munch_auth;
 
 comment on table munch.households is 'Shared recipe, meal-plan, and grocery workspace';
-comment on table munch.household_memberships is 'Connected Munch accounts with retained display-name attribution';
+comment on table munch.household_memberships is 'Connected or former Munch accounts with retained display-name attribution';
 comment on table munch.household_invitations is 'Single-use hashed invitations; raw tokens are never stored';
