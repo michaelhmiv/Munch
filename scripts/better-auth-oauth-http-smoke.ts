@@ -63,10 +63,18 @@ try {
 
     const registration = JSON.parse(responseText) as {
         client_id?: string;
+        client_secret?: string;
         redirect_uris?: string[];
+        token_endpoint_auth_method?: string;
     };
     if (!registration.client_id) {
         throw new Error("Dynamic registration returned no client_id");
+    }
+    if (registration.client_secret) {
+        throw new Error("Public dynamic registration returned a client secret");
+    }
+    if (registration.token_endpoint_auth_method !== "none") {
+        throw new Error("Dynamic registration did not preserve public auth");
     }
     if (
         JSON.stringify(registration.redirect_uris) !==
