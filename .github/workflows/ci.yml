@@ -7,57 +7,34 @@ on:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  apply-website-contract:
-    if: github.event_name == 'pull_request' && github.head_ref == 'feat/free-premium-website-final' && github.actor != 'github-actions[bot]'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: feat/free-premium-website-final
-          fetch-depth: 0
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1
-      - run: bun install --frozen-lockfile
-      - run: python3 scripts/apply-website-contract.py
-      - run: bun run format
-      - name: Remove one-use assets and restore CI
-        run: |
-          git fetch origin main
-          git checkout origin/main -- .github/workflows/ci.yml
-          rm -f .github/workflows/apply-website-contract.yml
-          rm -f scripts/apply-website-contract.py
-      - name: Commit website contract
-        run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add -A
-          git commit -m "feat: publish Free and Premium website contract"
-          git push origin HEAD:feat/free-premium-website-final
-
   quality:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
       - name: Check formatting
         run: bun run format:check
+
       - name: Typecheck server
         run: bun run typecheck
+
       - name: Run tests
         run: bun test
 
@@ -86,6 +63,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: Reject changes to existing migrations
         if: github.event_name == 'pull_request'
         shell: bash
@@ -95,27 +73,35 @@ jobs:
           violations=""
           while IFS= read -r file; do
             [[ -z "$file" ]] && continue
+
             if [[ "$file" == "db/migrations/0005_service_facilities.sql" ]] && \
                [[ "$(sha256sum "$file" | cut -d' ' -f1)" == "41e73783f3ad8175e382362d3ef6da0bb1c83bc9a6546da44e47a7a913541a5a" ]]; then
               continue
             fi
+
             violations+="$file"$'\n'
           done <<< "$changed"
+
           if [[ -n "$violations" ]]; then
             echo "Existing migration files are immutable. Add a new numbered migration instead:" >&2
             printf '%s' "$violations" >&2
             exit 1
           fi
+
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
       - name: Apply migrations
         run: bun run db:migrate
+
       - name: Verify migrations are idempotent
         run: bun run db:migrate
+
       - name: Verify Better Auth schema is current
         env:
           NODE_ENV: test
@@ -124,6 +110,7 @@ jobs:
           RESEND_API_KEY: re_test_schema
           MUNCH_EMAIL_FROM: Munch <support@munch.example>
         run: bun scripts/better-auth-schema-smoke.ts
+
       - name: Exercise Better Auth dynamic client registration
         env:
           NODE_ENV: test
@@ -132,26 +119,37 @@ jobs:
           RESEND_API_KEY: re_test_schema
           MUNCH_EMAIL_FROM: Munch <support@munch.example>
         run: bun scripts/better-auth-oauth-http-smoke.ts
+
       - name: Exercise account, billing, and OAuth persistence
         run: bun scripts/platform-smoke.ts
+
       - name: Exercise OAuth HTTP routes and subscription enforcement
         run: bun scripts/oauth-http-smoke.ts
+
       - name: Exercise nutrition persistence, idempotency, and RLS
         run: bun scripts/nutrition-platform-smoke.ts
+
       - name: Exercise service facilities and coherent backend selection
         run: bun scripts/service-platform-smoke.ts
+
       - name: Exercise structured meal items, totals, idempotency, and RLS
         run: bun scripts/structured-meal-smoke.ts
+
       - name: Exercise saved foods, personal history, and RLS
         run: bun scripts/saved-foods-smoke.ts
+
       - name: Exercise household membership, invitations, and RLS
         run: bun scripts/household-rls-smoke.ts
+
       - name: Exercise recipes, planning, groceries, idempotency, and RLS
         run: bun scripts/recipe-planning-smoke.ts
+
       - name: Exercise meal draft state, confirmation, idempotency, and RLS
         run: bun scripts/meal-drafts-smoke.ts
+
       - name: Exercise account portal, preferences, exports, and connections
         run: bun scripts/account-portal-smoke.ts
+
       - name: Exercise readiness endpoints and maintenance
         run: bun scripts/operations-smoke.ts
 
@@ -161,5 +159,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
       - name: Build production container
         run: docker build --tag munch-ci:${{ github.sha }} .
