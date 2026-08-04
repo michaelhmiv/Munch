@@ -4,7 +4,7 @@ Munch supports a pre-provisioned reviewer account with ordinary Better Auth emai
 
 `https://munch.business/review/sign-in`
 
-Public password signup is disabled. Normal users continue to use passwordless magic links. Reviewer credentials must be supplied privately in the marketplace submission and must never be committed to the repository.
+Public password signup is disabled. Normal users continue to use passwordless magic links. Reviewer credentials are created outside GitHub, supplied privately in the marketplace submission, and never committed to the repository.
 
 ## Provisioning
 
