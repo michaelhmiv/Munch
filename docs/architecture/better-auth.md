@@ -19,7 +19,7 @@ The stable business identity remains `munch.users.id`. Nutrition rows, Stripe cu
 
 `main` is the production release branch. GitHub CI validates every pull request and push to `main`; Railway watches `main` and deploys merged commits automatically.
 
-Better Auth requires `RESEND_API_KEY`, a verified `MUNCH_EMAIL_FROM` sender, Stripe API and webhook credentials, USDA credentials, PostgreSQL, and the existing Better Auth secret. Keep `MUNCH_AUTH_BACKEND=custom` until those production values are complete. The custom backend remains the rollback value without remapping nutrition or billing records.
+Better Auth requires `RESEND_API_KEY`, a verified `MUNCH_EMAIL_FROM` sender, Stripe API and webhook credentials, USDA credentials, PostgreSQL, and the existing Better Auth secret. The Resend API key is server-only and must never be returned to the browser or written to application logs. Keep `MUNCH_AUTH_BACKEND=custom` until those production values are complete. The custom backend remains the rollback value without remapping nutrition or billing records.
 
 ## Database rules
 
