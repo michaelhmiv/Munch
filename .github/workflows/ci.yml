@@ -1,14 +1,16 @@
 name: CI
 
 on:
-  pull_request:
+  push:
+    branches:
+      - fix/legal-household-disclosures
 
 permissions:
   contents: write
 
 jobs:
   format-legal:
-    if: github.head_ref == 'fix/legal-household-disclosures'
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Check out branch
@@ -22,11 +24,11 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Format legal pages
-        run: bunx prettier --write public/privacy.html public/terms.html
+        run: bunx prettier --write public/privacy.html public/terms.html docs/architecture/household-data-boundary.md
       - name: Commit formatting
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add public/privacy.html public/terms.html
-          git diff --cached --quiet || git commit -m "style: apply pinned Prettier to legal pages"
+          git add public/privacy.html public/terms.html docs/architecture/household-data-boundary.md
+          git diff --cached --quiet || git commit -m "style: apply pinned Prettier to legal disclosures"
           git push origin HEAD:fix/legal-household-disclosures
