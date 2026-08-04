@@ -1,9 +1,15 @@
+import { oauthProvider } from "@better-auth/oauth-provider";
 import { betterAuth } from "better-auth";
-import { magicLink } from "better-auth/plugins";
+import { jwt, magicLink } from "better-auth/plugins";
 import { Pool } from "pg";
 import { getBetterAuthRuntimeConfig } from "./config.js";
 import { sendBetterAuthMagicLink } from "./email.js";
 import { buildScannerSafeMagicLink } from "./magic-link-url.js";
+import {
+    MUNCH_DEFAULT_OAUTH_SCOPES,
+    MUNCH_OAUTH_SCOPES,
+    munchMcpResourceUrl,
+} from "./oauth-scopes.js";
 
 function createMunchBetterAuth() {
     const config = getBetterAuthRuntimeConfig();
@@ -134,6 +140,14 @@ function createMunchBetterAuth() {
                     window: 60,
                     max: 5,
                 },
+                "/oauth2/register": {
+                    window: 60,
+                    max: 20,
+                },
+                "/oauth2/token": {
+                    window: 60,
+                    max: 60,
+                },
             },
         },
         advanced: {
@@ -150,6 +164,7 @@ function createMunchBetterAuth() {
             },
         },
         plugins: [
+            jwt(),
             magicLink({
                 expiresIn: config.magicLinkExpiresIn,
                 disableSignUp: false,
@@ -165,6 +180,28 @@ function createMunchBetterAuth() {
                             Date.now() + config.magicLinkExpiresIn * 1000,
                         ),
                     });
+                },
+            }),
+            oauthProvider({
+                loginPage: "/connect/sign-in",
+                consentPage: "/connect/consent",
+                allowDynamicClientRegistration: true,
+                allowUnauthenticatedClientRegistration: true,
+                allowPublicClientPrelogin: true,
+                validAudiences: [munchMcpResourceUrl(config.baseUrl)],
+                scopes: [...MUNCH_OAUTH_SCOPES],
+                clientRegistrationDefaultScopes: [
+                    ...MUNCH_DEFAULT_OAUTH_SCOPES,
+                ],
+                accessTokenExpiresIn: "15m",
+                refreshTokenExpiresIn: "90d",
+                codeExpiresIn: "5m",
+                storeClientSecret: "hashed",
+                prefix: {
+                    clientId: "munch_",
+                    clientSecret: "munch_secret_",
+                    opaqueAccessToken: "munch_access_",
+                    refreshToken: "munch_refresh_",
                 },
             }),
         ],
