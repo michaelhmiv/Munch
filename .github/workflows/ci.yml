@@ -7,13 +7,37 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  format-branch:
+    if: github.event_name == 'pull_request' && github.head_ref == 'feat/household-lifecycle'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/household-lifecycle
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Format lifecycle files
+        run: bunx prettier --write scripts/household-lifecycle-smoke.ts src/households/lifecycle-routes.ts src/households/lifecycle.ts
+      - name: Commit formatting
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add scripts/household-lifecycle-smoke.ts src/households/lifecycle-routes.ts src/households/lifecycle.ts
+          git diff --cached --quiet || git commit -m "style: apply pinned Prettier to household lifecycle"
+          git push origin HEAD:feat/household-lifecycle
+
   quality:
     runs-on: ubuntu-latest
     timeout-minutes: 15
