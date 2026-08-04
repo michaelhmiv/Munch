@@ -12,6 +12,16 @@ def replace(path: str, old: str, new: str, expected: int = 1) -> None:
     file.write_text(text.replace(old, new))
 
 
+def insert_before_final_describe(path: str, addition: str) -> None:
+    file = Path(path)
+    text = file.read_text()
+    marker = "\n});\n"
+    position = text.rfind(marker)
+    if position < 0:
+        raise SystemExit(f"{path}: final describe terminator not found")
+    file.write_text(text[:position] + addition + text[position:])
+
+
 replace(
     "src/billing/stripe-client.ts",
     'const MUNCH_TRIAL_DAYS = 7;',
@@ -95,11 +105,9 @@ text = text.replace(
     'expect(params.get("subscription_data[trial_period_days]")).toBe("30");\n'
     '        expect(params.get("payment_method_collection")).toBe("always");',
 )
-marker = "\n});\n"
-if text.count(marker) != 1:
-    raise SystemExit("stripe-client.test.ts: expected one describe terminator")
-text = text.replace(
-    marker,
+stripe_test.write_text(text)
+insert_before_final_describe(
+    "src/billing/stripe-client.test.ts",
     r'''
 
     test("omits a repeat trial for an account that subscribed before", async () => {
@@ -136,16 +144,11 @@ text = text.replace(
         expect(params.has("subscription_data[trial_period_days]")).toBe(false);
         expect(params.get("payment_method_collection")).toBe("always");
     });
-''' + marker,
+''',
 )
-stripe_test.write_text(text)
 
-entitlement_test = Path("src/billing/entitlements.test.ts")
-text = entitlement_test.read_text()
-if text.count(marker) != 1:
-    raise SystemExit("entitlements.test.ts: expected one describe terminator")
-text = text.replace(
-    marker,
+insert_before_final_describe(
+    "src/billing/entitlements.test.ts",
     r'''
 
     test("denies protected access for non-entitled Stripe states", () => {
@@ -162,9 +165,8 @@ text = text.replace(
             expect(decision.canWriteNutritionData).toBe(false);
         }
     });
-''' + marker,
+''',
 )
-entitlement_test.write_text(text)
 
 for path, pairs in {
     "public/index.html": [
