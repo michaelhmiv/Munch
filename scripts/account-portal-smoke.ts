@@ -10,8 +10,7 @@ const { createAccountExportRouter } =
 const { consumeLoginChallenge, createLoginChallenge } =
     await import("../src/accounts/repository.js");
 const { MUNCH_SESSION_COOKIE } = await import("../src/accounts/session.js");
-const { upsertSubscription } =
-    await import("../src/billing/repository.js");
+const { upsertSubscription } = await import("../src/billing/repository.js");
 const {
     acceptHouseholdInvitation,
     createHousehold,
