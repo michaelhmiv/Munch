@@ -113,15 +113,23 @@ try {
     await deleteAllUserData(owner.userId);
 } catch (error) {
     ownerDeletionBlocked =
-        error instanceof Error && error.message.includes("Transfer or dissolve");
+        error instanceof Error &&
+        error.message.includes("Transfer or dissolve");
 }
 if (!ownerDeletionBlocked) {
     throw new Error("Household owner deletion was not explicitly blocked");
 }
 
 await deleteAllUserData(departing.userId);
-const retained = await withAuthDatabase(async (tx) =>
-    tx<Array<{ user_id: string | null; display_name: string; status: string }>>`
+const retained = await withAuthDatabase(
+    async (tx) =>
+        tx<
+            Array<{
+                user_id: string | null;
+                display_name: string;
+                status: string;
+            }>
+        >`
         select user_id, display_name, status
         from munch.household_memberships
         where household_id = ${household.householdId}

@@ -11,7 +11,11 @@ export async function deleteAllUserData(userId: string): Promise<void> {
               and status = 'active'
             for update
         `;
-        if (householdMemberships.some((membership) => membership.role === "owner")) {
+        if (
+            householdMemberships.some(
+                (membership) => membership.role === "owner",
+            )
+        ) {
             throw new Error(
                 "Transfer or dissolve the household before deleting its owner account",
             );
