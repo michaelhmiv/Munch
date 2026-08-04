@@ -59,7 +59,9 @@ describe("Better Auth magic-link delivery", () => {
     test("fails closed when the sender identity is missing", async () => {
         configureDelivery();
         delete process.env.MUNCH_EMAIL_FROM;
-        const fetchImpl = mock(async () => new Response(null, { status: 202 })) as unknown as typeof fetch;
+        const fetchImpl = mock(
+            async () => new Response(null, { status: 202 }),
+        ) as unknown as typeof fetch;
 
         await expect(
             sendBetterAuthMagicLink(
