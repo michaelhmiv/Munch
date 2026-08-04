@@ -14,6 +14,7 @@ public/map-data.json
 # Workflow and deployment assets are maintained separately from application
 # formatting because they are executed/reviewed as operational artifacts.
 .github/workflows/ci.yml
+.github/workflows/format-resend.yml
 docs/deployment/better-auth-cutover.md
 scripts/certification/public.ts
 
