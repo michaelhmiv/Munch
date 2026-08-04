@@ -1,7 +1,7 @@
 name: Apply website contract
 on:
-  push:
-    branches: [feat/free-premium-website-final]
+  pull_request:
+    branches: [main]
 permissions:
   contents: write
 jobs:
@@ -103,9 +103,7 @@ jobs:
           index.write_text(text.replace(old, new))
 
           tools = Path('public/tools.html')
-          text = tools.read_text().replace(
-              'https://munch-production-de3a.up.railway.app/tools',
-              'https://munch.business/tools')
+          text = tools.read_text().replace('https://munch-production-de3a.up.railway.app/tools', 'https://munch.business/tools')
           text = text.replace('>Start free trial</a', '>Sign in</a')
           marker = '''                <section class="tool-group">
                     <div>
@@ -138,15 +136,9 @@ jobs:
 
           readme = Path('README.md')
           text = readme.read_text()
-          text = text.replace(
-              '- Munch performs authentication, subscription entitlement checks, deterministic validation, food-source retrieval, storage, summaries, exports, and deletion.',
-              '- Munch performs authentication, capability resolution, deterministic validation, food-source retrieval, storage, summaries, exports, and deletion.')
-          text = text.replace(
-              '- Stripe manages checkout, subscriptions, invoices, and customer billing state.',
-              '- Stripe manages website-only Premium checkout, subscriptions, invoices, and customer billing state; OAuth and MCP remain billing-neutral.')
-          text = text.replace(
-              '8. Saved foods, saved meals, and “log my usual” behavior.',
-              '8. Saved foods, structured recipes, meal calendars, grocery lists, household sharing, and “log my usual” behavior.')
+          text = text.replace('- Munch performs authentication, subscription entitlement checks, deterministic validation, food-source retrieval, storage, summaries, exports, and deletion.', '- Munch performs authentication, capability resolution, deterministic validation, food-source retrieval, storage, summaries, exports, and deletion.')
+          text = text.replace('- Stripe manages checkout, subscriptions, invoices, and customer billing state.', '- Stripe manages website-only Premium checkout, subscriptions, invoices, and customer billing state; OAuth and MCP remain billing-neutral.')
+          text = text.replace('8. Saved foods, saved meals, and “log my usual” behavior.', '8. Saved foods, structured recipes, meal calendars, grocery lists, household sharing, and “log my usual” behavior.')
           readme.write_text(text)
 
           Path('docs/architecture/free-premium-household-contract.md').write_text('''# Free, Premium, and household contract
