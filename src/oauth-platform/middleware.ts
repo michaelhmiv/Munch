@@ -1,6 +1,9 @@
 import { verifyAccessToken } from "better-auth/oauth2";
 import type { Context, Next } from "hono";
-import { betterAuthIsEnabled, getBetterAuthRuntimeConfig } from "../auth/config.js";
+import {
+    betterAuthIsEnabled,
+    getBetterAuthRuntimeConfig,
+} from "../auth/config.js";
 import { munchMcpResourceUrl } from "../auth/oauth-scopes.js";
 import { decideEntitlement } from "../billing/entitlements.js";
 import { getSubscriptionSnapshot } from "../billing/repository.js";
@@ -75,7 +78,8 @@ async function authenticateBetterAuthBearer(
         return c.json(
             {
                 error: "subscription_required",
-                error_description: "An active Munch Premium subscription is required",
+                error_description:
+                    "An active Munch Premium subscription is required",
             },
             403,
         );
