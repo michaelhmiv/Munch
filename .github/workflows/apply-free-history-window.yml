@@ -1,0 +1,243 @@
+name: Apply free history window
+on:
+  push:
+    branches: [feat/capability-entitlements]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/capability-entitlements
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - name: Apply capability-aware history boundaries
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('src/mcp.ts')
+          text = path.read_text()
+          text = text.replace(
+              'import { withAnalytics } from "./analytics.js";',
+              'import { withAnalytics } from "./analytics.js";\nimport type { MunchCapabilities } from "./billing/capabilities.js";')
+
+          marker = '''// `alcohol` is the whole alcohol opt-in, threaded once: the drink unit to render'''
+          helper = '''export interface EffectiveHistoryRange {
+              requestedStart: string;
+              requestedEnd: string;
+              effectiveStart: string;
+              effectiveEnd: string;
+              cutoff: string | null;
+              applied: boolean;
+              empty: boolean;
+          }
+
+          export function applyHistoryDateRange(
+              requestedStart: string,
+              requestedEnd: string,
+              today: string,
+              historyDays: number | null,
+          ): EffectiveHistoryRange {
+              const cutoff =
+                  historyDays === null
+                      ? null
+                      : shiftLocalDate(today, -(historyDays - 1));
+              const effectiveStart =
+                  cutoff && requestedStart < cutoff ? cutoff : requestedStart;
+              return {
+                  requestedStart,
+                  requestedEnd,
+                  effectiveStart,
+                  effectiveEnd: requestedEnd,
+                  cutoff,
+                  applied: effectiveStart !== requestedStart,
+                  empty: effectiveStart > requestedEnd,
+              };
+          }
+
+          function historyWindowNote(range: EffectiveHistoryRange): string {
+              return range.applied && range.cutoff
+                  ? `Conversational history is available from ${range.cutoff}; the requested range was adjusted.\\n\\n`
+                  : "";
+          }
+
+          '''
+          if marker not in text:
+              raise SystemExit('history helper insertion marker missing')
+          text = text.replace(marker, helper + marker, 1)
+
+          old_signature = '''export function registerTools(
+              server: McpServer,
+              userId: string,
+              widgetsEnabled: boolean,
+              alcohol: AlcoholDisplay,
+          ) {'''
+          new_signature = '''export function registerTools(
+              server: McpServer,
+              userId: string,
+              widgetsEnabled: boolean,
+              alcohol: AlcoholDisplay,
+              capabilities: MunchCapabilities | null = null,
+          ) {
+              const historyDays = capabilities?.historyDays ?? null;'''
+          if old_signature not in text:
+              raise SystemExit('registerTools signature missing')
+          text = text.replace(old_signature, new_signature, 1)
+
+          old_date = '''                    const tz = await getUserTimezone(userId);
+                              const meals = await getMealsByDate(userId, date, tz);
+                              if (meals.length === 0) {'''
+          new_date = '''                    const tz = await getUserTimezone(userId);
+                              const range = applyHistoryDateRange(
+                                  date,
+                                  date,
+                                  todayInTz(tz),
+                                  historyDays,
+                              );
+                              if (range.empty || range.effectiveStart !== date) {
+                                  return {
+                                      content: [
+                                          {
+                                              type: "text",
+                                              text: `Conversational history is available from ${range.cutoff}. The requested date ${date} is outside that window. Data export remains available from the Munch account portal.`,
+                                          },
+                                      ],
+                                  };
+                              }
+                              const meals = await getMealsByDate(userId, date, tz);
+                              if (meals.length === 0) {'''
+          if old_date not in text:
+              raise SystemExit('get_meals_by_date block missing')
+          text = text.replace(old_date, new_date, 1)
+
+          old_range = '''                    const tz = await getUserTimezone(userId);
+                              const meals = await getMealsInRange(
+                                  userId,
+                                  start_date,
+                                  end_date,
+                                  tz,
+                              );
+                              if (meals.length === 0) {'''
+          new_range = '''                    const tz = await getUserTimezone(userId);
+                              const range = applyHistoryDateRange(
+                                  start_date,
+                                  end_date,
+                                  todayInTz(tz),
+                                  historyDays,
+                              );
+                              if (range.empty) {
+                                  return {
+                                      content: [
+                                          {
+                                              type: "text",
+                                              text: `Conversational history is available from ${range.cutoff}. The requested range ends before that date. Data export remains available from the Munch account portal.`,
+                                          },
+                                      ],
+                                  };
+                              }
+                              const meals = await getMealsInRange(
+                                  userId,
+                                  range.effectiveStart,
+                                  range.effectiveEnd,
+                                  tz,
+                              );
+                              if (meals.length === 0) {'''
+          if old_range not in text:
+              raise SystemExit('date range block missing')
+          text = text.replace(old_range, new_range, 1)
+          text = text.replace(
+              'text: `No meals found between ${start_date} and ${end_date}.`,',
+              'text: `${historyWindowNote(range)}No meals found between ${range.effectiveStart} and ${range.effectiveEnd}.`,',
+              1)
+          text = text.replace(
+              'text: sections.join("\\n\\n===\\n\\n"),',
+              'text: `${historyWindowNote(range)}${sections.join("\\n\\n===\\n\\n")}`,',
+              1)
+
+          old_search = '''                    const windowDays = days ?? 365;
+                              // A fuzzy lookback window needs no calendar-day precision,'''
+          new_search = '''                    const requestedWindowDays = days ?? 365;
+                              const windowDays =
+                                  historyDays === null
+                                      ? requestedWindowDays
+                                      : Math.min(requestedWindowDays, historyDays);
+                              // A fuzzy lookback window needs no calendar-day precision,'''
+          if old_search not in text:
+              raise SystemExit('search window block missing')
+          text = text.replace(old_search, new_search, 1)
+
+          summary_old = '''                    const tz = await getUserTimezone(userId);
+                              const [meals, water, goals] = await Promise.all([
+                                  getMealsInRange(userId, start_date, end_date, tz),
+                                  getWaterInRange(userId, start_date, end_date, tz),
+                                  getNutritionGoals(userId),
+                              ]);'''
+          summary_new = '''                    const tz = await getUserTimezone(userId);
+                              const range = applyHistoryDateRange(
+                                  start_date,
+                                  end_date,
+                                  todayInTz(tz),
+                                  historyDays,
+                              );
+                              const [meals, water, goals] = range.empty
+                                  ? [[], [], await getNutritionGoals(userId)]
+                                  : await Promise.all([
+                                        getMealsInRange(
+                                            userId,
+                                            range.effectiveStart,
+                                            range.effectiveEnd,
+                                            tz,
+                                        ),
+                                        getWaterInRange(
+                                            userId,
+                                            range.effectiveStart,
+                                            range.effectiveEnd,
+                                            tz,
+                                        ),
+                                        getNutritionGoals(userId),
+                                    ]);'''
+          if summary_old not in text:
+              raise SystemExit('nutrition summary range block missing')
+          text = text.replace(summary_old, summary_new, 1)
+          text = text.replace(
+              'text: `No meals or water logged between ${start_date} and ${end_date}.`,',
+              'text: `${historyWindowNote(range)}No meals or water logged between ${range.effectiveStart} and ${range.effectiveEnd}.`,',
+              1)
+          text = text.replace(
+              '''                                start_date,
+                                      end_date,
+                                      logged_days: 0,''',
+              '''                                start_date: range.effectiveStart,
+                                      end_date: range.effectiveEnd,
+                                      logged_days: 0,''',
+              1)
+          path.write_text(text)
+
+          runtime = Path('src/mcp-runtime.ts')
+          text = runtime.read_text()
+          old = '''        alcoholTrackingEnabledFromProfile(profile) ? (drinkUnit ?? "us") : null,
+              );'''
+          new = '''        alcoholTrackingEnabledFromProfile(profile) ? (drinkUnit ?? "us") : null,
+                  capabilities,
+              );'''
+          if old not in text:
+              raise SystemExit('runtime registerTools call missing')
+          runtime.write_text(text.replace(old, new, 1))
+          PY
+      - run: bun run format
+      - run: bun run typecheck
+      - run: bun test
+      - run: rm .github/workflows/apply-free-history-window.yml
+      - name: Commit changes
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "feat: enforce free conversational history window"
+          git push origin HEAD:feat/capability-entitlements
