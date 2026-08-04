@@ -56,6 +56,7 @@ async function buildMunchMcpServer(
         userId,
         widgetsEnabledFromProfile(profile),
         alcoholTrackingEnabledFromProfile(profile) ? (drinkUnit ?? "us") : null,
+        capabilities,
     );
     registerFoodTools(server, userId);
     registerSavedFoodTools(server, userId, capabilities);
