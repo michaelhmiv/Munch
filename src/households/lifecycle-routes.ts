@@ -83,7 +83,10 @@ export function createHouseholdLifecycleRouter(): Hono {
                     confirmation?: unknown;
                 };
                 if (body.confirmation !== "DISSOLVE HOUSEHOLD") {
-                    return c.json({ error: "dissolution_confirmation_required" }, 400);
+                    return c.json(
+                        { error: "dissolution_confirmation_required" },
+                        400,
+                    );
                 }
                 const userId = c.get("munchUserId");
                 const household = await getActiveHouseholdContext(userId);
