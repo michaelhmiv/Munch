@@ -5,9 +5,9 @@ describe("Better Auth consent continuation", () => {
     test("preserves the signed authorization query byte-for-byte", () => {
         const raw =
             "response_type=code&client_id=client-1&scope=nutrition.read+nutrition.write&ba_param=scope&ba_param=state&sig=abc%2B123%3D";
-        expect(signedOAuthQuery(`https://munch.test/connect/consent?${raw}`)).toBe(
-            raw,
-        );
+        expect(
+            signedOAuthQuery(`https://munch.test/connect/consent?${raw}`),
+        ).toBe(raw);
     });
 
     test("uses an explicitly nested oauth_query without reserializing it", () => {
