@@ -1,0 +1,39 @@
+name: Format Resend integration
+
+on:
+  push:
+    branches:
+      - feat/resend-main-deploy
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: "${{ !contains(github.event.head_commit.message, 'style: finalize Resend integration') }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/resend-main-deploy
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Apply repository formatting
+        run: bunx prettier --write src/auth/email.test.ts
+      - name: Remove one-use workflow and commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i '\|.github/workflows/format-resend.yml|d' .prettierignore
+          git rm .github/workflows/format-resend.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/auth/email.test.ts .prettierignore
+          git commit -m "style: finalize Resend integration"
+          git push origin HEAD:feat/resend-main-deploy
