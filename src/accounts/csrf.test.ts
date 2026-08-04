@@ -40,7 +40,7 @@ describe("same-origin request protection", () => {
         ).toBe(false);
     });
 
-    test("rejects missing, malformed, and foreign origins", () => {
+    test("rejects missing, malformed, foreign, and cross-site evidence", () => {
         expect(requestOriginMatches(undefined, "https://munch.example")).toBe(
             false,
         );
@@ -52,6 +52,14 @@ describe("same-origin request protection", () => {
                 "https://attacker.example",
                 "https://munch.example",
             ),
+        ).toBe(false);
+        expect(
+            requestHasSameOriginEvidence({
+                requestOrigin: "https://attacker.example",
+                configuredBaseUrl: "https://munch.business",
+                requestBaseUrl: "https://munch.business",
+                secFetchSite: "same-origin",
+            }),
         ).toBe(false);
         expect(
             requestHasSameOriginEvidence({
