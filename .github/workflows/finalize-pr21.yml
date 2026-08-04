@@ -1,9 +1,11 @@
 name: Finalize PR 21
 
 on:
-  push:
-    branches:
-      - feat/munch-frontend-overhaul
+  pull_request:
+    types:
+      - ready_for_review
+      - reopened
+      - synchronize
 
 permissions:
   contents: write
@@ -14,7 +16,7 @@ concurrency:
 
 jobs:
   finalize:
-    if: github.actor != 'github-actions[bot]'
+    if: github.event.pull_request.head.ref == 'feat/munch-frontend-overhaul' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
