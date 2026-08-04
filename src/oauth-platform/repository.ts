@@ -150,7 +150,7 @@ async function selectClient(tx: SQL, clientId: string): Promise<ClientRow> {
             client_id,
             client_secret_hash,
             client_name,
-            redirect_uris,
+            array_to_json(redirect_uris) as redirect_uris,
             token_endpoint_auth_method::text as token_endpoint_auth_method
         from munch.oauth_clients
         where client_id = ${clientId}
@@ -178,7 +178,7 @@ export async function registerOAuthClient(input: {
                 client_id,
                 client_secret_hash,
                 client_name,
-                redirect_uris,
+                array_to_json(redirect_uris) as redirect_uris,
                 token_endpoint_auth_method
             ) values (
                 ${clientId},
@@ -497,7 +497,7 @@ export async function exchangeAuthorizationCode(input: {
                 client.client_id,
                 client.client_secret_hash,
                 client.client_name,
-                client.redirect_uris,
+                array_to_json(client.redirect_uris) as redirect_uris,
                 client.token_endpoint_auth_method::text as token_endpoint_auth_method
             from munch.oauth_authorization_codes code
             join munch.oauth_clients client on client.client_id = code.client_id
@@ -571,7 +571,7 @@ export async function rotateRefreshToken(input: {
                 client.client_id,
                 client.client_secret_hash,
                 client.client_name,
-                client.redirect_uris,
+                array_to_json(client.redirect_uris) as redirect_uris,
                 client.token_endpoint_auth_method::text as token_endpoint_auth_method
             from munch.oauth_refresh_tokens refresh
             join munch.oauth_clients client on client.client_id = refresh.client_id
