@@ -10,7 +10,9 @@ create index meals_source_planned_meal_idx
     on munch.meals (user_id, source_planned_meal_id)
     where source_planned_meal_id is not null;
 
-create view munch.recipe_usage_facts as
+create view munch.recipe_usage_facts
+with (security_invoker = true)
+as
 select
     recipe.id as recipe_id,
     recipe.personal_owner_user_id,
@@ -28,4 +30,4 @@ group by recipe.id, recipe.personal_owner_user_id, recipe.household_id;
 grant select on munch.recipe_usage_facts to munch_app, munch_auth;
 
 comment on view munch.recipe_usage_facts is
-    'Factual scheduling and logging counts for model inference; no favorite or recommendation score';
+    'Security-invoker factual scheduling and logging counts for model inference; no favorite or recommendation score';
