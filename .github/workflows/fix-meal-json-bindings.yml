@@ -1,0 +1,82 @@
+name: Fix Meal JSON Bindings
+
+on:
+  pull_request:
+    types:
+      - synchronize
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fix-meal-json-bindings
+  cancel-in-progress: true
+
+jobs:
+  fix:
+    if: github.event.pull_request.head.ref == 'feat/munch-frontend-overhaul' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: munch_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d munch_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/munch_test
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/munch-frontend-overhaul
+          fetch-depth: 0
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Correct JSON array bindings
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/nutrition-platform/meals.ts')
+          text = path.read_text()
+          replacements = {
+              'jsonb_array_elements_text(${keyJson}::jsonb)': 'jsonb_array_elements_text((${keyJson}::text)::jsonb)',
+              'jsonb_array_elements_text(${patterns}::jsonb)': 'jsonb_array_elements_text((${patterns}::text)::jsonb)',
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f'Expected SQL fragment not found: {old}')
+              text = text.replace(old, new)
+          path.write_text(text)
+          PY
+          bunx prettier --write src/nutrition-platform/meals.ts
+
+      - name: Verify targeted nutrition smoke
+        run: |
+          bun run db:migrate
+          bun scripts/nutrition-platform-smoke.ts
+
+      - name: Commit fix
+        run: |
+          git checkout -- .github/workflows/fix-meal-json-bindings.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/nutrition-platform/meals.ts
+          git commit -m "fix: bind meal search arrays as JSON text"
+          git push origin HEAD:feat/munch-frontend-overhaul
