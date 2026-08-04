@@ -5,7 +5,9 @@ import { getMunchBetterAuth } from "../src/auth/auth.js";
 
 const databaseUrl = process.env.DATABASE_URL?.trim();
 if (!databaseUrl) {
-    throw new Error("DATABASE_URL is required for Better Auth OAuth smoke test");
+    throw new Error(
+        "DATABASE_URL is required for Better Auth OAuth smoke test",
+    );
 }
 
 function expectJsonArray(
@@ -70,7 +72,9 @@ try {
         JSON.stringify(registration.redirect_uris) !==
         JSON.stringify([redirectUri])
     ) {
-        throw new Error("Dynamic registration returned unexpected redirect_uris");
+        throw new Error(
+            "Dynamic registration returned unexpected redirect_uris",
+        );
     }
 
     const stored = await database.query<{
