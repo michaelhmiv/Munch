@@ -1,7 +1,9 @@
 from pathlib import Path
+import json
+import subprocess
 
-# One-use GitHub Actions migration from a whole-repository diagnostic filter to
-# a true production-source TypeScript project with a bounded compiler heap.
+# One-use GitHub Actions migration from the memory-bound JavaScript compiler to
+# Microsoft's native TypeScript compiler for the production source project.
 root = Path(__file__).resolve().parents[1]
 
 (root / "tsconfig.src.json").write_text('''{
@@ -14,15 +16,21 @@ root = Path(__file__).resolve().parents[1]
 }
 ''')
 
-(root / "scripts/typecheck.ts").write_text('''// Typecheck the production server sources only. Tests are compiled and executed
-// by `bun test`; scripts have their own runtime smoke coverage. Keeping this as
-// a real TypeScript project avoids loading generated assets and every test file
-// into a single compiler process.
+package_path = root / "package.json"
+package = json.loads(package_path.read_text())
+package.setdefault("devDependencies", {})["@typescript/native-preview"] = "7.0.0-dev.20260707.2"
+package_path.write_text(json.dumps(package, indent=4) + "\n")
+subprocess.run(["bun", "install"], cwd=root, check=True)
+
+(root / "scripts/typecheck.ts").write_text('''// Typecheck the production server sources with Microsoft's native TypeScript
+// compiler. The JavaScript compiler exceeded the GitHub runner heap on the MCP
+// tool-schema graph even when scoped to src/; tsgo performs the same validation
+// without relying on Node's V8 heap.
 
 const proc = Bun.spawn(
     [
         "bunx",
-        "tsc",
+        "tsgo",
         "--project",
         "tsconfig.src.json",
         "--noEmit",
@@ -32,10 +40,6 @@ const proc = Bun.spawn(
     {
         stdout: "pipe",
         stderr: "pipe",
-        env: {
-            ...process.env,
-            NODE_OPTIONS: "--max-old-space-size=6144",
-        },
     },
 );
 const [stdout, stderr, exitCode] = await Promise.all([
@@ -49,5 +53,5 @@ if (exitCode !== 0) {
     process.exit(1);
 }
 
-console.log("Production src/ typechecks clean");
+console.log("Production src/ typechecks clean with tsgo");
 ''')
