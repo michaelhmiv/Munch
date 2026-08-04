@@ -11,17 +11,13 @@ if (!email || !password || !process.env.DATABASE_URL) {
 const { Hono } = await import("hono");
 const { Pool } = await import("pg");
 const { getMunchBetterAuth } = await import("../src/auth/auth.js");
-const { createReviewerRouter } =
-    await import("../src/auth/reviewer-routes.js");
+const { createReviewerRouter } = await import("../src/auth/reviewer-routes.js");
 const { resolveMunchCapabilities } =
     await import("../src/billing/capabilities.js");
 const { getActiveHouseholdContext } =
     await import("../src/households/repository.js");
-const {
-    getGroceryList,
-    getMealPlan,
-    searchRecipes,
-} = await import("../src/planning/repository.js");
+const { getGroceryList, getMealPlan, searchRecipes } =
+    await import("../src/planning/repository.js");
 const { closePlatformDatabase } = await import("../src/platform/database.js");
 
 const auth = getMunchBetterAuth();
@@ -58,7 +54,9 @@ if (
     !capabilities.personalPlanningWrite ||
     !capabilities.householdManage
 ) {
-    throw new Error("Reviewer Premium override did not resolve full capabilities");
+    throw new Error(
+        "Reviewer Premium override did not resolve full capabilities",
+    );
 }
 
 const household = await getActiveHouseholdContext(userId);

@@ -13,8 +13,7 @@ import {
 
 function createMunchBetterAuth() {
     const config = getBetterAuthRuntimeConfig();
-    const reviewerSeedMode =
-        process.env.MUNCH_REVIEWER_SEED_MODE === "true";
+    const reviewerSeedMode = process.env.MUNCH_REVIEWER_SEED_MODE === "true";
     const database = new Pool({
         connectionString: config.databaseUrl,
         max: config.databasePoolSize,

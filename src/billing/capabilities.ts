@@ -93,11 +93,13 @@ function applyPremiumOverride(
 export async function resolveMunchCapabilities(
     userId: string,
 ): Promise<MunchCapabilities> {
-    const [directSubscription, household, explicitOverride] = await Promise.all([
-        getSubscriptionSnapshot(userId),
-        getActiveHouseholdContext(userId),
-        hasActivePremiumOverride(userId),
-    ]);
+    const [directSubscription, household, explicitOverride] = await Promise.all(
+        [
+            getSubscriptionSnapshot(userId),
+            getActiveHouseholdContext(userId),
+            hasActivePremiumOverride(userId),
+        ],
+    );
     const direct = capabilitiesFromSubscription(directSubscription);
     const result = explicitOverride ? applyPremiumOverride(direct) : direct;
     if (!household) return result;
