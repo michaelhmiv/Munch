@@ -164,7 +164,9 @@ function createMunchBetterAuth() {
             },
         },
         plugins: [
-            jwt(),
+            jwt({
+                disableSettingJwtHeader: true,
+            }),
             magicLink({
                 expiresIn: config.magicLinkExpiresIn,
                 disableSignUp: false,
@@ -193,12 +195,11 @@ function createMunchBetterAuth() {
                 clientRegistrationDefaultScopes: [
                     ...MUNCH_DEFAULT_OAUTH_SCOPES,
                 ],
-                accessTokenExpiresIn: "15m",
-                refreshTokenExpiresIn: "90d",
-                codeExpiresIn: "5m",
+                accessTokenExpiresIn: 15 * 60,
+                refreshTokenExpiresIn: 90 * 24 * 60 * 60,
+                codeExpiresIn: 5 * 60,
                 storeClientSecret: "hashed",
                 prefix: {
-                    clientId: "munch_",
                     clientSecret: "munch_secret_",
                     opaqueAccessToken: "munch_access_",
                     refreshToken: "munch_refresh_",
