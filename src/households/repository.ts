@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { withAuthDatabase, withUserDatabase } from "../platform/database.js";
 
 export type HouseholdRole = "owner" | "member" | "viewer";
@@ -52,6 +52,7 @@ export async function createHousehold(input: {
         throw new Error("Household name must be 1 to 120 characters");
     }
     const displayName = cleanDisplayName(input.displayName);
+    const householdId = randomUUID();
 
     return withUserDatabase(input.userId, async (tx) => {
         const existing = await tx<Array<{ id: string }>>`
@@ -61,29 +62,30 @@ export async function createHousehold(input: {
         `;
         if (existing[0]) throw new Error("User already belongs to a household");
 
-        const households = await tx<Array<{ id: string; version: number }>>`
-            insert into munch.households (name, owner_user_id)
-            values (${name}, ${input.userId})
-            returning id, version
+        // Do not use INSERT ... RETURNING here. PostgreSQL also applies the
+        // household SELECT policy to RETURNING, but owner visibility depends on
+        // the membership inserted in the next statement. Generate the UUID
+        // before the transaction so both rows can be created without a circular
+        // RLS dependency.
+        await tx`
+            insert into munch.households (id, name, owner_user_id)
+            values (${householdId}, ${name}, ${input.userId})
         `;
-        const household = households[0];
-        if (!household) throw new Error("Household creation returned no row");
-
         await tx`
             insert into munch.household_memberships (
                 household_id, user_id, display_name, role, status
             ) values (
-                ${household.id}, ${input.userId}, ${displayName}, 'owner', 'active'
+                ${householdId}, ${input.userId}, ${displayName}, 'owner', 'active'
             )
         `;
 
         return {
-            householdId: household.id,
+            householdId,
             householdName: name,
             ownerUserId: input.userId,
             role: "owner",
             displayName,
-            version: Number(household.version),
+            version: 1,
         };
     });
 }
