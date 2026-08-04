@@ -1,5 +1,7 @@
 from pathlib import Path
 
+# One-use GitHub Actions migration from a whole-repository diagnostic filter to
+# a true production-source TypeScript project.
 root = Path(__file__).resolve().parents[1]
 
 (root / "tsconfig.src.json").write_text('''{
