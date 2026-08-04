@@ -14,19 +14,22 @@ const proc = Bun.spawn(
         "false",
     ],
     {
-        stdout: "pipe",
-        stderr: "pipe",
+        stdout: "inherit",
+        stderr: "inherit",
     },
 );
-const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-]);
+
+const startedAt = Date.now();
+const heartbeat = setInterval(() => {
+    const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
+    console.log(`Typecheck still running (${elapsedSeconds}s)`);
+}, 30_000);
+
+const exitCode = await proc.exited;
+clearInterval(heartbeat);
 
 if (exitCode !== 0) {
-    console.error(stdout + stderr);
-    process.exit(1);
+    process.exit(exitCode);
 }
 
 console.log("Production src/ typechecks clean with tsgo");
