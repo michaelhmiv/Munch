@@ -31,7 +31,7 @@ describe("Stripe Checkout", () => {
                     headers: { "content-type": "application/json" },
                 },
             );
-        }) as typeof fetch;
+        }) as unknown as typeof fetch;
 
         await createStripeCheckoutSession({
             userId: "user-1",

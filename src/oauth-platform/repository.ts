@@ -420,7 +420,7 @@ export async function issueAuthorizationCode(
     });
 }
 
-function createTokenPair(familyId = randomUUID()): InternalTokenPair {
+function createTokenPair(familyId: string = randomUUID()): InternalTokenPair {
     return {
         familyId,
         access: issueOpaqueToken(32),
