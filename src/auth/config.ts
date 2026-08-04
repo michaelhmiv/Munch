@@ -43,7 +43,9 @@ export function getBetterAuthRuntimeConfig(): BetterAuthRuntimeConfig {
 
     const secret = required("BETTER_AUTH_SECRET");
     if (secret.length < 32) {
-        throw new Error("BETTER_AUTH_SECRET must contain at least 32 characters");
+        throw new Error(
+            "BETTER_AUTH_SECRET must contain at least 32 characters",
+        );
     }
 
     const magicLinkExpiresIn = Number(
