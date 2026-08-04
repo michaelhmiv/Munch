@@ -1,0 +1,162 @@
+from pathlib import Path
+
+index = Path("public/index.html")
+text = index.read_text()
+text = text.replace(
+    "Munch supplies secure nutrition storage, verified\n                            food search, saved foods, account controls, and\n                            tools ChatGPT can call when you ask.",
+    "Munch supplies structured food and macro data,\n                            recent meal memory, verified food search, and tools\n                            ChatGPT can call when you ask.",
+)
+text = text.replace(
+    '>Start 30-day free trial</a\n                            ><a class="button button-secondary" href="#how"\n                                >See how it works</a',
+    '>Connect free</a\n                            ><a class="button button-secondary" href="#pricing"\n                                >Compare plans</a',
+)
+text = text.replace(
+    '<span class="proof-pill"\n                                >$4.99/month after trial</span\n                            ><span class="proof-pill">Cancel anytime</span',
+    '<span class="proof-pill">Permanent free tier</span\n                            ><span class="proof-pill">No card required</span',
+)
+old = '''                    <div class="section-head center">
+                        <p class="section-kicker">One simple plan</p>
+                        <h2>Everything Munch provides. No tiers.</h2>
+                    </div>
+                    <article class="pricing-card">
+                        <p>30-day free trial</p>
+                        <div class="price">
+                            $4.99 <small>/ month after trial</small>
+                        </div>
+                        <ul class="pricing-list">
+                            <li>Conversational meal logging</li>
+                            <li>Verified food and barcode search</li>
+                            <li>Saved foods and recurring meals</li>
+                            <li>Macros, hydration, weight, and trends</li>
+                            <li>ChatGPT connection controls</li>
+                            <li>Export and permanent deletion</li>
+                        </ul>
+                        <a
+                            class="button button-primary"
+                            href="/account/login?return_to=/account/portal"
+                            >Start free trial</a
+                        >
+                        <p class="tiny spacer-top">
+                            Payment information is collected by Stripe. Cancel
+                            anytime through the Stripe-hosted billing portal.
+                        </p>
+                    </article>'''
+new = '''                    <div class="section-head center">
+                        <p class="section-kicker">Free and Premium</p>
+                        <h2>Start with permanent food and macro tools.</h2>
+                        <p class="section-copy">
+                            Free covers individual food search, logging, recent
+                            history, and data controls. Premium adds persistent
+                            recipe, planning, grocery, and household workflows.
+                        </p>
+                    </div>
+                    <div class="pricing-grid">
+                        <article class="pricing-card">
+                            <p>Free</p>
+                            <div class="price">$0 <small>/ month</small></div>
+                            <ul class="pricing-list">
+                                <li>Food and barcode search with provenance</li>
+                                <li>Meal logging, editing, and deletion</li>
+                                <li>Daily calories and macro summaries</li>
+                                <li>30 days of conversational history</li>
+                                <li>Up to 25 saved foods</li>
+                                <li>Export, revocation, and account deletion</li>
+                            </ul>
+                            <a class="button button-secondary" href="/account/login?return_to=/account/portal">Connect free</a>
+                            <p class="tiny spacer-top">Permanent access. No payment information required.</p>
+                        </article>
+                        <article class="pricing-card">
+                            <p>Premium · 30-day trial</p>
+                            <div class="price">$4.99 <small>/ month after trial</small></div>
+                            <ul class="pricing-list">
+                                <li>Everything in Free</li>
+                                <li>Unlimited personal history and saved foods</li>
+                                <li>Structured recipe book and nutrition arithmetic</li>
+                                <li>Meal calendar and grocery-list workflows</li>
+                                <li>Shared household recipes, plans, and groceries</li>
+                                <li>Up to six connected household accounts</li>
+                            </ul>
+                            <a class="button button-primary" href="/account/login?return_to=/account/portal">Start Premium trial</a>
+                            <p class="tiny spacer-top">Purchased and managed on Munch through Stripe. ChatGPT connection does not require Premium.</p>
+                        </article>
+                    </div>'''
+if old not in text:
+    raise SystemExit("pricing block not found")
+index.write_text(text.replace(old, new))
+
+tools = Path("public/tools.html")
+text = tools.read_text().replace(
+    "https://munch-production-de3a.up.railway.app/tools",
+    "https://munch.business/tools",
+)
+text = text.replace(">Start free trial</a", ">Sign in</a")
+marker = '''                <section class="tool-group">
+                    <div>
+                        <h2>Developer and MCP details</h2>'''
+addition = '''                <section class="tool-group">
+                    <div>
+                        <h2>Recipes, meal plans, and groceries</h2>
+                        <p>Premium accounts can turn recipes discussed with ChatGPT into persistent personal or household data.</p>
+                    </div>
+                    <div class="tool-list">
+                        <div class="tool-item"><code>“Save this recipe to our recipe book.”</code><span>Store ingredients, servings, instructions, nutrition, and provenance.</span></div>
+                        <div class="tool-item"><code>“Plan it for Monday dinner.”</code><span>Schedule the immutable recipe revision on the shared calendar.</span></div>
+                        <div class="tool-item"><code>“We have everything except onions.”</code><span>Add only onions to the shared grocery list; no pantry inventory is inferred.</span></div>
+                        <div class="tool-item"><code>“What did Mom plan for Monday?”</code><span>Read the household plan and factual nutrition in another connected account.</span></div>
+                    </div>
+                </section>
+''' + marker
+if marker not in text:
+    raise SystemExit("tools insertion point not found")
+text = text.replace(marker, addition)
+text = text.replace(
+    '''<code>Stripe Checkout</code
+                            ><span
+                                >Seven-day trial and recurring
+                                subscription.</span
+                            >''',
+    '''<code>Stripe Checkout</code
+                            ><span>Website-only Premium purchase and subscription management.</span>''',
+)
+tools.write_text(text)
+
+readme = Path("README.md")
+text = readme.read_text()
+text = text.replace(
+    "- Munch performs authentication, subscription entitlement checks, deterministic validation, food-source retrieval, storage, summaries, exports, and deletion.",
+    "- Munch performs authentication, capability resolution, deterministic validation, food-source retrieval, storage, summaries, exports, and deletion.",
+)
+text = text.replace(
+    "- Stripe manages checkout, subscriptions, invoices, and customer billing state.",
+    "- Stripe manages website-only Premium checkout, subscriptions, invoices, and customer billing state; OAuth and MCP remain billing-neutral.",
+)
+text = text.replace(
+    "8. Saved foods, saved meals, and “log my usual” behavior.",
+    "8. Saved foods, structured recipes, meal calendars, grocery lists, household sharing, and “log my usual” behavior.",
+)
+readme.write_text(text)
+
+Path("docs/architecture/free-premium-household-contract.md").write_text(
+    """# Free, Premium, and household contract
+
+Munch is a factual food, macro, recipe, planning, grocery, and household data service operated primarily through ChatGPT.
+
+## Free
+
+Every active account can connect through OAuth and use core food search, barcode lookup, meal logging, daily summaries, 30 days of conversational history, up to 25 saved foods, export, revocation, and account deletion. OAuth and MCP never initiate Stripe Checkout or promote an upgrade.
+
+## Premium
+
+Premium is purchased independently on the Munch website. It adds unlimited personal history and saved foods, structured recipes, recipe nutrition arithmetic, meal calendars, grocery lists, and household sharing. Existing subscribers receive these capabilities automatically after authentication.
+
+## Household
+
+A directly entitled account may own one household with up to six connected accounts. Members share household recipes, planned meals, and grocery lists. Personal meal, hydration, and weight histories remain private. Shared objects retain factual display-name attribution when a non-owner account is deleted.
+
+## Model boundary
+
+Munch stores ingredients, servings, nutrients, provenance, dates, revisions, grocery items, and observed usage. It does not store generated tags such as favorite, healthy, high-protein, easy, or recommended. The client model derives those conclusions from factual data and user-supplied constraints.
+
+Munch does not infer pantry inventory and does not determine calorie, protein, weight-loss, or medical targets.
+"""
+)
