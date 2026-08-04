@@ -21,7 +21,8 @@
     "private": true,
     "devDependencies": {
         "@types/bun": "latest",
-        "@types/node": "^26.1.2"
+        "@types/node": "^26.1.2",
+        "@typescript/native-preview": "7.0.0-dev.20260707.2"
     },
     "peerDependencies": {
         "typescript": "^5.9.3"
