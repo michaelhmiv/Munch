@@ -27,7 +27,9 @@ function privateHtml(c: Context, html: string) {
 }
 
 export function boundedOAuthQuery(value: unknown): string | undefined {
-    return typeof value === "string" && value.length > 0 && value.length <= 12_000
+    return typeof value === "string" &&
+        value.length > 0 &&
+        value.length <= 12_000
         ? value
         : undefined;
 }
@@ -42,7 +44,9 @@ export function signedOAuthQuery(requestUrl: string): string | undefined {
     const url = new URL(requestUrl);
     const nested = boundedOAuthQuery(url.searchParams.get("oauth_query"));
     if (nested) return nested;
-    return boundedOAuthQuery(url.search.startsWith("?") ? url.search.slice(1) : "");
+    return boundedOAuthQuery(
+        url.search.startsWith("?") ? url.search.slice(1) : "",
+    );
 }
 
 function publicClientName(value: unknown): string {

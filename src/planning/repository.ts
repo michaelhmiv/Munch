@@ -2,8 +2,7 @@ import type { DatabaseTransaction } from "../platform/database.js";
 import { withUserDatabase } from "../platform/database.js";
 
 export type PlanningScope =
-    | { type: "personal" }
-    | { type: "household"; householdId: string };
+    { type: "personal" } | { type: "household"; householdId: string };
 
 export interface NutrientFacts {
     calories?: number;
@@ -85,7 +84,10 @@ function normalizeName(value: string): string {
 }
 
 function validateScope(scope: PlanningScope): void {
-    if (scope.type === "household" && !/^[0-9a-f-]{36}$/i.test(scope.householdId)) {
+    if (
+        scope.type === "household" &&
+        !/^[0-9a-f-]{36}$/i.test(scope.householdId)
+    ) {
         throw new Error("Invalid household ID");
     }
 }
@@ -105,10 +107,17 @@ function validateRecipe(recipe: RecipeInput): void {
     if (!Number.isFinite(recipe.servings) || recipe.servings <= 0) {
         throw new Error("Recipe servings must be positive");
     }
-    if (!Array.isArray(recipe.instructions) || recipe.instructions.length > 100) {
+    if (
+        !Array.isArray(recipe.instructions) ||
+        recipe.instructions.length > 100
+    ) {
         throw new Error("Recipe instructions are invalid");
     }
-    if (!Array.isArray(recipe.ingredients) || recipe.ingredients.length < 1 || recipe.ingredients.length > 200) {
+    if (
+        !Array.isArray(recipe.ingredients) ||
+        recipe.ingredients.length < 1 ||
+        recipe.ingredients.length > 200
+    ) {
         throw new Error("Recipe must contain 1 to 200 ingredients");
     }
     for (const ingredient of recipe.ingredients) {
@@ -137,7 +146,10 @@ function calculateNutrition(recipe: RecipeInput) {
     let completeCore = true;
     for (const ingredient of recipe.ingredients) {
         const facts = ingredient.nutrients;
-        if (facts && Object.values(facts).some((value) => value !== undefined)) {
+        if (
+            facts &&
+            Object.values(facts).some((value) => value !== undefined)
+        ) {
             ingredientsWithFacts += 1;
         }
         for (const key of nutrientKeys) {
@@ -149,7 +161,12 @@ function calculateNutrition(recipe: RecipeInput) {
                 totals[key] = (totals[key] ?? 0) + value;
             }
         }
-        for (const key of ["calories", "protein_g", "carbs_g", "fat_g"] as const) {
+        for (const key of [
+            "calories",
+            "protein_g",
+            "carbs_g",
+            "fat_g",
+        ] as const) {
             if (facts?.[key] === undefined) completeCore = false;
         }
     }
@@ -162,7 +179,9 @@ function calculateNutrition(recipe: RecipeInput) {
     const perServing: NutrientFacts = {};
     for (const key of nutrientKeys) {
         if (totals[key] !== undefined) {
-            perServing[key] = Number((totals[key]! / recipe.servings).toFixed(2));
+            perServing[key] = Number(
+                (totals[key]! / recipe.servings).toFixed(2),
+            );
             totals[key] = Number(totals[key]!.toFixed(2));
         }
     }
@@ -209,7 +228,10 @@ async function existingRecipeByIdempotency(
     return rows[0] ? rowToSavedRecipe(rows[0], true) : null;
 }
 
-function nutrientsFromRow(row: Record<string, unknown>, suffix: string): NutrientFacts {
+function nutrientsFromRow(
+    row: Record<string, unknown>,
+    suffix: string,
+): NutrientFacts {
     const result: NutrientFacts = {};
     for (const key of nutrientKeys) {
         const value = row[`${key}${suffix}`];
@@ -226,7 +248,9 @@ function rowToSavedRecipe(
         recipeId: String(row.recipe_id),
         revisionId: String(row.revision_id),
         revisionNumber: Number(row.revision_number),
-        nutritionStatus: String(row.nutrition_status) as SavedRecipeResult["nutritionStatus"],
+        nutritionStatus: String(
+            row.nutrition_status,
+        ) as SavedRecipeResult["nutritionStatus"],
         totals: nutrientsFromRow(row, "_total"),
         perServing: nutrientsFromRow(row, "_per_serving"),
         deduplicated,
@@ -431,7 +455,8 @@ export async function getRecipe(userId: string, recipeId: string) {
             revision_id: String(recipe.revision_id),
             revision_number: Number(recipe.current_revision_number),
             servings: Number(recipe.servings),
-            description: recipe.description == null ? null : String(recipe.description),
+            description:
+                recipe.description == null ? null : String(recipe.description),
             instructions: recipe.instructions,
             preparation_minutes:
                 recipe.preparation_minutes == null
@@ -444,8 +469,13 @@ export async function getRecipe(userId: string, recipeId: string) {
             source: {
                 type: String(recipe.source_type),
                 title:
-                    recipe.source_title == null ? null : String(recipe.source_title),
-                url: recipe.source_url == null ? null : String(recipe.source_url),
+                    recipe.source_title == null
+                        ? null
+                        : String(recipe.source_title),
+                url:
+                    recipe.source_url == null
+                        ? null
+                        : String(recipe.source_url),
             },
             nutrition_status: String(recipe.nutrition_status),
             nutrition_total: nutrientsFromRow(recipe, "_total"),
@@ -455,7 +485,9 @@ export async function getRecipe(userId: string, recipeId: string) {
                 position: Number(ingredient.position),
                 name: String(ingredient.name),
                 quantity:
-                    ingredient.quantity == null ? null : Number(ingredient.quantity),
+                    ingredient.quantity == null
+                        ? null
+                        : Number(ingredient.quantity),
                 unit: ingredient.unit == null ? null : String(ingredient.unit),
                 preparation:
                     ingredient.preparation == null
@@ -468,7 +500,9 @@ export async function getRecipe(userId: string, recipeId: string) {
                         : Number(ingredient.gram_weight),
                 nutrients: nutrientsFromRow(ingredient, ""),
                 provider:
-                    ingredient.provider == null ? null : String(ingredient.provider),
+                    ingredient.provider == null
+                        ? null
+                        : String(ingredient.provider),
                 provider_food_id:
                     ingredient.provider_food_id == null
                         ? null
@@ -496,7 +530,9 @@ export async function searchRecipes(input: {
     limit?: number;
 }) {
     const query = input.query?.trim().toLowerCase() || null;
-    const pattern = query ? `%${query.replaceAll("%", "\\%").replaceAll("_", "\\_")}%` : null;
+    const pattern = query
+        ? `%${query.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`
+        : null;
     const limit = Math.max(1, Math.min(50, input.limit ?? 20));
     return withUserDatabase(input.userId, async (tx) => {
         const rows = await tx<Array<Record<string, unknown>>>`
@@ -538,8 +574,7 @@ export async function searchRecipes(input: {
             recipe_id: String(row.id),
             revision_id: String(row.revision_id),
             name: String(row.name),
-            ownership:
-                row.household_id == null ? "personal" : "household",
+            ownership: row.household_id == null ? "personal" : "household",
             servings: Number(row.servings),
             nutrition_status: String(row.nutrition_status),
             nutrition_per_serving: nutrientsFromRow(row, "_per_serving"),
@@ -548,7 +583,9 @@ export async function searchRecipes(input: {
                     ? null
                     : Number(row.preparation_minutes),
             cooking_minutes:
-                row.cooking_minutes == null ? null : Number(row.cooking_minutes),
+                row.cooking_minutes == null
+                    ? null
+                    : Number(row.cooking_minutes),
             times_scheduled: Number(row.times_scheduled),
             last_scheduled_date:
                 row.last_scheduled_date == null
@@ -595,7 +632,8 @@ async function scheduleRecipeInTransaction(
         returning id, planned_date, meal_slot, servings
     `;
     if (rows[0]) return rows[0];
-    if (!input.idempotencyKey) throw new Error("Planned meal creation returned no row");
+    if (!input.idempotencyKey)
+        throw new Error("Planned meal creation returned no row");
     const existing = await tx<Array<Record<string, unknown>>>`
         select id, planned_date, meal_slot, servings
         from munch.planned_meals
@@ -608,7 +646,9 @@ async function scheduleRecipeInTransaction(
     return existing[0];
 }
 
-export async function scheduleRecipe(input: Parameters<typeof scheduleRecipeInTransaction>[1]) {
+export async function scheduleRecipe(
+    input: Parameters<typeof scheduleRecipeInTransaction>[1],
+) {
     return withUserDatabase(input.userId, (tx) =>
         scheduleRecipeInTransaction(tx, input),
     );
@@ -714,7 +754,8 @@ async function addGroceryItemsInTransaction(
     for (const item of input.items) {
         const name = item.name.trim();
         const normalized = normalizeName(name);
-        if (!name || !normalized) throw new Error("Grocery item name is invalid");
+        if (!name || !normalized)
+            throw new Error("Grocery item name is invalid");
         const unit = item.unit?.trim() || null;
         let existing: Array<Record<string, unknown>> = [];
         if (item.quantity !== undefined) {
@@ -912,7 +953,9 @@ export async function saveRecipeAndPlan(input: {
                 planned_meal_id: String(planned.id),
                 planned_date: String(planned.planned_date),
                 meal_slot:
-                    planned.meal_slot == null ? null : String(planned.meal_slot),
+                    planned.meal_slot == null
+                        ? null
+                        : String(planned.meal_slot),
                 servings: Number(planned.servings),
             },
             grocery,

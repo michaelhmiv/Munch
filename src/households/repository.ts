@@ -1,8 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import {
-    withAuthDatabase,
-    withUserDatabase,
-} from "../platform/database.js";
+import { withAuthDatabase, withUserDatabase } from "../platform/database.js";
 
 export type HouseholdRole = "owner" | "member" | "viewer";
 
@@ -64,9 +61,7 @@ export async function createHousehold(input: {
         `;
         if (existing[0]) throw new Error("User already belongs to a household");
 
-        const households = await tx<
-            Array<{ id: string; version: number }>
-        >`
+        const households = await tx<Array<{ id: string; version: number }>>`
             insert into munch.households (name, owner_user_id)
             values (${name}, ${input.userId})
             returning id, version

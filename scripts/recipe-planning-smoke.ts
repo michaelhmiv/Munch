@@ -56,7 +56,10 @@ for (const [person, role, displayName] of [
     });
 }
 
-const scope = { type: "household" as const, householdId: household.householdId };
+const scope = {
+    type: "household" as const,
+    householdId: household.householdId,
+};
 const idempotencyKey = `recipe-plan:${crypto.randomUUID()}`;
 const recipe = {
     name: "Spaghetti with Meat Sauce",
@@ -150,7 +153,9 @@ if (
     memberPlan[0]?.recipe_name !== "Spaghetti with Meat Sauce" ||
     memberPlan[0]?.created_by !== "Mom"
 ) {
-    throw new Error("Household member could not read Monday dinner with attribution");
+    throw new Error(
+        "Household member could not read Monday dinner with attribution",
+    );
 }
 
 const memberGroceries = await getGroceryList({
@@ -191,7 +196,8 @@ try {
 } catch {
     viewerWriteDenied = true;
 }
-if (!viewerWriteDenied) throw new Error("Viewer was allowed to write household data");
+if (!viewerWriteDenied)
+    throw new Error("Viewer was allowed to write household data");
 
 if (await getRecipe(outsider.userId, created.recipe.recipeId)) {
     throw new Error("Unrelated user read a household recipe");
@@ -210,4 +216,6 @@ if (
 }
 
 await closePlatformDatabase();
-console.log("Munch recipe, meal calendar, grocery, idempotency, and household RLS smoke test passed.");
+console.log(
+    "Munch recipe, meal calendar, grocery, idempotency, and household RLS smoke test passed.",
+);

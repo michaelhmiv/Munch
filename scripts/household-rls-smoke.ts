@@ -67,8 +67,8 @@ if (members.length !== 2 || members[0]?.displayName !== "Mom") {
     throw new Error("Household member listing was incorrect");
 }
 if (
-    (await listHouseholdMembers(outsider.userId, household.householdId)).length !==
-    0
+    (await listHouseholdMembers(outsider.userId, household.householdId))
+        .length !== 0
 ) {
     throw new Error("Cross-household member enumeration was allowed");
 }
@@ -92,4 +92,6 @@ if (await getActiveHouseholdContext(member.userId)) {
 }
 
 await closePlatformDatabase();
-console.log("Munch household membership, invitation, and RLS smoke test passed.");
+console.log(
+    "Munch household membership, invitation, and RLS smoke test passed.",
+);

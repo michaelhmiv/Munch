@@ -110,7 +110,8 @@ function requestedScope(
         const allowed = write
             ? capabilities.personalRecipesWrite
             : capabilities.personalRecipesRead;
-        if (!allowed) throw new Error("Personal recipe capability is unavailable");
+        if (!allowed)
+            throw new Error("Personal recipe capability is unavailable");
         return { type: "personal" };
     }
     const allowed = write
@@ -141,10 +142,7 @@ export function registerRecipePlanningTools(
     userId: string,
     capabilities: MunchCapabilities,
 ): void {
-    if (
-        !capabilities.personalRecipesRead &&
-        !capabilities.householdRead
-    ) {
+    if (!capabilities.personalRecipesRead && !capabilities.householdRead) {
         return;
     }
     const toolServer = server as unknown as {

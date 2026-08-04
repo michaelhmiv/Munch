@@ -45,8 +45,8 @@ export function subscriptionProvidesPremium(
     }
     return Boolean(
         subscription.status === "past_due" &&
-            subscription.graceExpiresAt &&
-            subscription.graceExpiresAt.getTime() > now.getTime(),
+        subscription.graceExpiresAt &&
+        subscription.graceExpiresAt.getTime() > now.getTime(),
     );
 }
 

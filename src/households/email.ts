@@ -15,13 +15,16 @@ function escapeHtml(value: string): string {
         .replaceAll("'", "&#039;");
 }
 
-export async function sendHouseholdInvitation(input: {
-    email: string;
-    householdName: string;
-    invitedByDisplayName: string;
-    acceptUrl: string;
-    expiresAt: string;
-}, fetchImpl: typeof fetch = fetch): Promise<void> {
+export async function sendHouseholdInvitation(
+    input: {
+        email: string;
+        householdName: string;
+        invitedByDisplayName: string;
+        acceptUrl: string;
+        expiresAt: string;
+    },
+    fetchImpl: typeof fetch = fetch,
+): Promise<void> {
     const text = [
         `${input.invitedByDisplayName} invited you to ${input.householdName} on Munch.`,
         "",

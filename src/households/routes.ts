@@ -64,7 +64,10 @@ export function createHouseholdRouter(): Hono {
                     typeof body.name !== "string" ||
                     typeof body.display_name !== "string"
                 ) {
-                    return c.json({ error: "name_and_display_name_required" }, 400);
+                    return c.json(
+                        { error: "name_and_display_name_required" },
+                        400,
+                    );
                 }
                 return c.json({
                     household: await createHousehold({
@@ -98,7 +101,10 @@ export function createHouseholdRouter(): Hono {
                     typeof body.email !== "string" ||
                     (body.role !== "member" && body.role !== "viewer")
                 ) {
-                    return c.json({ error: "valid_email_and_role_required" }, 400);
+                    return c.json(
+                        { error: "valid_email_and_role_required" },
+                        400,
+                    );
                 }
                 const invitation = await createHouseholdInvitation({
                     userId,
@@ -142,7 +148,9 @@ export function createHouseholdRouter(): Hono {
                 303,
             );
         }
-        return c.html(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Join household — Munch</title><link rel="stylesheet" href="/styles.css"></head><body class="auth-page"><main class="auth-main"><section class="auth-card"><p class="section-kicker">Munch household</p><h1>Join this household</h1><p>Choose the name other household members should see when you add recipes, planned meals, or groceries.</p><form class="auth-form" method="post" action="/household/accept"><input type="hidden" name="token" value="${escapeHtml(token)}"><div class="field"><label for="display-name">Display name</label><input id="display-name" name="display_name" required maxlength="80"></div><button class="button button-primary" type="submit">Accept invitation</button></form></section></main></body></html>`);
+        return c.html(
+            `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Join household — Munch</title><link rel="stylesheet" href="/styles.css"></head><body class="auth-page"><main class="auth-main"><section class="auth-card"><p class="section-kicker">Munch household</p><h1>Join this household</h1><p>Choose the name other household members should see when you add recipes, planned meals, or groceries.</p><form class="auth-form" method="post" action="/household/accept"><input type="hidden" name="token" value="${escapeHtml(token)}"><div class="field"><label for="display-name">Display name</label><input id="display-name" name="display_name" required maxlength="80"></div><button class="button button-primary" type="submit">Accept invitation</button></form></section></main></body></html>`,
+        );
     });
 
     router.post(
@@ -156,7 +164,10 @@ export function createHouseholdRouter(): Hono {
                     typeof body.token !== "string" ||
                     typeof body.display_name !== "string"
                 ) {
-                    return c.json({ error: "token_and_display_name_required" }, 400);
+                    return c.json(
+                        { error: "token_and_display_name_required" },
+                        400,
+                    );
                 }
                 const household = await acceptHouseholdInvitation({
                     userId: c.get("munchUserId"),
@@ -189,7 +200,10 @@ export function createHouseholdRouter(): Hono {
                     typeof body.membership_id !== "string" ||
                     (body.role !== "member" && body.role !== "viewer")
                 ) {
-                    return c.json({ error: "membership_and_role_required" }, 400);
+                    return c.json(
+                        { error: "membership_and_role_required" },
+                        400,
+                    );
                 }
                 return c.json({
                     updated: await updateHouseholdMemberRole({
