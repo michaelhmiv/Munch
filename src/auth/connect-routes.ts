@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { requireSameOrigin } from "../accounts/csrf.js";
 import { getMunchBetterAuth } from "./auth.js";
 import { safeMagicLinkReturnPath } from "./magic-link-url.js";
@@ -18,7 +18,7 @@ function shell(title: string, body: string): string {
 <body class="auth-page"><div class="auth-layout"><aside class="auth-brand-panel"><a class="brand" href="/"><img class="brand-logo" src="/brand/munch-mark-white.svg" alt=""><span>Munch</span></a><div class="auth-brand-copy"><p class="eyebrow">Secure ChatGPT connection</p><h1>Nutrition memory for <span>ChatGPT.</span></h1><p>Sign in once, approve the connection, and return to ChatGPT.</p></div></aside><main class="auth-main"><section class="auth-card">${body}</section></main></div></body></html>`;
 }
 
-function privateHtml(c: Parameters<Hono["get"]>[1] extends never ? never : any, html: string) {
+function privateHtml(c: Context, html: string) {
     c.header("Cache-Control", "no-store, private");
     c.header("Pragma", "no-cache");
     c.header("Referrer-Policy", "no-referrer");
