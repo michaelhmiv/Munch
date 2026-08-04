@@ -8,12 +8,19 @@ if (!databaseUrl) {
     throw new Error("DATABASE_URL is required for Better Auth OAuth smoke test");
 }
 
-function expectJsonArray(value: unknown, expected: string[], field: string): void {
+function expectJsonArray(
+    value: unknown,
+    expected: string[],
+    field: string,
+): void {
     if (typeof value !== "string") {
         throw new Error(`${field} was not persisted as JSON text`);
     }
     const parsed = JSON.parse(value) as unknown;
-    if (!Array.isArray(parsed) || JSON.stringify(parsed) !== JSON.stringify(expected)) {
+    if (
+        !Array.isArray(parsed) ||
+        JSON.stringify(parsed) !== JSON.stringify(expected)
+    ) {
         throw new Error(`${field} did not preserve the registered list`);
     }
 }
@@ -59,7 +66,10 @@ try {
     if (!registration.client_id) {
         throw new Error("Dynamic registration returned no client_id");
     }
-    if (JSON.stringify(registration.redirect_uris) !== JSON.stringify([redirectUri])) {
+    if (
+        JSON.stringify(registration.redirect_uris) !==
+        JSON.stringify([redirectUri])
+    ) {
         throw new Error("Dynamic registration returned unexpected redirect_uris");
     }
 
@@ -85,9 +95,17 @@ try {
         ["nutrition.read", "nutrition.write", "offline_access"],
         "oauthClient.scopes",
     );
-    expectJsonArray(client.redirectUris, [redirectUri], "oauthClient.redirectUris");
+    expectJsonArray(
+        client.redirectUris,
+        [redirectUri],
+        "oauthClient.redirectUris",
+    );
     expectJsonArray(client.grantTypes, grantTypes, "oauthClient.grantTypes");
-    expectJsonArray(client.responseTypes, responseTypes, "oauthClient.responseTypes");
+    expectJsonArray(
+        client.responseTypes,
+        responseTypes,
+        "oauthClient.responseTypes",
+    );
 
     await database.query(
         `delete from munch."oauthClient" where "clientId" = $1`,
