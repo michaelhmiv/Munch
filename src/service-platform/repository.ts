@@ -161,8 +161,7 @@ export async function createExportFile(input: {
     expiresAt: Date;
 }): Promise<{ token: string }> {
     if (!input.content) throw new Error("Export content cannot be empty");
-    const contentType =
-        input.contentType?.trim() || "text/csv; charset=utf-8";
+    const contentType = input.contentType?.trim() || "text/csv; charset=utf-8";
     const token = issueOpaqueToken(32);
 
     await withServiceDatabase(async (tx) => {

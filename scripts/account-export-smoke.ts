@@ -108,7 +108,9 @@ if (!serialized.includes('"name":"Yellow onion"')) {
     throw new Error("Account export omitted accessible household groceries");
 }
 if (exported.recordCount < 5) {
-    throw new Error("Account export did not include the expected shared records");
+    throw new Error(
+        "Account export did not include the expected shared records",
+    );
 }
 
 await closePlatformDatabase();
