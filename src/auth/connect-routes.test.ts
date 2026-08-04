@@ -20,8 +20,9 @@ describe("Better Auth consent continuation", () => {
         expect(signedOAuthQuery(url.toString())).toBe(nested);
     });
 
-    test("rejects missing and oversized continuations", () => {
+    test("rejects missing, non-string, and oversized continuations", () => {
         expect(boundedOAuthQuery(undefined)).toBeUndefined();
+        expect(boundedOAuthQuery(123)).toBeUndefined();
         expect(boundedOAuthQuery("")).toBeUndefined();
         expect(boundedOAuthQuery("x".repeat(12_001))).toBeUndefined();
     });
