@@ -5,8 +5,7 @@
 
 const proc = Bun.spawn(
     [
-        "bunx",
-        "tsgo",
+        "./node_modules/.bin/tsgo",
         "--project",
         "tsconfig.src.json",
         "--noEmit",
