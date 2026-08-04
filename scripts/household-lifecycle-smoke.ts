@@ -17,7 +17,9 @@ const {
 const { closePlatformDatabase } = await import("../src/platform/database.js");
 
 if (!process.env.DATABASE_URL) {
-    throw new Error("DATABASE_URL is required for household lifecycle smoke tests");
+    throw new Error(
+        "DATABASE_URL is required for household lifecycle smoke tests",
+    );
 }
 
 async function createUser(prefix: string) {
@@ -92,7 +94,9 @@ if (!(await leaveHousehold(originalOwner.userId))) {
     throw new Error("Former owner could not leave after transferring ownership");
 }
 if (await getActiveHouseholdContext(originalOwner.userId)) {
-    throw new Error("Former owner retained active household access after leaving");
+    throw new Error(
+        "Former owner retained active household access after leaving",
+    );
 }
 
 if (
@@ -108,4 +112,6 @@ if (await getActiveHouseholdContext(successor.userId)) {
 }
 
 await closePlatformDatabase();
-console.log("Munch household transfer, leave, and dissolution smoke test passed.");
+console.log(
+    "Munch household transfer, leave, and dissolution smoke test passed.",
+);
