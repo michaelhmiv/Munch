@@ -1,0 +1,70 @@
+name: Certify production origin handling
+
+on:
+  push:
+    branches:
+      - chore/certify-production-origin
+
+permissions:
+  contents: write
+
+jobs:
+  certify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out certification branch
+        uses: actions/checkout@v4
+        with:
+          ref: chore/certify-production-origin
+          fetch-depth: 0
+
+      - name: Probe production form-origin handling
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://munch.business'
+
+          same_status="$(curl --silent --show-error --output /tmp/same.html --write-out '%{http_code}' \
+            --request POST "$base/connect/request" \
+            --header 'Origin: https://munch.business' \
+            --header 'Referer: https://munch.business/connect/sign-in' \
+            --header 'Sec-Fetch-Site: same-origin' \
+            --header 'Content-Type: application/x-www-form-urlencoded' \
+            --data 'email=&return_to=%2Faccount%2Fportal')"
+          test "$same_status" = '200'
+          grep --fixed-strings 'Enter a valid email address.' /tmp/same.html
+
+          missing_status="$(curl --silent --show-error --output /tmp/missing.html --write-out '%{http_code}' \
+            --request POST "$base/connect/request" \
+            --header 'Referer: https://munch.business/connect/sign-in' \
+            --header 'Sec-Fetch-Site: same-origin' \
+            --header 'Content-Type: application/x-www-form-urlencoded' \
+            --data 'email=&return_to=%2Faccount%2Fportal')"
+          test "$missing_status" = '200'
+          grep --fixed-strings 'Enter a valid email address.' /tmp/missing.html
+
+          foreign_status="$(curl --silent --show-error --output /tmp/foreign.json --write-out '%{http_code}' \
+            --request POST "$base/connect/request" \
+            --header 'Origin: https://attacker.example' \
+            --header 'Sec-Fetch-Site: cross-site' \
+            --header 'Content-Type: application/x-www-form-urlencoded' \
+            --data 'email=&return_to=%2Faccount%2Fportal')"
+          test "$foreign_status" = '403'
+          grep --fixed-strings 'invalid_request_origin' /tmp/foreign.json
+
+          printf '{"production_commit":"9aaa9f253bae1aee78655e39babe0d2839b1be19","same_origin_status":%s,"missing_origin_same_site_status":%s,"foreign_origin_status":%s,"certified_at":"%s"}\n' \
+            "$same_status" "$missing_status" "$foreign_status" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            > production-origin-probe.json
+
+      - name: Record result and remove one-use workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/certify-production-origin.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'test: certify production origin handling'
+          git push origin HEAD:chore/certify-production-origin
