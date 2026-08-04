@@ -1,7 +1,4 @@
-import {
-    withAuthDatabase,
-    withUserDatabase,
-} from "../platform/database.js";
+import { withAuthDatabase, withUserDatabase } from "../platform/database.js";
 import { getActiveHouseholdContext } from "./repository.js";
 
 export async function transferHouseholdOwnership(input: {

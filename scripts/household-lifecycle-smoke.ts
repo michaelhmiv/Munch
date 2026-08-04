@@ -9,11 +9,8 @@ const {
     getActiveHouseholdContext,
     listHouseholdMembers,
 } = await import("../src/households/repository.js");
-const {
-    dissolveHousehold,
-    leaveHousehold,
-    transferHouseholdOwnership,
-} = await import("../src/households/lifecycle.js");
+const { dissolveHousehold, leaveHousehold, transferHouseholdOwnership } =
+    await import("../src/households/lifecycle.js");
 const { closePlatformDatabase } = await import("../src/platform/database.js");
 
 if (!process.env.DATABASE_URL) {
@@ -91,7 +88,9 @@ if (!formerOwnerDissolveDenied) {
 }
 
 if (!(await leaveHousehold(originalOwner.userId))) {
-    throw new Error("Former owner could not leave after transferring ownership");
+    throw new Error(
+        "Former owner could not leave after transferring ownership",
+    );
 }
 if (await getActiveHouseholdContext(originalOwner.userId)) {
     throw new Error(
