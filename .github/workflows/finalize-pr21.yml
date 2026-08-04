@@ -12,7 +12,7 @@ permissions:
 
 concurrency:
   group: finalize-pr21
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   finalize:
@@ -55,8 +55,8 @@ jobs:
 
       - name: Commit finalized branch
         run: |
+          git checkout -- .github/workflows/ci.yml .github/workflows/finalize-pr21.yml
           rm scripts/finalize-pr21.py
-          rm .github/workflows/finalize-pr21.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
