@@ -19,7 +19,7 @@ Every active account can connect and permanently use core nutrition capabilities
 - up to 25 saved foods;
 - export, account deletion, connection review, and revocation.
 
-Older records remain stored and exportable. The history window limits conversational retrieval; it does not delete records or restrict data rights.
+Older records remain stored and exportable. The history window limits conversational retrieval; it does not delete records or restrict data rights. Reaching a Free capacity limit never removes existing records or blocks the user from reviewing, exporting, deleting, or replacing them.
 
 ## Premium tier
 
