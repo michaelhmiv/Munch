@@ -8,11 +8,11 @@ export function buildScannerSafeMagicLink(input: {
     const token = generated.searchParams.get("token");
     if (!token) throw new Error("Better Auth magic-link URL is missing token");
 
-    const returnTo = safeLocalRedirectPath(
+    const callback =
         generated.searchParams.get("callbackURL") ??
-            generated.searchParams.get("callbackUrl"),
-        "/account/portal",
-    );
+        generated.searchParams.get("callbackUrl") ??
+        undefined;
+    const returnTo = safeLocalRedirectPath(callback, "/account/portal");
     const confirmation = new URL("/connect/confirm", input.baseUrl);
     confirmation.searchParams.set("token", token);
     confirmation.searchParams.set("return_to", returnTo);
