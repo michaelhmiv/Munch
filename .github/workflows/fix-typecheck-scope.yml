@@ -32,21 +32,18 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Scope the production typecheck
+      - name: Configure native production typecheck
         run: python scripts/fix-typecheck-scope.py
 
       - name: Format new configuration
-        run: bunx prettier --write tsconfig.src.json scripts/typecheck.ts
+        run: bunx prettier --write package.json tsconfig.src.json scripts/typecheck.ts
 
-      - name: Verify scoped typecheck
-        run: bun run typecheck
-
-      - name: Commit fix
+      - name: Commit configuration for normal CI validation
         run: |
           git checkout -- .github/workflows/fix-typecheck-scope.yml
           rm scripts/fix-typecheck-scope.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "fix: scope TypeScript validation to production sources"
+          git commit -m "fix: use native compiler for production typecheck"
           git push origin HEAD:feat/munch-frontend-overhaul
