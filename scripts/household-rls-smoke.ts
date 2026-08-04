@@ -149,6 +149,12 @@ const activeMembers = await listHouseholdMembers(
     owner.userId,
     household.householdId,
 );
+if (
+    activeMembers.length !== 2 ||
+    activeMembers.some((entry) => entry.displayName === "Former Member")
+) {
+    throw new Error("Deleted member remained in active household reads");
+}
 const memberRow = activeMembers.find((entry) => entry.userId === member.userId);
 if (!memberRow) throw new Error("Joined member row was missing");
 if (
