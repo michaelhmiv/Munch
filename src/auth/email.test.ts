@@ -67,7 +67,8 @@ describe("Better Auth magic-link delivery", () => {
             sendBetterAuthMagicLink(
                 {
                     email: "person@example.com",
-                    loginUrl: "https://munch.example/connect/confirm?token=secret",
+                    loginUrl:
+                        "https://munch.example/connect/confirm?token=secret",
                     expiresAt: new Date("2026-08-04T12:00:00.000Z"),
                 },
                 fetchImpl,
