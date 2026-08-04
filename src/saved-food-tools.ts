@@ -63,13 +63,17 @@ function serializeHistory(record: RecentMealItemMemory) {
 }
 
 function formatSavedFood(record: SavedFoodRecord, index: number): string {
-    const portion = record.food.portions.find(
-        (candidate) => candidate.id === record.defaultPortionId,
-    ) ?? record.food.portions[0];
+    const portion =
+        record.food.portions.find(
+            (candidate) => candidate.id === record.defaultPortionId,
+        ) ?? record.food.portions[0];
     return `${index + 1}. ${record.label}\n   ${portion?.label ?? "No default portion"}${portion?.nutrients.calories == null ? "" : ` · ${portion.nutrients.calories} kcal`}\n   saved_food_id: ${record.id} · used ${record.useCount} times`;
 }
 
-export function registerSavedFoodTools(server: McpServer, userId: string): void {
+export function registerSavedFoodTools(
+    server: McpServer,
+    userId: string,
+): void {
     server.registerTool(
         "save_food",
         {
@@ -95,9 +99,8 @@ export function registerSavedFoodTools(server: McpServer, userId: string): void 
             withAnalytics(
                 "save_food",
                 async () => {
-                    const candidate = await getFoodSearchService().details(
-                        candidate_id,
-                    );
+                    const candidate =
+                        await getFoodSearchService().details(candidate_id);
                     if (!candidate) {
                         throw new Error(
                             "Food candidate is invalid or expired; run search_foods again",
@@ -223,7 +226,9 @@ export function registerSavedFoodTools(server: McpServer, userId: string): void 
                                 text:
                                     saved.length === 0
                                         ? "No saved foods yet."
-                                        : saved.map(formatSavedFood).join("\n\n"),
+                                        : saved
+                                              .map(formatSavedFood)
+                                              .join("\n\n"),
                             },
                         ],
                         structuredContent: {
@@ -302,7 +307,10 @@ export function registerSavedFoodTools(server: McpServer, userId: string): void 
             withAnalytics(
                 "delete_saved_food",
                 async () => {
-                    const deleted = await deleteSavedFood(userId, saved_food_id);
+                    const deleted = await deleteSavedFood(
+                        userId,
+                        saved_food_id,
+                    );
                     return {
                         content: [
                             {

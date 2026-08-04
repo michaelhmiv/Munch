@@ -5,10 +5,7 @@ import {
     normalizeNutrients,
     nutrientCompleteness,
 } from "./nutrients.js";
-import {
-    deduplicatePortions,
-    per100gPortion,
-} from "./portions.js";
+import { deduplicatePortions, per100gPortion } from "./portions.js";
 import type {
     BarcodeLookupInput,
     FoodCandidate,
@@ -66,9 +63,7 @@ function firstBrand(value: string | undefined): string | undefined {
     return value?.split(",")[0]?.trim() || undefined;
 }
 
-function per100gNutrients(
-    nutriments: Record<string, unknown>,
-): NutrientValues {
+function per100gNutrients(nutriments: Record<string, unknown>): NutrientValues {
     const sodiumG = finite(nutriments.sodium_100g);
     const cholesterolG = finite(nutriments.cholesterol_100g);
     const potassiumG = finite(nutriments.potassium_100g);
@@ -83,8 +78,7 @@ function per100gNutrients(
         sodium_mg: sodiumG === undefined ? undefined : sodiumG * 1_000,
         cholesterol_mg:
             cholesterolG === undefined ? undefined : cholesterolG * 1_000,
-        potassium_mg:
-            potassiumG === undefined ? undefined : potassiumG * 1_000,
+        potassium_mg: potassiumG === undefined ? undefined : potassiumG * 1_000,
     });
 }
 
@@ -142,8 +136,7 @@ function servingNutrients(
         sodium_mg: sodiumG === undefined ? undefined : sodiumG * 1_000,
         cholesterol_mg:
             cholesterolG === undefined ? undefined : cholesterolG * 1_000,
-        potassium_mg:
-            potassiumG === undefined ? undefined : potassiumG * 1_000,
+        potassium_mg: potassiumG === undefined ? undefined : potassiumG * 1_000,
     });
 }
 
@@ -152,7 +145,9 @@ function declaredServing(
     nutrients: NutrientValues,
 ): FoodPortion {
     const quantity = finite(product.serving_quantity);
-    const unit = String(product.serving_quantity_unit ?? "").trim().toLowerCase();
+    const unit = String(product.serving_quantity_unit ?? "")
+        .trim()
+        .toLowerCase();
     return {
         id: "declared-serving",
         amount: 1,
@@ -164,7 +159,9 @@ function declaredServing(
     };
 }
 
-function sourceUpdatedAt(value: number | string | undefined): string | undefined {
+function sourceUpdatedAt(
+    value: number | string | undefined,
+): string | undefined {
     const seconds = finite(value);
     if (seconds === undefined) return undefined;
     const date = new Date(seconds * 1_000);
@@ -187,9 +184,7 @@ export function normalizeOpenFoodFactsProduct(
         portions.push(per100gPortion(nutrients100g));
     }
     const normalizedPortions = deduplicatePortions(portions);
-    const completeness = nutrientCompleteness(
-        serving ?? nutrients100g,
-    );
+    const completeness = nutrientCompleteness(serving ?? nutrients100g);
     const confidence = Math.min(
         0.97,
         Math.round(
@@ -338,17 +333,21 @@ export class OpenFoodFactsProvider implements FoodProvider {
             "code,product_name,generic_name,brands,serving_size,serving_quantity,serving_quantity_unit,last_modified_t,nutriments",
         );
         try {
-            const response = await this.requestJson<OpenFoodFactsProductResponse>(
-                url,
-                input.signal,
-            );
+            const response =
+                await this.requestJson<OpenFoodFactsProductResponse>(
+                    url,
+                    input.signal,
+                );
             if (response.status === 0 || !response.product) return null;
             return normalizeOpenFoodFactsProduct({
                 ...response.product,
                 code: response.product.code ?? barcode,
             });
         } catch (error) {
-            if (error instanceof FoodProviderError && error.code === "not_found") {
+            if (
+                error instanceof FoodProviderError &&
+                error.code === "not_found"
+            ) {
                 return null;
             }
             throw error;

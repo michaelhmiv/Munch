@@ -6,10 +6,7 @@ import { createPortalRouter } from "../portal/routes.js";
 import { requireSameOrigin } from "./csrf.js";
 import { deliverLoginLink } from "./login-delivery.js";
 import { safeLocalRedirectPath } from "./redirect.js";
-import {
-    consumeLoginChallenge,
-    createLoginChallenge,
-} from "./repository.js";
+import { consumeLoginChallenge, createLoginChallenge } from "./repository.js";
 import {
     clearWebSession,
     requireWebSession,
@@ -44,59 +41,51 @@ export function createAccountRouter(): Hono {
         c.html(await Bun.file("./public/login.html").text()),
     );
 
-    account.post(
-        "/account/login/request",
-        requireSameOrigin,
-        async (c) => {
-            let body: LoginRequestBody;
-            try {
-                body = (await c.req.json()) as LoginRequestBody;
-            } catch {
-                return c.json({ error: "invalid_json" }, 400);
+    account.post("/account/login/request", requireSameOrigin, async (c) => {
+        let body: LoginRequestBody;
+        try {
+            body = (await c.req.json()) as LoginRequestBody;
+        } catch {
+            return c.json({ error: "invalid_json" }, 400);
+        }
+
+        if (typeof body.email !== "string") {
+            return c.json({ error: "email_required" }, 400);
+        }
+
+        const returnTo =
+            typeof body.returnTo === "string"
+                ? safeLocalRedirectPath(body.returnTo)
+                : undefined;
+
+        try {
+            const challenge = await createLoginChallenge(body.email);
+            const delivery = await deliverLoginLink({
+                ...challenge,
+                returnTo,
+            });
+
+            return c.json({
+                accepted: true,
+                ...(delivery.mode === "development"
+                    ? {
+                          developmentLoginUrl: delivery.developmentLoginUrl,
+                      }
+                    : {}),
+            });
+        } catch (error) {
+            const configurationFailure =
+                error instanceof Error &&
+                (error.message.includes("not configured") ||
+                    error.message.includes("is required"));
+            if (configurationFailure) {
+                console.error("Passwordless login delivery is unavailable");
+                return c.json({ error: "login_delivery_unavailable" }, 503);
             }
 
-            if (typeof body.email !== "string") {
-                return c.json({ error: "email_required" }, 400);
-            }
-
-            const returnTo =
-                typeof body.returnTo === "string"
-                    ? safeLocalRedirectPath(body.returnTo)
-                    : undefined;
-
-            try {
-                const challenge = await createLoginChallenge(body.email);
-                const delivery = await deliverLoginLink({
-                    ...challenge,
-                    returnTo,
-                });
-
-                return c.json({
-                    accepted: true,
-                    ...(delivery.mode === "development"
-                        ? {
-                              developmentLoginUrl:
-                                  delivery.developmentLoginUrl,
-                          }
-                        : {}),
-                });
-            } catch (error) {
-                const configurationFailure =
-                    error instanceof Error &&
-                    (error.message.includes("not configured") ||
-                        error.message.includes("is required"));
-                if (configurationFailure) {
-                    console.error("Passwordless login delivery is unavailable");
-                    return c.json(
-                        { error: "login_delivery_unavailable" },
-                        503,
-                    );
-                }
-
-                return c.json({ accepted: true });
-            }
-        },
-    );
+            return c.json({ accepted: true });
+        }
+    });
 
     account.get("/account/login/consume", async (c) => {
         const token = c.req.query("token");

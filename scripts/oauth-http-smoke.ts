@@ -21,7 +21,9 @@ if (!process.env.DATABASE_URL) {
 }
 
 const suffix = crypto.randomUUID().replaceAll("-", "");
-const challenge = await createLoginChallenge(`oauth-http-${suffix}@example.test`);
+const challenge = await createLoginChallenge(
+    `oauth-http-${suffix}@example.test`,
+);
 const webSession = await consumeLoginChallenge(challenge.token);
 if (!webSession) throw new Error("Unable to activate OAuth HTTP smoke user");
 
@@ -62,7 +64,9 @@ const registrationResponse = await app.request("/register", {
     }),
 });
 if (registrationResponse.status !== 201) {
-    throw new Error(`Client registration failed: ${registrationResponse.status}`);
+    throw new Error(
+        `Client registration failed: ${registrationResponse.status}`,
+    );
 }
 const registration = (await registrationResponse.json()) as {
     client_id: string;
@@ -84,10 +88,13 @@ const authorizeResponse = await app.request(
     `${authorizeUrl.pathname}${authorizeUrl.search}`,
 );
 if (authorizeResponse.status !== 303) {
-    throw new Error(`Authorization request failed: ${authorizeResponse.status}`);
+    throw new Error(
+        `Authorization request failed: ${authorizeResponse.status}`,
+    );
 }
 const continueLocation = authorizeResponse.headers.get("location");
-if (!continueLocation) throw new Error("Authorization response had no location");
+if (!continueLocation)
+    throw new Error("Authorization response had no location");
 const authorizationSessionId = new URL(
     continueLocation,
     "https://munch.test",
@@ -116,7 +123,9 @@ const tokenResponse = await app.request("/token", {
     }).toString(),
 });
 if (tokenResponse.status !== 200) {
-    throw new Error(`Authorization-code exchange failed: ${tokenResponse.status}`);
+    throw new Error(
+        `Authorization-code exchange failed: ${tokenResponse.status}`,
+    );
 }
 const tokens = (await tokenResponse.json()) as {
     access_token: string;
@@ -136,7 +145,9 @@ const refreshResponse = await app.request("/token", {
     }).toString(),
 });
 if (refreshResponse.status !== 200) {
-    throw new Error(`Active subscription refresh failed: ${refreshResponse.status}`);
+    throw new Error(
+        `Active subscription refresh failed: ${refreshResponse.status}`,
+    );
 }
 const rotated = (await refreshResponse.json()) as { refresh_token: string };
 
@@ -158,7 +169,9 @@ const canceledRefresh = await app.request("/token", {
     }).toString(),
 });
 if (canceledRefresh.status !== 400) {
-    throw new Error("Canceled subscription was allowed to refresh OAuth access");
+    throw new Error(
+        "Canceled subscription was allowed to refresh OAuth access",
+    );
 }
 const canceledBody = (await canceledRefresh.json()) as { error?: string };
 if (canceledBody.error !== "invalid_grant") {

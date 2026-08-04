@@ -6,10 +6,7 @@ import {
     summarizeFoodCandidate,
 } from "./food-providers/service.js";
 import type { FoodProviderFailure } from "./food-providers/registry.js";
-import type {
-    FoodCandidate,
-    NutrientValues,
-} from "./food-providers/types.js";
+import type { FoodCandidate, NutrientValues } from "./food-providers/types.js";
 
 const nutrientOutputSchema = z.object({
     calories: z.number().nullable(),
@@ -152,7 +149,9 @@ function formatCandidate(candidate: FoodCandidate, index?: number): string {
     const macros = portion
         ? [
               portion.calories == null ? null : `${portion.calories} kcal`,
-              portion.protein_g == null ? null : `${portion.protein_g}g protein`,
+              portion.protein_g == null
+                  ? null
+                  : `${portion.protein_g}g protein`,
               portion.carbs_g == null ? null : `${portion.carbs_g}g carbs`,
               portion.fat_g == null ? null : `${portion.fat_g}g fat`,
           ]
@@ -207,7 +206,10 @@ export function registerFoodTools(server: McpServer, userId: string): void {
                     const failures = serializeFailures(result.failures);
                     const failureNote = failures.length
                         ? `\n\nSome sources were unavailable: ${failures
-                              .map((failure) => `${failure.provider} (${failure.code})`)
+                              .map(
+                                  (failure) =>
+                                      `${failure.provider} (${failure.code})`,
+                              )
                               .join(", ")}. The results above are still usable.`
                         : "";
                     return {

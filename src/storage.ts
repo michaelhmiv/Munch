@@ -130,7 +130,10 @@ export async function getCachedFood<T>(
     sourceId: string,
 ): Promise<T | null> {
     if (railwayDataEnabled) {
-        return (await railwayService.getCachedFood(source, sourceId)) as T | null;
+        return (await railwayService.getCachedFood(
+            source,
+            sourceId,
+        )) as T | null;
     }
     return inherited.getCachedFood<T>(source, sourceId);
 }

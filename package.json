@@ -20,7 +20,8 @@
     "type": "module",
     "private": true,
     "devDependencies": {
-        "@types/bun": "latest"
+        "@types/bun": "latest",
+        "@types/node": "^26.1.2"
     },
     "peerDependencies": {
         "typescript": "^5.9.3"
@@ -43,6 +44,7 @@
         "@modelcontextprotocol/sdk": "^1.29.0",
         "@supabase/supabase-js": "^2.110.5",
         "hono": "^4.12.30",
-        "prettier": "^3.9.5"
+        "prettier": "^3.9.5",
+        "zod": "^4.4.3"
     }
 }

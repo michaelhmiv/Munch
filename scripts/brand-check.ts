@@ -9,11 +9,7 @@ const forbidden = [
     "anton@nutrition-mcp.com",
 ];
 
-const allowedPaths = new Set([
-    "LICENSE",
-    "NOTICE.md",
-    "README.md",
-]);
+const allowedPaths = new Set(["LICENSE", "NOTICE.md", "README.md"]);
 
 const roots = ["public", "src"];
 const failures: string[] = [];
@@ -31,7 +27,9 @@ for (const root of roots) {
 }
 
 if (failures.length > 0) {
-    console.error("Forbidden public brand strings found:\n" + failures.join("\n"));
+    console.error(
+        "Forbidden public brand strings found:\n" + failures.join("\n"),
+    );
     process.exit(1);
 }
 

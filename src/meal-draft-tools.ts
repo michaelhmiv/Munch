@@ -92,11 +92,14 @@ function draftSummary(draft: MealDraft): string {
     );
     const lines = [
         `Draft ${draft.id} · status ${draft.status} · version ${draft.version}`,
-        draft.description ? `Meal: ${draft.description}` : "Meal description not set",
+        draft.description
+            ? `Meal: ${draft.description}`
+            : "Meal description not set",
         draft.mealType ? `Type: ${draft.mealType}` : "Meal type not set",
         `Items: ${draft.items.length} · Open questions: ${open.length}`,
     ];
-    if (open[0]) lines.push(`Next question: ${open[0].prompt} [id: ${open[0].id}]`);
+    if (open[0])
+        lines.push(`Next question: ${open[0].prompt} [id: ${open[0].id}]`);
     if (draft.confirmedMealId) {
         lines.push(`Confirmed meal ID: ${draft.confirmedMealId}`);
     }
@@ -107,7 +110,10 @@ const DRAFT_OUTPUT = {
     draft: z.record(z.string(), z.unknown()),
 };
 
-export function registerMealDraftTools(server: McpServer, userId: string): void {
+export function registerMealDraftTools(
+    server: McpServer,
+    userId: string,
+): void {
     server.registerTool(
         "start_meal_draft",
         {
@@ -320,7 +326,12 @@ export function registerMealDraftTools(server: McpServer, userId: string): void 
                 expected_version: z.coerce.number().int().positive(),
                 question_key: z.string().min(1).max(200),
                 prompt: z.string().min(1).max(1_000),
-                impact_score: z.coerce.number().int().min(0).max(100).optional(),
+                impact_score: z.coerce
+                    .number()
+                    .int()
+                    .min(0)
+                    .max(100)
+                    .optional(),
                 item_id: z.string().uuid().optional(),
             },
             outputSchema: DRAFT_OUTPUT,

@@ -1,29 +1,273 @@
 <!doctype html>
 <html lang="en">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>What Munch can do</title>
-    <meta name="description" content="Examples of nutrition tasks users can ask Munch to perform through ChatGPT.">
-    <meta name="theme-color" content="#0B8F4D">
-    <link rel="canonical" href="https://munch-production-de3a.up.railway.app/tools">
-    <link rel="icon" href="/favicon.ico">
-    <link rel="stylesheet" href="/styles.css">
-</head>
-<body>
-<header class="site-header"><div class="container nav-inner"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">M</span><span>Munch</span></a><nav class="nav-links"><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/account/login">Sign in</a><a class="button button-primary button-small" href="/account/login?return_to=/account/portal">Start free trial</a></nav></div></header>
-<main>
-<section class="tools-hero"><div class="container"><p class="section-kicker">Use Munch through conversation</p><h1>Ask naturally. Munch handles the structure.</h1><p class="section-copy">These are examples, not rigid commands. ChatGPT decides when to call Munch and can ask follow-up questions when important details are missing.</p></div></section>
-<div class="container tool-groups">
-<section class="tool-group"><div><h2>Meals</h2><p>Log, review, edit, confirm, and delete meal records.</p></div><div class="tool-list"><div class="tool-item"><code>“Log two eggs and toast for breakfast.”</code><span>Create a structured meal.</span></div><div class="tool-item"><code>“Change lunch to two slices of cheddar.”</code><span>Edit a prior record.</span></div><div class="tool-item"><code>“Show me what you assumed before saving that.”</code><span>Review an uncertain draft.</span></div><div class="tool-item"><code>“Delete yesterday’s snack.”</code><span>Remove a meal record.</span></div></div></section>
-<section class="tool-group"><div><h2>Food search and barcodes</h2><p>Use structured food databases instead of relying only on a generic estimate.</p></div><div class="tool-list"><div class="tool-item"><code>“Find a USDA entry for a medium green apple.”</code><span>Search FoodData Central.</span></div><div class="tool-item"><code>“Scan this barcode.”</code><span>Look up a packaged product.</span></div><div class="tool-item"><code>“Use the 170-calorie label result.”</code><span>Select a verified match.</span></div><div class="tool-item"><code>“Where did those calories come from?”</code><span>Review provenance and assumptions.</span></div></div></section>
-<section class="tool-group"><div><h2>Saved foods and usual meals</h2><p>Make repeated logging faster while keeping your confirmed version.</p></div><div class="tool-list"><div class="tool-item"><code>“Save this as my usual peanut butter sandwich.”</code><span>Create a reusable food.</span></div><div class="tool-item"><code>“Log my usual breakfast.”</code><span>Reuse a saved meal.</span></div><div class="tool-item"><code>“What foods do I use most often?”</code><span>Review saved-food usage.</span></div><div class="tool-item"><code>“Forget that saved smoothie.”</code><span>Remove a saved item.</span></div></div></section>
-<section class="tool-group"><div><h2>Daily progress and goals</h2><p>Use persistent history to answer questions across conversations.</p></div><div class="tool-list"><div class="tool-item"><code>“How much protein do I have left today?”</code><span>Compare intake with goals.</span></div><div class="tool-item"><code>“Set my daily calorie goal to 2,300.”</code><span>Update a nutrition target.</span></div><div class="tool-item"><code>“Summarize my macros this week.”</code><span>Review a date range.</span></div><div class="tool-item"><code>“Which days were highest in fiber?”</code><span>Analyze longer-term history.</span></div></div></section>
-<section class="tool-group"><div><h2>Water and weight</h2><p>Keep hydration and body-weight history in the same account.</p></div><div class="tool-list"><div class="tool-item"><code>“Log 24 ounces of water.”</code><span>Add hydration.</span></div><div class="tool-item"><code>“How much water have I logged today?”</code><span>Review daily hydration.</span></div><div class="tool-item"><code>“Log my weight as 185.4 pounds.”</code><span>Add a weight measurement.</span></div><div class="tool-item"><code>“Show my weight trend for the last month.”</code><span>Review weight history.</span></div></div></section>
-<section class="tool-group"><div><h2>Data and account controls</h2><p>Keep the account portable and revocable.</p></div><div class="tool-list"><div class="tool-item"><code>“Export my meal history.”</code><span>Create a downloadable export.</span></div><div class="tool-item"><code>“What ChatGPT connections are active?”</code><span>Review authorized clients.</span></div><div class="tool-item"><code>“Revoke this connection.”</code><span>Disable a token family.</span></div><div class="tool-item"><code>“Delete my Munch account.”</code><span>Begin permanent deletion.</span></div></div></section>
-<section class="tool-group"><div><h2>Developer and MCP details</h2><p>Munch is designed for official ChatGPT app distribution and compatible MCP clients.</p></div><div class="tool-list"><div class="tool-item"><code>/mcp</code><span>Streamable HTTP MCP endpoint.</span></div><div class="tool-item"><code>OAuth 2.0 + PKCE</code><span>Account authorization boundary.</span></div><div class="tool-item"><code>Stripe Checkout</code><span>Seven-day trial and recurring subscription.</span></div><div class="tool-item"><code>Railway PostgreSQL</code><span>Account-scoped nutrition storage.</span></div></div></section>
-</div>
-</main>
-<footer class="site-footer"><div class="container footer-grid"><div><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">M</span><span>Munch</span></a><p class="footer-note">ChatGPT provides the conversation. Munch provides persistent nutrition data and tools.</p></div><nav class="footer-links"><a href="/">Home</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav></div></footer>
-</body>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <title>What Munch can do</title>
+        <meta
+            name="description"
+            content="Examples of nutrition tasks users can ask Munch to perform through ChatGPT."
+        />
+        <meta name="theme-color" content="#0B8F4D" />
+        <link
+            rel="canonical"
+            href="https://munch-production-de3a.up.railway.app/tools"
+        />
+        <link rel="icon" href="/favicon.ico" />
+        <link rel="stylesheet" href="/styles.css" />
+    </head>
+    <body>
+        <header class="site-header">
+            <div class="container nav-inner">
+                <a class="brand" href="/"
+                    ><img
+                        class="brand-logo"
+                        src="/brand/munch-mark.svg"
+                        alt=""
+                    /><span>Munch</span></a
+                >
+                <nav class="nav-links">
+                    <a href="/privacy">Privacy</a><a href="/terms">Terms</a
+                    ><a href="/account/login">Sign in</a
+                    ><a
+                        class="button button-primary button-small"
+                        href="/account/login?return_to=/account/portal"
+                        >Start free trial</a
+                    >
+                </nav>
+            </div>
+        </header>
+        <main>
+            <section class="tools-hero">
+                <div class="container">
+                    <p class="section-kicker">Use Munch through conversation</p>
+                    <h1>Ask naturally. Munch handles the structure.</h1>
+                    <p class="section-copy">
+                        These are examples, not rigid commands. ChatGPT decides
+                        when to call Munch and can ask follow-up questions when
+                        important details are missing.
+                    </p>
+                </div>
+            </section>
+            <div class="container tool-groups">
+                <section class="tool-group">
+                    <div>
+                        <h2>Meals</h2>
+                        <p>
+                            Log, review, edit, confirm, and delete meal records.
+                        </p>
+                    </div>
+                    <div class="tool-list">
+                        <div class="tool-item">
+                            <code>“Log two eggs and toast for breakfast.”</code
+                            ><span>Create a structured meal.</span>
+                        </div>
+                        <div class="tool-item">
+                            <code>“Change lunch to two slices of cheddar.”</code
+                            ><span>Edit a prior record.</span>
+                        </div>
+                        <div class="tool-item">
+                            <code
+                                >“Show me what you assumed before saving
+                                that.”</code
+                            ><span>Review an uncertain draft.</span>
+                        </div>
+                        <div class="tool-item">
+                            <code>“Delete yesterday’s snack.”</code
+                            ><span>Remove a meal record.</span>
+                        </div>
+                    </div>
+                </section>
+                <section class="tool-group">
+                    <div>
+                        <h2>Food search and barcodes</h2>
+                        <p>
+                            Use structured food databases instead of relying
+                            only on a generic estimate.
+                        </p>
+                    </div>
+                    <div class="tool-list">
+                        <div class="tool-item">
+                            <code
+                                >“Find a USDA entry for a medium green
+                                apple.”</code
+                            ><span>Search FoodData Central.</span>
+                        </div>
+                        <div class="tool-item">
+                            <code>“Scan this barcode.”</code
+                            ><span>Look up a packaged product.</span>
+                        </div>
+                        <div class="tool-item">
+                            <code>“Use the 170-calorie label result.”</code
+                            ><span>Select a verified match.</span>
+                        </div>
+                        <div class="tool-item">
+                            <code>“Where did those calories come from?”</code
+                            ><span>Review provenance and assumptions.</span>
+                        </div>
+                    </div>
+                </section>
+                <section class="tool-group">
+                    <div>
+                        <h2>Saved foods and usual meals</h2>
+                        <p>
+                            Make repeated logging faster while keeping your
+                            confirmed version.
+                        </p>
+                    </div>
+                    <div class="tool-list">
+                        <div class="tool-item">
+                            <code
+                                >“Save this as my usual peanut butter
+                                sandwich.”</code
+                            ><span>Create a reusable food.</span>
+                        </div>
+                        <div class="tool-item">
+                            <code>“Log my usual breakfast.”</code
+                            ><span>Reuse a saved meal.</span>
+                        </div>
+                        <div class="tool-item">
+                            <code>“What foods do I use most often?”</code
+                            ><span>Review saved-food usage.</span>
+                        </div>
+                        <div class="tool-item">
+                            <code>“Forget that saved smoothie.”</code
+                            ><span>Remove a saved item.</span>
+                        </div>
+                    </div>
+                </section>
+                <section class="tool-group">
+                    <div>
+                        <h2>Daily progress and goals</h2>
+                        <p>
+                            Use persistent history to answer questions across
+                            conversations.
+                        </p>
+                    </div>
+                    <div class="tool-list">
+                        <div class="tool-item">
+                            <code>“How much protein do I have left today?”</code
+                            ><span>Compare intake with goals.</span>
+                        </div>
+                        <div class="tool-item">
+                            <code>“Set my daily calorie goal to 2,300.”</code
+                            ><span>Update a nutrition target.</span>
+                        </div>
+                        <div class="tool-item">
+                            <code>“Summarize my macros this week.”</code
+                            ><span>Review a date range.</span>
+                        </div>
+                        <div class="tool-item">
+                            <code>“Which days were highest in fiber?”</code
+                            ><span>Analyze longer-term history.</span>
+                        </div>
+                    </div>
+                </section>
+                <section class="tool-group">
+                    <div>
+                        <h2>Water and weight</h2>
+                        <p>
+                            Keep hydration and body-weight history in the same
+                            account.
+                        </p>
+                    </div>
+                    <div class="tool-list">
+                        <div class="tool-item">
+                            <code>“Log 24 ounces of water.”</code
+                            ><span>Add hydration.</span>
+                        </div>
+                        <div class="tool-item">
+                            <code>“How much water have I logged today?”</code
+                            ><span>Review daily hydration.</span>
+                        </div>
+                        <div class="tool-item">
+                            <code>“Log my weight as 185.4 pounds.”</code
+                            ><span>Add a weight measurement.</span>
+                        </div>
+                        <div class="tool-item">
+                            <code
+                                >“Show my weight trend for the last
+                                month.”</code
+                            ><span>Review weight history.</span>
+                        </div>
+                    </div>
+                </section>
+                <section class="tool-group">
+                    <div>
+                        <h2>Data and account controls</h2>
+                        <p>Keep the account portable and revocable.</p>
+                    </div>
+                    <div class="tool-list">
+                        <div class="tool-item">
+                            <code>“Export my meal history.”</code
+                            ><span>Create a downloadable export.</span>
+                        </div>
+                        <div class="tool-item">
+                            <code>“What ChatGPT connections are active?”</code
+                            ><span>Review authorized clients.</span>
+                        </div>
+                        <div class="tool-item">
+                            <code>“Revoke this connection.”</code
+                            ><span>Disable a token family.</span>
+                        </div>
+                        <div class="tool-item">
+                            <code>“Delete my Munch account.”</code
+                            ><span>Begin permanent deletion.</span>
+                        </div>
+                    </div>
+                </section>
+                <section class="tool-group">
+                    <div>
+                        <h2>Developer and MCP details</h2>
+                        <p>
+                            Munch is designed for official ChatGPT app
+                            distribution and compatible MCP clients.
+                        </p>
+                    </div>
+                    <div class="tool-list">
+                        <div class="tool-item">
+                            <code>/mcp</code
+                            ><span>Streamable HTTP MCP endpoint.</span>
+                        </div>
+                        <div class="tool-item">
+                            <code>OAuth 2.0 + PKCE</code
+                            ><span>Account authorization boundary.</span>
+                        </div>
+                        <div class="tool-item">
+                            <code>Stripe Checkout</code
+                            ><span
+                                >Seven-day trial and recurring
+                                subscription.</span
+                            >
+                        </div>
+                        <div class="tool-item">
+                            <code>Railway PostgreSQL</code
+                            ><span>Account-scoped nutrition storage.</span>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+        <footer class="site-footer">
+            <div class="container footer-grid">
+                <div>
+                    <a class="brand" href="/"
+                        ><img
+                            class="brand-logo"
+                            src="/brand/munch-mark.svg"
+                            alt=""
+                        /><span>Munch</span></a
+                    >
+                    <p class="footer-note">
+                        ChatGPT provides the conversation. Munch provides
+                        persistent nutrition data and tools.
+                    </p>
+                </div>
+                <nav class="footer-links">
+                    <a href="/">Home</a><a href="/privacy">Privacy</a
+                    ><a href="/terms">Terms</a>
+                </nav>
+            </div>
+        </footer>
+    </body>
 </html>

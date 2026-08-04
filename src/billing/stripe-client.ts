@@ -78,7 +78,8 @@ async function stripeRequest<T>(
 
     const payload = (await response.json()) as T & StripeErrorEnvelope;
     if (!response.ok) {
-        const code = payload.error?.code ?? payload.error?.type ?? "stripe_error";
+        const code =
+            payload.error?.code ?? payload.error?.type ?? "stripe_error";
         throw new Error(`Stripe request failed: ${code}`);
     }
     return payload;
@@ -88,7 +89,9 @@ export async function createStripeCheckoutSession(
     input: CreateCheckoutInput,
 ): Promise<StripeCheckoutSession> {
     if (!input.customerId && !input.customerEmail) {
-        throw new Error("Checkout requires an existing customer or customer email");
+        throw new Error(
+            "Checkout requires an existing customer or customer email",
+        );
     }
 
     const body = new URLSearchParams({

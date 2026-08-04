@@ -1,8 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-labelledby="title description">
-  <title id="title">Munch</title>
-  <desc id="description">A rounded green letter M with a bite taken from the upper-right corner and three lime crumbs.</desc>
-  <path fill="#0B8F4D" fill-rule="evenodd" d="M28 52c0-14.36 11.64-26 26-26h8c8.58 0 16.6 4.23 21.44 11.32L96 55.71l12.56-18.39A25.99 25.99 0 0 1 130 26h8c14.36 0 26 11.64 26 26v88c0 14.36-11.64 26-26 26s-26-11.64-26-26V99.74l-5.82 8.52a12.3 12.3 0 0 1-20.36 0L80 99.74V140c0 14.36-11.64 26-26 26s-26-11.64-26-26V52Zm112-23a18 18 0 1 0 0 36 18 18 0 0 0 0-36Z"/>
-  <circle cx="169" cy="31" r="7" fill="#A8D90F"/>
-  <circle cx="177" cy="51" r="5.5" fill="#A8D90F"/>
-  <circle cx="168" cy="68" r="4.5" fill="#A8D90F"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-labelledby="title"><title id="title">Munch</title><path fill="#0B8F4D" d="M28 160V39c0-11 9-20 20-20 7 0 13 3 17 9l31 45 31-45c4-6 10-9 17-9 11 0 20 9 20 20v121c0 9-7 16-16 16s-16-7-16-16V83l-23 33c-3 5-8 7-13 7s-10-2-13-7L60 83v77c0 9-7 16-16 16s-16-7-16-16Z"/><circle cx="154" cy="40" r="20" fill="#FCFDF9"/><circle cx="171" cy="27" r="7" fill="#A8D90F"/><circle cx="178" cy="49" r="6" fill="#A8D90F"/><circle cx="170" cy="68" r="5" fill="#A8D90F"/></svg>

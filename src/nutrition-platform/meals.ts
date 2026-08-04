@@ -9,11 +9,7 @@ import {
     nullableNumber,
     stringOrNull,
 } from "./shared.js";
-import type {
-    Meal,
-    MealInput,
-    MealInsertResult,
-} from "./types.js";
+import type { Meal, MealInput, MealInsertResult } from "./types.js";
 
 interface MealRow {
     id: string;

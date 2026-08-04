@@ -254,14 +254,17 @@ export async function searchRecentMealItems(
                 "alcohol_g",
                 "sodium_mg",
             ]) {
-                if (row[column] != null) nutrients[column] = Number(row[column]);
+                if (row[column] != null)
+                    nutrients[column] = Number(row[column]);
             }
             return {
                 mealId: String(row.meal_id),
                 itemId: String(row.item_id),
                 name: String(row.name),
                 portionLabel:
-                    row.portion_label == null ? null : String(row.portion_label),
+                    row.portion_label == null
+                        ? null
+                        : String(row.portion_label),
                 nutrients,
                 sourceType: String(row.source_type),
                 provider: row.provider == null ? null : String(row.provider),
