@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-    requestHasSameOriginEvidence,
-    requestOriginMatches,
-} from "./csrf.js";
+import { requestHasSameOriginEvidence, requestOriginMatches } from "./csrf.js";
 
 describe("same-origin request protection", () => {
     test("accepts the configured application origin", () => {
