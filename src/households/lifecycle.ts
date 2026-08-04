@@ -1,4 +1,7 @@
-import { withAuthDatabase, withUserDatabase } from "../platform/database.js";
+import {
+    withAuthDatabase,
+    withUserDatabase,
+} from "../platform/database.js";
 import { getActiveHouseholdContext } from "./repository.js";
 
 export async function transferHouseholdOwnership(input: {
@@ -73,7 +76,9 @@ export async function leaveHousehold(userId: string): Promise<boolean> {
     const household = await getActiveHouseholdContext(userId);
     if (!household) return false;
     if (household.role === "owner") {
-        throw new Error("Household owner must transfer or dissolve the household");
+        throw new Error(
+            "Household owner must transfer or dissolve the household",
+        );
     }
 
     return withUserDatabase(userId, async (tx) => {
