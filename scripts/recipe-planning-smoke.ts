@@ -124,8 +124,13 @@ const created = await saveRecipeAndPlan({
 if (created.recipe.nutritionStatus !== "complete") {
     throw new Error("Complete recipe nutrition was not calculated");
 }
-if (created.grocery.items.length !== 1) {
-    throw new Error("Explicit missing grocery was not added");
+if (
+    created.grocery.items.length !== 1 ||
+    created.grocery.items[0]?.name !== "Yellow onion"
+) {
+    throw new Error(
+        "Compound workflow persisted groceries beyond the explicitly missing onion",
+    );
 }
 
 const replay = await saveRecipeAndPlan({
