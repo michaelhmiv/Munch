@@ -171,6 +171,7 @@ export async function registerOAuthClient(input: {
     const clientId = `munch_${issueOpaqueToken(24).token}`;
     const secret =
         authMethod === "client_secret_post" ? issueOpaqueToken(32) : null;
+    const redirectUrisJson = JSON.stringify(redirectUris);
 
     await withAuthDatabase(async (tx) => {
         await tx`
@@ -178,13 +179,18 @@ export async function registerOAuthClient(input: {
                 client_id,
                 client_secret_hash,
                 client_name,
-                array_to_json(redirect_uris) as redirect_uris,
+                redirect_uris,
                 token_endpoint_auth_method
             ) values (
                 ${clientId},
                 ${secret?.hash ?? null},
                 ${clientName},
-                ${tx.array(redirectUris)},
+                (
+                    select array_agg(item.value order by item.ordinality)
+                    from jsonb_array_elements_text(
+                        (${redirectUrisJson}::text)::jsonb
+                    ) with ordinality as item(value, ordinality)
+                ),
                 ${authMethod}
             )
         `;
