@@ -25,6 +25,7 @@ function stage(message: string): void {
 }
 
 const heartbeat = setInterval(() => stage("still running"), 30_000);
+let succeeded = false;
 
 try {
     const suffix = crypto.randomUUID().replaceAll("-", "");
@@ -199,7 +200,11 @@ try {
     }
 
     stage("passed");
+    succeeded = true;
+} catch (error) {
+    console.error(error);
 } finally {
     clearInterval(heartbeat);
-    await closePlatformDatabase();
+    await Promise.race([closePlatformDatabase(), Bun.sleep(1000)]);
+    process.exit(succeeded ? 0 : 1);
 }
