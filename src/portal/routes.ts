@@ -76,7 +76,7 @@ document.getElementById('delete-account').addEventListener('click',async()=>{try
 export function createPortalRouter(): Hono {
     const portal = new Hono();
 
-    portal.use("/account/portal*", async (c, next) => {
+    portal.use("*", async (c, next) => {
         await next();
         c.header("Cache-Control", "private, no-store");
         c.header("Pragma", "no-cache");

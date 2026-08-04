@@ -38,7 +38,13 @@ export async function getCachedFood(
             where source = ${source}
               and source_id = ${sourceId}
         `;
-        return rows[0]?.payload ?? null;
+        const payload = rows[0]?.payload;
+        if (typeof payload !== "string") return payload ?? null;
+        try {
+            return JSON.parse(payload) as unknown;
+        } catch {
+            return null;
+        }
     });
 }
 
@@ -57,7 +63,7 @@ export async function cacheFood(
             ) values (
                 ${source},
                 ${sourceId},
-                ${JSON.stringify(payload)}::jsonb,
+                ${payload}::jsonb,
                 now()
             )
             on conflict (source, source_id) do update

@@ -345,8 +345,8 @@ export async function insertStructuredMeal(
                     ${item.sourceUrl ?? null},
                     ${item.sourceUpdatedAt ? new Date(item.sourceUpdatedAt) : null},
                     ${item.confidence ?? null},
-                    ${JSON.stringify(item.assumptions ?? [])}::jsonb,
-                    ${JSON.stringify(item.sourceSnapshot ?? {})}::jsonb
+                    ${item.assumptions ?? []}::jsonb,
+                    ${item.sourceSnapshot ?? {}}::jsonb
                 )
             `;
         }

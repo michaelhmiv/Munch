@@ -54,6 +54,11 @@ function finite(value: unknown): number | undefined {
     return Math.round(parsed * 100) / 100;
 }
 
+function finiteRaw(value: unknown): number | undefined {
+    const parsed = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
 function normalizedBarcode(value: unknown): string | undefined {
     const digits = String(value ?? "").replace(/\D/g, "");
     return digits.length >= 8 && digits.length <= 14 ? digits : undefined;
@@ -64,9 +69,9 @@ function firstBrand(value: string | undefined): string | undefined {
 }
 
 function per100gNutrients(nutriments: Record<string, unknown>): NutrientValues {
-    const sodiumG = finite(nutriments.sodium_100g);
-    const cholesterolG = finite(nutriments.cholesterol_100g);
-    const potassiumG = finite(nutriments.potassium_100g);
+    const sodiumG = finiteRaw(nutriments.sodium_100g);
+    const cholesterolG = finiteRaw(nutriments.cholesterol_100g);
+    const potassiumG = finiteRaw(nutriments.potassium_100g);
     return normalizeNutrients({
         calories: nutriments["energy-kcal_100g"],
         protein_g: nutriments.proteins_100g,
@@ -121,9 +126,9 @@ function servingNutrients(
     ) {
         return undefined;
     }
-    const sodiumG = finite(nutriments.sodium_serving);
-    const cholesterolG = finite(nutriments.cholesterol_serving);
-    const potassiumG = finite(nutriments.potassium_serving);
+    const sodiumG = finiteRaw(nutriments.sodium_serving);
+    const cholesterolG = finiteRaw(nutriments.cholesterol_serving);
+    const potassiumG = finiteRaw(nutriments.potassium_serving);
     return normalizeNutrients({
         calories: nutriments["energy-kcal_serving"],
         protein_g: nutriments.proteins_serving,

@@ -171,9 +171,19 @@ function serializeFailures(failures: FoodProviderFailure[]) {
 }
 
 export function registerFoodTools(server: McpServer, userId: string): void {
+    // Keep the expensive MCP SDK schema generic out of the native compiler's
+    // hot path; runtime registration and MCP integration tests still validate
+    // the complete schemas.
+    const toolServer = server as unknown as {
+        registerTool: (
+            name: string,
+            config: unknown,
+            handler: (...args: any[]) => unknown,
+        ) => unknown;
+    };
     const service = getFoodSearchService();
 
-    server.registerTool(
+    toolServer.registerTool(
         "search_foods",
         {
             title: "Search Verified Foods",
@@ -235,7 +245,7 @@ export function registerFoodTools(server: McpServer, userId: string): void {
             ),
     );
 
-    server.registerTool(
+    toolServer.registerTool(
         "get_food_details",
         {
             title: "Get Food Details",
@@ -282,7 +292,7 @@ export function registerFoodTools(server: McpServer, userId: string): void {
             ),
     );
 
-    server.registerTool(
+    toolServer.registerTool(
         "lookup_food_barcode",
         {
             title: "Look Up Food Barcode",

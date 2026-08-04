@@ -114,7 +114,17 @@ export function registerMealDraftTools(
     server: McpServer,
     userId: string,
 ): void {
-    server.registerTool(
+    // Keep the expensive MCP SDK schema generic out of the native compiler's
+    // hot path; runtime registration and MCP integration tests still validate
+    // the complete schemas.
+    const toolServer = server as unknown as {
+        registerTool: (
+            name: string,
+            config: unknown,
+            handler: (...args: any[]) => unknown,
+        ) => unknown;
+    };
+    toolServer.registerTool(
         "start_meal_draft",
         {
             title: "Start Meal Draft",
@@ -165,7 +175,7 @@ export function registerMealDraftTools(
             ),
     );
 
-    server.registerTool(
+    toolServer.registerTool(
         "get_meal_draft",
         {
             title: "Get Meal Draft",
@@ -207,7 +217,7 @@ export function registerMealDraftTools(
             ),
     );
 
-    server.registerTool(
+    toolServer.registerTool(
         "update_meal_draft",
         {
             title: "Update Meal Draft",
@@ -254,7 +264,7 @@ export function registerMealDraftTools(
             ),
     );
 
-    server.registerTool(
+    toolServer.registerTool(
         "upsert_meal_draft_item",
         {
             title: "Add or Update Draft Item",
@@ -309,7 +319,7 @@ export function registerMealDraftTools(
             ),
     );
 
-    server.registerTool(
+    toolServer.registerTool(
         "add_meal_draft_question",
         {
             title: "Add Draft Question",
@@ -358,7 +368,7 @@ export function registerMealDraftTools(
             ),
     );
 
-    server.registerTool(
+    toolServer.registerTool(
         "answer_meal_draft_question",
         {
             title: "Answer Draft Question",
@@ -398,7 +408,7 @@ export function registerMealDraftTools(
             ),
     );
 
-    server.registerTool(
+    toolServer.registerTool(
         "prepare_meal_confirmation",
         {
             title: "Prepare Meal Confirmation",
@@ -442,7 +452,7 @@ export function registerMealDraftTools(
             ),
     );
 
-    server.registerTool(
+    toolServer.registerTool(
         "confirm_meal_draft",
         {
             title: "Confirm Meal Draft",
@@ -485,7 +495,7 @@ export function registerMealDraftTools(
             ),
     );
 
-    server.registerTool(
+    toolServer.registerTool(
         "cancel_meal_draft",
         {
             title: "Cancel Meal Draft",

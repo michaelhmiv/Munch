@@ -118,7 +118,7 @@ export async function saveFood(input: {
                 ${input.food.provider},
                 ${input.food.providerFoodId},
                 ${defaultPortionId},
-                ${JSON.stringify(input.food)}::jsonb,
+                ${input.food}::jsonb,
                 now()
             )
             on conflict (user_id, normalized_label) do update

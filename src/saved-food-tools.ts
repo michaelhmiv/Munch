@@ -74,7 +74,17 @@ export function registerSavedFoodTools(
     server: McpServer,
     userId: string,
 ): void {
-    server.registerTool(
+    // Keep the expensive MCP SDK schema generic out of the native compiler's
+    // hot path; runtime registration and MCP integration tests still validate
+    // the complete schemas.
+    const toolServer = server as unknown as {
+        registerTool: (
+            name: string,
+            config: unknown,
+            handler: (...args: any[]) => unknown,
+        ) => unknown;
+    };
+    toolServer.registerTool(
         "save_food",
         {
             title: "Save Food",
@@ -128,7 +138,7 @@ export function registerSavedFoodTools(
             ),
     );
 
-    server.registerTool(
+    toolServer.registerTool(
         "search_saved_foods",
         {
             title: "Search Personal Foods",
@@ -195,7 +205,7 @@ export function registerSavedFoodTools(
             ),
     );
 
-    server.registerTool(
+    toolServer.registerTool(
         "list_saved_foods",
         {
             title: "List Saved Foods",
@@ -240,7 +250,7 @@ export function registerSavedFoodTools(
             ),
     );
 
-    server.registerTool(
+    toolServer.registerTool(
         "mark_saved_food_used",
         {
             title: "Mark Saved Food Used",
@@ -283,7 +293,7 @@ export function registerSavedFoodTools(
             ),
     );
 
-    server.registerTool(
+    toolServer.registerTool(
         "delete_saved_food",
         {
             title: "Delete Saved Food",

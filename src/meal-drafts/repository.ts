@@ -333,7 +333,7 @@ export async function upsertMealDraftItem(input: {
                 draft_id, user_id, position, item_payload
             ) values (
                 ${input.draftId}, ${input.userId}, ${input.position},
-                ${JSON.stringify(item)}::jsonb
+                ${item}::jsonb
             )
             on conflict (draft_id, position) do update
             set item_payload = excluded.item_payload,
@@ -577,8 +577,8 @@ async function insertConfirmedMeal(
                     ${item.providerRevision ?? null}, ${item.sourceUrl ?? null},
                     ${item.sourceUpdatedAt ? new Date(item.sourceUpdatedAt) : null},
                     ${item.confidence ?? null},
-                    ${JSON.stringify(item.assumptions ?? [])}::jsonb,
-                    ${JSON.stringify(item.sourceSnapshot ?? {})}::jsonb
+                    ${item.assumptions ?? []}::jsonb,
+                    ${item.sourceSnapshot ?? {}}::jsonb
                 )
             `;
         }
