@@ -97,7 +97,9 @@ if (serialized.includes(owner.userId)) {
     throw new Error("Account export leaked another household member's user ID");
 }
 if (!serialized.includes('"display_name":"Mom"')) {
-    throw new Error("Account export did not preserve household display attribution");
+    throw new Error(
+        "Account export did not preserve household display attribution",
+    );
 }
 if (!serialized.includes('"name":"Spaghetti"')) {
     throw new Error("Account export omitted accessible household recipes");
