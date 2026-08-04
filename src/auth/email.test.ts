@@ -65,7 +65,9 @@ describe("Better Auth magic-link delivery", () => {
     test("fails closed when the Resend API key is missing", async () => {
         configureDelivery();
         delete process.env.RESEND_API_KEY;
-        const fetchImpl = mock(async () => new Response(null, { status: 200 })) as unknown as typeof fetch;
+        const fetchImpl = mock(
+            async () => new Response(null, { status: 200 }),
+        ) as unknown as typeof fetch;
 
         await expect(
             sendBetterAuthMagicLink(input, fetchImpl),
@@ -76,7 +78,9 @@ describe("Better Auth magic-link delivery", () => {
     test("fails closed when the sender identity is missing", async () => {
         configureDelivery();
         delete process.env.MUNCH_EMAIL_FROM;
-        const fetchImpl = mock(async () => new Response(null, { status: 200 })) as unknown as typeof fetch;
+        const fetchImpl = mock(
+            async () => new Response(null, { status: 200 }),
+        ) as unknown as typeof fetch;
 
         await expect(
             sendBetterAuthMagicLink(input, fetchImpl),
