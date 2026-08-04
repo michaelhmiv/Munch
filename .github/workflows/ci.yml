@@ -20,22 +20,8 @@ jobs:
         with:
           bun-version: 1
       - run: bun install --frozen-lockfile
-      - name: Correct personal recipe source
-        run: |
-          python3 <<'PY'
-          from pathlib import Path
-          path = Path('scripts/provision-reviewer.ts')
-          text = path.read_text()
-          old = '''        description: "Reviewer sample personal recipe",
-        servings: 1,
-        sourceType: "user_supplied",'''
-          new = '''        description: "Reviewer sample personal recipe",
-        servings: 1,
-        sourceType: "user_entered",'''
-          if old not in text:
-              raise SystemExit('reviewer personal recipe source block not found')
-          path.write_text(text.replace(old, new, 1))
-          PY
+      - name: Validate corrected personal recipe source
+        run: grep -q 'sourceType: "user_entered"' scripts/provision-reviewer.ts
       - name: Apply pinned formatting
         run: bunx prettier --write db/migrations/0022_provisioned_credentials.sql docs/review/marketplace-review.md scripts/provision-reviewer.ts scripts/reviewer-readiness-smoke.ts src/auth/auth.ts src/auth/reviewer-routes.ts src/auth/routes.ts src/billing/capabilities.ts src/billing/override.ts
       - name: Commit final reviewer implementation
