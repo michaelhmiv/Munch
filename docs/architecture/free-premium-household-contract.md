@@ -12,7 +12,7 @@ Premium is purchased independently on the Munch website. It adds unlimited perso
 
 ## Household
 
-A directly entitled account may own one household with up to six connected accounts. Members share household recipes, planned meals, and grocery lists. Personal meal, hydration, and weight histories remain private. Shared objects retain factual display-name attribution when a non-owner account is deleted.
+A directly entitled account may own one household with up to six connected accounts. Members share household recipes, planned meals, and grocery lists. Personal meal, hydration, and weight histories remain private. Shared objects retain the factual household display name recorded for an action when a non-owner account is later deleted.
 
 ## Model boundary
 
