@@ -3,10 +3,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 # One-use compatibility migration executed by GitHub Actions.
-
 def update(path: str, old: str, new: str) -> None:
     target = ROOT / path
     text = target.read_text()
+    if new in text:
+        return
     if old not in text:
         raise RuntimeError(f"Expected text not found in {path}: {old!r}")
     target.write_text(text.replace(old, new, 1))
