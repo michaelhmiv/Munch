@@ -68,7 +68,9 @@ describe("production widget boundary", () => {
 
     test("production exports only user-facing templates", async () => {
         const widgetsSource = await Bun.file("src/widgets.ts").text();
-        expect(widgetsSource).toContain('process.env.NODE_ENV === "production"');
+        expect(widgetsSource).toContain(
+            'process.env.NODE_ENV === "production"',
+        );
         expect(widgetsSource).toContain("USER_WIDGET_TEMPLATES");
     });
 });
