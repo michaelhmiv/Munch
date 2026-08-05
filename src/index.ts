@@ -30,9 +30,7 @@ const railwayAuthEnabled = process.env.MUNCH_RAILWAY_AUTH_ENABLED === "true";
 const betterAuthEnabled = betterAuthIsEnabled();
 const mcpAuthMode = resolveMcpAuthMode(betterAuthEnabled, railwayAuthEnabled);
 const mcpAuthenticator =
-    mcpAuthMode === "railway"
-        ? authenticatePlatformBearer
-        : authenticateBearer;
+    mcpAuthMode === "railway" ? authenticatePlatformBearer : authenticateBearer;
 
 app.use("*", async (c, next) => {
     const path = new URL(c.req.url).pathname;
@@ -120,13 +118,7 @@ if (!betterAuthEnabled && railwayAuthEnabled) {
     app.route("/", createOAuthRouter());
 }
 
-app.all(
-    "/mcp",
-    banRepeatAuthFailures,
-    mcpAuthenticator,
-    rateLimit,
-    handleMcp,
-);
+app.all("/mcp", banRepeatAuthFailures, mcpAuthenticator, rateLimit, handleMcp);
 
 const STATS_TTL_MS = 5 * 60 * 1000;
 let statsCache: { data: LandingStats; expiresAt: number } | null = null;
@@ -268,9 +260,7 @@ app.onError((_error, c) => {
 });
 
 const port = parseInt(process.env.PORT || "8080");
-console.log(
-    `Munch server listening on 0.0.0.0:${port} auth=${mcpAuthMode}`,
-);
+console.log(`Munch server listening on 0.0.0.0:${port} auth=${mcpAuthMode}`);
 
 await warmWidgets();
 startExportCleanup();
