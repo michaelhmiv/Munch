@@ -172,6 +172,14 @@ jobs:
       - name: Exercise meal draft state, confirmation, idempotency, and RLS
         run: bun scripts/meal-drafts-smoke.ts
 
+      - name: Exercise atomic meal review, edits, confirmation, and RLS
+        run: bun scripts/atomic-meal-review-smoke.ts
+
+      - name: Benchmark legacy and atomic meal review database paths
+        env:
+          MUNCH_BENCHMARK_ITERATIONS: 3
+        run: bun scripts/meal-review-benchmark.ts
+
       - name: Exercise account portal, preferences, exports, and connections
         run: bun scripts/account-portal-smoke.ts
 
