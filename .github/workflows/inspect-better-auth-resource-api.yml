@@ -20,7 +20,9 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Inspect installed resource-server APIs
         run: |
-          grep -R -n -E "oauthProviderResourceClient|oAuth2IntrospectVerify|verifyAccessToken" \
-            node_modules/@better-auth/oauth-provider \
-            node_modules/better-auth \
-            | head -n 400
+          echo '=== client-resource.d.mts ==='
+          sed -n '1,150p' node_modules/@better-auth/oauth-provider/dist/client-resource.d.mts
+          echo '=== client-resource.mjs ==='
+          sed -n '1,150p' node_modules/@better-auth/oauth-provider/dist/client-resource.mjs
+          echo '=== oauth2 declarations ==='
+          grep -R -n -A35 -B10 "declare.*verifyAccessToken\|function verifyAccessToken" node_modules/better-auth/dist node_modules/@better-auth/oauth-provider/dist | head -n 500
