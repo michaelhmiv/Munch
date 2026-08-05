@@ -1,5 +1,8 @@
 import { foodCatalogConfig } from "./catalog-config.js";
-import { FoodCatalogRepository, normalizeFoodText } from "./catalog-repository.js";
+import {
+    FoodCatalogRepository,
+    normalizeFoodText,
+} from "./catalog-repository.js";
 import { OpenFoodFactsProvider } from "./open-food-facts.js";
 import {
     FoodProviderRegistry,
@@ -101,21 +104,33 @@ export class FoodSearchService {
         this.catalog = catalog ?? new FoodCatalogRepository(this.config);
     }
 
-    async search(query: string, limit = 10): Promise<AggregatedFoodSearchResult> {
+    async search(
+        query: string,
+        limit = 10,
+    ): Promise<AggregatedFoodSearchResult> {
         const normalized = normalizeFoodText(query);
         if (!normalized) return { candidates: [], failures: [] };
         const boundedLimit = Math.max(1, Math.min(25, limit));
         const local = await this.catalog.searchLocal(normalized, boundedLimit);
         if (local.length >= boundedLimit) {
-            console.info(`[food_catalog] local_hit operation=search count=${local.length}`);
+            console.info(
+                `[food_catalog] local_hit operation=search count=${local.length}`,
+            );
             return { candidates: local.slice(0, boundedLimit), failures: [] };
         }
 
-        console.info(`[food_catalog] local_miss operation=search count=${local.length}`);
-        const result = await this.registry.search({ query: normalized, limit: boundedLimit });
+        console.info(
+            `[food_catalog] local_miss operation=search count=${local.length}`,
+        );
+        const result = await this.registry.search({
+            query: normalized,
+            limit: boundedLimit,
+        });
         if (result.candidates.length > 0) {
             await this.catalog.upsertMany(result.candidates);
-            console.info(`[food_catalog] provider_write operation=search count=${result.candidates.length}`);
+            console.info(
+                `[food_catalog] provider_write operation=search count=${result.candidates.length}`,
+            );
         }
         const combined = rankCandidates(
             { query: normalized },
@@ -127,9 +142,14 @@ export class FoodSearchService {
     async details(candidateId: string): Promise<FoodCandidate | null> {
         const decoded = decodeFoodCandidateId(candidateId);
         if (!decoded) return null;
-        const local = await this.catalog.findByProviderId(decoded.provider, decoded.providerFoodId);
+        const local = await this.catalog.findByProviderId(
+            decoded.provider,
+            decoded.providerFoodId,
+        );
         if (local && !local.stale) {
-            console.info(`[food_catalog] local_hit operation=details provider=${decoded.provider}`);
+            console.info(
+                `[food_catalog] local_hit operation=details provider=${decoded.provider}`,
+            );
             return local.candidate;
         }
 
@@ -139,14 +159,22 @@ export class FoodSearchService {
             });
             if (candidate) {
                 await this.catalog.upsert(candidate);
-                console.info(`[food_catalog] provider_write operation=details provider=${decoded.provider}`);
+                console.info(
+                    `[food_catalog] provider_write operation=details provider=${decoded.provider}`,
+                );
                 return candidate;
             }
-            await this.catalog.recordNegative("details", decoded.providerFoodId, decoded.provider);
+            await this.catalog.recordNegative(
+                "details",
+                decoded.providerFoodId,
+                decoded.provider,
+            );
             return local?.candidate ?? null;
         } catch (error) {
             if (local && this.config.staleOnError) {
-                console.warn(`[food_catalog] stale_hit operation=details provider=${decoded.provider}`);
+                console.warn(
+                    `[food_catalog] stale_hit operation=details provider=${decoded.provider}`,
+                );
                 return local.candidate;
             }
             throw error;
@@ -159,9 +187,13 @@ export class FoodSearchService {
             return { candidates: [], failures: [] };
         }
         const local = await this.catalog.findByBarcode(digits);
-        const fresh = local.filter((hit) => !hit.stale).map((hit) => hit.candidate);
+        const fresh = local
+            .filter((hit) => !hit.stale)
+            .map((hit) => hit.candidate);
         if (fresh.length > 0) {
-            console.info(`[food_catalog] local_hit operation=barcode count=${fresh.length}`);
+            console.info(
+                `[food_catalog] local_hit operation=barcode count=${fresh.length}`,
+            );
             return { candidates: fresh, failures: [] };
         }
 
@@ -170,19 +202,28 @@ export class FoodSearchService {
             return { candidates: [], failures: [] };
         }
 
-        console.info(`[food_catalog] local_miss operation=barcode stale=${local.length}`);
+        console.info(
+            `[food_catalog] local_miss operation=barcode stale=${local.length}`,
+        );
         const result = await this.registry.lookupBarcode({ barcode: digits });
         if (result.candidates.length > 0) {
             await this.catalog.upsertMany(result.candidates);
-            console.info(`[food_catalog] provider_write operation=barcode count=${result.candidates.length}`);
+            console.info(
+                `[food_catalog] provider_write operation=barcode count=${result.candidates.length}`,
+            );
             return result;
         }
         if (result.failures.length === 0) {
             await this.catalog.recordNegative("barcode", digits, "aggregate");
         }
         if (local.length > 0 && this.config.staleOnError) {
-            console.warn(`[food_catalog] stale_hit operation=barcode count=${local.length}`);
-            return { candidates: local.map((hit) => hit.candidate), failures: result.failures };
+            console.warn(
+                `[food_catalog] stale_hit operation=barcode count=${local.length}`,
+            );
+            return {
+                candidates: local.map((hit) => hit.candidate),
+                failures: result.failures,
+            };
         }
         return result;
     }

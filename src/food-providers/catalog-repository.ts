@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import { withServiceDatabase } from "../platform/database.js";
-import type { FoodCandidate, FoodProviderName, NutrientValues } from "./types.js";
+import type {
+    FoodCandidate,
+    FoodProviderName,
+    NutrientValues,
+} from "./types.js";
 
 export interface CatalogConfig {
     readsEnabled: boolean;
@@ -52,12 +56,17 @@ function validateNutrients(nutrients: NutrientValues | undefined): void {
 }
 
 export function validateCatalogCandidate(candidate: FoodCandidate): void {
-    if (!candidate.providerFoodId.trim()) throw new Error("Missing provider food ID");
+    if (!candidate.providerFoodId.trim())
+        throw new Error("Missing provider food ID");
     if (!candidate.name.trim()) throw new Error("Missing food name");
     if (candidate.barcode && !/^[0-9]{8,14}$/.test(candidate.barcode)) {
         throw new Error("Invalid barcode");
     }
-    if (!Number.isFinite(candidate.confidence) || candidate.confidence < 0 || candidate.confidence > 1) {
+    if (
+        !Number.isFinite(candidate.confidence) ||
+        candidate.confidence < 0 ||
+        candidate.confidence > 1
+    ) {
         throw new Error("Invalid confidence");
     }
     validateNutrients(candidate.nutrientsPer100g);
@@ -65,7 +74,10 @@ export function validateCatalogCandidate(candidate: FoodCandidate): void {
         if (!Number.isFinite(portion.amount) || portion.amount <= 0) {
             throw new Error("Invalid portion amount");
         }
-        if (portion.gramWeight !== undefined && (!Number.isFinite(portion.gramWeight) || portion.gramWeight <= 0)) {
+        if (
+            portion.gramWeight !== undefined &&
+            (!Number.isFinite(portion.gramWeight) || portion.gramWeight <= 0)
+        ) {
             throw new Error("Invalid portion gram weight");
         }
         validateNutrients(portion.nutrients);
@@ -79,22 +91,33 @@ function contentHash(candidate: FoodCandidate): string {
 }
 
 function candidateFromRow(row: CatalogRow): FoodCandidate | null {
-    const snapshot = typeof row.source_snapshot === "string"
-        ? JSON.parse(row.source_snapshot)
-        : row.source_snapshot;
+    const snapshot =
+        typeof row.source_snapshot === "string"
+            ? JSON.parse(row.source_snapshot)
+            : row.source_snapshot;
     if (!snapshot || typeof snapshot !== "object") return null;
     return snapshot as FoodCandidate;
 }
 
-function refreshAfter(candidate: FoodCandidate, config: CatalogConfig, now: Date): Date {
-    const ttl = candidate.dataKind === "generic" ? config.genericTtlMs : config.packagedTtlMs;
+function refreshAfter(
+    candidate: FoodCandidate,
+    config: CatalogConfig,
+    now: Date,
+): Date {
+    const ttl =
+        candidate.dataKind === "generic"
+            ? config.genericTtlMs
+            : config.packagedTtlMs;
     return new Date(now.getTime() + ttl);
 }
 
 export class FoodCatalogRepository {
     constructor(private readonly config: CatalogConfig) {}
 
-    async findByProviderId(provider: FoodProviderName, providerFoodId: string): Promise<CatalogHit | null> {
+    async findByProviderId(
+        provider: FoodProviderName,
+        providerFoodId: string,
+    ): Promise<CatalogHit | null> {
         if (!this.config.readsEnabled) return null;
         return withServiceDatabase(async (tx) => {
             const rows = await tx<CatalogRow[]>`
@@ -109,7 +132,10 @@ export class FoodCatalogRepository {
             if (!row) return null;
             const candidate = candidateFromRow(row);
             if (!candidate) return null;
-            return { candidate, stale: new Date(row.refresh_after) <= new Date() };
+            return {
+                candidate,
+                stale: new Date(row.refresh_after) <= new Date(),
+            };
         });
     }
 
@@ -125,7 +151,14 @@ export class FoodCatalogRepository {
             `;
             return rows.flatMap((row) => {
                 const candidate = candidateFromRow(row);
-                return candidate ? [{ candidate, stale: new Date(row.refresh_after) <= new Date() }] : [];
+                return candidate
+                    ? [
+                          {
+                              candidate,
+                              stale: new Date(row.refresh_after) <= new Date(),
+                          },
+                      ]
+                    : [];
             });
         });
     }
@@ -163,11 +196,16 @@ export class FoodCatalogRepository {
         validateCatalogCandidate(candidate);
         const now = new Date();
         const normalizedName = normalizeFoodText(candidate.name);
-        const normalizedBrand = candidate.brand ? normalizeFoodText(candidate.brand) : null;
+        const normalizedBrand = candidate.brand
+            ? normalizeFoodText(candidate.brand)
+            : null;
         const serving = candidate.portions[0]?.nutrients ?? null;
         const sourceUrl = candidate.attribution.url ?? null;
         const sourceLicense = candidate.attribution.license ?? null;
-        const revision = typeof candidate.raw?.revision === "string" ? candidate.raw.revision : null;
+        const revision =
+            typeof candidate.raw?.revision === "string"
+                ? candidate.raw.revision
+                : null;
         await withServiceDatabase(async (tx) => {
             await tx`
                 insert into munch.food_catalog_entries (
@@ -217,7 +255,11 @@ export class FoodCatalogRepository {
         for (const candidate of candidates) await this.upsert(candidate);
     }
 
-    async isNegative(operation: string, identity: string, provider: string): Promise<boolean> {
+    async isNegative(
+        operation: string,
+        identity: string,
+        provider: string,
+    ): Promise<boolean> {
         if (!this.config.readsEnabled) return false;
         const identityHash = hashCatalogIdentity(identity);
         return withServiceDatabase(async (tx) => {
@@ -234,7 +276,11 @@ export class FoodCatalogRepository {
         });
     }
 
-    async recordNegative(operation: string, identity: string, provider: string): Promise<void> {
+    async recordNegative(
+        operation: string,
+        identity: string,
+        provider: string,
+    ): Promise<void> {
         if (!this.config.writesEnabled) return;
         const identityHash = hashCatalogIdentity(identity);
         const expiresAt = new Date(Date.now() + this.config.negativeTtlMs);
