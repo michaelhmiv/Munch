@@ -4,6 +4,8 @@ process.env.MUNCH_RAILWAY_DATA_ENABLED = "true";
 process.env.MUNCH_RAILWAY_AUTH_ENABLED = "true";
 process.env.MUNCH_APP_BASE_URL = "https://munch.example";
 
+// This script intentionally exercises the destructive MCP handler only against
+// the ephemeral PostgreSQL service created for CI acceptance testing.
 const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
 const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
 const { InMemoryTransport } =
