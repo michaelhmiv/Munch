@@ -19,22 +19,23 @@ for (const path of requiredFiles) {
 }
 
 const homepage = await Bun.file("public/index.html").text();
+const normalizedHomepage = homepage.replace(/\s+/g, " ");
 for (const stale of [
     "Start free trial",
     "30-day trial",
     "seven-day trial",
     "after trial",
 ]) {
-    if (homepage.toLowerCase().includes(stale.toLowerCase())) {
+    if (normalizedHomepage.toLowerCase().includes(stale.toLowerCase())) {
         throw new Error(`Homepage contains stale commercial copy: ${stale}`);
     }
 }
-if (!homepage.includes("$4.99")) {
+if (!normalizedHomepage.includes("$4.99")) {
     throw new Error("Homepage does not state the canonical monthly price");
 }
 if (
-    !homepage.includes("Nutrition MCP") ||
-    !homepage.includes("Alexander Kutishevsky")
+    !normalizedHomepage.includes("Nutrition MCP") ||
+    !normalizedHomepage.includes("Alexander Kutishevsky")
 ) {
     throw new Error("Homepage is missing upstream attribution");
 }
