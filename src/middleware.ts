@@ -35,9 +35,8 @@ type BetterAuthResourceActions = ReturnType<
 let betterAuthResourceActions: BetterAuthResourceActions | undefined;
 
 function getBetterAuthResourceActions(): BetterAuthResourceActions {
-    betterAuthResourceActions ??= oauthProviderResourceClient(
-        getMunchBetterAuth(),
-    ).getActions();
+    betterAuthResourceActions ??=
+        oauthProviderResourceClient(getMunchBetterAuth()).getActions();
     return betterAuthResourceActions;
 }
 

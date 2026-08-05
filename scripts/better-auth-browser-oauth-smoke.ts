@@ -10,11 +10,8 @@ const { Hono } = await import("hono");
 const { registerBetterAuthRoutes } = await import("../src/auth/routes.js");
 const { registerDiscoveryRoutes } = await import("../src/discovery.js");
 const { handleMcp } = await import("../src/mcp-runtime.js");
-const {
-    authenticateBearer,
-    banRepeatAuthFailures,
-    rateLimit,
-} = await import("../src/middleware.js");
+const { authenticateBearer, banRepeatAuthFailures, rateLimit } =
+    await import("../src/middleware.js");
 
 function cookieFrom(response: Response): string {
     const cookie = response.headers.get("set-cookie")?.split(";", 1)[0];
@@ -54,13 +51,14 @@ async function codeChallenge(verifier: string): Promise<string> {
 function decodeJwtPayload(token: string): Record<string, unknown> {
     const encoded = token.split(".")[1];
     if (!encoded) throw new Error("Resource-bound access token is not a JWT");
-    return JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as Record<
-        string,
-        unknown
-    >;
+    return JSON.parse(
+        Buffer.from(encoded, "base64url").toString("utf8"),
+    ) as Record<string, unknown>;
 }
 
-async function jsonRpcBody(response: Response): Promise<Record<string, unknown>> {
+async function jsonRpcBody(
+    response: Response,
+): Promise<Record<string, unknown>> {
     const text = await response.text();
     const contentType = response.headers.get("content-type") ?? "";
     if (contentType.includes("text/event-stream")) {
@@ -69,7 +67,8 @@ async function jsonRpcBody(response: Response): Promise<Record<string, unknown>>
             .filter((line) => line.startsWith("data:"))
             .map((line) => line.slice(5).trim())
             .find((line) => line.length > 0);
-        if (!data) throw new Error(`MCP SSE response contained no data: ${text}`);
+        if (!data)
+            throw new Error(`MCP SSE response contained no data: ${text}`);
         return JSON.parse(data) as Record<string, unknown>;
     }
     return JSON.parse(text) as Record<string, unknown>;
@@ -267,17 +266,23 @@ if (!tokens.access_token || !tokens.refresh_token) {
     throw new Error("Token exchange omitted access or refresh token");
 }
 if (tokens.access_token.split(".").length !== 3) {
-    throw new Error("MCP resource token was opaque instead of audience-bound JWT");
+    throw new Error(
+        "MCP resource token was opaque instead of audience-bound JWT",
+    );
 }
 const accessPayload = decodeJwtPayload(tokens.access_token);
 const audiences = Array.isArray(accessPayload.aud)
     ? accessPayload.aud
     : [accessPayload.aud];
 if (!audiences.includes(resource)) {
-    throw new Error(`MCP access token has unexpected audience: ${accessPayload.aud}`);
+    throw new Error(
+        `MCP access token has unexpected audience: ${accessPayload.aud}`,
+    );
 }
 if (accessPayload.iss !== "https://munch.example/api/auth") {
-    throw new Error(`MCP access token has unexpected issuer: ${accessPayload.iss}`);
+    throw new Error(
+        `MCP access token has unexpected issuer: ${accessPayload.iss}`,
+    );
 }
 
 const mcpHeaders = {
@@ -309,8 +314,13 @@ if (!initialize.ok) {
     );
 }
 const initializeBody = await jsonRpcBody(initialize);
-if ((initializeBody.result as { serverInfo?: { name?: string } } | undefined)?.serverInfo?.name !== "Munch") {
-    throw new Error(`MCP initialize returned unexpected server: ${JSON.stringify(initializeBody)}`);
+if (
+    (initializeBody.result as { serverInfo?: { name?: string } } | undefined)
+        ?.serverInfo?.name !== "Munch"
+) {
+    throw new Error(
+        `MCP initialize returned unexpected server: ${JSON.stringify(initializeBody)}`,
+    );
 }
 
 const initialized = await app.request("https://munch.example/mcp", {
@@ -355,7 +365,9 @@ for (const candidate of tools) {
         inputSchema?: unknown;
     };
     if (typeof tool.name !== "string" || tool.name.length === 0) {
-        throw new Error(`MCP exposed a tool without a name: ${JSON.stringify(tool)}`);
+        throw new Error(
+            `MCP exposed a tool without a name: ${JSON.stringify(tool)}`,
+        );
     }
     if (toolNames.has(tool.name)) {
         throw new Error(`MCP exposed duplicate tool name ${tool.name}`);
@@ -392,7 +404,11 @@ const rejected = await app.request("https://munch.example/mcp", {
 if (rejected.status !== 401) {
     throw new Error(`Tampered MCP token was not rejected: ${rejected.status}`);
 }
-if (!rejected.headers.get("www-authenticate")?.includes("oauth-protected-resource/mcp")) {
+if (
+    !rejected.headers
+        .get("www-authenticate")
+        ?.includes("oauth-protected-resource/mcp")
+) {
     throw new Error("MCP 401 omitted path-aware protected-resource metadata");
 }
 
