@@ -1,0 +1,55 @@
+name: Remove obsolete Supabase references
+
+on:
+  push:
+    branches:
+      - fix/production-auth-discovery-meal-visibility
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/production-auth-discovery-meal-visibility
+          fetch-depth: 0
+      - name: Remove obsolete names and comments
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              Path('src/import.ts'): [
+                  ('src/supabase.ts', 'src/storage.ts'),
+                  ('there is no transaction available through supabase-js here', 'the storage adapter does not expose a transaction boundary here'),
+              ],
+              Path('src/middleware.test.ts'): [
+                  ('supabaseAvailable', 'databaseAvailable'),
+                  ('Railway PostgreSQL', 'the database'),
+                  ('getRailway PostgreSQL/signInUser', 'getUserIdByToken/signInUser'),
+              ],
+          }
+          for path, edits in replacements.items():
+              text = path.read_text()
+              for old, new in edits:
+                  text = text.replace(old, new)
+              path.write_text(text)
+          Path('.github/workflows/supabase-reference-cleanup-temp.yml').unlink()
+          PY
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - run: bunx prettier --write src/import.ts src/middleware.test.ts
+      - name: Commit cleanup and remove this workflow
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src .github/workflows/supabase-reference-cleanup-temp.yml
+          git commit -m "Remove obsolete Supabase references"
+          git push origin HEAD:fix/production-auth-discovery-meal-visibility
