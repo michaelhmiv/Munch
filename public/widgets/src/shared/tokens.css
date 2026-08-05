@@ -1,99 +1,84 @@
 :root {
-    /* Light theme (default). Dark overridden below.
-                   Apple-like neutral grays/whites with the brand green
-                   accent, matching the landing page's clean section. */
-    --text: #1d1d1f;
-    --text-dim: #6e6e73;
-    --bg: #f5f5f7;
-    --panel: #ffffff;
-    --panel-border: #e6e6ea;
-    --track: #e6e6ea;
-    --accent: #4a7c59;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 8px 22px rgba(0, 0, 0, 0.05);
-
-    --calories: #ff9f0a;
-    --protein: #8b5cf6;
-    --carbs: #10b981;
-    --fiber: #0d9488;
-    --sugar: #65a30d;
-    --fat: #f43f7e;
-    --alcohol: #a21caf;
-    --water: #0ea5e9;
-    --over: #d0452b;
-    --warn: #b26a00;
-
-    /* Native controls (select, input, scrollbars) follow the theme only when
-       color-scheme is declared; without it a dark widget renders light OS
-       chrome that ignores every token. */
     color-scheme: light;
-
-    --radius: 18px;
+    --text: var(--color-text-primary, #1f2328);
+    --text-dim: var(--color-text-secondary, #667085);
+    --text-subtle: var(--color-text-tertiary, #7d8590);
+    --bg: transparent;
+    --panel: var(--color-background-primary, #ffffff);
+    --panel-muted: var(--color-background-secondary, #f6f7f8);
+    --panel-border: var(--color-border-default, #dfe3e7);
+    --track: var(--color-background-tertiary, #eceff1);
+    --accent: var(--color-accent, #3f7a56);
+    --accent-contrast: var(--color-text-on-accent, #ffffff);
+    --over: var(--color-text-danger, #b42318);
+    --warn: var(--color-text-warning, #9a6700);
+    --success: var(--color-text-success, #067647);
+    --calories: #d97706;
+    --protein: #6d5bd0;
+    --carbs: #18864b;
+    --fat: #c2416c;
+    --water: #1479a8;
+    --fiber: #0f766e;
+    --sugar: #64820f;
+    --alcohol: #9333a8;
+    --radius: var(--border-radius-lg, 14px);
+    --radius-sm: var(--border-radius-md, 10px);
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
 }
 
 @media (prefers-color-scheme: dark) {
     :root {
-        --text: #f5f5f7;
-        --text-dim: #98989d;
-        --bg: #000000;
-        --panel: #1c1c1e;
-        --panel-border: #2c2c2e;
-        --track: #2c2c2e;
-        --accent: #6ab98a;
-        --shadow: none;
-        --calories: #ffab2e;
-        --protein: #a78bfa;
-        --carbs: #34d399;
-        --fiber: #14b8a6;
-        --sugar: #a3e635;
-        --fat: #fb7199;
-        --alcohol: #e879f9;
-        --water: #38bdf8;
-        --over: #ff6b52;
-        --warn: #e0a030;
         color-scheme: dark;
+        --text: var(--color-text-primary, #f2f4f7);
+        --text-dim: var(--color-text-secondary, #a6adb7);
+        --text-subtle: var(--color-text-tertiary, #8b949e);
+        --panel: var(--color-background-primary, #202123);
+        --panel-muted: var(--color-background-secondary, #292b2f);
+        --panel-border: var(--color-border-default, #3b3f45);
+        --track: var(--color-background-tertiary, #35383d);
+        --accent: var(--color-accent, #72b68a);
+        --accent-contrast: var(--color-text-on-accent, #102016);
+        --over: var(--color-text-danger, #ff8a80);
+        --warn: var(--color-text-warning, #f7c66b);
+        --success: var(--color-text-success, #75d6a4);
+        --calories: #f4a340;
+        --protein: #b3a7ff;
+        --carbs: #64d08a;
+        --fat: #ff8eb1;
+        --water: #72c7ef;
+        --fiber: #5ed5c7;
+        --sugar: #b8d96c;
+        --alcohol: #e28bf3;
     }
 }
 
-/* Explicit host override wins over the media query in both directions. */
 :root[data-theme="light"] {
-    --text: #1d1d1f;
-    --text-dim: #6e6e73;
-    --bg: #f5f5f7;
-    --panel: #ffffff;
-    --panel-border: #e6e6ea;
-    --track: #e6e6ea;
-    --accent: #4a7c59;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 8px 22px rgba(0, 0, 0, 0.05);
-    --calories: #ff9f0a;
-    --protein: #8b5cf6;
-    --carbs: #10b981;
-    --fiber: #0d9488;
-    --sugar: #65a30d;
-    --fat: #f43f7e;
-    --alcohol: #a21caf;
-    --water: #0ea5e9;
-    --over: #d0452b;
-    --warn: #b26a00;
     color-scheme: light;
 }
 :root[data-theme="dark"] {
-    --text: #f5f5f7;
-    --text-dim: #98989d;
-    --bg: #000000;
-    --panel: #1c1c1e;
-    --panel-border: #2c2c2e;
-    --track: #2c2c2e;
-    --accent: #6ab98a;
-    --shadow: none;
-    --calories: #ffab2e;
-    --protein: #a78bfa;
-    --carbs: #34d399;
-    --fiber: #14b8a6;
-    --sugar: #a3e635;
-    --fat: #fb7199;
-    --alcohol: #e879f9;
-    --water: #38bdf8;
-    --over: #ff6b52;
-    --warn: #e0a030;
     color-scheme: dark;
+    --text: var(--color-text-primary, #f2f4f7);
+    --text-dim: var(--color-text-secondary, #a6adb7);
+    --text-subtle: var(--color-text-tertiary, #8b949e);
+    --panel: var(--color-background-primary, #202123);
+    --panel-muted: var(--color-background-secondary, #292b2f);
+    --panel-border: var(--color-border-default, #3b3f45);
+    --track: var(--color-background-tertiary, #35383d);
+    --accent: var(--color-accent, #72b68a);
+    --accent-contrast: var(--color-text-on-accent, #102016);
+    --over: var(--color-text-danger, #ff8a80);
+    --warn: var(--color-text-warning, #f7c66b);
+    --success: var(--color-text-success, #75d6a4);
+    --calories: #f4a340;
+    --protein: #b3a7ff;
+    --carbs: #64d08a;
+    --fat: #ff8eb1;
+    --water: #72c7ef;
+    --fiber: #5ed5c7;
+    --sugar: #b8d96c;
+    --alcohol: #e28bf3;
 }

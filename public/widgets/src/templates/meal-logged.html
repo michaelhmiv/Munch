@@ -1,24 +1,4 @@
 <!doctype html>
-<!--
-  Meal-logged widget (MCP Apps).
-
-  Assembled from shared partials at server startup (see src/widgets.ts); the
-  @include markers below inline the shared design tokens, components, and host
-  bridge. The result is fully self-contained — inline CSS + JS, zero network
-  requests — because the MCP Apps sandbox blocks external hosts. Styling follows
-  public/widgets/STYLE_GUIDE.md so it matches the other widgets.
-
-  Shown after log_meal AND update_meal (both tools link this same widget and emit
-  the same structuredContent shape via buildMealProgress in src/mcp.ts): the day's
-  running totals vs the user's goals as donut rings. The `action` field ("logged"
-  or "updated") only changes the header wording. Per product decision, it renders
-  NOTHING when no nutrition goals are set (there is no target to show progress
-  against).
-
-  Data arrives as the `structuredContent` of the log_meal / update_meal tool
-  result; the shared bridge (shared/bridge.js) reads it across host conventions
-  and calls render(). Standalone preview uses the SAMPLE below.
--->
 <html lang="en">
     <head>
         <meta charset="utf-8" />
@@ -26,35 +6,40 @@
         <title>Meal Logged</title>
         <style>
             /*@include shared/tokens.css@*/
-
             /*@include shared/base.css@*/
-
-            /* No goals → nothing to show. Collapse padding and drop the
-               full-height fill so an empty widget takes up as little of the
-               host frame as possible. */
-            .wrap:empty {
-                padding: 0;
+            .receipt {
+                padding: 15px;
             }
-            body:has(.wrap:empty) {
-                min-height: 0;
+            .receipt-main {
+                min-width: 0;
             }
-
-            /*@include shared/ring.css@*/
-
-            /*@include shared/macros.css@*/
+            .receipt-title {
+                font-size: 16px;
+                font-weight: 700;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .today-strip {
+                margin-top: 12px;
+                padding: 10px 12px;
+                border-radius: var(--radius-sm);
+                background: var(--panel-muted);
+            }
+            .today-strip strong {
+                font-variant-numeric: tabular-nums;
+            }
         </style>
     </head>
     <body>
         <div class="wrap" id="root"></div>
-
         <script>
             "use strict";
-
             /*@include shared/bridge.js@*/
-
-            // ---- Sample data so the file renders on its own (browser preview) ----
+            /*@include shared/ui.js@*/
             const SAMPLE = {
-                date: "2026-07-11",
+                action: "logged",
+                date: "2026-08-05",
                 logged_meal: {
                     description: "Grilled chicken salad",
                     meal_type: "lunch",
@@ -62,11 +47,6 @@
                     protein_g: 42,
                     carbs_g: 28,
                     fat_g: 22,
-                    fiber_g: 7.4,
-                    sugar_g: 6.1,
-                    // null = this user has alcohol tracking off, which is also
-                    // why the panel below shows no alcohol stat line.
-                    alcohol_g: null,
                 },
                 has_goals: true,
                 goals: {
@@ -74,165 +54,100 @@
                     protein_g: 160,
                     carbs_g: 220,
                     fat_g: 70,
-                    fiber_g: 30,
-                    sugar_g: 45,
-                    alcohol_g: null,
-                    water_ml: 2500,
                 },
                 totals: {
                     calories: 1480,
                     protein_g: 118,
                     carbs_g: 165,
                     fat_g: 52,
-                    fiber_g: 21.8,
-                    sugar_g: 38.4,
-                    // Alcohol tracking OFF in this sample (the other widgets'
-                    // samples have it on): null is the opt-in's "hide this
-                    // entirely", distinct from a 0 that means an alcohol-free
-                    // day. No stat line renders.
-                    alcohol_g: null,
-                    water_ml: 1600,
                 },
-                meals: [
-                    {
-                        description: "Overnight oats with berries",
-                        meal_type: "breakfast",
-                        date: null,
-                        calories: 420,
-                        protein_g: 18,
-                        carbs_g: 62,
-                        fat_g: 12,
-                        fiber_g: 9.4,
-                        sugar_g: 24.6,
-                        alcohol_g: null,
-                    },
-                    {
-                        description: "Greek yogurt & almonds",
-                        meal_type: "snack",
-                        date: null,
-                        calories: 260,
-                        protein_g: 22,
-                        carbs_g: 14,
-                        fat_g: 14,
-                        fiber_g: 1.1,
-                        sugar_g: 12.6,
-                        alcohol_g: null,
-                    },
-                    {
-                        description: "Turkey sandwich",
-                        meal_type: "lunch",
-                        date: null,
-                        calories: 280,
-                        protein_g: 36,
-                        carbs_g: 61,
-                        fat_g: 4,
-                        fiber_g: 3.8,
-                        sugar_g: 5.2,
-                        alcohol_g: null,
-                    },
-                    {
-                        description: "Grilled chicken salad",
-                        meal_type: "lunch",
-                        date: null,
-                        calories: 520,
-                        protein_g: 42,
-                        carbs_g: 28,
-                        fat_g: 22,
-                        fiber_g: 7.4,
-                        sugar_g: 6.1,
-                        alcohol_g: null,
-                    },
-                ],
             };
-
-            function fmt(n, decimals) {
-                if (n == null || isNaN(n)) return "0";
-                const r = decimals ? n.toFixed(decimals) : Math.round(n);
-                return Number(r).toLocaleString();
-            }
-            function esc(s) {
-                return String(s).replace(
-                    /[&<>"]/g,
-                    (c) =>
-                        ({
-                            "&": "&amp;",
-                            "<": "&lt;",
-                            ">": "&gt;",
-                            '"': "&quot;",
-                        })[c],
-                );
-            }
-
-            /*@include shared/macros.js@*/
-
-            function render(data) {
-                const root = document.getElementById("root");
-
-                // Per product decision: with no goals there is no target to show
-                // progress against, so the widget shows nothing at all.
-                if (!data || !data.has_goals || !data.goals) {
-                    root.innerHTML = "";
-                    return;
-                }
-
-                const totals = data.totals || {};
-                const panel = macroPanel(
-                    totals,
-                    data.goals,
-                    undefined,
-                    data.meals,
-                    // Not in the tool's output schema today (it carries
-                    // canonical grams); honoured the moment it is, and "us"
-                    // until then — the server's own default.
-                    { drinkUnit: data.drink_unit },
-                );
-
-                const meal = data.logged_meal;
-                let sub = "";
-                if (meal && meal.description) {
-                    const bits = [esc(meal.description)];
-                    if (meal.meal_type) bits.push(esc(meal.meal_type));
-                    if (meal.calories != null)
-                        bits.push(`${fmt(meal.calories, 0)} kcal`);
-                    sub = bits.join(" · ");
-                }
-
-                // Same widget for log_meal and update_meal — the action only
-                // changes the header wording.
-                const title =
-                    data.action === "updated" ? "Meal updated" : "Meal logged";
-
-                root.innerHTML = `
-          <header class="head">
-            <h1>${title}</h1>
-            ${sub ? `<span class="range">${sub}</span>` : ""}
-          </header>
-          <div class="section-title">Today vs goal</div>
-          ${panel}`;
-            }
-
-            // Pull the meal progress out of whatever wrapper the host used.
+            let DATA = null;
+            let API = null;
             function coerce(payload) {
                 if (!payload || typeof payload !== "object") return null;
-                // The structuredContent object itself, or a wrapper around it.
-                if (
-                    payload.totals ||
-                    payload.logged_meal ||
-                    "has_goals" in payload
-                )
+                if (payload.logged_meal || "has_goals" in payload)
                     return payload;
-                if (payload.structuredContent) return payload.structuredContent;
-                return null;
+                return payload.structuredContent || null;
             }
-
+            function render(data) {
+                DATA = data;
+                const meal = data.logged_meal || {};
+                const action = data.action === "updated" ? "updated" : "logged";
+                const title = meal.description || "Meal";
+                const macros = [
+                    meal.calories != null ? `${fmt(meal.calories)} kcal` : null,
+                    meal.protein_g != null
+                        ? `${fmt(meal.protein_g, 1)} g protein`
+                        : null,
+                    meal.carbs_g != null
+                        ? `${fmt(meal.carbs_g, 1)} g carbs`
+                        : null,
+                    meal.fat_g != null ? `${fmt(meal.fat_g, 1)} g fat` : null,
+                ]
+                    .filter(Boolean)
+                    .join(" · ");
+                let today = "";
+                if (data.has_goals && data.goals && data.totals) {
+                    const proteinPct = pct(
+                        data.totals.protein_g,
+                        data.goals.protein_g,
+                    );
+                    const caloriePct = pct(
+                        data.totals.calories,
+                        data.goals.calories,
+                    );
+                    const focus =
+                        proteinPct != null
+                            ? `<strong>${fmt(data.totals.protein_g, 1)} / ${fmt(data.goals.protein_g, 1)} g protein</strong> today${proteinPct > 100 ? " · above target" : ` · ${proteinPct}%`}`
+                            : caloriePct != null
+                              ? `<strong>${fmt(data.totals.calories)} / ${fmt(data.goals.calories)} kcal</strong> today · ${caloriePct}%`
+                              : "";
+                    if (focus)
+                        today = `<div class="today-strip"><div class="caption">Today after this meal</div><div>${focus}</div></div>`;
+                }
+                document.getElementById("root").innerHTML =
+                    `<article class="card receipt" aria-label="Meal ${action}">
+        <div class="row">
+            <div class="icon-badge success" aria-hidden="true">✓</div>
+            <div class="receipt-main">
+                <div class="eyebrow">${meal.meal_type ? `${esc(meal.meal_type)} ${action}` : `Meal ${action}`}</div>
+                <div class="receipt-title">${esc(title)}</div>
+                ${macros ? `<div class="meta num">${esc(macros)}</div>` : '<div class="meta">Saved to your Munch log.</div>'}
+            </div>
+        </div>
+        ${today}
+        <div class="actions single"><button class="btn btn-quiet" id="adjust">Adjust meal</button></div>
+        <div class="status" id="status" role="status" aria-live="polite"></div>
+    </article>`;
+                document
+                    .getElementById("adjust")
+                    ?.addEventListener("click", async () => {
+                        const status = document.getElementById("status");
+                        status.textContent = "Opening adjustment in chat…";
+                        const prompt = `Adjust the ${meal.meal_type || "meal"} I just ${action}: ${title}. Ask me what needs to change, then update the existing meal rather than creating a duplicate.`;
+                        try {
+                            if (API?.canSendMessages)
+                                await API.sendMessage(prompt);
+                            else await API?.updateModelContext(prompt);
+                            status.textContent = API?.canSendMessages
+                                ? "Continue in chat to make the change."
+                                : "Tell ChatGPT what should change.";
+                        } catch (error) {
+                            status.textContent =
+                                "Tell ChatGPT what should change.";
+                        }
+                    });
+            }
             initWidget({
                 name: "meal-logged-widget",
-                // No loading state: the widget may legitimately end up empty
-                // (no goals), so we start blank and only fill in on data.
-                loading: "",
+                loading: '<div class="card empty">Saving meal…</div>',
                 coerce,
                 render,
                 sample: SAMPLE,
+                onReady(api) {
+                    API = api;
+                },
             });
         </script>
     </body>

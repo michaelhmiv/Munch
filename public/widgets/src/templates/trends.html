@@ -1,324 +1,196 @@
 <!doctype html>
-<!--
-  Trends widget (MCP Apps).
-
-  Assembled from shared partials at server startup (see src/widgets.ts); the
-  @include markers below inline the shared design tokens, components, and host
-  bridge. The result is fully self-contained — inline CSS + JS, zero network
-  requests — because the MCP Apps sandbox blocks external hosts.
-
-  Shown after get_trends. The tool sends up to 30 days of daily series, and the
-  7 / 14 / 30-day toggle slices it CLIENT-SIDE and re-renders — no host round-trip,
-  so switching ranges is instant. Each range shows a calories/day line chart and
-  the trailing average vs goal as rings (average over the window, empty days
-  counted as 0, matching the tool's text output).
-
-  Data arrives as the `structuredContent` of the get_trends tool result; the
-  shared bridge (shared/bridge.js) reads it across host conventions and calls
-  render(). Standalone preview uses the SAMPLE below.
--->
 <html lang="en">
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Trends</title>
+        <title>Nutrition Trends</title>
         <style>
             /*@include shared/tokens.css@*/
-
             /*@include shared/base.css@*/
-
-            /* Segmented control (7 / 14 / 30-day toggle). The active label uses
-               var(--bg) on the accent fill so it stays high-contrast in both
-               themes (off-white on dark-green in light, black on light-green in
-               dark). */
-            /*@include shared/seg.css@*/
-
-            /* Calories trend chart (hand-built SVG area + line) */
-            /*@include shared/trend.css@*/
-
-            /* Ring gauge + macro panel (calories hero, protein/carbs/fat row,
-               water bar) — shared across widgets. */
-            /*@include shared/ring.css@*/
-
-            /*@include shared/macros.css@*/
+            .trends {
+                padding: 15px;
+            }
+            .range-controls {
+                display: flex;
+                gap: 8px;
+                flex-wrap: wrap;
+                margin-bottom: 14px;
+            }
+            .range-controls .btn[aria-pressed="true"] {
+                background: var(--accent);
+                color: var(--accent-contrast);
+                border-color: var(--accent);
+            }
+            .trend-detail {
+                display: grid;
+                grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+                gap: 20px;
+                margin-top: 18px;
+            }
+            .day-table {
+                max-height: min(48vh, 520px);
+                overflow: auto;
+            }
+            @media (max-width: 720px) {
+                .trend-detail {
+                    grid-template-columns: 1fr;
+                }
+            }
         </style>
     </head>
     <body>
         <div class="wrap" id="root"></div>
-
         <script>
             "use strict";
-
             /*@include shared/bridge.js@*/
-
-            const RANGES = [7, 14, 30];
-
-            // ---- Sample data so the file renders on its own (browser preview) ----
+            /*@include shared/ui.js@*/
             function buildSample() {
                 const days = [];
-                const end = new Date("2026-07-11T00:00:00Z");
-                let date = "2026-07-11";
+                const end = new Date("2026-08-05T12:00:00Z");
                 for (let i = 29; i >= 0; i--) {
                     const d = new Date(end);
                     d.setUTCDate(d.getUTCDate() - i);
-                    date = d.toISOString().slice(0, 10);
-                    const w = Math.sin(i / 3);
-                    const skip = i === 4 || i === 11; // a couple of unlogged days
-                    const r = (n) => Math.round(n * 10) / 10;
+                    const wave = Math.sin(i / 3);
                     days.push({
-                        date,
-                        calories: skip ? 0 : Math.round(2010 + w * 250),
-                        protein_g: skip ? 0 : Math.round(150 + w * 18),
-                        carbs_g: skip ? 0 : Math.round(212 + w * 28),
-                        fat_g: skip ? 0 : Math.round(68 + w * 9),
-                        fiber_g: skip ? 0 : r(26 + w * 6),
-                        sugar_g: skip ? 0 : r(58 + w * 14),
-                        // Alcohol tracking ON in this sample, and 0 on most
-                        // days — a real alcohol-free day, which still shows.
-                        // null on every day (tracking off) hides the stat line.
-                        alcohol_g: skip || i % 7 ? 0 : r(13.9 + w * 4),
-                        water_ml: skip ? 0 : Math.round(2200 + w * 320),
+                        date: d.toISOString().slice(0, 10),
+                        calories: Math.round(2050 + wave * 230),
+                        protein_g: Math.round(148 + wave * 16),
+                        carbs_g: Math.round(210 + wave * 24),
+                        fat_g: Math.round(68 + wave * 8),
+                        water_ml: Math.round(2100 + wave * 300),
                     });
                 }
                 return {
-                    end_date: date,
+                    end_date: "2026-08-05",
                     default_range: 14,
                     goals: {
                         calories: 2200,
                         protein_g: 160,
                         carbs_g: 220,
                         fat_g: 70,
-                        fiber_g: 30,
-                        sugar_g: 45,
-                        alcohol_g: 20,
                         water_ml: 2500,
                     },
                     days,
                 };
             }
             const SAMPLE = buildSample();
-
-            function fmt(n, decimals) {
-                if (n == null || isNaN(n)) return "0";
-                const r = decimals ? n.toFixed(decimals) : Math.round(n);
-                return Number(r).toLocaleString();
-            }
-            function esc(s) {
-                return String(s).replace(
-                    /[&<>"]/g,
-                    (c) =>
-                        ({
-                            "&": "&amp;",
-                            "<": "&lt;",
-                            ">": "&gt;",
-                            '"': "&quot;",
-                        })[c],
-                );
-            }
-            // Trailing average over exactly the days shown: sum / count, empty
-            // days included as 0 — matches the tool's text trailingAverage.
-            //
-            // A key that is null on EVERY day averages to null, not 0. That is
-            // the alcohol opt-in: alcohol_g arrives null when the user has
-            // tracking off, and a 0 there would claim an alcohol-free window
-            // instead of hiding the metric.
-            function avgOf(days, key) {
-                if (!days.length) return 0;
-                let sum = 0;
-                let seen = 0;
-                for (const d of days) {
-                    if (d[key] == null) continue;
-                    seen++;
-                    sum += d[key] || 0;
-                }
-                if (!seen) return null;
-                return sum / days.length;
-            }
-
-            // MACROS + the macro panel builder (calories hero, protein/carbs/fat
-            // row, water bar). Defines the shared MACROS array the paint() loop
-            // reads. Requires fmt + esc above.
-            /*@include shared/macros.js@*/
-
-            // Calories-per-day trend: SVG area + line that scales to any range
-            // (7 to 30 days). Uniform scaling — no preserveAspectRatio
-            // distortion — so it keeps its aspect ratio at any container width.
-            function trendChart(days, goal) {
-                const W = 480,
-                    H = 88,
-                    padL = 8,
-                    padR = 8,
-                    padT = 10,
-                    padB = 6;
-                const n = days.length;
-                const vals = days.map((d) => d.calories || 0);
-                const maxV = Math.max(...vals, goal || 0, 1) * 1.15;
-                const plotW = W - padL - padR;
-                const plotH = H - padT - padB;
-                const base = padT + plotH;
-                const x = (i) =>
-                    n === 1 ? padL + plotW / 2 : padL + (plotW * i) / (n - 1);
-                const y = (v) => padT + plotH - (v / maxV) * plotH;
-                const pts = vals.map((v, i) => [x(i), y(v)]);
-
-                const line = pts
-                    .map(
-                        (p, i) =>
-                            `${i ? "L" : "M"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`,
-                    )
-                    .join(" ");
-                const area =
-                    `M${pts[0][0].toFixed(1)} ${base} ` +
-                    pts
-                        .map((p) => `L${p[0].toFixed(1)} ${p[1].toFixed(1)}`)
-                        .join(" ") +
-                    ` L${pts[n - 1][0].toFixed(1)} ${base} Z`;
-
-                const goalLine =
-                    goal && goal > 0
-                        ? `<line class="goalline" x1="${padL}" y1="${y(goal).toFixed(1)}" x2="${W - padR}" y2="${y(goal).toFixed(1)}"/>`
-                        : "";
-                // Only draw point markers on short ranges to avoid clutter.
-                const dots =
-                    n <= 14
-                        ? pts
-                              .map(
-                                  (p) =>
-                                      `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="2.4" fill="var(--calories)"/>`,
-                              )
-                              .join("")
-                        : "";
-                const md = (d) => esc(d.date.slice(5)); // MM-DD
-                const avg = Math.round(avgOf(days, "calories"));
-
-                return `
-          <div class="trend">
-            <div class="thead">
-              <span class="ttitle">Calories / day</span>
-              <span class="tmeta">avg ${fmt(avg, 0)}${goal && goal > 0 ? ` · goal ${fmt(goal, 0)}` : ""}</span>
-            </div>
-            <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Calories per day over the selected range">
-              <defs>
-                <linearGradient id="calfill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="var(--calories)" stop-opacity="0.28"/>
-                  <stop offset="100%" stop-color="var(--calories)" stop-opacity="0.02"/>
-                </linearGradient>
-              </defs>
-              <line class="axis" x1="${padL}" y1="${base}" x2="${W - padR}" y2="${base}"/>
-              ${goalLine}
-              <path d="${area}" fill="url(#calfill)"/>
-              <path d="${line}" fill="none" stroke="var(--calories)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-              ${dots}
-            </svg>
-            <div class="tdates">
-              <span>${md(days[0])}</span>
-              <span>${md(days[n - 1])}</span>
-            </div>
-          </div>`;
-            }
-
-            // ---- State + rendering ---------------------------------------------
-            const STATE = { data: null, range: 30 };
-
-            function render(data) {
-                STATE.data = data;
-                const root = document.getElementById("root");
-                // The tool sends a bucket for every calendar day (zeros for
-                // unlogged days), so the array is basically never empty — treat
-                // an all-zero series (nothing logged) as empty too.
-                // dayHasData (shared/macros.js) derives the test from MACROS,
-                // so it covers exactly the top-level metrics — fiber, sugar and
-                // alcohol never appear without a meal that already contributes
-                // calories, and a null alcohol_g must not count as a logged day.
-                const anyLogged =
-                    data &&
-                    Array.isArray(data.days) &&
-                    data.days.some(dayHasData);
-                if (!anyLogged) {
-                    root.innerHTML = `
-            <div class="empty">
-              <div class="big">📈</div>
-              <div>No meals or water logged in this range yet.</div>
-            </div>`;
-                    return;
-                }
-                STATE.range = RANGES.includes(data.default_range)
-                    ? data.default_range
-                    : 30;
-                paint();
-            }
-
-            function paint() {
-                const root = document.getElementById("root");
-                const data = STATE.data;
-                const all = data.days
-                    .slice()
-                    .sort((a, b) => (a.date < b.date ? -1 : 1));
-                const range = STATE.range;
-                const slice = all.slice(-range);
-                const n = slice.length;
-
-                const avg = {};
-                for (const m of MACROS) avg[m.key] = avgOf(slice, m.key);
-
-                const logged = slice.filter(dayHasData).length;
-
-                const seg = RANGES.map(
-                    (r) =>
-                        `<button class="seg-btn${r === range ? " active" : ""}" data-n="${r}" role="tab" aria-selected="${r === range}">${r} days</button>`,
-                ).join("");
-
-                // No per-meal rows in a trends payload, so only carbs is
-                // tappable — for the window's average fiber and sugar.
-                const panel = macroPanel(
-                    avg,
-                    data.goals,
-                    { under: "under" },
-                    null,
-                    {
-                        drinkUnit: data.drink_unit,
-                    },
-                );
-                const chart = trendChart(slice, data.goals?.calories ?? null);
-
-                root.innerHTML = `
-          <header class="head">
-            <h1>Trends</h1>
-            <span class="range">${esc(slice[0].date)} → ${esc(slice[n - 1].date)} · ${logged}/${n} days logged</span>
-          </header>
-          <div class="seg" role="tablist" aria-label="Trend window">${seg}</div>
-          ${chart}
-          <div class="section-title">${range}-day average vs goal</div>
-          ${panel}`;
-            }
-
-            // Delegated on #root, which persists across paint()'s innerHTML
-            // rewrites, so it's attached once.
-            document.getElementById("root").addEventListener("click", (e) => {
-                const btn = e.target.closest(".seg-btn");
-                if (!btn) return;
-                const n = Number(btn.dataset.n);
-                if (n && n !== STATE.range && STATE.data) {
-                    STATE.range = n;
-                    paint();
-                }
-            });
-
-            // ---- Rendering intake ----------------------------------------------
+            let DATA = null,
+                API = null,
+                RANGE = 14;
             function coerce(payload) {
                 if (!payload || typeof payload !== "object") return null;
                 if (Array.isArray(payload.days)) return payload;
-                if (payload.structuredContent) return payload.structuredContent;
-                return null;
+                return payload.structuredContent || null;
             }
-
+            function average(days, key) {
+                if (!days.length) return 0;
+                return (
+                    days.reduce((sum, day) => sum + Number(day[key] || 0), 0) /
+                    days.length
+                );
+            }
+            function hasData(day) {
+                return [
+                    "calories",
+                    "protein_g",
+                    "carbs_g",
+                    "fat_g",
+                    "water_ml",
+                ].some((key) => Number(day[key] || 0) > 0);
+            }
+            function sliceForRange(data, range) {
+                const sorted = data.days
+                    .slice()
+                    .sort((a, b) => a.date.localeCompare(b.date));
+                return sorted.slice(-range);
+            }
+            function changeText(slice) {
+                if (slice.length < 4)
+                    return "Not enough data to compare periods.";
+                const midpoint = Math.floor(slice.length / 2);
+                const first = average(slice.slice(0, midpoint), "calories");
+                const second = average(slice.slice(midpoint), "calories");
+                const delta = Math.round(second - first);
+                if (Math.abs(delta) < 50)
+                    return "Average calories were stable across this window.";
+                return `Average calories moved ${fmt(Math.abs(delta))} kcal ${delta > 0 ? "higher" : "lower"} in the newer half of the window.`;
+            }
+            function paint() {
+                const slice = sliceForRange(DATA, RANGE);
+                const logged = slice.filter(hasData);
+                if (!logged.length) {
+                    document.getElementById("root").innerHTML =
+                        '<article class="card empty"><strong>No trend data yet</strong>Log meals on several days to build a trend.</article>';
+                    return;
+                }
+                const avg = {
+                    calories: average(slice, "calories"),
+                    protein_g: average(slice, "protein_g"),
+                    carbs_g: average(slice, "carbs_g"),
+                    fat_g: average(slice, "fat_g"),
+                    water_ml: average(slice, "water_ml"),
+                };
+                const points = slice.map((day) => ({
+                    value: day.calories || 0,
+                }));
+                const start = slice[0]?.date,
+                    end = slice[slice.length - 1]?.date;
+                const rows = slice
+                    .map(
+                        (day) =>
+                            `<tr><td>${esc(humanDate(day.date))}</td><td class="num">${fmt(day.calories)}</td><td class="num">${fmt(day.protein_g, 1)}</td><td class="num">${fmt(day.carbs_g, 1)}</td><td class="num">${fmt(day.fat_g, 1)}</td></tr>`,
+                    )
+                    .join("");
+                const controls = [7, 14, 30]
+                    .map(
+                        (range) =>
+                            `<button class="btn btn-sm" data-range="${range}" aria-pressed="${RANGE === range}">${range} days</button>`,
+                    )
+                    .join("");
+                document.getElementById("root").innerHTML =
+                    `<article class="card trends"><div class="head"><div class="head-main"><div class="eyebrow">Nutrition</div><h1>${RANGE}-day trend</h1><div class="meta">${esc(humanRange(start, end))} · ${logged.length}/${slice.length} days logged</div></div><button class="btn btn-sm inline-only" id="explore">Explore trends</button></div>
+ <div class="fullscreen-only range-controls" role="group" aria-label="Trend range">${controls}</div>
+ <div>${sparkline(points, { goal: DATA.goals?.calories, label: `Calories over ${RANGE} days` })}<div class="row-between caption"><span>${esc(humanDate(start))}</span><span>avg ${fmt(avg.calories)} kcal</span><span>${esc(humanDate(end))}</span></div></div>
+ <div class="metrics" style="margin-top:12px">${nutrientMetrics(avg)}</div><div class="notice" style="margin-top:12px">${esc(changeText(slice))}</div>
+ <div class="fullscreen-only"><div class="trend-detail"><div><h2>Daily values</h2><div class="table-wrap day-table" style="margin-top:10px"><table><thead><tr><th>Date</th><th>kcal</th><th>Protein</th><th>Carbs</th><th>Fat</th></tr></thead><tbody>${rows}</tbody></table></div></div><div><h2>Average versus target</h2><div class="stack" style="margin-top:12px">${progress("Calories", avg.calories, DATA.goals?.calories, "kcal", "var(--calories)")}${progress("Protein", avg.protein_g, DATA.goals?.protein_g, "g", "var(--protein)")}${progress("Carbs", avg.carbs_g, DATA.goals?.carbs_g, "g", "var(--carbs)")}${progress("Fat", avg.fat_g, DATA.goals?.fat_g, "g", "var(--fat)")}${progress("Water", avg.water_ml, DATA.goals?.water_ml, "ml", "var(--water)")}</div></div></div><div class="actions"><button class="btn" id="close">Return to chat</button></div></div></article>`;
+                document
+                    .getElementById("explore")
+                    ?.addEventListener("click", () =>
+                        API?.requestDisplayMode("fullscreen"),
+                    );
+                document
+                    .getElementById("close")
+                    ?.addEventListener("click", () =>
+                        API?.requestDisplayMode("inline"),
+                    );
+                document.querySelectorAll("[data-range]").forEach((button) =>
+                    button.addEventListener("click", () => {
+                        RANGE = Number(button.dataset.range);
+                        paint();
+                    }),
+                );
+            }
+            function render(data) {
+                DATA = data;
+                RANGE = [7, 14, 30].includes(Number(data.default_range))
+                    ? Number(data.default_range)
+                    : 14;
+                paint();
+            }
             initWidget({
                 name: "trends-widget",
+                displayModes: ["inline", "fullscreen"],
                 loading:
-                    '<div class="empty"><div class="big">📈</div><div>Loading your trends…</div></div>',
+                    '<div class="card empty">Loading nutrition trends…</div>',
                 coerce,
                 render,
                 sample: SAMPLE,
+                onReady(api) {
+                    API = api;
+                },
+                onHostContext() {
+                    if (DATA) paint();
+                },
             });
         </script>
     </body>
