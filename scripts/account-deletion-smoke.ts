@@ -20,6 +20,14 @@ if (!process.env.DATABASE_URL) {
         "DATABASE_URL is required for account deletion smoke tests",
     );
 }
+if (
+    process.env.CI !== "true" &&
+    process.env.MUNCH_ALLOW_ACCOUNT_DELETION_SMOKE !== "true"
+) {
+    throw new Error(
+        "Account deletion smoke tests may run only in CI or with an explicit disposable-database override",
+    );
+}
 
 interface Counts {
     users: number;
