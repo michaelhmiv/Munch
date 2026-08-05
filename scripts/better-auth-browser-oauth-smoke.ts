@@ -119,9 +119,7 @@ if (!client.client_id) throw new Error("Registration returned no client_id");
 
 const verifier = `v-${suffix}-${"x".repeat(48)}`;
 const state = `state-${suffix}`;
-const authorize = new URL(
-    "https://munch.example/api/auth/oauth2/authorize",
-);
+const authorize = new URL("https://munch.example/api/auth/oauth2/authorize");
 authorize.searchParams.set("response_type", "code");
 authorize.searchParams.set("client_id", client.client_id);
 authorize.searchParams.set("redirect_uri", redirectUri);
@@ -159,24 +157,21 @@ if (consentPage.status !== 200) {
 const oauthQuery = hiddenValue(consentHtml, "oauth_query");
 const scope = hiddenValue(consentHtml, "scope");
 const clientId = hiddenValue(consentHtml, "client_id");
-const consent = await app.request(
-    "https://munch.example/connect/consent",
-    {
-        method: "POST",
-        headers: {
-            cookie,
-            origin: "https://munch.example",
-            "content-type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({
-            client_id: clientId,
-            scope,
-            oauth_query: oauthQuery,
-            decision: "approve",
-        }),
-        redirect: "manual",
+const consent = await app.request("https://munch.example/connect/consent", {
+    method: "POST",
+    headers: {
+        cookie,
+        origin: "https://munch.example",
+        "content-type": "application/x-www-form-urlencoded",
     },
-);
+    body: new URLSearchParams({
+        client_id: clientId,
+        scope,
+        oauth_query: oauthQuery,
+        decision: "approve",
+    }),
+    redirect: "manual",
+});
 if (consent.status !== 302 && consent.status !== 303) {
     throw new Error(
         `Consent failed: ${consent.status} ${await consent.text()}`,
@@ -194,20 +189,17 @@ if (callback.searchParams.get("state") !== state) {
 const code = callback.searchParams.get("code");
 if (!code) throw new Error(`Consent returned no code: ${callback}`);
 
-const token = await app.request(
-    "https://munch.example/api/auth/oauth2/token",
-    {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-            grant_type: "authorization_code",
-            client_id: client.client_id,
-            redirect_uri: redirectUri,
-            code,
-            code_verifier: verifier,
-        }),
-    },
-);
+const token = await app.request("https://munch.example/api/auth/oauth2/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+        grant_type: "authorization_code",
+        client_id: client.client_id,
+        redirect_uri: redirectUri,
+        code,
+        code_verifier: verifier,
+    }),
+});
 const tokenText = await token.text();
 if (!token.ok) {
     throw new Error(`Token exchange failed: ${token.status} ${tokenText}`);
