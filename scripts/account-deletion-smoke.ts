@@ -45,6 +45,13 @@ function toolText(result: unknown): string {
         : "";
 }
 
+const analyticsWarnings: string[] = [];
+const originalWarn = console.warn;
+console.warn = (...args: unknown[]) => {
+    analyticsWarnings.push(args.map(String).join(" "));
+    originalWarn(...args);
+};
+
 const email = `account-deletion-${crypto.randomUUID()}@example.test`;
 const challenge = await createLoginChallenge(email);
 const session = await consumeLoginChallenge(challenge.token);
@@ -155,10 +162,22 @@ try {
         );
     }
 
+    await Bun.sleep(50);
+    if (
+        analyticsWarnings.some((warning) =>
+            warning.includes("Failed to persist analytics for delete_account"),
+        )
+    ) {
+        throw new Error(
+            "Account deletion attempted to persist analytics after removing the user",
+        );
+    }
+
     console.log(
         "Munch delete_account MCP tool confirmation and disposable-account cascade smoke test passed.",
     );
 } finally {
+    console.warn = originalWarn;
     await client.close().catch(() => undefined);
     await server.close().catch(() => undefined);
     await database`
