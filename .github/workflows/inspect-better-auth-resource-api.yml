@@ -1,0 +1,25 @@
+name: Inspect Better Auth resource API
+
+on:
+  push:
+    branches:
+      - fix/better-auth-mcp-bearer-discovery
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - name: Inspect installed resource-server APIs
+        run: |
+          grep -R -n -E "oauthProviderResourceClient|oAuth2IntrospectVerify|verifyAccessToken" \
+            node_modules/@better-auth/oauth-provider \
+            node_modules/better-auth \
+            | head -n 400
