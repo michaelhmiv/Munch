@@ -18,11 +18,7 @@ import {
     upsertProfile,
 } from "../storage.js";
 import { validateTz } from "../tz.js";
-import {
-    isPlausibleWeightGrams,
-    isWeightUnit,
-    toGrams,
-} from "../units.js";
+import { isPlausibleWeightGrams, isWeightUnit, toGrams } from "../units.js";
 import {
     getAppBootstrap,
     getFoodsWorkspace,
@@ -152,12 +148,14 @@ export function createAppRouter(): Hono {
 
     app.get("/api/app/settings", async (c) => {
         const userId = c.get("munchUserId");
-        const [bootstrap, goals, subscription, connections] = await Promise.all([
-            getAppBootstrap(userId, c.get("munchUserEmail")),
-            getNutritionGoals(userId),
-            getSubscriptionSnapshot(userId),
-            listOAuthConnections(userId),
-        ]);
+        const [bootstrap, goals, subscription, connections] = await Promise.all(
+            [
+                getAppBootstrap(userId, c.get("munchUserEmail")),
+                getNutritionGoals(userId),
+                getSubscriptionSnapshot(userId),
+                listOAuthConnections(userId),
+            ],
+        );
         return privateJson(c, {
             ...bootstrap,
             goals,
@@ -166,90 +164,67 @@ export function createAppRouter(): Hono {
         });
     });
 
-    app.patch(
-        "/api/app/meals/:id",
-        requireSameOrigin,
-        async (c) => {
-            const body = (await c.req.json()) as Record<string, unknown>;
-            const meal = await updateMeal(
-                c.get("munchUserId"),
-                c.req.param("id"),
-                {
-                    ...(typeof body.description === "string"
-                        ? { description: body.description }
-                        : {}),
-                    ...(body.meal_type !== undefined
-                        ? { meal_type: mealType(body.meal_type) }
-                        : {}),
-                    ...(body.calories !== undefined
-                        ? {
-                              calories:
-                                  numberOrNull(body.calories) ?? undefined,
-                          }
-                        : {}),
-                    ...(body.protein_g !== undefined
-                        ? {
-                              protein_g:
-                                  numberOrNull(body.protein_g) ?? undefined,
-                          }
-                        : {}),
-                    ...(body.carbs_g !== undefined
-                        ? {
-                              carbs_g:
-                                  numberOrNull(body.carbs_g) ?? undefined,
-                          }
-                        : {}),
-                    ...(body.fat_g !== undefined
-                        ? { fat_g: numberOrNull(body.fat_g) ?? undefined }
-                        : {}),
-                    ...(body.fiber_g !== undefined
-                        ? {
-                              fiber_g:
-                                  numberOrNull(body.fiber_g) ?? undefined,
-                          }
-                        : {}),
-                    ...(body.sugar_g !== undefined
-                        ? {
-                              sugar_g:
-                                  numberOrNull(body.sugar_g) ?? undefined,
-                          }
-                        : {}),
-                    ...(body.alcohol_g !== undefined
-                        ? {
-                              alcohol_g:
-                                  numberOrNull(body.alcohol_g) ?? undefined,
-                          }
-                        : {}),
-                    ...(typeof body.logged_at === "string"
-                        ? { logged_at: body.logged_at }
-                        : {}),
-                    ...(body.notes === null ||
-                    typeof body.notes === "string"
-                        ? { notes: body.notes as string | null }
-                        : {}),
-                },
-            );
-            return privateJson(c, { meal });
-        },
-    );
+    app.patch("/api/app/meals/:id", requireSameOrigin, async (c) => {
+        const body = (await c.req.json()) as Record<string, unknown>;
+        const meal = await updateMeal(c.get("munchUserId"), c.req.param("id"), {
+            ...(typeof body.description === "string"
+                ? { description: body.description }
+                : {}),
+            ...(body.meal_type !== undefined
+                ? { meal_type: mealType(body.meal_type) }
+                : {}),
+            ...(body.calories !== undefined
+                ? {
+                      calories: numberOrNull(body.calories) ?? undefined,
+                  }
+                : {}),
+            ...(body.protein_g !== undefined
+                ? {
+                      protein_g: numberOrNull(body.protein_g) ?? undefined,
+                  }
+                : {}),
+            ...(body.carbs_g !== undefined
+                ? {
+                      carbs_g: numberOrNull(body.carbs_g) ?? undefined,
+                  }
+                : {}),
+            ...(body.fat_g !== undefined
+                ? { fat_g: numberOrNull(body.fat_g) ?? undefined }
+                : {}),
+            ...(body.fiber_g !== undefined
+                ? {
+                      fiber_g: numberOrNull(body.fiber_g) ?? undefined,
+                  }
+                : {}),
+            ...(body.sugar_g !== undefined
+                ? {
+                      sugar_g: numberOrNull(body.sugar_g) ?? undefined,
+                  }
+                : {}),
+            ...(body.alcohol_g !== undefined
+                ? {
+                      alcohol_g: numberOrNull(body.alcohol_g) ?? undefined,
+                  }
+                : {}),
+            ...(typeof body.logged_at === "string"
+                ? { logged_at: body.logged_at }
+                : {}),
+            ...(body.notes === null || typeof body.notes === "string"
+                ? { notes: body.notes as string | null }
+                : {}),
+        });
+        return privateJson(c, { meal });
+    });
 
-    app.delete(
-        "/api/app/meals/:id",
-        requireSameOrigin,
-        async (c) => {
-            await deleteMeal(c.get("munchUserId"), c.req.param("id"));
-            return privateJson(c, { deleted: true });
-        },
-    );
+    app.delete("/api/app/meals/:id", requireSameOrigin, async (c) => {
+        await deleteMeal(c.get("munchUserId"), c.req.param("id"));
+        return privateJson(c, { deleted: true });
+    });
 
     app.post("/api/app/water", requireSameOrigin, async (c) => {
         const body = (await c.req.json()) as Record<string, unknown>;
         const amountMl = Number(body.amount_ml);
-        if (
-            !Number.isInteger(amountMl) ||
-            amountMl <= 0 ||
-            amountMl > 20_000
-        ) {
+        if (!Number.isInteger(amountMl) || amountMl <= 0 || amountMl > 20_000) {
             throw new Error("Invalid water amount");
         }
         const result = await insertWater(c.get("munchUserId"), {
@@ -257,9 +232,7 @@ export function createAppRouter(): Hono {
             ...(typeof body.logged_at === "string"
                 ? { logged_at: body.logged_at }
                 : {}),
-            ...(typeof body.notes === "string"
-                ? { notes: body.notes }
-                : {}),
+            ...(typeof body.notes === "string" ? { notes: body.notes } : {}),
         });
         return privateJson(c, result);
     });
@@ -272,11 +245,7 @@ export function createAppRouter(): Hono {
     app.post("/api/app/weight", requireSameOrigin, async (c) => {
         const body = (await c.req.json()) as Record<string, unknown>;
         const value = Number(body.weight);
-        if (
-            !Number.isFinite(value) ||
-            value <= 0 ||
-            !isWeightUnit(body.unit)
-        ) {
+        if (!Number.isFinite(value) || value <= 0 || !isWeightUnit(body.unit)) {
             throw new Error("Invalid weight");
         }
         const weightG = toGrams(value, body.unit);
@@ -288,9 +257,7 @@ export function createAppRouter(): Hono {
             ...(typeof body.logged_at === "string"
                 ? { logged_at: body.logged_at }
                 : {}),
-            ...(typeof body.notes === "string"
-                ? { notes: body.notes }
-                : {}),
+            ...(typeof body.notes === "string" ? { notes: body.notes } : {}),
         });
         return privateJson(c, result);
     });

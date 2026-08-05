@@ -84,7 +84,8 @@
         --info-100: #e6f4ff;
         --purple-700: #6d4ea1;
         --purple-100: #f1eaff;
-        --shadow-sm: 0 1px 2px rgb(12 49 29 / 0.06), 0 1px 5px rgb(12 49 29 / 0.04);
+        --shadow-sm:
+            0 1px 2px rgb(12 49 29 / 0.06), 0 1px 5px rgb(12 49 29 / 0.04);
         --shadow-md: 0 14px 38px rgb(12 49 29 / 0.1);
         --shadow-lg: 0 24px 70px rgb(12 49 29 / 0.16);
         --radius-sm: 10px;
@@ -92,7 +93,9 @@
         --radius-lg: 24px;
         --radius-xl: 32px;
         --container: 1180px;
-        --font-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --font-sans:
+            Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+            sans-serif;
         --focus: 0 0 0 3px rgb(54 164 95 / 0.25);
     }
 
@@ -291,7 +294,11 @@
         font-weight: 760;
         line-height: 1.2;
         text-align: center;
-        transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease, border-color 150ms ease;
+        transition:
+            transform 150ms ease,
+            box-shadow 150ms ease,
+            background 150ms ease,
+            border-color 150ms ease;
     }
 
     .button:hover {
@@ -367,7 +374,11 @@
 
     .hero-product {
         background:
-            radial-gradient(circle at 88% 12%, rgb(142 214 170 / 0.22), transparent 32%),
+            radial-gradient(
+                circle at 88% 12%,
+                rgb(142 214 170 / 0.22),
+                transparent 32%
+            ),
             linear-gradient(180deg, var(--green-50), white 75%);
     }
 
@@ -1271,7 +1282,11 @@
         min-height: 100vh;
         place-items: center;
         background:
-            radial-gradient(circle at 50% 0, rgb(142 214 170 / 0.24), transparent 38%),
+            radial-gradient(
+                circle at 50% 0,
+                rgb(142 214 170 / 0.24),
+                transparent 38%
+            ),
             var(--surface-muted);
         padding: 24px;
     }
@@ -1728,7 +1743,12 @@
     .skeleton {
         overflow: hidden;
         border-radius: 8px;
-        background: linear-gradient(90deg, var(--ink-100), var(--ink-50), var(--ink-100));
+        background: linear-gradient(
+            90deg,
+            var(--ink-100),
+            var(--ink-50),
+            var(--ink-100)
+        );
         background-size: 200% 100%;
         animation: skeleton 1.4s ease-in-out infinite;
     }
@@ -1958,7 +1978,9 @@
         bottom: 0;
         left: 0;
         display: grid;
-        padding: 7px max(8px, env(safe-area-inset-right)) max(7px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+        padding: 7px max(8px, env(safe-area-inset-right))
+            max(7px, env(safe-area-inset-bottom))
+            max(8px, env(safe-area-inset-left));
         border-top: 1px solid var(--ink-100);
         background: rgb(255 255 255 / 0.96);
         backdrop-filter: blur(18px);
@@ -2133,7 +2155,8 @@
         min-height: 100vh;
         border: 0;
         border-radius: 0;
-        padding: max(28px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom));
+        padding: max(28px, env(safe-area-inset-top)) 20px
+            max(28px, env(safe-area-inset-bottom));
         box-shadow: none;
     }
 

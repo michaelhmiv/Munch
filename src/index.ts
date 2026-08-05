@@ -28,14 +28,9 @@ validateStartupConfiguration();
 const app = new Hono();
 const railwayAuthEnabled = process.env.MUNCH_RAILWAY_AUTH_ENABLED === "true";
 const betterAuthEnabled = betterAuthIsEnabled();
-const mcpAuthMode = resolveMcpAuthMode(
-    betterAuthEnabled,
-    railwayAuthEnabled,
-);
+const mcpAuthMode = resolveMcpAuthMode(betterAuthEnabled, railwayAuthEnabled);
 const mcpAuthenticator =
-    mcpAuthMode === "railway"
-        ? authenticatePlatformBearer
-        : authenticateBearer;
+    mcpAuthMode === "railway" ? authenticatePlatformBearer : authenticateBearer;
 
 app.use("*", async (c, next) => {
     const path = new URL(c.req.url).pathname;
@@ -86,14 +81,7 @@ app.use(
                 ) ?? [];
             return allowed.includes(origin) ? origin : null;
         },
-        allowMethods: [
-            "GET",
-            "POST",
-            "PUT",
-            "PATCH",
-            "DELETE",
-            "OPTIONS",
-        ],
+        allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allowHeaders: [
             "Content-Type",
             "Authorization",
@@ -165,14 +153,10 @@ app.get("/og.png", async (c) =>
     }),
 );
 app.get("/apple-touch-icon.png", async (c) =>
-    c.body(
-        await Bun.file("./public/apple-touch-icon.png").arrayBuffer(),
-        200,
-        {
-            "Content-Type": "image/png",
-            "Cache-Control": "public, max-age=86400",
-        },
-    ),
+    c.body(await Bun.file("./public/apple-touch-icon.png").arrayBuffer(), 200, {
+        "Content-Type": "image/png",
+        "Cache-Control": "public, max-age=86400",
+    }),
 );
 const BRAND_ASSETS: Record<string, { file: string; contentType: string }> = {
     "/brand/munch-mark.svg": {
@@ -227,9 +211,7 @@ app.get("/.well-known/security.txt", async (c) =>
     }),
 );
 
-app.get("/", async (c) =>
-    c.html(await Bun.file("./public/index.html").text()),
-);
+app.get("/", async (c) => c.html(await Bun.file("./public/index.html").text()));
 app.get("/privacy", async (c) =>
     c.html(await Bun.file("./public/privacy.html").text()),
 );
@@ -313,9 +295,7 @@ app.onError((_error, c) => {
 });
 
 const port = parseInt(process.env.PORT || "8080");
-console.log(
-    `Munch server listening on 0.0.0.0:${port} auth=${mcpAuthMode}`,
-);
+console.log(`Munch server listening on 0.0.0.0:${port} auth=${mcpAuthMode}`);
 
 await warmWidgets();
 startExportCleanup();

@@ -120,8 +120,7 @@ async function listMealItems(
                 row.provider_food_id == null
                     ? null
                     : String(row.provider_food_id),
-            sourceUrl:
-                row.source_url == null ? null : String(row.source_url),
+            sourceUrl: row.source_url == null ? null : String(row.source_url),
             sourceUpdatedAt:
                 row.source_updated_at == null
                     ? null
@@ -134,10 +133,7 @@ async function listMealItems(
     });
 }
 
-async function attachItems(
-    userId: string,
-    meals: Meal[],
-): Promise<AppMeal[]> {
+async function attachItems(userId: string, meals: Meal[]): Promise<AppMeal[]> {
     const items = await listMealItems(
         userId,
         meals.map((meal) => meal.id),
@@ -207,8 +203,7 @@ async function listOpenDrafts(userId: string) {
             id: String(row.id),
             status: String(row.status),
             sourceMode: String(row.source_mode),
-            mealType:
-                row.meal_type == null ? null : String(row.meal_type),
+            mealType: row.meal_type == null ? null : String(row.meal_type),
             description:
                 row.description == null ? null : String(row.description),
             loggedAt:
@@ -249,10 +244,7 @@ export async function getAppBootstrap(userId: string, email: string) {
     };
 }
 
-export async function getTodayWorkspace(
-    userId: string,
-    dateValue: string,
-) {
+export async function getTodayWorkspace(userId: string, dateValue: string) {
     const date = validateDate(dateValue);
     const [profile, capabilities] = await Promise.all([
         getProfile(userId),
@@ -362,9 +354,7 @@ export async function getInsightsWorkspace(
     const averages = Object.fromEntries(
         Object.entries(aggregate).map(([key, value]) => [
             key,
-            loggedDays === 0
-                ? 0
-                : Number((value / loggedDays).toFixed(1)),
+            loggedDays === 0 ? 0 : Number((value / loggedDays).toFixed(1)),
         ]),
     );
     return {

@@ -1,4 +1,7 @@
-import { PROTECTED_COMMERCE_PATHS, PROTECTED_COMMERCE_TERMS } from "../src/product-config.js";
+import {
+    PROTECTED_COMMERCE_PATHS,
+    PROTECTED_COMMERCE_TERMS,
+} from "../src/product-config.js";
 
 const root = new URL("../", import.meta.url);
 const findings: string[] = [];
@@ -25,7 +28,9 @@ for (const path of PROTECTED_COMMERCE_PATHS) {
 }
 
 if (findings.length > 0) {
-    console.error("Commercial language was found in a protected connection or MCP surface:");
+    console.error(
+        "Commercial language was found in a protected connection or MCP surface:",
+    );
     for (const finding of findings) console.error(`- ${finding}`);
     process.exit(1);
 }

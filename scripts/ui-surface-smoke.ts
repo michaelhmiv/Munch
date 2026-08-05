@@ -32,7 +32,10 @@ for (const stale of [
 if (!homepage.includes("$4.99")) {
     throw new Error("Homepage does not state the canonical monthly price");
 }
-if (!homepage.includes("Nutrition MCP") || !homepage.includes("Alexander Kutishevsky")) {
+if (
+    !homepage.includes("Nutrition MCP") ||
+    !homepage.includes("Alexander Kutishevsky")
+) {
     throw new Error("Homepage is missing upstream attribution");
 }
 
@@ -56,14 +59,16 @@ for (const path of authSurfaces) {
     const text = (await Bun.file(path).text()).toLowerCase();
     for (const term of forbiddenAuthWords) {
         if (text.includes(term)) {
-            throw new Error(`${path} contains protected commerce term: ${term}`);
+            throw new Error(
+                `${path} contains protected commerce term: ${term}`,
+            );
         }
     }
 }
 
 const indexSource = await Bun.file("src/index.ts").text();
 for (const route of [
-    'createAppRouter()',
+    "createAppRouter()",
     '"/help"',
     '"/help/connect-chatgpt"',
     '"/security"',

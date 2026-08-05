@@ -118,12 +118,17 @@ function formatTime(value) {
 
 function number(value, digits = 0) {
     if (value == null || Number.isNaN(Number(value))) return "—";
-    return new Intl.NumberFormat("en-US", { maximumFractionDigits: digits }).format(Number(value));
+    return new Intl.NumberFormat("en-US", {
+        maximumFractionDigits: digits,
+    }).format(Number(value));
 }
 
 function percent(value, target) {
     if (!target || target <= 0) return null;
-    return Math.max(0, Math.min(100, Math.round((Number(value || 0) / target) * 100)));
+    return Math.max(
+        0,
+        Math.min(100, Math.round((Number(value || 0) / target) * 100)),
+    );
 }
 
 function sourceBadge(type) {
@@ -134,7 +139,12 @@ function sourceBadge(type) {
 
 function confidenceBadge(value) {
     if (value == null) return "";
-    const label = value >= 0.85 ? "High confidence" : value >= 0.6 ? "Medium confidence" : "Low confidence";
+    const label =
+        value >= 0.85
+            ? "High confidence"
+            : value >= 0.6
+              ? "Medium confidence"
+              : "Low confidence";
     return `<span class="confidence-chip">${label}</span>`;
 }
 
@@ -166,7 +176,8 @@ async function api(path, options = {}) {
         throw new Error("Authentication required");
     }
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.message || data.error || "Request failed");
+    if (!response.ok)
+        throw new Error(data.message || data.error || "Request failed");
     return data;
 }
 
@@ -182,7 +193,8 @@ function errorState(error) {
 function setActiveRoute(route) {
     document.querySelectorAll("[data-route]").forEach((link) => {
         link.classList.toggle("is-active", link.dataset.route === route);
-        if (link.dataset.route === route) link.setAttribute("aria-current", "page");
+        if (link.dataset.route === route)
+            link.setAttribute("aria-current", "page");
         else link.removeAttribute("aria-current");
     });
     const [kicker, title] = titles[route] || titles.today;
@@ -197,10 +209,12 @@ function metricCard(label, value, unit, target, primary = false) {
 }
 
 function mealItems(items) {
-    if (!items?.length) return `<div class="food-items"><div class="food-row"><div><strong>Legacy aggregate entry</strong><small>Item-level details were not recorded for this meal.</small></div></div></div>`;
+    if (!items?.length)
+        return `<div class="food-items"><div class="food-row"><div><strong>Legacy aggregate entry</strong><small>Item-level details were not recorded for this meal.</small></div></div></div>`;
     return `<div class="food-items">${items
         .map(
-            (item) => `<div class="food-row"><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.portionLabel || (item.quantity ? `${number(item.quantity, 2)} serving` : "Portion not recorded"))}</small><div class="demo-source-row">${sourceBadge(item.sourceType)}${confidenceBadge(item.confidence)}</div>${item.assumptions?.length ? `<small>Assumptions: ${escapeHtml(item.assumptions.join("; "))}</small>` : ""}</div><strong>${item.calories == null ? "—" : `${number(item.calories)} kcal`}</strong></div>`,
+            (item) =>
+                `<div class="food-row"><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.portionLabel || (item.quantity ? `${number(item.quantity, 2)} serving` : "Portion not recorded"))}</small><div class="demo-source-row">${sourceBadge(item.sourceType)}${confidenceBadge(item.confidence)}</div>${item.assumptions?.length ? `<small>Assumptions: ${escapeHtml(item.assumptions.join("; "))}</small>` : ""}</div><strong>${item.calories == null ? "—" : `${number(item.calories)} kcal`}</strong></div>`,
         )
         .join("")}</div>`;
 }
@@ -212,11 +226,17 @@ function mealCard(meal) {
 
 function groupedMeals(meals) {
     const order = ["breakfast", "lunch", "dinner", "snack"];
-    const groups = Object.groupBy(meals || [], (meal) => meal.meal_type || "snack");
+    const groups = Object.groupBy(
+        meals || [],
+        (meal) => meal.meal_type || "snack",
+    );
     return `<div class="meal-groups">${order
         .map((type) => {
             const entries = groups[type] || [];
-            const total = entries.reduce((sum, meal) => sum + (meal.calories || 0), 0);
+            const total = entries.reduce(
+                (sum, meal) => sum + (meal.calories || 0),
+                0,
+            );
             return `<section class="meal-group"><header class="meal-group-header"><div><span class="meal-dot ${type}"></span><strong>${type[0].toUpperCase() + type.slice(1)}</strong></div><span>${entries.length ? `${number(total)} kcal` : "No entries"}</span></header>${entries.length ? entries.map(mealCard).join("") : `<div class="meal-card"><p>No ${type} logged.</p></div>`}</section>`;
         })
         .join("")}</div>`;
@@ -224,7 +244,9 @@ function groupedMeals(meals) {
 
 async function renderToday() {
     setLoading("Loading today’s meals and progress…");
-    const data = await api(`/api/app/today?date=${encodeURIComponent(state.date)}`);
+    const data = await api(
+        `/api/app/today?date=${encodeURIComponent(state.date)}`,
+    );
     const goals = data.goals || {};
     const latestWeight = data.weight?.at(-1);
     content.innerHTML = `<div class="page-heading"><div><h2>${escapeHtml(formatDate(state.date, { weekday: true }))}</h2><p>Your structured nutrition record for this day.</p></div><div class="auth-actions"><button class="button button-secondary button-small" data-action="date-prev">Previous</button><button class="button button-secondary button-small" data-action="date-today">Today</button><button class="button button-secondary button-small" data-action="date-next">Next</button></div></div><div class="dashboard-grid"><section class="panel panel-span-12"><div class="summary-grid">${metricCard("Calories", data.totals.calories, " kcal", goals.daily_calories, true)}${metricCard("Protein", data.totals.proteinG, "g", goals.daily_protein_g)}${metricCard("Carbohydrates", data.totals.carbsG, "g", goals.daily_carbs_g)}${metricCard("Fat", data.totals.fatG, "g", goals.daily_fat_g)}</div></section><section class="panel panel-span-8"><div class="panel-title"><h3>Meals</h3><span>${data.meals.length} logged</span></div>${groupedMeals(data.meals)}</section><aside class="panel panel-span-4"><div class="panel-title"><h3>Daily details</h3></div><div class="summary-grid" style="grid-template-columns:1fr 1fr">${metricCard("Water", data.water.totalMl, " ml", goals.daily_water_ml)}${metricCard("Weight", latestWeight ? latestWeight.weight_g / 1000 : null, " kg", null)}</div><div class="auth-actions"><button class="button button-secondary button-small" data-action="add-water">Add water</button><button class="button button-secondary button-small" data-action="add-weight">Add weight</button></div>${data.drafts?.length ? `<div class="panel-title spacer-top"><h3>Pending drafts</h3><span>${data.drafts.length}</span></div><div class="meal-groups">${data.drafts.map((draft) => `<article class="meal-card"><strong>${escapeHtml(draft.description || `${draft.sourceMode} meal`)}</strong><p>${draft.openQuestionCount ? `${draft.openQuestionCount} question${draft.openQuestionCount === 1 ? "" : "s"} remaining` : "Ready for confirmation"}</p><small>Continue this draft in ChatGPT.</small></article>`).join("")}</div>` : ""}${data.plannedMeals?.length ? `<div class="panel-title spacer-top"><h3>Planned today</h3><span>${data.plannedMeals.length}</span></div>${data.plannedMeals.map((meal) => `<div class="food-row"><div><strong>${escapeHtml(meal.recipe_name)}</strong><small>${escapeHtml(meal.meal_slot || "Meal")} · ${number(meal.servings, 1)} servings</small></div><span>${meal.nutrition_per_serving?.calories ? `${number(meal.nutrition_per_serving.calories * meal.servings)} kcal` : ""}</span></div>`).join("")}` : ""}</aside></div>`;
@@ -232,7 +254,9 @@ async function renderToday() {
 
 async function renderLog() {
     setLoading("Loading your food history…");
-    const data = await api(`/api/app/meals?start=${encodeURIComponent(state.date)}&end=${encodeURIComponent(state.date)}`);
+    const data = await api(
+        `/api/app/meals?start=${encodeURIComponent(state.date)}&end=${encodeURIComponent(state.date)}`,
+    );
     content.innerHTML = `<div class="page-heading"><div><h2>${escapeHtml(formatDate(state.date, { weekday: true }))}</h2><p>Review meals, item-level provenance, notes, and totals.</p></div><div class="auth-actions"><button class="button button-secondary button-small" data-action="date-prev">Previous</button><button class="button button-secondary button-small" data-action="date-today">Today</button><button class="button button-secondary button-small" data-action="date-next">Next</button></div></div><section class="panel"><div class="summary-grid">${metricCard("Calories", data.totals.calories, " kcal", null, true)}${metricCard("Protein", data.totals.proteinG, "g", null)}${metricCard("Carbohydrates", data.totals.carbsG, "g", null)}${metricCard("Fat", data.totals.fatG, "g", null)}</div></section><div class="spacer-top">${groupedMeals(data.meals)}</div>`;
 }
 
@@ -244,7 +268,9 @@ function barChart(days, key, label, unit = "") {
             const height = Math.max(2, Math.round((values[index] / max) * 150));
             return `<div style="display:flex;min-width:0;flex:1;flex-direction:column;align-items:center;justify-content:flex-end;height:100%"><span class="tiny">${number(values[index])}</span><div style="width:100%;max-width:24px;height:${height}px;border-radius:7px 7px 2px 2px;background:var(--green-600)"></div><span class="tiny">${escapeHtml(day.date.slice(5))}</span></div>`;
         })
-        .join("")}</div><p class="tiny">${escapeHtml(label)} is shown for logged days only${unit ? ` in ${escapeHtml(unit)}` : ""}.</p>`;
+        .join(
+            "",
+        )}</div><p class="tiny">${escapeHtml(label)} is shown for logged days only${unit ? ` in ${escapeHtml(unit)}` : ""}.</p>`;
 }
 
 async function renderInsights() {
@@ -266,7 +292,10 @@ function premiumUnavailable(title, description) {
 }
 
 async function planningData() {
-    const start = shiftDate(state.date, -((new Date(`${state.date}T12:00:00Z`).getUTCDay() + 6) % 7));
+    const start = shiftDate(
+        state.date,
+        -((new Date(`${state.date}T12:00:00Z`).getUTCDay() + 6) % 7),
+    );
     return api(`/api/app/planning?start=${start}&end=${shiftDate(start, 6)}`);
 }
 
@@ -274,7 +303,10 @@ async function renderRecipes() {
     setLoading("Loading recipes…");
     const data = await planningData();
     if (!data.available) {
-        content.innerHTML = premiumUnavailable("Recipe workspace is not available for this account", "Recipes are managed from the Munch website when the account has recipe capability.");
+        content.innerHTML = premiumUnavailable(
+            "Recipe workspace is not available for this account",
+            "Recipes are managed from the Munch website when the account has recipe capability.",
+        );
         return;
     }
     content.innerHTML = `<div class="page-heading"><div><h2>Recipe library</h2><p>${data.recipes.length} structured recipe${data.recipes.length === 1 ? "" : "s"}.</p></div><input class="input" id="recipe-filter" type="search" placeholder="Filter recipes" aria-label="Filter recipes" /></div><div class="capability-grid" id="recipe-grid">${data.recipes.length ? data.recipes.map((recipe) => `<article class="capability-card" data-recipe-name="${escapeHtml(recipe.name.toLowerCase())}"><span class="source-chip ${recipe.ownership === "household" ? "source-saved" : "source-usda"}">${escapeHtml(recipe.ownership)}</span><h3 class="spacer-top">${escapeHtml(recipe.name)}</h3><p>${number(recipe.servings, 1)} servings · ${escapeHtml(recipe.nutrition_status)}</p><div class="meal-macros"><span class="macro-chip">${number(recipe.nutrition_per_serving?.calories)} kcal</span><span class="macro-chip">P ${number(recipe.nutrition_per_serving?.protein_g, 1)}g</span><span class="macro-chip">C ${number(recipe.nutrition_per_serving?.carbs_g, 1)}g</span><span class="macro-chip">F ${number(recipe.nutrition_per_serving?.fat_g, 1)}g</span></div><p class="tiny spacer-top">Scheduled ${number(recipe.times_scheduled)} times · logged ${number(recipe.times_logged)} times</p></article>`).join("") : `<div class="empty-state"><div><h3>No recipes yet</h3><p>Ask ChatGPT to save a complete recipe after the ingredients and servings are established.</p></div></div>`}</div>`;
@@ -288,19 +320,38 @@ async function renderPlan() {
     setLoading("Loading the meal plan…");
     const data = await planningData();
     if (!data.available) {
-        content.innerHTML = premiumUnavailable("Meal planning is not available for this account", "The website meal calendar appears when the account has planning capability.");
+        content.innerHTML = premiumUnavailable(
+            "Meal planning is not available for this account",
+            "The website meal calendar appears when the account has planning capability.",
+        );
         return;
     }
-    const start = shiftDate(state.date, -((new Date(`${state.date}T12:00:00Z`).getUTCDay() + 6) % 7));
-    const byDate = Object.groupBy(data.plannedMeals, (meal) => meal.planned_date);
-    content.innerHTML = `<div class="page-heading"><div><h2>Week of ${escapeHtml(formatDate(start))}</h2><p>Planned meals stay separate from foods you actually logged.</p></div><div class="auth-actions"><button class="button button-secondary button-small" data-action="date-week-prev">Previous week</button><button class="button button-secondary button-small" data-action="date-today">This week</button><button class="button button-secondary button-small" data-action="date-week-next">Next week</button></div></div><div class="meal-groups">${weekDays(start).map((date) => `<section class="meal-group"><header class="meal-group-header"><div><strong>${escapeHtml(formatDate(date, { weekday: true }))}</strong></div><span>${(byDate[date] || []).length} planned</span></header>${(byDate[date] || []).length ? (byDate[date] || []).map((meal) => `<article class="meal-card"><div class="meal-card-head"><div><h4>${escapeHtml(meal.recipe_name)}</h4><div class="meal-meta"><span>${escapeHtml(meal.meal_slot || "Meal")}</span><span>${escapeHtml(meal.ownership)}</span>${meal.created_by ? `<span>Added by ${escapeHtml(meal.created_by)}</span>` : ""}</div></div><strong>${number(meal.servings, 1)} servings</strong></div><div class="meal-macros"><span class="macro-chip">${number((meal.nutrition_per_serving?.calories || 0) * meal.servings)} kcal</span><span class="macro-chip">P ${number((meal.nutrition_per_serving?.protein_g || 0) * meal.servings, 1)}g</span></div></article>`).join("") : `<div class="meal-card"><p>No meals planned.</p></div>`}</section>`).join("")}</div>`;
+    const start = shiftDate(
+        state.date,
+        -((new Date(`${state.date}T12:00:00Z`).getUTCDay() + 6) % 7),
+    );
+    const byDate = Object.groupBy(
+        data.plannedMeals,
+        (meal) => meal.planned_date,
+    );
+    content.innerHTML = `<div class="page-heading"><div><h2>Week of ${escapeHtml(formatDate(start))}</h2><p>Planned meals stay separate from foods you actually logged.</p></div><div class="auth-actions"><button class="button button-secondary button-small" data-action="date-week-prev">Previous week</button><button class="button button-secondary button-small" data-action="date-today">This week</button><button class="button button-secondary button-small" data-action="date-week-next">Next week</button></div></div><div class="meal-groups">${weekDays(
+        start,
+    )
+        .map(
+            (date) =>
+                `<section class="meal-group"><header class="meal-group-header"><div><strong>${escapeHtml(formatDate(date, { weekday: true }))}</strong></div><span>${(byDate[date] || []).length} planned</span></header>${(byDate[date] || []).length ? (byDate[date] || []).map((meal) => `<article class="meal-card"><div class="meal-card-head"><div><h4>${escapeHtml(meal.recipe_name)}</h4><div class="meal-meta"><span>${escapeHtml(meal.meal_slot || "Meal")}</span><span>${escapeHtml(meal.ownership)}</span>${meal.created_by ? `<span>Added by ${escapeHtml(meal.created_by)}</span>` : ""}</div></div><strong>${number(meal.servings, 1)} servings</strong></div><div class="meal-macros"><span class="macro-chip">${number((meal.nutrition_per_serving?.calories || 0) * meal.servings)} kcal</span><span class="macro-chip">P ${number((meal.nutrition_per_serving?.protein_g || 0) * meal.servings, 1)}g</span></div></article>`).join("") : `<div class="meal-card"><p>No meals planned.</p></div>`}</section>`,
+        )
+        .join("")}</div>`;
 }
 
 async function renderGroceries() {
     setLoading("Loading grocery lists…");
     const data = await planningData();
     if (!data.available) {
-        content.innerHTML = premiumUnavailable("Grocery lists are not available for this account", "The shopping workspace appears when the account has planning capability.");
+        content.innerHTML = premiumUnavailable(
+            "Grocery lists are not available for this account",
+            "The shopping workspace appears when the account has planning capability.",
+        );
         return;
     }
     content.innerHTML = `<div class="page-heading"><div><h2>Groceries</h2><p>Explicit shopping lists only. Munch does not infer pantry inventory.</p></div><button class="button button-secondary button-small" data-action="shopping-mode">Shopping mode</button></div><div class="dashboard-grid">${data.groceries.map((list) => `<section class="panel panel-span-6"><div class="panel-title"><h3>${list.scope === "household" ? "Household list" : "Personal list"}</h3><span>${list.items.length} items</span></div>${list.items.length ? `<div class="meal-groups">${list.items.map((item) => `<label class="food-row"><div><strong>${escapeHtml(item.name)}</strong><small>${item.quantity == null ? "" : `${number(item.quantity, 2)} ${escapeHtml(item.unit || "")}`}${item.note ? ` · ${escapeHtml(item.note)}` : ""}</small></div><input type="checkbox" ${item.purchased_at ? "checked" : ""} disabled aria-label="${escapeHtml(item.name)} purchased" /></label>`).join("")}</div>` : `<div class="empty-state"><div><h3>The list is empty</h3><p>Ask ChatGPT to add the groceries you explicitly need.</p></div></div>`}</section>`).join("")}</div>`;
@@ -334,7 +385,9 @@ async function renderRoute() {
     try {
         if (!state.bootstrap) {
             state.bootstrap = await api("/api/app/bootstrap");
-            state.date = dateInTimezone(state.bootstrap.profile?.timezone || "UTC");
+            state.date = dateInTimezone(
+                state.bootstrap.profile?.timezone || "UTC",
+            );
         }
         const renderers = {
             today: renderToday,
@@ -372,7 +425,10 @@ function openDialog(title, body, actions = "") {
 async function editMeal(id) {
     const card = document.querySelector(`[data-meal-id="${CSS.escape(id)}"]`);
     const description = card?.querySelector("h4")?.textContent || "";
-    openDialog("Edit meal", `<form id="edit-meal-form" class="auth-form" data-id="${escapeHtml(id)}"><label class="field"><span>Description</span><textarea name="description" rows="4" required>${escapeHtml(description)}</textarea></label><label class="field"><span>Meal type</span><select name="meal_type"><option>breakfast</option><option>lunch</option><option>dinner</option><option>snack</option></select></label><button class="button button-primary" type="submit">Save meal</button></form>`);
+    openDialog(
+        "Edit meal",
+        `<form id="edit-meal-form" class="auth-form" data-id="${escapeHtml(id)}"><label class="field"><span>Description</span><textarea name="description" rows="4" required>${escapeHtml(description)}</textarea></label><label class="field"><span>Meal type</span><select name="meal_type"><option>breakfast</option><option>lunch</option><option>dinner</option><option>snack</option></select></label><button class="button button-primary" type="submit">Save meal</button></form>`,
+    );
 }
 
 async function handleAction(button) {
@@ -383,40 +439,73 @@ async function handleAction(button) {
     if (action === "date-next") state.date = shiftDate(state.date, 1);
     if (action === "date-week-prev") state.date = shiftDate(state.date, -7);
     if (action === "date-week-next") state.date = shiftDate(state.date, 7);
-    if (action === "date-today") state.date = dateInTimezone(state.bootstrap.profile?.timezone || "UTC");
-    if (["date-prev", "date-next", "date-week-prev", "date-week-next", "date-today"].includes(action)) return renderRoute();
+    if (action === "date-today")
+        state.date = dateInTimezone(state.bootstrap.profile?.timezone || "UTC");
+    if (
+        [
+            "date-prev",
+            "date-next",
+            "date-week-prev",
+            "date-week-next",
+            "date-today",
+        ].includes(action)
+    )
+        return renderRoute();
     if (action === "edit-meal") return editMeal(button.dataset.id);
     if (action === "duplicate-meal") {
-        toast("Open ChatGPT and ask Munch to log this meal again. The original entry was not changed.");
+        toast(
+            "Open ChatGPT and ask Munch to log this meal again. The original entry was not changed.",
+        );
         return;
     }
     if (action === "delete-meal") {
         const id = button.dataset.id;
         if (!confirm(`Permanently delete ${findMeal(id)}?`)) return;
-        await api(`/api/app/meals/${encodeURIComponent(id)}`, { method: "DELETE", keepPrevious: true });
+        await api(`/api/app/meals/${encodeURIComponent(id)}`, {
+            method: "DELETE",
+            keepPrevious: true,
+        });
         toast("Meal deleted.");
         return renderRoute();
     }
     if (action === "add-water") {
-        openDialog("Add water", `<form id="water-form" class="auth-form"><label class="field"><span>Amount (milliliters)</span><input name="amount_ml" type="number" min="1" max="20000" value="350" required /></label><label class="field"><span>Notes</span><input name="notes" placeholder="Optional" /></label><button class="button button-primary" type="submit">Add water</button></form>`);
+        openDialog(
+            "Add water",
+            `<form id="water-form" class="auth-form"><label class="field"><span>Amount (milliliters)</span><input name="amount_ml" type="number" min="1" max="20000" value="350" required /></label><label class="field"><span>Notes</span><input name="notes" placeholder="Optional" /></label><button class="button button-primary" type="submit">Add water</button></form>`,
+        );
         return;
     }
     if (action === "add-weight") {
-        openDialog("Add weight", `<form id="weight-form" class="auth-form"><label class="field"><span>Weight</span><input name="weight" type="number" min="1" step="0.1" required /></label><label class="field"><span>Unit</span><select name="unit"><option value="lb" ${state.bootstrap.profile?.preferred_weight_unit === "lb" ? "selected" : ""}>lb</option><option value="kg" ${state.bootstrap.profile?.preferred_weight_unit === "kg" ? "selected" : ""}>kg</option></select></label><label class="field"><span>Notes</span><input name="notes" placeholder="Optional" /></label><button class="button button-primary" type="submit">Add weight</button></form>`);
+        openDialog(
+            "Add weight",
+            `<form id="weight-form" class="auth-form"><label class="field"><span>Weight</span><input name="weight" type="number" min="1" step="0.1" required /></label><label class="field"><span>Unit</span><select name="unit"><option value="lb" ${state.bootstrap.profile?.preferred_weight_unit === "lb" ? "selected" : ""}>lb</option><option value="kg" ${state.bootstrap.profile?.preferred_weight_unit === "kg" ? "selected" : ""}>kg</option></select></label><label class="field"><span>Notes</span><input name="notes" placeholder="Optional" /></label><button class="button button-primary" type="submit">Add weight</button></form>`,
+        );
         return;
     }
     if (action === "billing-checkout") {
-        const data = await api("/billing/checkout", { method: "POST", body: JSON.stringify({ returnTo: "/app/settings/billing" }), keepPrevious: true });
+        const data = await api("/billing/checkout", {
+            method: "POST",
+            body: JSON.stringify({ returnTo: "/app/settings/billing" }),
+            keepPrevious: true,
+        });
         location.href = data.url;
         return;
     }
     if (action === "billing-portal") {
-        const data = await api("/billing/portal", { method: "POST", body: "{}", keepPrevious: true });
+        const data = await api("/billing/portal", {
+            method: "POST",
+            body: "{}",
+            keepPrevious: true,
+        });
         location.href = data.url;
         return;
     }
     if (action === "logout") {
-        await api("/account/logout", { method: "POST", body: "{}", keepPrevious: true });
+        await api("/account/logout", {
+            method: "POST",
+            body: "{}",
+            keepPrevious: true,
+        });
         location.href = "/";
         return;
     }
@@ -428,12 +517,19 @@ async function handleAction(button) {
         location.href = "/account/portal";
         return;
     }
-    if (action === "shopping-mode") document.body.classList.toggle("shopping-mode");
+    if (action === "shopping-mode")
+        document.body.classList.toggle("shopping-mode");
 }
 
 document.addEventListener("click", async (event) => {
     const link = event.target.closest("a[href^='/app']");
-    if (link && !event.metaKey && !event.ctrlKey && !event.shiftKey && link.target !== "_blank") {
+    if (
+        link &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.shiftKey &&
+        link.target !== "_blank"
+    ) {
         event.preventDefault();
         navigate(link.getAttribute("href"));
         return;
@@ -465,33 +561,62 @@ document.addEventListener("input", (event) => {
 document.addEventListener("submit", async (event) => {
     const form = event.target;
     if (!(form instanceof HTMLFormElement)) return;
-    if (!["edit-meal-form", "water-form", "weight-form", "preferences-form", "goals-form"].includes(form.id)) return;
+    if (
+        ![
+            "edit-meal-form",
+            "water-form",
+            "weight-form",
+            "preferences-form",
+            "goals-form",
+        ].includes(form.id)
+    )
+        return;
     event.preventDefault();
     const values = Object.fromEntries(new FormData(form));
     const submit = form.querySelector("button[type='submit']");
     submit.disabled = true;
     try {
         if (form.id === "edit-meal-form") {
-            await api(`/api/app/meals/${encodeURIComponent(form.dataset.id)}`, { method: "PATCH", body: JSON.stringify(values), keepPrevious: true });
+            await api(`/api/app/meals/${encodeURIComponent(form.dataset.id)}`, {
+                method: "PATCH",
+                body: JSON.stringify(values),
+                keepPrevious: true,
+            });
             toast("Meal updated.");
         }
         if (form.id === "water-form") {
-            await api("/api/app/water", { method: "POST", body: JSON.stringify(values), keepPrevious: true });
+            await api("/api/app/water", {
+                method: "POST",
+                body: JSON.stringify(values),
+                keepPrevious: true,
+            });
             toast("Water added.");
         }
         if (form.id === "weight-form") {
-            await api("/api/app/weight", { method: "POST", body: JSON.stringify(values), keepPrevious: true });
+            await api("/api/app/weight", {
+                method: "POST",
+                body: JSON.stringify(values),
+                keepPrevious: true,
+            });
             toast("Weight added.");
         }
         if (form.id === "preferences-form") {
             values.widgets_enabled = form.elements.widgets_enabled.checked;
             values.preferred_weight_unit = values.preferred_weight_unit || null;
-            await api("/api/app/preferences", { method: "PUT", body: JSON.stringify(values), keepPrevious: true });
+            await api("/api/app/preferences", {
+                method: "PUT",
+                body: JSON.stringify(values),
+                keepPrevious: true,
+            });
             state.bootstrap = null;
             toast("Preferences saved.");
         }
         if (form.id === "goals-form") {
-            await api("/api/app/goals", { method: "PUT", body: JSON.stringify(values), keepPrevious: true });
+            await api("/api/app/goals", {
+                method: "PUT",
+                body: JSON.stringify(values),
+                keepPrevious: true,
+            });
             toast("Goals saved.");
         }
         if (dialog.open) dialog.close();
@@ -505,7 +630,9 @@ document.addEventListener("submit", async (event) => {
 
 refreshButton.addEventListener("click", renderRoute);
 quickAction.addEventListener("click", () => {
-    toast("Open ChatGPT and ask Munch to log, search, plan, or review nutrition data.");
+    toast(
+        "Open ChatGPT and ask Munch to log, search, plan, or review nutrition data.",
+    );
 });
 window.addEventListener("popstate", renderRoute);
 renderRoute();

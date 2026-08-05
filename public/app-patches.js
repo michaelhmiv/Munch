@@ -28,7 +28,10 @@ document.addEventListener(
         const button = event.target.closest("[data-action]");
         if (!button) return;
         const action = button.dataset.action;
-        if (!action || !["edit-meal", "add-water", "add-weight"].includes(action)) {
+        if (
+            !action ||
+            !["edit-meal", "add-water", "add-weight"].includes(action)
+        ) {
             return;
         }
 
@@ -65,8 +68,8 @@ document.addEventListener(
         }
 
         const preferredUnit =
-            document.querySelector("select[name='preferred_weight_unit']")?.value ||
-            "lb";
+            document.querySelector("select[name='preferred_weight_unit']")
+                ?.value || "lb";
         showPatchedDialog(
             "Add weight",
             `<form id="weight-form" class="auth-form"><label class="field"><span>Weight</span><input name="weight" type="number" min="1" step="0.1" inputmode="decimal" required /></label><label class="field"><span>Unit</span><select name="unit"><option value="lb" ${preferredUnit === "lb" ? "selected" : ""}>lb</option><option value="kg" ${preferredUnit === "kg" ? "selected" : ""}>kg</option></select></label><label class="field"><span>Notes</span><input name="notes" placeholder="Optional" /></label><button class="button button-primary" type="submit">Add weight</button></form>`,
