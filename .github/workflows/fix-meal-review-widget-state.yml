@@ -28,12 +28,8 @@ jobs:
 
           widget = Path('public/widgets/src/templates/meal-review.html')
           text = widget.read_text()
-          old = '''document
-                        .querySelectorAll(".actions button")
-                        .forEach((button) => (button.disabled = true));'''
-          new = '''document
-                        .querySelectorAll(".actions button")
-                        .forEach((button) => {
+          old = '.forEach((button) => (button.disabled = true));'
+          new = '''.forEach((button) => {
                             button.dataset.locked = "true";
                             button.disabled = true;
                         });'''
