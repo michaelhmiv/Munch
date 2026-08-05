@@ -70,7 +70,29 @@ if (!signup.ok) {
         `Reviewer-mode signup failed: ${signup.status} ${await signup.text()}`,
     );
 }
-const cookie = cookieFrom(signup);
+
+const signIn = await app.request(
+    "https://munch.example/api/auth/sign-in/email",
+    {
+        method: "POST",
+        headers: {
+            "content-type": "application/json",
+            origin: "https://munch.example",
+        },
+        body: JSON.stringify({
+            email,
+            password,
+            rememberMe: false,
+            callbackURL: "/account/portal",
+        }),
+    },
+);
+if (!signIn.ok) {
+    throw new Error(
+        `Reviewer-mode sign-in failed: ${signIn.status} ${await signIn.text()}`,
+    );
+}
+const cookie = cookieFrom(signIn);
 
 const redirectUri = "https://client.example/callback";
 const registration = await app.request(
