@@ -1,0 +1,28 @@
+name: Render OAuth formatting
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  render:
+    if: github.head_ref == 'fix/oauth-consent-request-continuation'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/oauth-consent-request-continuation
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - run: bunx prettier --write scripts/better-auth-browser-oauth-smoke.ts .github/workflows/oauth-browser-smoke.yml
+      - name: Print formatted files
+        run: |
+          echo 'SCRIPT_BASE64_BEGIN'
+          base64 -w0 scripts/better-auth-browser-oauth-smoke.ts
+          echo
+          echo 'SCRIPT_BASE64_END'
+          echo 'WORKFLOW_BASE64_BEGIN'
+          base64 -w0 .github/workflows/oauth-browser-smoke.yml
+          echo
+          echo 'WORKFLOW_BASE64_END'
