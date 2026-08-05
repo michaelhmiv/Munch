@@ -31,7 +31,7 @@ function extension(path: string): string {
 }
 
 test("active source and configuration contain no Supabase dependency or fallback", async () => {
-    const violations: string[] = [];
+    const violations = new Set<string>();
 
     for (const root of ACTIVE_ROOTS) {
         const glob = new Bun.Glob("**/*");
@@ -43,18 +43,18 @@ test("active source and configuration contain no Supabase dependency or fallback
             if (path.endsWith("no-supabase-runtime.test.ts")) continue;
             if (!TEXT_EXTENSIONS.has(extension(path))) continue;
             const content = await Bun.file(path).text();
-            if (FORBIDDEN.test(content)) violations.push(path);
+            if (FORBIDDEN.test(content)) violations.add(path);
         }
     }
 
     for (const path of ACTIVE_FILES) {
         const file = Bun.file(path);
         if (!(await file.exists())) continue;
-        if (FORBIDDEN.test(await file.text())) violations.push(path);
+        if (FORBIDDEN.test(await file.text())) violations.add(path);
     }
 
     expect(
-        violations,
+        [...violations].sort(),
         "Railway PostgreSQL is authoritative; remove every Supabase runtime, fallback, variable, migration, and client reference",
     ).toEqual([]);
 });
