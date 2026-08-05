@@ -1,0 +1,33 @@
+name: Format debug
+
+on:
+  push:
+    branches:
+      - fix/better-auth-mcp-token-validation
+
+permissions:
+  contents: read
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Print Prettier diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          bunx prettier --write src/index.ts
+          git diff -- src/index.ts
+          test -z "$(git status --short src/index.ts)"
