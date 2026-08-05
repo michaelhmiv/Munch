@@ -1,0 +1,45 @@
+name: Fix cutover script
+
+on:
+  push:
+    branches:
+      - fix/remove-supabase-runtime
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/remove-supabase-runtime
+          fetch-depth: 0
+      - name: Correct OAuth block transformation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          path = Path('scripts/railway-only-cutover.py')
+          text = path.read_text()
+          old = '''text = text.replace(
+    '} else if (!betterAuthEnabled) {\\n    app.route("/", createOAuthRouter());\\n',
+    "}",
+)'''
+          new = '''text = text.replace(
+    ' else if (!betterAuthEnabled) {\\n    app.route("/", createOAuthRouter());\\n}',
+    "",
+)'''
+          if old not in text:
+              raise SystemExit('target transformation not found')
+          path.write_text(text.replace(old, new))
+          PY
+          rm .github/workflows/fix-cutover-script.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'ci: correct Railway-only cutover script'
+          git push origin HEAD:fix/remove-supabase-runtime
