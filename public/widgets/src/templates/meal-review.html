@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Meal Review</title>
+        <style>
+            /*@include shared/tokens.css@*/
+            /*@include shared/base.css@*/
+            /*@include shared/form.css@*/
+
+            .review-card {
+                border: 1px solid var(--panel-border);
+                border-radius: 16px;
+                background: var(--panel-bg);
+                overflow: hidden;
+            }
+            .review-head {
+                padding: 18px;
+                border-bottom: 1px solid var(--panel-border);
+            }
+            .review-head h1 {
+                margin: 0 0 4px;
+                font-size: 20px;
+            }
+            .meta,
+            .source,
+            .assumption,
+            .status {
+                color: var(--text-dim);
+                font-size: 12px;
+                line-height: 1.45;
+            }
+            .items {
+                display: grid;
+                gap: 0;
+            }
+            .item {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) auto;
+                gap: 12px;
+                padding: 14px 18px;
+                border-bottom: 1px solid var(--panel-border);
+            }
+            .item:last-child {
+                border-bottom: 0;
+            }
+            .item-name {
+                font-weight: 650;
+            }
+            .portion {
+                margin-top: 3px;
+                font-size: 13px;
+            }
+            .kcal {
+                font-weight: 700;
+                white-space: nowrap;
+            }
+            .macro-row {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin-top: 7px;
+                font-size: 12px;
+                color: var(--text-dim);
+            }
+            .confidence {
+                display: inline-flex;
+                align-items: center;
+                gap: 5px;
+                margin-top: 7px;
+                font-size: 11px;
+                color: var(--text-dim);
+            }
+            .dot {
+                width: 7px;
+                height: 7px;
+                border-radius: 50%;
+                background: currentColor;
+            }
+            .summary {
+                padding: 16px 18px;
+                border-top: 1px solid var(--panel-border);
+                background: var(--panel-muted, transparent);
+            }
+            .total {
+                display: flex;
+                justify-content: space-between;
+                align-items: baseline;
+                gap: 12px;
+                font-weight: 700;
+            }
+            .total strong {
+                font-size: 22px;
+            }
+            .assumptions,
+            .question {
+                margin-top: 12px;
+                padding: 12px;
+                border: 1px solid var(--panel-border);
+                border-radius: 12px;
+            }
+            .question {
+                font-size: 13px;
+                font-weight: 600;
+            }
+            .actions {
+                display: grid;
+                grid-template-columns: 1fr 1fr 1fr;
+                gap: 8px;
+                margin-top: 14px;
+            }
+            .actions button {
+                min-height: 44px;
+            }
+            .edit-box {
+                display: none;
+                margin-top: 12px;
+            }
+            .edit-box.open {
+                display: block;
+            }
+            .edit-box textarea {
+                width: 100%;
+                min-height: 82px;
+                box-sizing: border-box;
+            }
+            .edit-actions {
+                display: flex;
+                justify-content: flex-end;
+                gap: 8px;
+                margin-top: 8px;
+            }
+            .message {
+                margin-top: 10px;
+                font-size: 12px;
+            }
+            @media (max-width: 520px) {
+                .review-head,
+                .item,
+                .summary {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                }
+                .actions {
+                    grid-template-columns: 1fr;
+                }
+                .actions button {
+                    width: 100%;
+                }
+            }
+            @media (prefers-reduced-motion: reduce) {
+                *,
+                *::before,
+                *::after {
+                    scroll-behavior: auto !important;
+                    transition: none !important;
+                    animation: none !important;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="wrap" id="root"></div>
+        <script>
+            "use strict";
+            /*@include shared/bridge.js@*/
+
+            const SAMPLE = {
+                id: "0d64799e-d22b-4bb0-9c55-91db2a714ca1",
+                version: 1,
+                status: "awaiting_confirmation",
+                source_mode: "photo",
+                meal_type: "dinner",
+                description: "Homemade chicken, rice, and vegetables",
+                ready_for_confirmation: true,
+                items: [
+                    {
+                        position: 0,
+                        name: "Roasted chicken thigh",
+                        portion_label: "1 medium thigh",
+                        nutrients: {
+                            calories: 285,
+                            protein_g: 28,
+                            carbs_g: 0,
+                            fat_g: 19,
+                        },
+                        source_type: "model_estimate",
+                        confidence: 0.82,
+                        assumptions: [
+                            "Fork used as the primary scale reference",
+                        ],
+                    },
+                    {
+                        position: 1,
+                        name: "Rice",
+                        portion_label: "about 1 cup",
+                        nutrients: {
+                            calories: 205,
+                            protein_g: 4,
+                            carbs_g: 45,
+                            fat_g: 0.4,
+                        },
+                        source_type: "model_estimate",
+                        confidence: 0.78,
+                        assumptions: [],
+                    },
+                ],
+                totals: {
+                    calories: 490,
+                    protein_g: 32,
+                    carbs_g: 45,
+                    fat_g: 19.4,
+                },
+                assumptions: ["Fork used as the primary scale reference"],
+                next_question: null,
+            };
+
+            function esc(value) {
+                return String(value ?? "").replace(
+                    /[&<>\"]/g,
+                    (char) =>
+                        ({
+                            "&": "&amp;",
+                            "<": "&lt;",
+                            ">": "&gt;",
+                            '"': "&quot;",
+                        })[char],
+                );
+            }
+            function number(value, digits) {
+                if (value == null || Number.isNaN(Number(value))) return "—";
+                return Number(value).toLocaleString(undefined, {
+                    maximumFractionDigits: digits ?? 0,
+                });
+            }
+            function confidenceLabel(value) {
+                if (value == null) return "Confidence not scored";
+                if (value >= 0.8) return "High confidence";
+                if (value >= 0.6) return "Moderate confidence";
+                return "Low confidence";
+            }
+            function coerce(payload) {
+                if (!payload || typeof payload !== "object") return null;
+                if (payload.review) return payload.review;
+                if (payload.structuredContent?.review)
+                    return payload.structuredContent.review;
+                if (payload.id && payload.items) return payload;
+                return null;
+            }
+
+            let current = null;
+            let apiRef = null;
+            let busy = false;
+
+            function setMessage(text, error) {
+                const node = document.getElementById("message");
+                if (!node) return;
+                node.textContent = text || "";
+                node.style.color = error
+                    ? "var(--danger, #b42318)"
+                    : "var(--text-dim)";
+            }
+            function setBusy(value) {
+                busy = value;
+                document.querySelectorAll("button").forEach((button) => {
+                    button.disabled = value || button.dataset.locked === "true";
+                });
+            }
+
+            function render(review) {
+                current = review;
+                const root = document.getElementById("root");
+                if (!review) {
+                    root.innerHTML = "";
+                    return;
+                }
+                const items = Array.isArray(review.items) ? review.items : [];
+                const totals = review.totals || {};
+                const assumptions = Array.isArray(review.assumptions)
+                    ? review.assumptions
+                    : [];
+                const itemHtml = items
+                    .map((item) => {
+                        const nutrients = item.nutrients || {};
+                        const source =
+                            item.provider || item.source_type || "estimate";
+                        return `<div class="item">
+                            <div>
+                                <div class="item-name">${esc(item.name)}</div>
+                                <div class="portion">${esc(item.portion_label || "Portion estimated")}</div>
+                                <div class="macro-row">
+                                    <span>${number(nutrients.protein_g, 1)} g protein</span>
+                                    <span>${number(nutrients.carbs_g, 1)} g carbs</span>
+                                    <span>${number(nutrients.fat_g, 1)} g fat</span>
+                                </div>
+                                <div class="confidence"><span class="dot"></span>${esc(confidenceLabel(item.confidence))} · ${esc(source)}</div>
+                            </div>
+                            <div class="kcal">${number(nutrients.calories)} kcal</div>
+                        </div>`;
+                    })
+                    .join("");
+                const assumptionHtml = assumptions.length
+                    ? `<div class="assumptions"><strong>Assumptions</strong>${assumptions
+                          .map(
+                              (value) =>
+                                  `<div class="assumption">• ${esc(value)}</div>`,
+                          )
+                          .join("")}</div>`
+                    : "";
+                const questionHtml = review.next_question
+                    ? `<div class="question">Before confirmation: ${esc(review.next_question.prompt)}<div class="status">Reply in chat so the estimate can be recalculated.</div></div>`
+                    : "";
+                const canConfirm = Boolean(review.ready_for_confirmation);
+                root.innerHTML = `<div class="review-card">
+                    <div class="review-head">
+                        <h1>${esc(review.description || "Review meal")}</h1>
+                        <div class="meta">${esc(review.meal_type || "meal")} · ${esc(review.source_mode || "estimated")}</div>
+                    </div>
+                    <div class="items">${itemHtml}</div>
+                    <div class="summary">
+                        <div class="total"><span>Estimated total</span><strong>${number(totals.calories)} kcal</strong></div>
+                        <div class="macro-row">
+                            <span>${number(totals.protein_g, 1)} g protein</span>
+                            <span>${number(totals.carbs_g, 1)} g carbs</span>
+                            <span>${number(totals.fat_g, 1)} g fat</span>
+                        </div>
+                        ${assumptionHtml}
+                        ${questionHtml}
+                        <div class="actions">
+                            <button id="confirm" data-locked="${canConfirm ? "false" : "true"}" ${canConfirm ? "" : "disabled"}>Confirm</button>
+                            <button id="edit">Edit</button>
+                            <button id="cancel">Cancel</button>
+                        </div>
+                        <div class="edit-box" id="edit-box">
+                            <label for="correction">What should change?</label>
+                            <textarea id="correction" placeholder="Example: the rice was half a cup, not one cup"></textarea>
+                            <div class="edit-actions"><button id="send-edit">Send correction</button></div>
+                        </div>
+                        <div class="message" id="message" role="status" aria-live="polite"></div>
+                    </div>
+                </div>`;
+
+                document
+                    .getElementById("confirm")
+                    ?.addEventListener("click", confirmReview);
+                document
+                    .getElementById("cancel")
+                    ?.addEventListener("click", cancelReview);
+                document
+                    .getElementById("edit")
+                    ?.addEventListener("click", () => {
+                        document
+                            .getElementById("edit-box")
+                            ?.classList.toggle("open");
+                        document.getElementById("correction")?.focus();
+                    });
+                document
+                    .getElementById("send-edit")
+                    ?.addEventListener("click", sendEdit);
+                if (busy) setBusy(true);
+            }
+
+            async function confirmReview() {
+                if (
+                    !apiRef?.canCallTools ||
+                    !current?.ready_for_confirmation ||
+                    busy
+                )
+                    return;
+                setBusy(true);
+                setMessage("Saving meal…");
+                try {
+                    const result = await apiRef.callTool("confirm_meal_draft", {
+                        draft_id: current.id,
+                        expected_version: current.version,
+                        confirmed: true,
+                    });
+                    setMessage("Meal logged.");
+                    await apiRef.updateModelContext(
+                        `The user confirmed and logged meal draft ${current.id}.`,
+                    );
+                    const card = document.querySelector(".review-card");
+                    if (card) card.setAttribute("data-confirmed", "true");
+                    document
+                        .querySelectorAll(".actions button")
+                        .forEach((button) => (button.disabled = true));
+                    return result;
+                } catch (error) {
+                    setMessage(
+                        error?.message || "Unable to confirm meal.",
+                        true,
+                    );
+                } finally {
+                    setBusy(false);
+                }
+            }
+
+            async function cancelReview() {
+                if (!apiRef?.canCallTools || busy) return;
+                setBusy(true);
+                setMessage("Cancelling review…");
+                try {
+                    await apiRef.callTool("cancel_meal_draft", {
+                        draft_id: current.id,
+                        expected_version: current.version,
+                    });
+                    setMessage("Meal review cancelled.");
+                    await apiRef.updateModelContext(
+                        `The user cancelled meal draft ${current.id}.`,
+                    );
+                    document
+                        .querySelectorAll(".actions button")
+                        .forEach((button) => (button.disabled = true));
+                } catch (error) {
+                    setMessage(
+                        error?.message || "Unable to cancel review.",
+                        true,
+                    );
+                } finally {
+                    setBusy(false);
+                }
+            }
+
+            async function sendEdit() {
+                const correction = document
+                    .getElementById("correction")
+                    ?.value?.trim();
+                if (!correction || !apiRef || busy) return;
+                setBusy(true);
+                setMessage("Sending correction to ChatGPT…");
+                try {
+                    await apiRef.updateModelContext(
+                        `The user requested this correction to meal draft ${current.id} version ${current.version}: ${correction}. Recalculate affected items and call resolve_meal_review with the current expected_version before asking for confirmation again.`,
+                    );
+                    setMessage(
+                        "Correction sent. Continue in chat to review the recalculated meal.",
+                    );
+                } catch (error) {
+                    setMessage(
+                        error?.message || "Unable to send correction.",
+                        true,
+                    );
+                } finally {
+                    setBusy(false);
+                }
+            }
+
+            initWidget({
+                name: "meal-review-widget",
+                loading: '<div class="status">Preparing meal review…</div>',
+                coerce,
+                render,
+                sample: SAMPLE,
+                onReady(api) {
+                    apiRef = api;
+                },
+            });
+        </script>
+    </body>
+</html>
