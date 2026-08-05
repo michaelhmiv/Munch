@@ -75,7 +75,7 @@ describe("production widget boundary", () => {
     });
 });
 
-describe("ChatGPT-native UX contracts", () => {
+describe("ChatGPT-native widget UX contracts", () => {
     test("user-facing widgets contain no competitor-specific fallback copy", async () => {
         for (const key of USER_KEYS) {
             const source = await Bun.file(
