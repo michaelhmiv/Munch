@@ -31,14 +31,14 @@ test("atomic review tools preserve explicit confirmation", () => {
     expect(toolSource).toContain("accept_remaining_assumptions");
 });
 
-test("meal review widget exposes confirm edit and cancel actions", async () => {
+test("meal review widget exposes one primary and one adjustment action", async () => {
     const html = await getWidgetHtml("meal-review");
     expect(html).toContain('id="confirm"');
-    expect(html).toContain('id="edit"');
-    expect(html).toContain('id="cancel"');
-    expect(html).toContain('apiRef.callTool("confirm_meal_draft"');
-    expect(html).toContain('apiRef.callTool("cancel_meal_draft"');
+    expect(html).toContain('id="adjust"');
+    expect(html).not.toContain('id="cancel"');
+    expect(html).not.toContain("<textarea");
+    expect(html).toContain('API.callTool("confirm_meal_draft"');
     expect(html).toContain("prefers-reduced-motion");
     expect(html).toContain("min-height: 44px");
-    expect(html.match(/button\.dataset\.locked = "true"/g)?.length).toBe(2);
+    expect(html).toContain("Meal logged");
 });

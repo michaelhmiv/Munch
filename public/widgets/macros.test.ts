@@ -235,11 +235,8 @@ test("a static tile keeps its ring label and goal caption exposed", () => {
 
 // ---- import widget: the alcohol opt-in ------------------------------------
 //
-// The map step is evaluated the way the assembler ships it: the real assembled
-// widget (bridge + the transpiled csv.ts + the template) is run as one script
-// with only the `initWidget({…})` bootstrap cut off, because that line is the
-// one that reaches for window.parent. Everything below therefore exercises the
-// same code a host runs, not a paraphrase of it.
+// The assembled importer is evaluated without its initWidget bootstrap so the
+// mapping and row-building rules are exercised exactly as the host receives them.
 const importWidget = await (async () => {
     const { getWidgetHtml } = await import("../../src/widgets");
     const html = await getWidgetHtml("import-meals");
@@ -253,28 +250,29 @@ const importWidget = await (async () => {
         `${script.slice(0, boot)}
          return {
              S,
-             setDrinkUnit: (u) => { CFG = Object.assign({}, CFG, { drink_unit: u }); },
+             setDrinkUnit: (unit) => { CFG = Object.assign({}, CFG, { drink_unit: unit }); },
              autoMap,
-             mapStep,
+             mappingView,
+             buildRows,
          };`,
     );
     return factory() as {
-        S: Record<string, unknown>;
-        setDrinkUnit: (u: string | null) => void;
+        S: Record<string, any>;
+        setDrinkUnit: (unit: string | null) => void;
         autoMap: () => void;
-        mapStep: () => string;
+        mappingView: () => string;
+        buildRows: () => boolean;
     };
 })();
 
-// Render the map step over a one-row file. Returns its HTML.
-function mapStepFor(
+function prepareImport(
     headers: string[],
     row: string[],
     drinkUnit: string | null,
 ) {
-    const w = importWidget;
-    w.setDrinkUnit(drinkUnit);
-    w.S.table = {
+    const widget = importWidget;
+    widget.setDrinkUnit(drinkUnit);
+    widget.S.table = {
         headers,
         rows: [row],
         sourceLines: [2],
@@ -285,12 +283,12 @@ function mapStepFor(
         skippedTotalsRows: 0,
         skippedBlankRows: 0,
     };
-    w.S.sourceApp = "";
-    w.S.dateFormat = "iso";
-    w.S.dateAmbiguous = false;
-    w.S.energyUnit = "kcal";
-    w.autoMap();
-    return w.mapStep();
+    widget.S.sourceApp = "";
+    widget.S.dateFormat = "iso";
+    widget.S.dateAmbiguous = false;
+    widget.S.energyUnit = "kcal";
+    widget.autoMap();
+    return widget;
 }
 
 const WITH_ALCOHOL = [
@@ -302,61 +300,51 @@ const NO_ALCOHOL = [
     ["2026-07-18", "Porridge", "310", "9.2"],
 ] as const;
 
-// The gate is silent by design, and alcohol_g sits outside the import digest
-// (CONTRACT §2) — so importing with tracking off and re-running the file after
-// turning it on dedupes to a no-op that back-fills nothing. Unrecoverable and
-// unannounced is the combination this notice exists to break.
-test("a file with alcohol data says so when tracking is off", () => {
-    const html = mapStepFor(WITH_ALCOHOL[0], WITH_ALCOHOL[1], null);
-    expect(html).toContain("alcohol tracking is off");
+test("a file with alcohol data explains the exclusion when tracking is off", () => {
+    const widget = prepareImport(WITH_ALCOHOL[0], WITH_ALCOHOL[1], null);
+    const html = widget.mappingView();
+    expect(html).toContain("Alcohol column excluded");
+    expect(html).toContain("Alcohol tracking is off");
     expect(html).toContain("will not be imported");
-    // Names the column — the user's own header text — so they can tell which
-    // one is meant, and names the way to keep it.
-    expect(html).toContain("This file has an alcohol column (Alcohol (g))");
-    expect(html).toContain("set_alcohol_tracking");
-    // But never a parsed figure: suppressing those is the whole point of the
-    // opt-in, and the gate must not be undone by the notice about it.
     expect(html).not.toContain("17.4");
-    // Nor is the column offered for mapping while tracking is off.
     expect(html).not.toContain('data-field="alcohol_g"');
+
+    expect(widget.buildRows()).toBe(true);
+    expect(widget.S.rows[0]).not.toHaveProperty("alcohol_g");
 });
 
-test("no notice when the user tracks alcohol — the column just imports", () => {
-    const html = mapStepFor(WITH_ALCOHOL[0], WITH_ALCOHOL[1], "us");
-    expect(html).not.toContain("alcohol tracking is off");
+test("tracking on exposes and serializes the alcohol column", () => {
+    const widget = prepareImport(WITH_ALCOHOL[0], WITH_ALCOHOL[1], "us");
+    const html = widget.mappingView();
+    expect(html).not.toContain("Alcohol column excluded");
     expect(html).toContain('data-field="alcohol_g"');
+
+    expect(widget.buildRows()).toBe(true);
+    expect(widget.S.rows[0].alcohol_g).toBe(17.4);
 });
 
-test("no notice when the file has no alcohol column", () => {
-    const html = mapStepFor(NO_ALCOHOL[0], NO_ALCOHOL[1], null);
-    expect(html).not.toContain("alcohol tracking is off");
-    expect(html).not.toContain("alcohol column");
+test("no alcohol notice appears when the file has no alcohol column", () => {
+    const widget = prepareImport(NO_ALCOHOL[0], NO_ALCOHOL[1], null);
+    const html = widget.mappingView();
+    expect(html).not.toContain("Alcohol column excluded");
+    expect(html).not.toContain("Alcohol tracking is off");
 });
 
-// The wording is a claim about presence, so it must not fire on a header that
-// merely looks alcoholic. Sugar alcohols are polyols and ABV is a percentage,
-// neither of which is grams of ethanol — both are excluded from ALIASES, and
-// the notice reuses that list rather than a second one that could drift.
-test("the notice reuses the gate's alias list, not a looser match", () => {
-    const html = mapStepFor(
+test("the alcohol gate ignores polyols and ABV percentage columns", () => {
+    const widget = prepareImport(
         ["Date", "Food Name", "Sugar Alcohols (g)", "ABV"],
         ["2026-07-18", "Protein bar", "4.1", "0"],
         null,
     );
-    expect(html).not.toContain("alcohol tracking is off");
+    expect(widget.mappingView()).not.toContain("Alcohol column excluded");
 });
 
-// The importer parses the file in the browser, so its gate cannot be exercised
-// from here; what is pinned is the part that made the leak possible, namely
-// which way an absent drink_unit defaults.
-test("the importer defaults to alcohol tracking OFF", async () => {
+test("the importer defaults to alcohol tracking off", async () => {
     const html = await Bun.file(`${SRC}/templates/import-meals.html`).text();
     const cfg = html.slice(html.indexOf("let CFG = {"));
     expect(cfg.slice(0, cfg.indexOf("};"))).toContain("drink_unit: null");
-    // Only the two values the server's schema can emit turn it on.
     expect(html).toContain(
         'CFG.drink_unit === "us" || CFG.drink_unit === "uk"',
     );
-    // Nothing leaves the browser unless it is on.
     expect(html).toContain("alcohol_g: alcoholTracked()");
 });

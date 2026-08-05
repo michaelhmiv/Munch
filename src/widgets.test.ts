@@ -108,7 +108,7 @@ describe("ChatGPT-native UX contracts", () => {
         const source = await Bun.file(
             `${SRC}/templates/meal-logged.html`,
         ).text();
-        expect(source).toContain("Meal logged");
+        expect(source).toContain("<title>Meal Logged</title>");
         expect(source).not.toContain('root.innerHTML = ""');
     });
 
