@@ -29,6 +29,38 @@ async function betterAuthJsonPost(
     );
 }
 
+async function browserRedirectResponse(
+    c: Context,
+    response: Response,
+): Promise<Response> {
+    if (!response.ok) return response;
+
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.toLowerCase().includes("application/json")) {
+        return response;
+    }
+
+    const payload = (await response.json()) as {
+        redirect?: unknown;
+        url?: unknown;
+    };
+    if (payload.redirect !== true || typeof payload.url !== "string") {
+        return c.json(payload);
+    }
+
+    let redirectUrl: URL;
+    try {
+        redirectUrl = new URL(payload.url);
+    } catch {
+        return connectionError(c, "consent_redirect_url");
+    }
+    if (redirectUrl.protocol !== "https:" && redirectUrl.protocol !== "http:") {
+        return connectionError(c, "consent_redirect_protocol");
+    }
+
+    return c.redirect(redirectUrl.toString(), 303);
+}
+
 export function createOAuthContinuationRouter(): Hono {
     const router = new Hono();
 
@@ -59,7 +91,7 @@ export function createOAuthContinuationRouter(): Hono {
         }
 
         try {
-            return await betterAuthJsonPost(
+            const response = await betterAuthJsonPost(
                 c,
                 "/api/auth/oauth2/consent",
                 {
@@ -68,6 +100,7 @@ export function createOAuthContinuationRouter(): Hono {
                     oauth_query: oauthQuery,
                 },
             );
+            return browserRedirectResponse(c, response);
         } catch (error) {
             return connectionError(c, "oauth2_consent", error);
         }
