@@ -1,6 +1,7 @@
 name: Inspect Better Auth resource API
 
 on:
+  pull_request:
   push:
     branches:
       - fix/better-auth-mcp-bearer-discovery
