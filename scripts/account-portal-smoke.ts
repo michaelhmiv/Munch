@@ -198,14 +198,18 @@ if (
         (meal) => meal.description === "Portal zero calorie boundary meal",
     )
 ) {
-    throw new Error("Timezone grouping duplicated the meal onto an adjacent day");
+    throw new Error(
+        "Timezone grouping duplicated the meal onto an adjacent day",
+    );
 }
 if (
     boundaryResponse.headers.get("cache-control") !== "private, no-store" ||
-    (await app.request(
-        "https://munch.example/account/portal/meals?date=2026-02-30",
-        { headers: { cookie } },
-    )).status !== 400
+    (
+        await app.request(
+            "https://munch.example/account/portal/meals?date=2026-02-30",
+            { headers: { cookie } },
+        )
+    ).status !== 400
 ) {
     throw new Error("Portal meal endpoint caching or date validation failed");
 }
@@ -225,7 +229,9 @@ const unauthorizedMeals = await app.request(
     "https://munch.example/account/portal/meals?date=2026-08-04",
 );
 if (unauthorized.status !== 401 || unauthorizedMeals.status !== 401) {
-    throw new Error("Portal or meal history allowed access without a web session");
+    throw new Error(
+        "Portal or meal history allowed access without a web session",
+    );
 }
 
 const preferences = await app.request(

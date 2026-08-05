@@ -84,7 +84,10 @@ export function injectMealHistoryIntoPortal(html: string): string {
             PORTAL_GRID_MARKER,
             `${PORTAL_GRID_MARKER}${portalMealHistorySection()}`,
         )
-        .replace(PORTAL_BODY_END, `${portalMealHistoryScript()}${PORTAL_BODY_END}`);
+        .replace(
+            PORTAL_BODY_END,
+            `${portalMealHistoryScript()}${PORTAL_BODY_END}`,
+        );
 }
 
 export function createMealHistoryRouter(): Hono {

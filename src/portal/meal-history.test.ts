@@ -27,7 +27,9 @@ test("portal controls stylesheet is publicly served with the correct MIME type",
     const app = new Hono();
     app.route("/", createMealHistoryRouter());
 
-    const response = await app.request("https://munch.example/portal-controls.css");
+    const response = await app.request(
+        "https://munch.example/portal-controls.css",
+    );
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("text/css");
     expect(await response.text()).toContain("portal-");

@@ -35,7 +35,10 @@ test("active source and configuration contain no Supabase dependency or fallback
 
     for (const root of ACTIVE_ROOTS) {
         const glob = new Bun.Glob("**/*");
-        for await (const relative of glob.scan({ cwd: root, onlyFiles: true })) {
+        for await (const relative of glob.scan({
+            cwd: root,
+            onlyFiles: true,
+        })) {
             const path = `${root}/${relative}`;
             if (path.endsWith("no-supabase-runtime.test.ts")) continue;
             if (!TEXT_EXTENSIONS.has(extension(path))) continue;
