@@ -1,0 +1,28 @@
+name: Supabase runtime audit
+
+on:
+  push:
+    branches:
+      - fix/remove-supabase-runtime
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Runtime references
+        shell: bash
+        run: |
+          set -u
+          echo '=== SUPABASE identifiers ==='
+          rg -n --hidden --glob '!supabase/**' --glob '!docs/**' --glob '!CLAUDE.md' 'SUPABASE_|getSupabase|@supabase/supabase-js|inherited-supabase|\.\/supabase\.js' . || true
+          echo '=== Source imports from supabase facade ==='
+          rg -n 'from ["'"']\.\/supabase\.js["'"']' src || true
+          echo '=== Package references ==='
+          rg -n 'supabase' package.json bun.lock .env.example README.md railway.json || true
+          echo '=== Legacy directory ==='
+          find supabase -maxdepth 2 -type f -print 2>/dev/null || true
