@@ -1,7 +1,14 @@
 import { resolveMunchCapabilities } from "../billing/capabilities.js";
-import { getActiveHouseholdContext, listHouseholdMembers } from "../households/repository.js";
+import {
+    getActiveHouseholdContext,
+    listHouseholdMembers,
+} from "../households/repository.js";
 import { withUserDatabase } from "../platform/database.js";
-import { getGroceryList, getMealPlan, searchRecipes } from "../planning/repository.js";
+import {
+    getGroceryList,
+    getMealPlan,
+    searchRecipes,
+} from "../planning/repository.js";
 import { listSavedFoods } from "../saved-foods/repository.js";
 import {
     getMealsByDate,
@@ -12,6 +19,7 @@ import {
     getWeightByDate,
     type Meal,
 } from "../storage.js";
+import { dateInTz } from "../tz.js";
 
 export interface AppMealItem {
     id: string;
@@ -50,7 +58,9 @@ function numeric(value: unknown): number | null {
 }
 
 function validateDate(value: string): string {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error("Invalid date");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        throw new Error("Invalid date");
+    }
     return value;
 }
 
@@ -63,8 +73,12 @@ function daysBetween(startDate: string, endDate: string): number {
     return Math.floor((end - start) / 86_400_000) + 1;
 }
 
-async function listMealItems(userId: string, mealIds: string[]): Promise<AppMealItem[]> {
+async function listMealItems(
+    userId: string,
+    mealIds: string[],
+): Promise<AppMealItem[]> {
     if (mealIds.length === 0) return [];
+    const idJson = JSON.stringify(mealIds);
     return withUserDatabase(userId, async (tx) => {
         const rows = await tx<Array<Record<string, unknown>>>`
             select
@@ -74,7 +88,10 @@ async function listMealItems(userId: string, mealIds: string[]): Promise<AppMeal
                 source_type, provider, provider_food_id, source_url,
                 source_updated_at, confidence, assumptions
             from munch.meal_items
-            where meal_id = any(${mealIds}::uuid[])
+            where meal_id in (
+                select value::uuid
+                from jsonb_array_elements_text((${idJson}::text)::jsonb)
+            )
             order by meal_id, position
         `;
         return rows.map((row) => ({
@@ -83,7 +100,8 @@ async function listMealItems(userId: string, mealIds: string[]): Promise<AppMeal
             position: Number(row.position),
             name: String(row.name),
             quantity: numeric(row.quantity),
-            portionLabel: row.portion_label == null ? null : String(row.portion_label),
+            portionLabel:
+                row.portion_label == null ? null : String(row.portion_label),
             gramWeight: numeric(row.gram_weight),
             calories: numeric(row.calories),
             proteinG: numeric(row.protein_g),
@@ -98,8 +116,12 @@ async function listMealItems(userId: string, mealIds: string[]): Promise<AppMeal
             potassiumMg: numeric(row.potassium_mg),
             sourceType: String(row.source_type),
             provider: row.provider == null ? null : String(row.provider),
-            providerFoodId: row.provider_food_id == null ? null : String(row.provider_food_id),
-            sourceUrl: row.source_url == null ? null : String(row.source_url),
+            providerFoodId:
+                row.provider_food_id == null
+                    ? null
+                    : String(row.provider_food_id),
+            sourceUrl:
+                row.source_url == null ? null : String(row.source_url),
             sourceUpdatedAt:
                 row.source_updated_at == null
                     ? null
@@ -112,7 +134,10 @@ async function listMealItems(userId: string, mealIds: string[]): Promise<AppMeal
     });
 }
 
-async function attachItems(userId: string, meals: Meal[]): Promise<AppMeal[]> {
+async function attachItems(
+    userId: string,
+    meals: Meal[],
+): Promise<AppMeal[]> {
     const items = await listMealItems(
         userId,
         meals.map((meal) => meal.id),
@@ -123,7 +148,10 @@ async function attachItems(userId: string, meals: Meal[]): Promise<AppMeal[]> {
         group.push(item);
         byMeal.set(item.mealId, group);
     }
-    return meals.map((meal) => ({ ...meal, items: byMeal.get(meal.id) ?? [] }));
+    return meals.map((meal) => ({
+        ...meal,
+        items: byMeal.get(meal.id) ?? [],
+    }));
 }
 
 function totals(meals: Meal[]) {
@@ -158,11 +186,18 @@ async function listOpenDrafts(userId: string) {
                 draft.description, draft.logged_at, draft.notes, draft.version,
                 draft.expires_at, draft.updated_at,
                 count(distinct item.id)::integer as item_count,
-                count(distinct question.id) filter (where question.status = 'open')::integer as open_question_count
+                count(distinct question.id)
+                    filter (where question.status = 'open')::integer
+                    as open_question_count
             from munch.meal_drafts draft
             left join munch.meal_draft_items item on item.draft_id = draft.id
-            left join munch.meal_draft_questions question on question.draft_id = draft.id
-            where draft.status in ('open', 'awaiting_answers', 'awaiting_confirmation')
+            left join munch.meal_draft_questions question
+                on question.draft_id = draft.id
+            where draft.status in (
+                'open',
+                'awaiting_answers',
+                'awaiting_confirmation'
+            )
               and draft.expires_at > now()
             group by draft.id
             order by draft.updated_at desc
@@ -172,8 +207,10 @@ async function listOpenDrafts(userId: string) {
             id: String(row.id),
             status: String(row.status),
             sourceMode: String(row.source_mode),
-            mealType: row.meal_type == null ? null : String(row.meal_type),
-            description: row.description == null ? null : String(row.description),
+            mealType:
+                row.meal_type == null ? null : String(row.meal_type),
+            description:
+                row.description == null ? null : String(row.description),
             loggedAt:
                 row.logged_at == null
                     ? null
@@ -201,8 +238,10 @@ export async function getAppBootstrap(userId: string, email: string) {
             tier: capabilities.tier,
             historyDays: capabilities.historyDays,
             savedFoodLimit: capabilities.savedFoodLimit,
-            recipes: capabilities.personalRecipesRead || capabilities.householdRead,
-            planning: capabilities.personalPlanningRead || capabilities.householdRead,
+            recipes:
+                capabilities.personalRecipesRead || capabilities.householdRead,
+            planning:
+                capabilities.personalPlanningRead || capabilities.householdRead,
             household: capabilities.householdRead,
             householdManage: capabilities.householdManage,
         },
@@ -210,21 +249,35 @@ export async function getAppBootstrap(userId: string, email: string) {
     };
 }
 
-export async function getTodayWorkspace(userId: string, dateValue: string) {
+export async function getTodayWorkspace(
+    userId: string,
+    dateValue: string,
+) {
     const date = validateDate(dateValue);
-    const capabilities = await resolveMunchCapabilities(userId);
-    const [meals, goals, water, weight, drafts, plannedMeals] = await Promise.all([
-        getMealsByDate(userId, date),
-        getNutritionGoals(userId),
-        getWaterByDate(userId, date),
-        getWeightByDate(userId, date),
-        listOpenDrafts(userId),
-        capabilities.personalPlanningRead || capabilities.householdRead
-            ? getMealPlan({ userId, startDate: date, endDate: date, scope: "all" })
-            : Promise.resolve([]),
+    const [profile, capabilities] = await Promise.all([
+        getProfile(userId),
+        resolveMunchCapabilities(userId),
     ]);
+    const timezone = profile.timezone;
+    const [meals, goals, water, weight, drafts, plannedMeals] =
+        await Promise.all([
+            getMealsByDate(userId, date, timezone),
+            getNutritionGoals(userId),
+            getWaterByDate(userId, date, timezone),
+            getWeightByDate(userId, date, timezone),
+            listOpenDrafts(userId),
+            capabilities.personalPlanningRead || capabilities.householdRead
+                ? getMealPlan({
+                      userId,
+                      startDate: date,
+                      endDate: date,
+                      scope: "all",
+                  })
+                : Promise.resolve([]),
+        ]);
     return {
         date,
+        timezone,
         totals: totals(meals),
         meals: await attachItems(userId, meals),
         goals,
@@ -248,10 +301,17 @@ export async function getMealHistoryWorkspace(
     if (daysBetween(startDate, endDate) > 366) {
         throw new Error("Date range is too large");
     }
-    const meals = await getMealsInRange(userId, startDate, endDate);
+    const profile = await getProfile(userId);
+    const meals = await getMealsInRange(
+        userId,
+        startDate,
+        endDate,
+        profile.timezone,
+    );
     return {
         startDate,
         endDate,
+        timezone: profile.timezone,
         totals: totals(meals),
         meals: await attachItems(userId, meals),
     };
@@ -276,28 +336,41 @@ export async function getInsightsWorkspace(
     const endDate = validateDate(endValue);
     const dayCount = daysBetween(startDate, endDate);
     if (dayCount > 366) throw new Error("Date range is too large");
-    const meals = await getMealsInRange(userId, startDate, endDate);
+    const profile = await getProfile(userId);
+    const meals = await getMealsInRange(
+        userId,
+        startDate,
+        endDate,
+        profile.timezone,
+    );
     const byDate = new Map<string, Meal[]>();
     for (const meal of meals) {
-        const date = meal.logged_at.slice(0, 10);
-        const group = byDate.get(date) ?? [];
+        const localDate = dateInTz(meal.logged_at, profile.timezone);
+        const group = byDate.get(localDate) ?? [];
         group.push(meal);
-        byDate.set(date, group);
+        byDate.set(localDate, group);
     }
     const days = [...byDate.entries()]
-        .map(([date, entries]) => ({ date, totals: totals(entries), mealCount: entries.length }))
+        .map(([date, entries]) => ({
+            date,
+            totals: totals(entries),
+            mealCount: entries.length,
+        }))
         .sort((left, right) => left.date.localeCompare(right.date));
     const aggregate = totals(meals);
     const loggedDays = days.length;
     const averages = Object.fromEntries(
         Object.entries(aggregate).map(([key, value]) => [
             key,
-            loggedDays === 0 ? 0 : Number((value / loggedDays).toFixed(1)),
+            loggedDays === 0
+                ? 0
+                : Number((value / loggedDays).toFixed(1)),
         ]),
     );
     return {
         startDate,
         endDate,
+        timezone: profile.timezone,
         calendarDays: dayCount,
         loggedDays,
         mealCount: meals.length,
@@ -307,37 +380,64 @@ export async function getInsightsWorkspace(
     };
 }
 
-export async function getPlanningWorkspace(userId: string, startValue: string, endValue: string) {
+export async function getPlanningWorkspace(
+    userId: string,
+    startValue: string,
+    endValue: string,
+) {
     const startDate = validateDate(startValue);
     const endDate = validateDate(endValue);
-    if (daysBetween(startDate, endDate) > 62) throw new Error("Date range is too large");
+    if (daysBetween(startDate, endDate) > 62) {
+        throw new Error("Date range is too large");
+    }
     const capabilities = await resolveMunchCapabilities(userId);
     const household = capabilities.household;
-    const canRead = capabilities.personalPlanningRead || capabilities.householdRead;
+    const canRead =
+        capabilities.personalPlanningRead || capabilities.householdRead;
     if (!canRead) {
-        return { available: false, recipes: [], plannedMeals: [], groceries: [] };
+        return {
+            available: false,
+            recipes: [],
+            plannedMeals: [],
+            groceries: [],
+        };
     }
-    const [recipes, plannedMeals, personalGroceries, householdGroceries] = await Promise.all([
-        searchRecipes({ userId, scope: "all", limit: 50 }),
-        getMealPlan({ userId, startDate, endDate, scope: "all" }),
-        capabilities.personalPlanningRead
-            ? getGroceryList({ userId, scope: { type: "personal" }, includePurchased: true })
-            : Promise.resolve({ groceryListId: null, items: [] }),
-        capabilities.householdRead && household
-            ? getGroceryList({
-                  userId,
-                  scope: { type: "household", householdId: household.householdId },
-                  includePurchased: true,
-              })
-            : Promise.resolve({ groceryListId: null, items: [] }),
-    ]);
+    const [recipes, plannedMeals, personalGroceries, householdGroceries] =
+        await Promise.all([
+            searchRecipes({ userId, scope: "all", limit: 50 }),
+            getMealPlan({
+                userId,
+                startDate,
+                endDate,
+                scope: "all",
+            }),
+            capabilities.personalPlanningRead
+                ? getGroceryList({
+                      userId,
+                      scope: { type: "personal" },
+                      includePurchased: true,
+                  })
+                : Promise.resolve({ groceryListId: null, items: [] }),
+            capabilities.householdRead && household
+                ? getGroceryList({
+                      userId,
+                      scope: {
+                          type: "household",
+                          householdId: household.householdId,
+                      },
+                      includePurchased: true,
+                  })
+                : Promise.resolve({ groceryListId: null, items: [] }),
+        ]);
     return {
         available: true,
         recipes,
         plannedMeals,
         groceries: [
             { scope: "personal", ...personalGroceries },
-            ...(household ? [{ scope: "household", ...householdGroceries }] : []),
+            ...(household
+                ? [{ scope: "household", ...householdGroceries }]
+                : []),
         ],
     };
 }
