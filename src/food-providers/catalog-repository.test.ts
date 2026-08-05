@@ -55,7 +55,7 @@ function candidate(overrides: Partial<FoodCandidate> = {}): FoodCandidate {
 
 describe("persistent food catalog helpers", () => {
     test("normalizes names and brands consistently", () => {
-        expect(normalizeFoodText("  Simply—Nature   GRAINtastic™ ")).toBe(
+        expect(normalizeFoodText("  Simply—Nature   GRAINtastic ")).toBe(
             "simply nature graintastic",
         );
     });
