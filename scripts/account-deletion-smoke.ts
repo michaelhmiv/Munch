@@ -4,24 +4,21 @@ process.env.MUNCH_RAILWAY_DATA_ENABLED = "true";
 process.env.MUNCH_RAILWAY_AUTH_ENABLED = "true";
 process.env.MUNCH_APP_BASE_URL = "https://munch.example";
 
-const { McpServer } = await import(
-    "@modelcontextprotocol/sdk/server/mcp.js"
-);
+const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
 const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
-const { InMemoryTransport } = await import(
-    "@modelcontextprotocol/sdk/inMemory.js"
-);
+const { InMemoryTransport } =
+    await import("@modelcontextprotocol/sdk/inMemory.js");
 const { createLoginChallenge, consumeLoginChallenge } =
     await import("../src/accounts/repository.js");
 const { registerTools } = await import("../src/mcp.js");
-const {
-    closePlatformDatabase,
-    getPlatformDatabase,
-} = await import("../src/platform/database.js");
+const { closePlatformDatabase, getPlatformDatabase } =
+    await import("../src/platform/database.js");
 const storage = await import("../src/storage.js");
 
 if (!process.env.DATABASE_URL) {
-    throw new Error("DATABASE_URL is required for account deletion smoke tests");
+    throw new Error(
+        "DATABASE_URL is required for account deletion smoke tests",
+    );
 }
 
 interface Counts {
@@ -35,9 +32,7 @@ function toolText(result: unknown): string {
     const content = (result as { content?: Array<{ text?: unknown }> }).content;
     return Array.isArray(content)
         ? content
-              .map((item) =>
-                  typeof item.text === "string" ? item.text : "",
-              )
+              .map((item) => (typeof item.text === "string" ? item.text : ""))
               .join("\n")
         : "";
 }
