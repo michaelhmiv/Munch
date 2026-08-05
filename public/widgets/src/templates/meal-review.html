@@ -384,7 +384,10 @@
                     if (card) card.setAttribute("data-confirmed", "true");
                     document
                         .querySelectorAll(".actions button")
-                        .forEach((button) => (button.disabled = true));
+                        .forEach((button) => {
+                            button.dataset.locked = "true";
+                            button.disabled = true;
+                        });
                     return result;
                 } catch (error) {
                     setMessage(
@@ -411,7 +414,10 @@
                     );
                     document
                         .querySelectorAll(".actions button")
-                        .forEach((button) => (button.disabled = true));
+                        .forEach((button) => {
+                            button.dataset.locked = "true";
+                            button.disabled = true;
+                        });
                 } catch (error) {
                     setMessage(
                         error?.message || "Unable to cancel review.",

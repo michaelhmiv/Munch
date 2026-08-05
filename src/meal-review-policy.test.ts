@@ -40,4 +40,5 @@ test("meal review widget exposes confirm edit and cancel actions", async () => {
     expect(html).toContain('apiRef.callTool("cancel_meal_draft"');
     expect(html).toContain("prefers-reduced-motion");
     expect(html).toContain("min-height: 44px");
+    expect(html.match(/button\.dataset\.locked = "true"/g)?.length).toBe(2);
 });
