@@ -29,6 +29,10 @@ const app = new Hono();
 const railwayAuthEnabled = process.env.MUNCH_RAILWAY_AUTH_ENABLED === "true";
 const betterAuthEnabled = betterAuthIsEnabled();
 const mcpAuthMode = resolveMcpAuthMode(betterAuthEnabled, railwayAuthEnabled);
+const mcpAuthenticator =
+    mcpAuthMode === "railway"
+        ? authenticatePlatformBearer
+        : authenticateBearer;
 
 app.use("*", async (c, next) => {
     const path = new URL(c.req.url).pathname;
@@ -119,7 +123,7 @@ if (!betterAuthEnabled && railwayAuthEnabled) {
 app.all(
     "/mcp",
     banRepeatAuthFailures,
-    mcpAuthMode === "railway" ? authenticatePlatformBearer : authenticateBearer,
+    mcpAuthenticator,
     rateLimit,
     handleMcp,
 );
