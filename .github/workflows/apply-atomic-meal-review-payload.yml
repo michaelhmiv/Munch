@@ -37,7 +37,7 @@ jobs:
           text = path.read_text()
           text = text.replace(
               'args.answers?.map((answer) => ({',
-              'args.answers?.map((answer: z.infer<typeof reviewAnswerInput>) => ({',
+              'args.answers?.map((answer: { question_id?: string; question_key?: string; answer: string }) => ({',
           )
           path.write_text(text)
           PY
