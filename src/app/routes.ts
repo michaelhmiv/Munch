@@ -166,58 +166,62 @@ export function createAppRouter(): Hono {
 
     app.patch("/api/app/meals/:id", requireSameOrigin, async (c) => {
         const body = (await c.req.json()) as Record<string, unknown>;
-        const meal = await updateMeal(c.get("munchUserId"), c.req.param("id"), {
-            ...(typeof body.description === "string"
-                ? { description: body.description }
-                : {}),
-            ...(body.meal_type !== undefined
-                ? { meal_type: mealType(body.meal_type) }
-                : {}),
-            ...(body.calories !== undefined
-                ? {
-                      calories: numberOrNull(body.calories) ?? undefined,
-                  }
-                : {}),
-            ...(body.protein_g !== undefined
-                ? {
-                      protein_g: numberOrNull(body.protein_g) ?? undefined,
-                  }
-                : {}),
-            ...(body.carbs_g !== undefined
-                ? {
-                      carbs_g: numberOrNull(body.carbs_g) ?? undefined,
-                  }
-                : {}),
-            ...(body.fat_g !== undefined
-                ? { fat_g: numberOrNull(body.fat_g) ?? undefined }
-                : {}),
-            ...(body.fiber_g !== undefined
-                ? {
-                      fiber_g: numberOrNull(body.fiber_g) ?? undefined,
-                  }
-                : {}),
-            ...(body.sugar_g !== undefined
-                ? {
-                      sugar_g: numberOrNull(body.sugar_g) ?? undefined,
-                  }
-                : {}),
-            ...(body.alcohol_g !== undefined
-                ? {
-                      alcohol_g: numberOrNull(body.alcohol_g) ?? undefined,
-                  }
-                : {}),
-            ...(typeof body.logged_at === "string"
-                ? { logged_at: body.logged_at }
-                : {}),
-            ...(body.notes === null || typeof body.notes === "string"
-                ? { notes: body.notes as string | null }
-                : {}),
-        });
+        const meal = await updateMeal(
+            c.get("munchUserId"),
+            c.req.param("id")!,
+            {
+                ...(typeof body.description === "string"
+                    ? { description: body.description }
+                    : {}),
+                ...(body.meal_type !== undefined
+                    ? { meal_type: mealType(body.meal_type) }
+                    : {}),
+                ...(body.calories !== undefined
+                    ? {
+                          calories: numberOrNull(body.calories) ?? undefined,
+                      }
+                    : {}),
+                ...(body.protein_g !== undefined
+                    ? {
+                          protein_g: numberOrNull(body.protein_g) ?? undefined,
+                      }
+                    : {}),
+                ...(body.carbs_g !== undefined
+                    ? {
+                          carbs_g: numberOrNull(body.carbs_g) ?? undefined,
+                      }
+                    : {}),
+                ...(body.fat_g !== undefined
+                    ? { fat_g: numberOrNull(body.fat_g) ?? undefined }
+                    : {}),
+                ...(body.fiber_g !== undefined
+                    ? {
+                          fiber_g: numberOrNull(body.fiber_g) ?? undefined,
+                      }
+                    : {}),
+                ...(body.sugar_g !== undefined
+                    ? {
+                          sugar_g: numberOrNull(body.sugar_g) ?? undefined,
+                      }
+                    : {}),
+                ...(body.alcohol_g !== undefined
+                    ? {
+                          alcohol_g: numberOrNull(body.alcohol_g) ?? undefined,
+                      }
+                    : {}),
+                ...(typeof body.logged_at === "string"
+                    ? { logged_at: body.logged_at }
+                    : {}),
+                ...(body.notes === null || typeof body.notes === "string"
+                    ? { notes: body.notes as string | null }
+                    : {}),
+            },
+        );
         return privateJson(c, { meal });
     });
 
     app.delete("/api/app/meals/:id", requireSameOrigin, async (c) => {
-        await deleteMeal(c.get("munchUserId"), c.req.param("id"));
+        await deleteMeal(c.get("munchUserId"), c.req.param("id")!);
         return privateJson(c, { deleted: true });
     });
 
@@ -238,7 +242,7 @@ export function createAppRouter(): Hono {
     });
 
     app.delete("/api/app/water/:id", requireSameOrigin, async (c) => {
-        await deleteWater(c.get("munchUserId"), c.req.param("id"));
+        await deleteWater(c.get("munchUserId"), c.req.param("id")!);
         return privateJson(c, { deleted: true });
     });
 
@@ -263,7 +267,7 @@ export function createAppRouter(): Hono {
     });
 
     app.delete("/api/app/weight/:id", requireSameOrigin, async (c) => {
-        await deleteWeight(c.get("munchUserId"), c.req.param("id"));
+        await deleteWeight(c.get("munchUserId"), c.req.param("id")!);
         return privateJson(c, { deleted: true });
     });
 
@@ -336,7 +340,7 @@ export function createAppRouter(): Hono {
         async (c) => {
             const revoked = await revokeOAuthConnection(
                 c.get("munchUserId"),
-                c.req.param("tokenFamilyId"),
+                c.req.param("tokenFamilyId")!,
             );
             if (!revoked) throw new Error("Connection not found");
             return privateJson(c, { revoked: true });

@@ -250,7 +250,7 @@ export async function getTodayWorkspace(userId: string, dateValue: string) {
         getProfile(userId),
         resolveMunchCapabilities(userId),
     ]);
-    const timezone = profile.timezone;
+    const timezone = profile?.timezone ?? "UTC";
     const [meals, goals, water, weight, drafts, plannedMeals] =
         await Promise.all([
             getMealsByDate(userId, date, timezone),
@@ -294,16 +294,12 @@ export async function getMealHistoryWorkspace(
         throw new Error("Date range is too large");
     }
     const profile = await getProfile(userId);
-    const meals = await getMealsInRange(
-        userId,
-        startDate,
-        endDate,
-        profile.timezone,
-    );
+    const timezone = profile?.timezone ?? "UTC";
+    const meals = await getMealsInRange(userId, startDate, endDate, timezone);
     return {
         startDate,
         endDate,
-        timezone: profile.timezone,
+        timezone,
         totals: totals(meals),
         meals: await attachItems(userId, meals),
     };
@@ -329,15 +325,11 @@ export async function getInsightsWorkspace(
     const dayCount = daysBetween(startDate, endDate);
     if (dayCount > 366) throw new Error("Date range is too large");
     const profile = await getProfile(userId);
-    const meals = await getMealsInRange(
-        userId,
-        startDate,
-        endDate,
-        profile.timezone,
-    );
+    const timezone = profile?.timezone ?? "UTC";
+    const meals = await getMealsInRange(userId, startDate, endDate, timezone);
     const byDate = new Map<string, Meal[]>();
     for (const meal of meals) {
-        const localDate = dateInTz(meal.logged_at, profile.timezone);
+        const localDate = dateInTz(meal.logged_at, timezone);
         const group = byDate.get(localDate) ?? [];
         group.push(meal);
         byDate.set(localDate, group);
@@ -360,7 +352,7 @@ export async function getInsightsWorkspace(
     return {
         startDate,
         endDate,
-        timezone: profile.timezone,
+        timezone,
         calendarDays: dayCount,
         loggedDays,
         mealCount: meals.length,
