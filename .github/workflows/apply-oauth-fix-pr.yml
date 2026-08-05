@@ -1,0 +1,32 @@
+name: Apply OAuth fix on PR
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'fix/oauth-consent-request-continuation' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/oauth-consent-request-continuation
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - run: python3 scripts/apply-oauth-continuation-fix.py
+      - run: bunx prettier --write src/auth/connect-routes.ts scripts/better-auth-browser-oauth-smoke.ts .github/workflows/ci.yml docs/oauth-continuation-incident.md
+      - name: Commit final fix
+        run: |
+          rm .github/workflows/apply-oauth-continuation-fix.yml
+          rm .github/workflows/apply-oauth-fix-pr.yml
+          rm scripts/apply-oauth-continuation-fix.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/auth/connect-routes.ts scripts/better-auth-browser-oauth-smoke.ts .github/workflows/ci.yml docs/oauth-continuation-incident.md .github/workflows/apply-oauth-continuation-fix.yml .github/workflows/apply-oauth-fix-pr.yml scripts/apply-oauth-continuation-fix.py
+          git commit -m "fix: preserve Better Auth OAuth continuation"
+          git push origin HEAD:fix/oauth-consent-request-continuation
