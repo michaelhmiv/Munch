@@ -29,6 +29,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          cp .github/workflows/ci.yml /tmp/original-ci.yml
           cat .codegen/part-* | tr -d '\n' | base64 -d > /tmp/munch-payload.tar.gz
           tar -xzf /tmp/munch-payload.tar.gz -C .
           python - <<'PY'
@@ -41,8 +42,8 @@ jobs:
           )
           path.write_text(text)
           PY
+          cp /tmp/original-ci.yml .github/workflows/ci.yml
           rm -rf .codegen
-          rm -f .github/workflows/apply-atomic-meal-review-payload.yml
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -58,7 +59,6 @@ jobs:
           scripts/atomic-meal-review-smoke.ts
           scripts/meal-review-benchmark.ts
           public/widgets/src/templates/meal-review.html
-          .github/workflows/ci.yml
 
       - name: Run generated-source quality checks
         shell: bash
