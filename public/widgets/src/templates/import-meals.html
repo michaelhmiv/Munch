@@ -1,31 +1,4 @@
 <!doctype html>
-<!--
-  Bulk meal import widget (MCP Apps).
-
-  The point of this widget is that the MODEL never handles row data. It parses the
-  user's export in-browser, shows a mapping and a preview to confirm, then calls
-  bulk_import_meals itself via the shared bridge's api.callTool. Structured tool
-  results are not added to model context, so hundreds of rows never enter the
-  token stream — only a short summary, pushed back deliberately at the end via
-  api.updateModelContext.
-
-  Four steps: file -> map columns -> preview -> import.
-
-  Alcohol is opt-in and the opt-in reaches this far: start_meal_import sends
-  drink_unit, and with it null the widget neither maps, previews nor sends an
-  alcohol column, however loudly the file advertises one. See gatedField below
-  for why nothing is written either.
-
-  The CSV parser is NOT written here. `@inlinets src/csv.ts` splices in the real
-  tested module (src/csv.test.ts), because a parser facing arbitrary user files
-  must not live as untested inline template JS.
-
-  Degrades on purpose:
-    - api.canCallTools false  -> tells the user to ask Claude to import instead
-    - host never answers      -> per-call timeout, reported, retry offered
-    - a chunk fails           -> other chunks still land; re-running is a no-op
-                                 server-side, so "retry failed rows" is safe
--->
 <html lang="en">
     <head>
         <meta charset="utf-8" />
@@ -33,226 +6,205 @@
         <title>Import Meals</title>
         <style>
             /*@include shared/tokens.css@*/
-
             /*@include shared/base.css@*/
 
-            /*@include shared/form.css@*/
-
-            /*@include shared/table.css@*/
-
-            .imp {
-                padding: 14px;
+            .launch {
                 display: grid;
-                /* minmax(0,1fr): an auto column would be sized by the nowrap
-                   preview table and drag every sibling card wide. */
-                grid-template-columns: minmax(0, 1fr);
                 gap: 14px;
+                padding: 18px;
             }
-            .imp section {
-                padding: 14px;
-            }
-            .imp h3 {
-                margin: 0 0 10px;
-                font-size: 11.5px;
-                font-weight: 700;
-                text-transform: uppercase;
-                letter-spacing: 0.06em;
-                color: var(--accent);
-            }
-            .map-grid {
+            .launch-copy {
                 display: grid;
-                grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-                gap: 8px 12px;
-                align-items: center;
+                gap: 4px;
             }
-            .map-src {
-                font-size: 12.5px;
-                font-weight: 600;
+            .launch-title {
+                font-size: 17px;
+                font-weight: 700;
+                letter-spacing: -0.015em;
+            }
+            .source-list {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 6px;
+            }
+            .source-chip {
+                border: 1px solid var(--panel-border);
+                border-radius: 999px;
+                padding: 3px 8px;
+                color: var(--text-dim);
+                font-size: 11px;
+            }
+            .import-shell {
+                display: grid;
+                gap: 14px;
+                padding: 16px;
+            }
+            .stepper {
+                display: grid;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: 6px;
+            }
+            .step {
+                display: grid;
+                gap: 4px;
+                min-width: 0;
+                color: var(--text-dim);
+                font-size: 11px;
+            }
+            .step::before {
+                content: "";
+                display: block;
+                height: 4px;
+                border-radius: 999px;
+                background: var(--track);
+            }
+            .step.active,
+            .step.done {
+                color: var(--text);
+                font-weight: 650;
+            }
+            .step.active::before,
+            .step.done::before {
+                background: var(--accent);
+            }
+            .drop {
+                position: relative;
+                display: grid;
+                place-items: center;
+                min-height: 178px;
+                padding: 24px;
+                text-align: center;
+                border: 1.5px dashed var(--panel-border);
+                border-radius: var(--radius);
+                background: var(--panel);
+                cursor: pointer;
+            }
+            .drop:hover,
+            .drop.over,
+            .drop:focus-within {
+                border-color: var(--accent);
+                background: var(--accent-soft);
+            }
+            .drop input {
+                position: absolute;
+                width: 1px;
+                height: 1px;
                 overflow: hidden;
+                opacity: 0;
+            }
+            .drop strong {
+                display: block;
+                margin-bottom: 4px;
+                font-size: 15px;
+            }
+            .mapping {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 12px;
+            }
+            .field-note {
+                overflow: hidden;
+                color: var(--text-dim);
+                font-size: 11px;
                 text-overflow: ellipsis;
                 white-space: nowrap;
             }
-            .map-sample {
-                font-size: 11px;
-                color: var(--text-dim);
-                font-family: ui-monospace, Menlo, monospace;
-            }
-            .stat-row {
-                display: flex;
-                gap: 16px;
-                flex-wrap: wrap;
-                font-size: 12.5px;
-                margin-bottom: 10px;
-            }
-            .stat-row b {
+            .preview-table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 12px;
                 font-variant-numeric: tabular-nums;
             }
-            .diag {
-                display: block;
-                margin-top: 8px;
-                padding: 7px 9px;
-                border-radius: 8px;
-                background: var(--track);
-                font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-                font-size: 10.5px;
-                line-height: 1.5;
-                white-space: pre-wrap;
-                user-select: all;
+            .preview-table th,
+            .preview-table td {
+                padding: 9px 8px;
+                text-align: left;
+                border-bottom: 1px solid var(--panel-border);
+                vertical-align: top;
+            }
+            .preview-table th {
                 color: var(--text-dim);
+                font-size: 10.5px;
+                font-weight: 650;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+            }
+            .preview-table .num {
+                text-align: right;
+                white-space: nowrap;
+            }
+            .preview-wrap {
+                overflow-x: auto;
+                border: 1px solid var(--panel-border);
+                border-radius: var(--radius-sm);
+            }
+            .preview-wrap .preview-table {
+                min-width: 620px;
+            }
+            .result-grid {
+                display: grid;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: 8px;
+            }
+            .result-stat {
+                padding: 12px;
+                border: 1px solid var(--panel-border);
+                border-radius: var(--radius-sm);
+                background: var(--panel);
+            }
+            .result-stat strong {
+                display: block;
+                font-size: 20px;
+                letter-spacing: -0.025em;
+            }
+            .result-stat span {
+                color: var(--text-dim);
+                font-size: 11px;
+            }
+            @media (max-width: 620px) {
+                .mapping,
+                .result-grid {
+                    grid-template-columns: 1fr;
+                }
+                .step span {
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
             }
         </style>
     </head>
     <body>
-        <div id="root"></div>
+        <div class="wrap" id="root"></div>
         <script>
+            "use strict";
             /*@include shared/bridge.js@*/
-
-            // The real, unit-tested CSV parser (src/csv.ts + src/csv.test.ts).
+            /*@include shared/ui.js@*/
             /*@inlinets src/csv.ts@*/
 
-            // ---- config from start_meal_import -------------------------------
-            //
-            // drink_unit is the alcohol opt-in, exactly as every other
-            // widget-backed tool carries it: "us" / "uk" when the user tracks
-            // alcohol, null when they do not. It DEFAULTS to null and an absent
-            // field therefore reads as tracking-off, deliberately: a widget is
-            // assembled from source by the same process that serves the tool, so
-            // a payload with no drink_unit means a host or harness synthesised
-            // it, and guessing "on" there would surface per-row ethanol to the
-            // one user the opt-in exists to protect. Failing closed costs a
-            // column; failing open costs the thing the gate is for.
-            let CFG = {
-                tz: "UTC",
-                today: "",
-                max_rows_per_call: 50,
-                import_tool_name: "bulk_import_meals",
-                known_source_apps: [],
-                tz_configured: true,
-                drink_unit: null,
-            };
-            let API = null;
-
-            // Strict allowlist, not truthiness: only the two values the server's
-            // schema can emit turn alcohol on.
-            function alcoholTracked() {
-                return CFG.drink_unit === "us" || CFG.drink_unit === "uk";
-            }
-
-            // Support contact, shown only when something has actually gone wrong.
-            // Plain text, NOT a mailto: link — the widget runs in a
-            // sandbox="allow-scripts" iframe and Chrome blocks navigation to
-            // external protocols from one, so a mailto anchor silently does
-            // nothing while still looking clickable.
-            // Munch does not embed a maintainer email inside the sandboxed widget.
-            const SUPPORT_EMAIL = "";
-
-            // A short, copyable description of the file and what went wrong.
-            // "Email me" on its own costs two round trips — the first reply is
-            // always "what does your file look like?" — so the answer ships with
-            // the question.
-            function diagnosticsBlock() {
-                if (!SUPPORT_EMAIL) return "";
-                const t = S.table;
-                const lines = [];
-                if (t) {
-                    lines.push(
-                        t.headers.length +
-                            " columns: " +
-                            t.headers.slice(0, 8).join(" | ") +
-                            (t.headers.length > 8 ? " | …" : ""),
-                    );
-                    lines.push(
-                        "encoding " +
-                            t.encoding +
-                            " · delimiter " +
-                            (t.delimiter === "\t" ? "tab" : t.delimiter) +
-                            " · decimal " +
-                            t.decimalSeparator +
-                            " · " +
-                            t.rows.length +
-                            " rows",
-                    );
-                    lines.push(
-                        "dates read as " +
-                            dateFormatLabel(S.dateFormat) +
-                            " · energy " +
-                            S.energyUnit +
-                            (S.dateAmbiguous ? " · format was ambiguous" : ""),
-                    );
-                }
-                const r = S.result;
-                if (r) {
-                    lines.push(
-                        "imported " +
-                            r.created +
-                            " · already logged " +
-                            r.deduplicated +
-                            " · failed " +
-                            r.failed +
-                            " · skipped " +
-                            S.skipped,
-                    );
-                    const first = (r.rowErrors || [])[0];
-                    if (first)
-                        lines.push(
-                            "first error, line " +
-                                first.line +
-                                ": " +
-                                first.message,
-                        );
-                    for (const e of (r.chunkErrors || []).slice(0, 2))
-                        lines.push("batch error: " + e);
-                } else if (S.badDates > 0) {
-                    lines.push(
-                        S.badDates +
-                            " row(s) have an unreadable date" +
-                            (S.badDateSample
-                                ? " (line " +
-                                  S.badDateSample.line +
-                                  ": " +
-                                  S.badDateSample.value +
-                                  ")"
-                                : ""),
-                    );
-                }
-                return (
-                    '<div class="notice"><span>✉</span><span>Not working as expected? Email ' +
-                    "<b>" +
-                    esc(SUPPORT_EMAIL) +
-                    "</b> and include the lines below — that is everything needed to diagnose it." +
-                    '<span class="diag">' +
-                    esc(lines.join("\n")) +
-                    "</span></span></div>"
-                );
-            }
-
-            // ---- state -------------------------------------------------------
             const FIELDS = [
-                { key: "logged_at", label: "Date / time", required: true },
+                { key: "logged_at", label: "Date", required: true },
+                { key: "time", label: "Time" },
                 { key: "description", label: "Food name" },
-                { key: "meal_type", label: "Meal" },
+                { key: "meal_type", label: "Meal type" },
                 { key: "calories", label: "Calories" },
                 { key: "protein_g", label: "Protein (g)" },
                 { key: "carbs_g", label: "Carbs (g)" },
                 { key: "fat_g", label: "Fat (g)" },
                 { key: "fiber_g", label: "Fiber (g)" },
-                { key: "sugar_g", label: "Sugar, total (g)" },
-                // Only offered when the user tracks alcohol — see gatedField.
+                { key: "sugar_g", label: "Total sugar (g)" },
                 { key: "alcohol_g", label: "Alcohol (g)", alcoholOnly: true },
                 { key: "notes", label: "Notes" },
-                { key: "time", label: "Time (separate column)" },
                 { key: "deleted", label: "Deleted flag" },
             ];
-            // Header aliases for the exports surveyed. Matched with
-            // normalizeHeader from csv.ts, so "Fat (g)" and "fat_g" both hit.
             const ALIASES = {
-                logged_at: ["date", "day", "logged_at", "datum", "timestamp"],
+                logged_at: ["date", "day", "logged_at", "timestamp", "datum"],
                 time: ["time", "uhrzeit"],
                 description: [
+                    "food",
                     "food_name",
                     "description",
                     "name",
-                    "food",
                     "item",
                     "lebensmittel",
                 ],
@@ -262,7 +214,6 @@
                     "energy_kcal",
                     "energy",
                     "kcal",
-                    "calories_kcal",
                     "kalorien",
                 ],
                 protein_g: ["protein_g", "protein", "eiweiss"],
@@ -271,53 +222,25 @@
                     "carbohydrates_g",
                     "carbs",
                     "carbohydrates",
-                    "net_carbs_g",
                     "kohlenhydrate",
                 ],
                 fat_g: ["fat_g", "fat", "total_fat", "fett"],
-                // normalizeHeader turns "Fiber (g)" into "fiber_g" but leaves
-                // "Fiber" as "fiber", so both spellings are listed. Localised
-                // headers usually ship the unit too ("Ballaststoffe (g)"), so
-                // the non-English words get the _g form as well.
                 fiber_g: [
                     "fiber_g",
                     "fiber",
                     "fibre_g",
                     "fibre",
                     "dietary_fiber",
-                    "dietary_fibre",
-                    "total_fiber",
-                    "total_fibre",
                     "ballaststoffe",
-                    "ballaststoffe_g",
-                    "fibra",
-                    "fibres",
                 ],
-                // TOTAL sugars only. "Added sugar" / "free sugars" is a
-                // different quantity and is deliberately absent here — see
-                // ADDED_SUGAR_RE below. Matching is exact per normalized
-                // header, so Cronometer's "Sugar Alcohols (g)" (a polyol, not
-                // sugar and not ethanol) cannot land in this field either.
                 sugar_g: [
                     "sugar_g",
                     "sugar",
-                    "sugars_g",
                     "sugars",
                     "total_sugar",
                     "total_sugars",
-                    "total_sugars_g",
                     "zucker",
-                    "zucker_g",
-                    "azucar",
-                    "azucares",
-                    "sucres",
-                    "zuccheri",
-                    "suikers",
                 ],
-                // Grams of pure ethanol. NOT a drink volume, an ABV percentage
-                // or a sugar-alcohol count, so "abv" / "alcohol_by_volume" /
-                // "sugar_alcohols" are excluded on purpose. "alcohol_ethyl" is
-                // the USDA field name Cronometer inherits.
                 alcohol_g: [
                     "alcohol_g",
                     "alcohol",
@@ -325,1091 +248,610 @@
                     "ethanol",
                     "ethanol_g",
                     "alkohol",
-                    "alkohol_g",
                 ],
                 notes: ["note", "notes", "comment", "kommentar"],
                 deleted: ["deleted"],
             };
+            const DATE_FORMATS = [
+                ["iso", "Year-month-day (2026-08-05)"],
+                ["mdy", "Month/day/year (08/05/2026)"],
+                ["dmy", "Day/month/year (05/08/2026)"],
+            ];
 
-            // Columns that hold ADDED sugar rather than total sugar. The server
-            // stores total sugars (including what is naturally in fruit and
-            // milk), so an added-sugar column is not a substitute: mapping it
-            // would under-report every row while looking like a clean import.
-            // It never auto-maps; when a file has one and nothing filled the
-            // Sugar row, say why rather than leaving a silent blank.
-            const ADDED_SUGAR_RE =
-                /added_sugar|sugar_added|free_sugar|zugesetzt|zusatz/;
-            function addedSugarColumns() {
-                if (!S.table) return [];
-                return S.table.headers.filter((h) =>
-                    ADDED_SUGAR_RE.test(normalizeHeader(h)),
-                );
-            }
-
-            // Alcohol is opt-in (CONTRACT §7). With tracking off this widget
-            // does not auto-map an alcohol column, does not offer one to map,
-            // does not preview one, and — the decision worth stating — does not
-            // SEND one either.
-            //
-            // The "never silently drop user data" rule governs values a caller
-            // explicitly passes: bulk_import_meals still stores alcohol_g for
-            // anyone who supplies it, tracking or not, so the write layer stays
-            // ungated. Here the widget IS the caller, and declining to map a
-            // column is a mapping decision, not a dropped field. Writing it
-            // anyway would put a number into the user's log that never appeared
-            // in the preview they confirmed — this whole flow exists so that
-            // what is written is what was shown — and it would sit there
-            // unreviewable until the day they turn tracking on. Turning
-            // tracking on first and importing then is the supported path.
-            function gatedField(f) {
-                return f.alcoholOnly && !alcoholTracked();
-            }
-            // The gate is silent by construction — with tracking off the field
-            // is never offered, so a file's alcohol column simply is not there
-            // to notice. That silence is only safe if the data can be got back,
-            // and it cannot: alcohol_g is deliberately outside the import
-            // idempotency digest (CONTRACT §2), so importing now and re-running
-            // the same file after turning tracking on is a clean no-op that
-            // back-fills nothing. The user would have to delete and re-import.
-            // So say it once, here, while the choice is still free.
-            //
-            // Same ALIASES entry the gate maps by, so the notice cannot drift
-            // from what would actually have been imported. It fires on the
-            // column's PRESENCE only and names its header — the user's own file
-            // text. It never reads a cell: per-row ethanol figures are the one
-            // thing the opt-in exists to keep off this screen.
-            function alcoholColumn() {
-                if (!S.table) return "";
-                const i = findColumn(S.table.headers, ALIASES.alcohol_g);
-                return i >= 0 ? S.table.headers[i] : "";
-            }
-            function mappableFields() {
-                return FIELDS.filter((f) => !gatedField(f));
-            }
-
+            let API = null;
+            let CFG = {
+                tz: "UTC",
+                tz_configured: true,
+                max_rows_per_call: 50,
+                import_tool_name: "bulk_import_meals",
+                known_source_apps: [
+                    "MyFitnessPal",
+                    "Cronometer",
+                    "Lose It!",
+                    "MacroFactor",
+                ],
+                drink_unit: null,
+            };
             const S = {
-                step: "file", // file | map | preview | done
-                fileName: "",
-                table: null, // ParsedTable from csv.ts
-                mapping: {}, // field key -> column index (-1 = unmapped)
+                step: "launch",
+                table: null,
+                mapping: {},
+                dateFormat: "iso",
+                dateAmbiguous: false,
+                energyUnit: "kcal",
                 sourceApp: "",
-                dateFormat: "iso", // iso | dmy | mdy — sniffed, user-confirmable
-                dateAmbiguous: false, // sniff could not tell day-first from month-first
-                energyUnit: "kcal", // kcal | kj — unit of the calories column
-                rows: [], // built import rows
+                rows: [],
                 skipped: 0,
-                badDates: 0, // rows dropped because their date would not parse
-                badDateSample: null, // { line, value } of the first such row
-                errors: [], // local pre-flight problems
+                errors: [],
+                warnings: [],
                 busy: false,
-                progress: null, // { done, total, label }
-                result: null, // aggregate of every chunk
+                progress: null,
+                result: null,
+                fileName: "",
             };
 
-            function esc(s) {
-                return String(s == null ? "" : s)
-                    .replace(/&/g, "&amp;")
-                    .replace(/</g, "&lt;")
-                    .replace(/>/g, "&gt;")
-                    .replace(/"/g, "&quot;")
-                    .replace(/'/g, "&#39;");
+            function alcoholTracked() {
+                return CFG.drink_unit === "us" || CFG.drink_unit === "uk";
             }
-
-            // ---- step 1: file ------------------------------------------------
-            async function loadFile(file) {
-                S.fileName = file.name;
-                try {
-                    const buf = new Uint8Array(await file.arrayBuffer());
-                    S.table = parseCsv(buf);
-                } catch (e) {
-                    S.errors = ["Could not read that file: " + e.message];
-                    render();
-                    return;
-                }
-                if (!S.table.rows.length) {
-                    S.errors = [
-                        "No data rows found in that file." +
-                            (S.table.warnings[0]
-                                ? " " + S.table.warnings[0]
-                                : ""),
-                    ];
-                    render();
-                    return;
-                }
-                S.errors = [];
-                autoMap();
-                guessSourceApp();
-                resniffDateFormat();
-                resniffEnergyUnit();
-                S.step = "map";
-                render();
+            function visibleFields() {
+                return FIELDS.filter(
+                    (field) => !field.alcoholOnly || alcoholTracked(),
+                );
             }
-
+            function currentStepIndex() {
+                return (
+                    { file: 0, map: 1, preview: 2, importing: 3, done: 3 }[
+                        S.step
+                    ] ?? 0
+                );
+            }
+            function stepper() {
+                const labels = ["File", "Map", "Preview", "Import"];
+                const active = currentStepIndex();
+                return `<div class="stepper" aria-label="Import progress">${labels
+                    .map(
+                        (label, index) =>
+                            `<div class="step ${index < active ? "done" : index === active ? "active" : ""}"><span>${label}</span></div>`,
+                    )
+                    .join("")}</div>`;
+            }
+            function sources() {
+                return (CFG.known_source_apps || [])
+                    .slice(0, 6)
+                    .map(
+                        (source) =>
+                            `<span class="source-chip">${esc(source)}</span>`,
+                    )
+                    .join("");
+            }
+            function launchView() {
+                return `<div class="card launch">
+                    <div class="launch-copy">
+                        <div class="eyebrow">Meal history</div>
+                        <div class="launch-title">Import an export file</div>
+                        <div class="muted">Review the detected columns and problem rows before anything is saved.</div>
+                    </div>
+                    <div class="source-list">${sources()}</div>
+                    <div class="actions"><button class="btn btn-primary" id="open-importer">Open importer</button></div>
+                </div>`;
+            }
+            function fileView() {
+                const tzWarning = CFG.tz_configured
+                    ? ""
+                    : `<div class="notice warning"><strong>Timezone needed.</strong> Dates without an offset will be interpreted as UTC. Set your timezone in chat before importing if that could shift meals to another day.</div>`;
+                return `${stepper()}<section class="card section-stack">
+                    <div><div class="eyebrow">Choose file</div><h1 class="title">Import meal history</h1><p class="subtitle">CSV exports are read locally in this view. Nothing is saved until the preview is confirmed.</p></div>
+                    ${tzWarning}
+                    ${S.errors.length ? `<div class="notice danger">${esc(S.errors[0])}</div>` : ""}
+                    <label class="drop" id="drop"><span><strong>Choose a CSV file</strong><span class="muted">or drag it here</span></span><input id="file" type="file" accept=".csv,text/csv,text/plain" /></label>
+                    <div class="muted small">Supported automatically: MyFitnessPal, Cronometer, Lose It!, MacroFactor, and similar tabular exports.</div>
+                    <div class="actions"><button class="btn btn-ghost" id="close-importer">Return to chat</button></div>
+                </section>`;
+            }
+            function optionList(selected) {
+                return `<option value="-1">Not in file</option>${S.table.headers
+                    .map(
+                        (header, index) =>
+                            `<option value="${index}" ${selected === index ? "selected" : ""}>${esc(header || `Column ${index + 1}`)}</option>`,
+                    )
+                    .join("")}`;
+            }
+            function mappingView() {
+                const fields = visibleFields()
+                    .map((field) => {
+                        const index = S.mapping[field.key] ?? -1;
+                        const sample =
+                            index >= 0 ? S.table.rows[0]?.[index] || "" : "";
+                        return `<label class="field"><span class="label">${esc(field.label)}${field.required ? " *" : ""}</span><select class="select map-select" data-field="${field.key}">${optionList(index)}</select><span class="field-note">${sample ? `Example: ${esc(sample)}` : "No value detected"}</span></label>`;
+                    })
+                    .join("");
+                const dateWarning = S.dateAmbiguous
+                    ? `<div class="notice warning"><strong>Confirm the date order.</strong> The values can be read more than one way; the selection below controls where every meal lands.</div>`
+                    : "";
+                const alcoholNotice =
+                    !alcoholTracked() &&
+                    findColumn(S.table.headers, ALIASES.alcohol_g) >= 0
+                        ? `<div class="notice"><strong>Alcohol column excluded.</strong> Alcohol tracking is off, so this column will not be imported. Turn tracking on in chat before importing to retain it.</div>`
+                        : "";
+                return `${stepper()}<section class="card section-stack">
+                    <div><div class="eyebrow">Detected ${fmt(S.table.rows.length)} rows</div><h1 class="title">Review column mapping</h1><p class="subtitle">Munch matched the common fields. Correct only what is wrong or missing.</p></div>
+                    ${S.table.warnings.map((warning) => `<div class="notice warning">${esc(warning)}</div>`).join("")}
+                    ${dateWarning}${alcoholNotice}
+                    <div class="mapping">${fields}</div>
+                    <div class="mapping">
+                        <label class="field"><span class="label">Date format</span><select class="select" id="date-format">${DATE_FORMATS.map(([value, label]) => `<option value="${value}" ${S.dateFormat === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+                        <label class="field"><span class="label">Energy unit</span><select class="select" id="energy-unit"><option value="kcal" ${S.energyUnit === "kcal" ? "selected" : ""}>Calories (kcal)</option><option value="kj" ${S.energyUnit === "kj" ? "selected" : ""}>Kilojoules (kJ)</option></select></label>
+                        <label class="field"><span class="label">Source app (optional)</span><input class="input" id="source-app" value="${esc(S.sourceApp)}" placeholder="Example: MyFitnessPal" /></label>
+                    </div>
+                    ${S.errors.length ? `<div class="notice danger">${esc(S.errors[0])}</div>` : ""}
+                    <div class="actions"><button class="btn btn-primary" id="to-preview">Preview import</button><button class="btn" id="back-file">Choose another file</button></div>
+                </section>`;
+            }
+            function previewView() {
+                const rows = S.rows.slice(0, 12);
+                const totalKcal = S.rows.reduce(
+                    (sum, row) => sum + (row.calories || 0),
+                    0,
+                );
+                return `${stepper()}<section class="card section-stack">
+                    <div><div class="eyebrow">Ready to review</div><h1 class="title">${fmt(S.rows.length)} meals ready</h1><p class="subtitle">${fmt(totalKcal)} kcal across valid rows. ${S.skipped ? `${fmt(S.skipped)} rows will be skipped.` : "No rows will be skipped."}</p></div>
+                    ${S.warnings.map((warning) => `<div class="notice warning">${esc(warning)}</div>`).join("")}
+                    ${S.errors.length ? `<div class="notice danger">${esc(S.errors[0])}</div>` : ""}
+                    <div class="preview-wrap"><table class="preview-table"><thead><tr><th>Date</th><th>Meal</th><th>Food</th><th class="num">kcal</th><th class="num">P</th><th class="num">C</th><th class="num">F</th></tr></thead><tbody>${rows
+                        .map(
+                            (row) =>
+                                `<tr><td>${esc(row.logged_at)}</td><td>${esc(row.meal_type || "—")}</td><td>${esc(row.description || "Imported meal")}</td><td class="num">${fmt(row.calories)}</td><td class="num">${fmt(row.protein_g, 1)}</td><td class="num">${fmt(row.carbs_g, 1)}</td><td class="num">${fmt(row.fat_g, 1)}</td></tr>`,
+                        )
+                        .join("")}</tbody></table></div>
+                    ${S.rows.length > rows.length ? `<div class="muted small">Showing the first ${rows.length} of ${fmt(S.rows.length)} rows.</div>` : ""}
+                    <div class="actions"><button class="btn btn-primary" id="do-import" ${!API?.canCallTools || S.rows.length === 0 ? "disabled" : ""}>Import ${fmt(S.rows.length)} meals</button><button class="btn" id="back-map">Back to mapping</button></div>
+                    ${!API?.canCallTools ? `<div class="notice warning">This host cannot save from the importer. Continue in chat and ask Munch to import the file data instead.</div>` : ""}
+                </section>`;
+            }
+            function importingView() {
+                const ratio = S.progress?.total
+                    ? S.progress.done / S.progress.total
+                    : 0;
+                return `${stepper()}<section class="card section-stack" aria-live="polite">
+                    <div><div class="eyebrow">Importing</div><h1 class="title">Saving meal history</h1><p class="subtitle">${esc(S.progress?.label || "Validating the first batch…")}</p></div>
+                    ${progress(ratio * 100, "Import progress")}
+                    <div class="muted small">Batch ${fmt(S.progress?.done || 0)} of ${fmt(S.progress?.total || 0)}</div>
+                </section>`;
+            }
+            function doneView() {
+                const result = S.result || {
+                    created: 0,
+                    deduplicated: 0,
+                    failed: 0,
+                };
+                const success =
+                    result.failed === 0 && result.chunkErrors.length === 0;
+                return `${stepper()}<section class="card section-stack" aria-live="polite">
+                    <div class="status-row"><span class="status-icon ${success ? "success" : "warning"}" aria-hidden="true">${success ? "✓" : "!"}</span><div><div class="eyebrow">Import complete</div><h1 class="title">${success ? "Meal history imported" : "Import finished with issues"}</h1><p class="subtitle">${esc(S.fileName || "CSV file")}</p></div></div>
+                    <div class="result-grid"><div class="result-stat"><strong>${fmt(result.created)}</strong><span>Imported</span></div><div class="result-stat"><strong>${fmt(result.deduplicated)}</strong><span>Already logged</span></div><div class="result-stat"><strong>${fmt(result.failed)}</strong><span>Failed</span></div><div class="result-stat"><strong>${fmt(S.skipped)}</strong><span>Skipped</span></div></div>
+                    ${result.chunkErrors.map((error) => `<div class="notice danger">${esc(error)}</div>`).join("")}
+                    ${result.rowErrors
+                        .slice(0, 5)
+                        .map(
+                            (error) =>
+                                `<div class="notice warning">Line ${fmt(error.line)}: ${esc(error.message)}</div>`,
+                        )
+                        .join("")}
+                    <div class="actions"><button class="btn btn-primary" id="finish">Return to chat</button><button class="btn" id="restart">Import another file</button></div>
+                </section>`;
+            }
+            function render() {
+                const root = document.getElementById("root");
+                const displayMode =
+                    API?.hostContext?.displayMode ||
+                    document.documentElement.dataset.displayMode ||
+                    "inline";
+                if (S.step === "launch" && displayMode !== "fullscreen") {
+                    root.innerHTML = launchView();
+                } else {
+                    if (S.step === "launch") S.step = "file";
+                    const view =
+                        S.step === "file"
+                            ? fileView()
+                            : S.step === "map"
+                              ? mappingView()
+                              : S.step === "preview"
+                                ? previewView()
+                                : S.step === "importing"
+                                  ? importingView()
+                                  : doneView();
+                    root.innerHTML = `<div class="import-shell">${view}</div>`;
+                }
+                wire();
+            }
             function autoMap() {
                 S.mapping = {};
-                for (const f of FIELDS) {
-                    // A gated field is pinned to -1 rather than skipped: every
-                    // key must exist, because buildRows' num() only treats a
-                    // real negative index as "not in this file".
-                    S.mapping[f.key] = gatedField(f)
-                        ? -1
-                        : findColumn(
-                              S.table.headers,
-                              ALIASES[f.key] || [f.key],
-                          );
+                for (const field of FIELDS)
+                    S.mapping[field.key] = findColumn(
+                        S.table.headers,
+                        ALIASES[field.key] || [],
+                    );
+                const dateColumn = S.mapping.logged_at;
+                if (dateColumn >= 0) {
+                    const sniffed = sniffDateFormat(
+                        S.table.rows
+                            .slice(0, 50)
+                            .map((row) => row[dateColumn] || ""),
+                    );
+                    S.dateFormat = sniffed.format;
+                    S.dateAmbiguous = sniffed.ambiguous;
                 }
             }
-            // A MyFitnessPal export has a Meal column but no food name; knowing
-            // which app it came from lets the server label those rows.
-            function guessSourceApp() {
-                const h = S.table.headers.map(normalizeHeader).join("|");
-                if (h.includes("food_name") && h.includes("amount"))
-                    S.sourceApp = "cronometer";
-                else if (
-                    S.mapping.description === -1 &&
-                    S.mapping.meal_type >= 0
-                )
-                    S.sourceApp = "myfitnesspal";
-                else if (h.includes("deleted")) S.sourceApp = "loseit";
-                else if (h.includes("serving_size"))
-                    S.sourceApp = "macrofactor";
-                else S.sourceApp = "";
+            async function loadFile(file) {
+                S.errors = [];
+                S.warnings = [];
+                try {
+                    const bytes = new Uint8Array(await file.arrayBuffer());
+                    S.table = parseCsv(bytes);
+                    if (!S.table.headers.length || !S.table.rows.length)
+                        throw new Error(
+                            "This file does not contain any meal rows.",
+                        );
+                    S.fileName = file.name;
+                    autoMap();
+                    S.step = "map";
+                } catch (error) {
+                    S.errors = [
+                        error?.message || "The file could not be read.",
+                    ];
+                    S.step = "file";
+                }
+                render();
             }
-
-            // ---- date format & energy unit -----------------------------------
-            //
-            // The server accepts ISO dates and kcal only, so a DD/MM/YYYY or
-            // kilojoule export has to be converted here. Both settings are sniffed
-            // from the file (sniffDateFormat / sniffEnergyUnit in csv.ts) and then
-            // stay editable, because a sniff is a guess and both failure modes are
-            // silent: day/month order is genuinely undecidable for a column of
-            // 05/06/2026, and a column headed "Calories" may hold kJ, which would
-            // store every row 4.184x too high while reporting success. So each
-            // control is shown next to a worked example from the user's own first
-            // row — a wrong setting is then visible before anything is written.
-            const DATE_FORMAT_OPTIONS = [
-                ["iso", "Year-Month-Day (2026-07-18)"],
-                ["dmy", "Day/Month/Year (18/07/2026)"],
-                ["mdy", "Month/Day/Year (07/18/2026)"],
-            ];
-            const ENERGY_UNIT_OPTIONS = [
-                ["kcal", "Calories (kcal)"],
-                ["kj", "Kilojoules (kJ)"],
-            ];
-
-            // Some exports put the whole timestamp in the date column. toIsoDate
-            // tolerates a trailing time but returns the date alone, so the time is
-            // captured here and re-appended after conversion — dropping it would
-            // quietly move every meal to midday. Mirrors csv.ts's TRAILING_TIME_RE
-            // so exactly what toIsoDate discards is what gets put back.
-            const CELL_TIME_RE =
-                /[T ]\s*(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?\s*[ap]?\.?m?\.?)$/i;
-            function timeInDateCell(raw) {
-                const m = CELL_TIME_RE.exec(
-                    String(raw == null ? "" : raw).trim(),
+            function normalizeMealType(raw) {
+                const value = String(raw || "")
+                    .trim()
+                    .toLowerCase();
+                if (/breakfast|morning|frühstück/.test(value))
+                    return "breakfast";
+                if (/lunch|midday|mittag/.test(value)) return "lunch";
+                if (/dinner|supper|evening|abend/.test(value)) return "dinner";
+                if (/snack/.test(value)) return "snack";
+                return undefined;
+            }
+            function normalizeTime(raw) {
+                const value = String(raw || "").trim();
+                if (!value) return "";
+                const match =
+                    /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([ap]m)?$/i.exec(value);
+                if (!match) return "";
+                let hour = Number(match[1]);
+                const minute = Number(match[2]);
+                const second = Number(match[3] || 0);
+                const meridiem = (match[4] || "").toLowerCase();
+                if (meridiem === "pm" && hour < 12) hour += 12;
+                if (meridiem === "am" && hour === 12) hour = 0;
+                if (hour > 23 || minute > 59 || second > 59) return "";
+                return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}`;
+            }
+            function mapped(row, key) {
+                const index = S.mapping[key];
+                return index >= 0 ? row[index] : undefined;
+            }
+            function numeric(row, key) {
+                const value = parseNumber(
+                    mapped(row, key),
+                    S.table.decimalSeparator,
                 );
-                return m ? m[1].trim() : "";
+                return value == null ? undefined : value;
             }
-
-            function dateFormatLabel(fmt) {
-                const o = DATE_FORMAT_OPTIONS.find((x) => x[0] === fmt);
-                return o ? o[1].replace(/\s*\(.*\)$/, "") : String(fmt);
-            }
-
-            // Cells / numbers of the column currently mapped to `fieldKey`
-            // (limit 0 = all of them).
-            function columnCells(fieldKey, limit) {
-                const t = S.table;
-                const idx = S.mapping[fieldKey];
-                const out = [];
-                if (!t || !(idx >= 0)) return out;
-                for (const r of t.rows) {
-                    if (isBlankCell(r[idx])) continue;
-                    out.push(r[idx].trim());
-                    if (limit && out.length >= limit) break;
-                }
-                return out;
-            }
-            function columnNumbers(fieldKey, limit) {
-                const t = S.table;
-                const idx = S.mapping[fieldKey];
-                const out = [];
-                if (!t || !(idx >= 0)) return out;
-                for (const r of t.rows) {
-                    const v = parseNumber(r[idx], t.decimalSeparator);
-                    if (v === null) continue;
-                    out.push(v);
-                    if (limit && out.length >= limit) break;
-                }
-                return out;
-            }
-
-            // Sniff the whole column, not a sample: one 18/07/2026 anywhere in the
-            // file is what settles day-first, and the energy median is steadier
-            // over every row. Re-run on load AND whenever the user remaps
-            // logged_at / calories, since the evidence came from that column.
-            function resniffDateFormat() {
-                const values = columnCells("logged_at", 0);
-                if (!values.length) {
-                    S.dateFormat = "iso";
-                    S.dateAmbiguous = false;
-                    return;
-                }
-                const sniffed = sniffDateFormat(values);
-                S.dateFormat = sniffed.format;
-                S.dateAmbiguous = sniffed.ambiguous;
-            }
-            function resniffEnergyUnit() {
-                const t = S.table;
-                const idx = S.mapping.calories;
-                if (!t || !(idx >= 0)) {
-                    S.energyUnit = "kcal";
-                    return;
-                }
-                S.energyUnit = sniffEnergyUnit(
-                    t.headers[idx] || "",
-                    columnNumbers("calories", 0),
-                );
-            }
-
-            // ---- step 2 -> 3: build rows -------------------------------------
             function buildRows() {
-                const t = S.table;
-                const m = S.mapping;
-                const dec = t.decimalSeparator;
-                const cell = (row, idx) =>
-                    idx >= 0 && !isBlankCell(row[idx])
-                        ? row[idx].trim()
-                        : undefined;
-                const num = (row, idx) => {
-                    if (idx < 0) return undefined;
-                    const v = parseNumber(row[idx], dec);
-                    return v === null ? undefined : v;
-                };
-
-                const rows = [];
-                let skipped = 0;
-                let badDates = 0;
-                let badDateSample = null;
-                for (let i = 0; i < t.rows.length; i++) {
-                    const r = t.rows[i];
-                    if (m.deleted >= 0 && isDeletedRow(r, m.deleted)) {
-                        skipped++;
+                S.rows = [];
+                S.skipped = 0;
+                S.errors = [];
+                S.warnings = [];
+                if ((S.mapping.logged_at ?? -1) < 0) {
+                    S.errors.push("Map a date column before continuing.");
+                    return false;
+                }
+                for (let index = 0; index < S.table.rows.length; index++) {
+                    const source = S.table.rows[index];
+                    if (isDeletedRow(source, S.mapping.deleted ?? -1)) {
+                        S.skipped++;
                         continue;
                     }
-                    const rawWhen = cell(r, m.logged_at);
-                    if (rawWhen === undefined) {
-                        skipped++;
+                    const date = toIsoDate(
+                        mapped(source, "logged_at"),
+                        S.dateFormat,
+                    );
+                    if (!date) {
+                        S.skipped++;
                         continue;
                     }
-                    // The server only accepts ISO, so convert with the format the
-                    // column agreed on. A cell that will not parse is dropped and
-                    // counted rather than sent — the server would reject it row by
-                    // row anyway, and the count is surfaced in the preview so a
-                    // wrong format setting cannot pass as a successful import.
-                    const iso = toIsoDate(rawWhen, S.dateFormat);
-                    if (iso === null) {
-                        badDates++;
-                        if (!badDateSample) {
-                            badDateSample = {
-                                line: t.sourceLines[i],
-                                value: rawWhen,
-                            };
-                        }
-                        skipped++;
-                        continue;
-                    }
-                    let when = iso;
-                    // A separate time column is common (Cronometer: Day + Time);
-                    // otherwise keep a time that rode along in the date cell,
-                    // which toIsoDate drops.
-                    const time = cell(r, m.time) || timeInDateCell(rawWhen);
-                    if (time) when = when + " " + time;
-
-                    // Calories only: protein/carbs/fat/fiber/sugar/alcohol are
-                    // all grams in every export, so none of them convert.
-                    const energy = num(r, m.calories);
-
-                    rows.push({
-                        source_line: t.sourceLines[i],
-                        logged_at: when,
-                        description: cell(r, m.description),
-                        meal_type: cell(r, m.meal_type),
-                        calories:
-                            energy === undefined
-                                ? undefined
-                                : toKcal(energy, S.energyUnit),
-                        protein_g: num(r, m.protein_g),
-                        carbs_g: num(r, m.carbs_g),
-                        fat_g: num(r, m.fat_g),
-                        fiber_g: num(r, m.fiber_g),
-                        sugar_g: num(r, m.sugar_g),
-                        // The mapping is already -1 when tracking is off; this
-                        // is the belt to that braces, because this line is the
-                        // one that decides what leaves the browser.
+                    const separateTime = normalizeTime(mapped(source, "time"));
+                    const embeddedTime = /[T ](\d{1,2}:\d{2}(?::\d{2})?)/.exec(
+                        String(mapped(source, "logged_at") || ""),
+                    );
+                    const time =
+                        separateTime || normalizeTime(embeddedTime?.[1]);
+                    const row = {
+                        logged_at: time ? `${date}T${time}` : date,
+                        description: String(
+                            mapped(source, "description") ||
+                                `${S.sourceApp || "Imported"} meal`,
+                        ).trim(),
+                        meal_type: normalizeMealType(
+                            mapped(source, "meal_type"),
+                        ),
+                        calories: numeric(source, "calories"),
+                        protein_g: numeric(source, "protein_g"),
+                        carbs_g: numeric(source, "carbs_g"),
+                        fat_g: numeric(source, "fat_g"),
+                        fiber_g: numeric(source, "fiber_g"),
+                        sugar_g: numeric(source, "sugar_g"),
                         alcohol_g: alcoholTracked()
-                            ? num(r, m.alcohol_g)
+                            ? numeric(source, "alcohol_g")
                             : undefined,
-                        notes: cell(r, m.notes),
-                    });
+                        notes:
+                            String(mapped(source, "notes") || "").trim() ||
+                            undefined,
+                        source_line: S.table.sourceLines[index],
+                    };
+                    if (S.energyUnit === "kj" && row.calories != null)
+                        row.calories =
+                            Math.round((row.calories / 4.184) * 10) / 10;
+                    for (const key of Object.keys(row))
+                        if (row[key] === undefined || row[key] === "")
+                            delete row[key];
+                    S.rows.push(row);
                 }
-                S.rows = rows;
-                S.badDates = badDates;
-                S.badDateSample = badDateSample;
-                S.skipped = skipped + t.skippedTotalsRows + t.skippedBlankRows;
+                if (!S.rows.length)
+                    S.errors.push(
+                        "No valid rows remain after applying the mapping and date format.",
+                    );
+                if (S.skipped)
+                    S.warnings.push(
+                        `${S.skipped} row${S.skipped === 1 ? "" : "s"} will be skipped because the date is unreadable or the source marks it deleted.`,
+                    );
+                return S.rows.length > 0;
             }
-
-            // Never split a calendar date across chunks: the server's duplicate
-            // handling is per call, so an identical pair straddling a boundary
-            // would collapse into one row.
-            function chunkRows(rows, max) {
-                const dayOf = (r) => String(r.logged_at).slice(0, 10);
+            function chunks(array, size) {
                 const out = [];
-                let cur = [];
-                for (const r of rows) {
-                    if (
-                        cur.length >= max &&
-                        dayOf(r) !== dayOf(cur[cur.length - 1])
-                    ) {
-                        out.push(cur);
-                        cur = [];
-                    }
-                    cur.push(r);
-                }
-                if (cur.length) out.push(cur);
+                for (let index = 0; index < array.length; index += size)
+                    out.push(array.slice(index, index + size));
                 return out;
             }
-
-            // ---- step 3: import ----------------------------------------------
+            function collect(payload, dryRun) {
+                if (!payload) return;
+                if (dryRun) {
+                    for (const row of payload.results || [])
+                        if (row.error)
+                            S.result.rowErrors.push({
+                                line: row.source_line,
+                                message: row.error.message,
+                            });
+                    return;
+                }
+                const summary = payload.summary || {};
+                S.result.created += summary.created || 0;
+                S.result.deduplicated += summary.deduplicated || 0;
+                S.result.failed += summary.failed || 0;
+                for (const row of payload.results || [])
+                    if (row.error)
+                        S.result.rowErrors.push({
+                            line: row.source_line,
+                            message: row.error.message,
+                        });
+            }
             async function runImport() {
-                if (!API || !API.canCallTools) return;
+                if (!API?.canCallTools || !S.rows.length || S.busy) return;
                 S.busy = true;
+                S.step = "importing";
+                const batches = chunks(
+                    S.rows,
+                    Math.max(1, CFG.max_rows_per_call || 50),
+                );
+                S.progress = {
+                    done: 0,
+                    total: batches.length,
+                    label: "Validating the first batch…",
+                };
                 S.result = {
                     created: 0,
                     deduplicated: 0,
                     failed: 0,
-                    chunks: 0,
-                    chunkErrors: [],
                     rowErrors: [],
-                    warnings: [],
+                    chunkErrors: [],
                 };
-                const chunks = chunkRows(S.rows, CFG.max_rows_per_call);
-                S.progress = { done: 0, total: chunks.length, label: "" };
                 render();
-
-                for (let i = 0; i < chunks.length; i++) {
-                    const rows = chunks[i];
-                    const kcal = rows.reduce(
-                        (a, r) => a + (r.calories ?? 0),
+                for (let index = 0; index < batches.length; index++) {
+                    const batch = batches[index];
+                    const totalKcal = batch.reduce(
+                        (sum, row) => sum + (row.calories || 0),
                         0,
                     );
-                    const everyHasKcal = rows.every(
-                        (r) => r.calories !== undefined,
-                    );
                     const args = {
-                        meals: rows,
-                        expected_row_count: rows.length,
-                        rows_skipped: i === 0 ? S.skipped : 0,
+                        meals: batch,
+                        expected_row_count: batch.length,
+                        rows_skipped: index === 0 ? S.skipped : 0,
                         source_app: S.sourceApp || undefined,
-                        // Dry-run the FIRST chunk only. A full second pass would
-                        // double the call count, and at 60 requests/min a large
-                        // file would hit the rate limit; the preview above has
-                        // already shown the user what will be written.
-                        dry_run: i === 0,
+                        dry_run: index === 0,
                     };
-                    if (everyHasKcal) args.expected_total_kcal = kcal;
-
-                    S.progress.label =
-                        (i === 0 ? "Checking" : "Importing") +
-                        " " +
-                        rows.length +
-                        " rows…";
-                    render();
-
+                    if (batch.every((row) => row.calories != null))
+                        args.expected_total_kcal = totalKcal;
                     try {
-                        const res = await API.callTool(
-                            CFG.import_tool_name,
-                            args,
-                            { timeoutMs: 90000 },
-                        );
-                        const sc = res && res.structuredContent;
-                        if (!sc) throw new Error("no result payload");
-                        collect(sc);
-
-                        if (i === 0) {
-                            // Dry run: abort on failure rather than writing.
-                            if (sc.status === "failed") {
-                                S.busy = false;
-                                S.progress = null;
-                                render();
-                                return;
-                            }
-                            // Passed — now write this chunk for real.
-                            args.dry_run = false;
-                            const real = await API.callTool(
+                        if (index === 0) {
+                            const check = await API.callTool(
                                 CFG.import_tool_name,
                                 args,
                                 { timeoutMs: 90000 },
                             );
-                            const rsc = real && real.structuredContent;
-                            if (rsc) collect(rsc);
+                            collect(check?.structuredContent, true);
+                            if (check?.structuredContent?.status === "failed")
+                                throw new Error(
+                                    "The validation pass found blocking errors.",
+                                );
+                            args.dry_run = false;
                         }
-                    } catch (e) {
-                        S.result.chunkErrors.push(
-                            "Rows " +
-                                rows[0].source_line +
-                                "–" +
-                                rows[rows.length - 1].source_line +
-                                ": " +
-                                e.message,
+                        S.progress.label = `Importing rows ${fmt(batch[0].source_line)}–${fmt(batch[batch.length - 1].source_line)}…`;
+                        render();
+                        const result = await API.callTool(
+                            CFG.import_tool_name,
+                            args,
+                            { timeoutMs: 90000 },
                         );
+                        collect(result?.structuredContent, false);
+                    } catch (error) {
+                        S.result.chunkErrors.push(
+                            `Rows ${batch[0].source_line}–${batch[batch.length - 1].source_line}: ${error?.message || "Import failed"}`,
+                        );
+                        S.result.failed += batch.length;
                     }
-                    S.progress.done = i + 1;
+                    S.progress.done = index + 1;
                     render();
                 }
-
                 S.busy = false;
-                S.progress = null;
                 S.step = "done";
                 render();
-
-                // Tell the model what happened — a summary only, never rows.
-                if (API.updateModelContext) {
-                    const r = S.result;
-                    API.updateModelContext(
-                        "Bulk meal import finished: " +
-                            r.created +
-                            " meals imported, " +
-                            r.deduplicated +
-                            " already logged, " +
-                            r.failed +
-                            " failed" +
-                            (S.skipped
-                                ? ", " + S.skipped + " rows skipped"
-                                : "") +
-                            ". Source: " +
-                            (S.fileName || "pasted data") +
-                            ".",
-                    );
-                }
+                API.updateModelContext(
+                    `Meal import finished: ${S.result.created} imported, ${S.result.deduplicated} already logged, ${S.result.failed} failed, and ${S.skipped} skipped.`,
+                ).catch(() => {});
             }
-
-            function collect(sc) {
-                const r = S.result;
-                r.chunks++;
-                if (sc.dry_run) {
-                    for (const w of sc.warnings || []) {
-                        if (r.warnings.indexOf(w) === -1) r.warnings.push(w);
-                    }
-                    for (const row of sc.results || []) {
-                        if (row.error) {
-                            r.rowErrors.push({
-                                line: row.source_line,
-                                message: row.error.message,
-                            });
-                        }
-                    }
-                    return;
-                }
-                r.created += sc.summary.created;
-                r.deduplicated += sc.summary.deduplicated;
-                r.failed += sc.summary.failed;
-                for (const w of sc.warnings || []) {
-                    if (r.warnings.indexOf(w) === -1) r.warnings.push(w);
-                }
-                for (const row of sc.results || []) {
-                    if (row.error) {
-                        r.rowErrors.push({
-                            line: row.source_line,
-                            message: row.error.message,
-                        });
-                    }
-                }
+            function reset() {
+                Object.assign(S, {
+                    step: "file",
+                    table: null,
+                    mapping: {},
+                    dateFormat: "iso",
+                    dateAmbiguous: false,
+                    energyUnit: "kcal",
+                    sourceApp: "",
+                    rows: [],
+                    skipped: 0,
+                    errors: [],
+                    warnings: [],
+                    busy: false,
+                    progress: null,
+                    result: null,
+                    fileName: "",
+                });
+                render();
             }
-
-            // ---- rendering ---------------------------------------------------
-            function steps() {
-                const order = ["file", "map", "preview", "done"];
-                const names = ["File", "Map columns", "Preview", "Import"];
-                const at = order.indexOf(S.step);
-                return (
-                    '<div class="steps">' +
-                    order
-                        .map(
-                            (k, i) =>
-                                '<span class="step ' +
-                                (i === at ? "active" : i < at ? "done" : "") +
-                                '"><span class="dot">' +
-                                (i + 1) +
-                                "</span>" +
-                                names[i] +
-                                "</span>" +
-                                (i < 3
-                                    ? '<span class="step-sep">→</span>'
-                                    : ""),
-                        )
-                        .join("") +
-                    "</div>"
-                );
-            }
-
-            function fileStep() {
-                const noTools =
-                    API && !API.canCallTools
-                        ? '<div class="notice notice-warn"><span>!</span><span>' +
-                          "This host does not let this view write to your log. Ask Claude to import the file instead — it can do it directly." +
-                          "</span></div>" +
-                          (SUPPORT_EMAIL
-                              ? '<div class="notice"><span>✉</span><span>If asking Claude does not work either, email <b>' +
-                                esc(SUPPORT_EMAIL) +
-                                "</b>.</span></div>"
-                              : "")
-                        : "";
-                const tzWarn = !CFG.tz_configured
-                    ? '<div class="notice notice-warn"><span>!</span><span>' +
-                      "Your timezone is not set, so times will be read as UTC and may land on the wrong day. Ask Claude to set your timezone first." +
-                      "</span></div>"
-                    : "";
-                return (
-                    '<section class="card"><h3>Choose your export</h3>' +
-                    noTools +
-                    tzWarn +
-                    (S.errors.length
-                        ? '<div class="notice notice-error"><span>✕</span><span>' +
-                          esc(S.errors[0]) +
-                          "</span></div>"
-                        : "") +
-                    '<label class="drop" id="drop">' +
-                    '<span class="big">📄</span><strong>Choose a CSV file</strong><br />or drag it here' +
-                    '<input type="file" class="drop-input" id="file" accept=".csv,text/csv,text/plain" />' +
-                    "</label>" +
-                    '<div class="hint" style="margin-top:8px">Exports from MyFitnessPal, Cronometer, Lose It! and MacroFactor are recognised automatically. Nothing is saved until you confirm.</div>' +
-                    "</section>"
-                );
-            }
-
-            // Worked examples: the first real value from the user's own file, run
-            // through the very functions the import will use. Returns escaped HTML.
-            function dateExampleHtml() {
-                if (!(S.mapping.logged_at >= 0))
-                    return "Map a date column above to see how a value from your file converts.";
-                const raw = columnCells("logged_at", 1)[0];
-                if (raw === undefined) return "That column has no dates in it.";
-                const iso = toIsoDate(raw, S.dateFormat);
-                if (iso === null)
-                    return (
-                        esc(raw) +
-                        " → cannot be read as " +
-                        esc(dateFormatLabel(S.dateFormat)) +
-                        ", so rows like it will be skipped"
-                    );
-                const time = timeInDateCell(raw);
-                return esc(raw) + " → " + esc(iso + (time ? " " + time : ""));
-            }
-            function energyExampleHtml() {
-                if (!(S.mapping.calories >= 0))
-                    return "Map a calories column above to see how a value from your file converts.";
-                const v = columnNumbers("calories", 1)[0];
-                if (v === undefined) return "That column has no numbers in it.";
-                if (S.energyUnit === "kj")
-                    return esc(v) + " kJ → " + esc(toKcal(v, "kj")) + " kcal";
-                return esc(v) + " kcal → " + esc(v) + " kcal (no conversion)";
-            }
-
-            function formatFieldsHtml() {
-                const select = (id, options, sel) =>
-                    '<select class="select" id="' +
-                    id +
-                    '">' +
-                    options
-                        .map(
-                            (o) =>
-                                '<option value="' +
-                                o[0] +
-                                '"' +
-                                (sel === o[0] ? " selected" : "") +
-                                ">" +
-                                esc(o[1]) +
-                                "</option>",
-                        )
-                        .join("") +
-                    "</select>";
-                return (
-                    '<div style="margin-top:12px">' +
-                    // Undecidable, so it must not be dressed up as auto-detected.
-                    (S.dateAmbiguous
-                        ? '<div class="notice notice-warn"><span>!</span><span>' +
-                          "The date format could not be determined from this file — its dates read equally well as day-first or month-first. Please confirm which one your app exports: the wrong choice files meals on the wrong day with no error." +
-                          "</span></div>"
-                        : "") +
-                    '<div class="field"><label class="label" for="dateFormat">Date format in this file</label>' +
-                    select("dateFormat", DATE_FORMAT_OPTIONS, S.dateFormat) +
-                    '<span class="hint">' +
-                    dateExampleHtml() +
-                    "</span></div>" +
-                    '<div class="field"><label class="label" for="energyUnit">Energy unit of the calories column</label>' +
-                    select("energyUnit", ENERGY_UNIT_OPTIONS, S.energyUnit) +
-                    '<span class="hint">' +
-                    energyExampleHtml() +
-                    "</span></div>" +
-                    "</div>"
-                );
-            }
-
-            function mapStep() {
-                const t = S.table;
-                const opts = (sel) =>
-                    '<option value="-1"' +
-                    (sel === -1 ? " selected" : "") +
-                    ">(not in this file)</option>" +
-                    t.headers
-                        .map(
-                            (h, i) =>
-                                '<option value="' +
-                                i +
-                                '"' +
-                                (sel === i ? " selected" : "") +
-                                ">" +
-                                esc(h || "column " + (i + 1)) +
-                                "</option>",
-                        )
-                        .join("");
-                return (
-                    '<section class="card"><h3>Map columns</h3>' +
-                    '<div class="stat-row"><span><b>' +
-                    t.rows.length +
-                    "</b> rows</span><span><b>" +
-                    t.headers.length +
-                    "</b> columns</span><span>" +
-                    esc(t.encoding) +
-                    ", delimiter <b>" +
-                    esc(t.delimiter === "\t" ? "tab" : t.delimiter) +
-                    "</b></span></div>" +
-                    (t.warnings.length
-                        ? t.warnings
-                              .map(
-                                  (w) =>
-                                      '<div class="notice notice-warn"><span>!</span><span>' +
-                                      esc(w) +
-                                      "</span></div>",
-                              )
-                              .join("")
-                        : "") +
-                    (S.mapping.sugar_g === -1 && addedSugarColumns().length
-                        ? '<div class="notice"><span>i</span><span>' +
-                          esc(
-                              "This file has an added-sugar column (" +
-                                  addedSugarColumns()[0] +
-                                  ") but no total-sugar column, so Sugar was left unmapped. Sugar is stored as TOTAL sugars, including what occurs naturally in fruit and milk, so mapping added sugar into it would under-report every row.",
-                          ) +
-                          "</span></div>"
-                        : "") +
-                    (!alcoholTracked() && alcoholColumn()
-                        ? '<div class="notice"><span>i</span><span>' +
-                          esc(
-                              "This file has an alcohol column (" +
-                                  alcoholColumn() +
-                                  "), but alcohol tracking is off for this account, so it will not be imported. Re-importing the same file later will not fill it in — those rows will already be logged and will be skipped as duplicates. To keep this data, ask Claude to turn on alcohol tracking (set_alcohol_tracking) before importing.",
-                          ) +
-                          "</span></div>"
-                        : "") +
-                    '<div class="map-grid">' +
-                    mappableFields()
-                        .map((f) => {
-                            const sel = S.mapping[f.key];
-                            const sample =
-                                sel >= 0 && t.rows[0] ? t.rows[0][sel] : "";
-                            return (
-                                '<div><div class="map-src">' +
-                                esc(f.label) +
-                                (f.required
-                                    ? ' <span style="color:var(--over)">*</span>'
-                                    : "") +
-                                '</div><div class="map-sample">' +
-                                esc(sample ? "e.g. " + sample : "") +
-                                "</div></div>" +
-                                '<select class="select map-sel" data-field="' +
-                                f.key +
-                                '">' +
-                                opts(sel) +
-                                "</select>"
-                            );
-                        })
-                        .join("") +
-                    "</div>" +
-                    formatFieldsHtml() +
-                    '<div class="field"><label class="label">Source app (optional)</label>' +
-                    '<input class="input" id="srcapp" value="' +
-                    esc(S.sourceApp) +
-                    '" placeholder="myfitnesspal" />' +
-                    '<span class="hint">Used to label rows that have no food name of their own.</span></div>' +
-                    '<div class="actions"><button class="btn btn-primary" id="toPreview">Preview import</button>' +
-                    '<button class="btn" id="backToFile">Choose another file</button></div>' +
-                    "</section>"
-                );
-            }
-
-            function previewStep() {
-                const shown = S.rows.slice(0, 30);
-                const kcal = S.rows.reduce((a, r) => a + (r.calories ?? 0), 0);
-                const noTime = S.rows.filter(
-                    (r) => !/\d\d:\d\d/.test(String(r.logged_at)),
-                ).length;
-                const chunks = chunkRows(S.rows, CFG.max_rows_per_call).length;
-                // Fiber, sugar and alcohol are missing from most exports, so
-                // their columns appear only when this file actually carries
-                // them — three columns of "—" would push the macros that do
-                // have values off the visible width for no information.
-                // Alcohol additionally never appears with tracking off: the
-                // rows carry none by then, but the column is filtered by the
-                // opt-in as well as by the data, so a stray value could not
-                // put ethanol on screen.
-                const extra = [
-                    ["fiber_g", "Fib"],
-                    ["sugar_g", "Sug"],
-                    ["alcohol_g", "Alc", true],
-                ].filter(
-                    (c) =>
-                        (!c[2] || alcoholTracked()) &&
-                        S.rows.some((r) => r[c[0]] !== undefined),
-                );
-                return (
-                    '<section class="card"><h3>Preview</h3>' +
-                    '<div class="stat-row"><span><b>' +
-                    S.rows.length +
-                    "</b> meals to import</span><span><b>" +
-                    kcal.toLocaleString() +
-                    "</b> kcal total</span>" +
-                    (S.skipped
-                        ? "<span><b>" + S.skipped + "</b> rows skipped</span>"
-                        : "") +
-                    "<span><b>" +
-                    chunks +
-                    "</b> batch" +
-                    (chunks === 1 ? "" : "es") +
-                    "</span></div>" +
-                    // State the two conversions applied, so the confirmation step
-                    // shows what will be sent rather than what the file said.
-                    '<div class="hint" style="margin-bottom:10px">Dates read as ' +
-                    esc(dateFormatLabel(S.dateFormat)) +
-                    "; energy " +
-                    (S.energyUnit === "kj"
-                        ? "converted from kJ to kcal"
-                        : "read as kcal") +
-                    ".</div>" +
-                    // Importing fewer rows than the file holds is the exact failure
-                    // this flow exists to prevent, so never let it pass silently.
-                    (S.badDates
-                        ? '<div class="notice notice-warn"><span>!</span><span>' +
-                          esc(
-                              S.badDates +
-                                  " row(s) were skipped because their date could not be read as " +
-                                  dateFormatLabel(S.dateFormat) +
-                                  (S.badDateSample
-                                      ? " (e.g. line " +
-                                        S.badDateSample.line +
-                                        ": " +
-                                        S.badDateSample.value +
-                                        ")"
-                                      : "") +
-                                  ". Go back and set the date format that matches your file.",
-                          ) +
-                          "</span></div>"
-                        : "") +
-                    (noTime
-                        ? '<div class="notice notice-warn"><span>!</span><span>' +
-                          noTime +
-                          " row(s) have a date but no time — they will be logged at midday." +
-                          "</span></div>"
-                        : "") +
-                    '<div class="tscroll"><table class="tbl"><thead><tr>' +
-                    "<th>Line</th><th>When</th><th>Meal</th><th class='wide'>Food</th>" +
-                    '<th class="num">kcal</th><th class="num">P</th><th class="num">C</th><th class="num">F</th>' +
-                    extra
-                        .map((c) => '<th class="num">' + c[1] + "</th>")
-                        .join("") +
-                    "</tr></thead><tbody>" +
-                    shown
-                        .map(
-                            (r) =>
-                                "<tr><td class='dim'>" +
-                                r.source_line +
-                                "</td><td>" +
-                                esc(r.logged_at) +
-                                "</td><td>" +
-                                esc(r.meal_type || "—") +
-                                "</td><td class='wide'>" +
-                                esc(
-                                    r.description ||
-                                        "(no name — will be labelled by meal)",
-                                ) +
-                                '</td><td class="num">' +
-                                (r.calories ?? "—") +
-                                '</td><td class="num">' +
-                                (r.protein_g ?? "—") +
-                                '</td><td class="num">' +
-                                (r.carbs_g ?? "—") +
-                                '</td><td class="num">' +
-                                (r.fat_g ?? "—") +
-                                "</td>" +
-                                extra
-                                    .map(
-                                        (c) =>
-                                            '<td class="num">' +
-                                            (r[c[0]] ?? "—") +
-                                            "</td>",
-                                    )
-                                    .join("") +
-                                "</tr>",
-                        )
-                        .join("") +
-                    "</tbody></table>" +
-                    (S.rows.length > shown.length
-                        ? '<div class="tmore">Showing ' +
-                          shown.length +
-                          " of " +
-                          S.rows.length +
-                          " rows</div>"
-                        : "") +
-                    "</div>" +
-                    (S.progress
-                        ? '<div style="margin-top:12px"><div class="bar"><span style="width:' +
-                          Math.round(
-                              (S.progress.done / S.progress.total) * 100,
-                          ) +
-                          '%"></span></div><div class="hint" style="margin-top:6px">' +
-                          esc(S.progress.label) +
-                          " (batch " +
-                          S.progress.done +
-                          " of " +
-                          S.progress.total +
-                          ")</div></div>"
-                        : "") +
-                    (S.result && S.result.chunkErrors.length
-                        ? S.result.chunkErrors
-                              .map(
-                                  (e) =>
-                                      '<div class="notice notice-error"><span>✕</span><span>' +
-                                      esc(e) +
-                                      "</span></div>",
-                              )
-                              .join("")
-                        : "") +
-                    (S.result && S.result.rowErrors.length && !S.busy
-                        ? '<div class="notice notice-error"><span>✕</span><span>' +
-                          esc(
-                              S.result.rowErrors.length +
-                                  " row(s) would fail, e.g. line " +
-                                  S.result.rowErrors[0].line +
-                                  ": " +
-                                  S.result.rowErrors[0].message,
-                          ) +
-                          "</span></div>"
-                        : "") +
-                    (S.badDates > 0 ? diagnosticsBlock() : "") +
-                    '<div class="actions"><button class="btn btn-primary" id="doImport"' +
-                    (S.busy || !(API && API.canCallTools) ? " disabled" : "") +
-                    ">" +
-                    (S.busy
-                        ? "Importing…"
-                        : "Import " + S.rows.length + " meals") +
-                    "</button>" +
-                    '<button class="btn" id="backToMap"' +
-                    (S.busy ? " disabled" : "") +
-                    ">Back to mapping</button></div>" +
-                    "</section>"
-                );
-            }
-
-            function doneStep() {
-                const r = S.result || {
-                    created: 0,
-                    deduplicated: 0,
-                    failed: 0,
-                };
-                const ok = r.failed === 0 && !r.chunkErrors.length;
-                return (
-                    '<section class="card"><h3>Import complete</h3>' +
-                    '<div class="notice ' +
-                    (ok ? "notice-ok" : "notice-warn") +
-                    '"><span>' +
-                    (ok ? "✓" : "!") +
-                    "</span><span><b>" +
-                    r.created +
-                    "</b> meals imported" +
-                    (r.deduplicated
-                        ? ", " + r.deduplicated + " already logged"
-                        : "") +
-                    (r.failed ? ", " + r.failed + " failed" : "") +
-                    (S.skipped ? ", " + S.skipped + " skipped" : "") +
-                    ".</span></div>" +
-                    (r.warnings || [])
-                        .map(
-                            (w) =>
-                                '<div class="notice"><span>i</span><span>' +
-                                esc(w) +
-                                "</span></div>",
-                        )
-                        .join("") +
-                    (r.rowErrors && r.rowErrors.length
-                        ? '<div class="tscroll" style="max-height:160px"><table class="tbl"><thead><tr><th>Line</th><th class="wide">Problem</th></tr></thead><tbody>' +
-                          r.rowErrors
-                              .slice(0, 20)
-                              .map(
-                                  (e) =>
-                                      "<tr class='bad'><td class='dim'>" +
-                                      e.line +
-                                      "</td><td class='wide'>" +
-                                      esc(e.message) +
-                                      "</td></tr>",
-                              )
-                              .join("") +
-                          "</tbody></table></div>"
-                        : "") +
-                    (ok ? "" : diagnosticsBlock()) +
-                    '<div class="actions"><button class="btn" id="restart">Import another file</button></div>' +
-                    "</section>"
-                );
-            }
-
-            function render() {
-                const el = document.getElementById("root");
-                if (!el) return;
-                let body = "";
-                if (S.step === "file") body = fileStep();
-                else if (S.step === "map") body = mapStep();
-                else if (S.step === "preview") body = previewStep();
-                else body = doneStep();
-                el.innerHTML = '<div class="imp">' + steps() + body + "</div>";
-                wire();
-            }
-
             function wire() {
+                document
+                    .getElementById("open-importer")
+                    ?.addEventListener("click", async () => {
+                        const result =
+                            await API?.requestDisplayMode("fullscreen");
+                        S.step = "file";
+                        if (result?.mode !== "fullscreen")
+                            document.documentElement.dataset.displayMode =
+                                "fullscreen";
+                        render();
+                    });
+                document
+                    .getElementById("close-importer")
+                    ?.addEventListener("click", async () => {
+                        await API?.requestDisplayMode("inline");
+                        S.step = "launch";
+                        document.documentElement.dataset.displayMode = "inline";
+                        render();
+                    });
                 const file = document.getElementById("file");
                 if (file)
-                    file.onchange = (e) => {
-                        const f = e.target.files && e.target.files[0];
-                        if (f) loadFile(f);
-                    };
+                    file.addEventListener(
+                        "change",
+                        (event) =>
+                            event.target.files?.[0] &&
+                            loadFile(event.target.files[0]),
+                    );
                 const drop = document.getElementById("drop");
                 if (drop) {
-                    drop.ondragover = (e) => {
-                        e.preventDefault();
+                    drop.addEventListener("dragover", (event) => {
+                        event.preventDefault();
                         drop.classList.add("over");
-                    };
-                    drop.ondragleave = () => drop.classList.remove("over");
-                    drop.ondrop = (e) => {
-                        e.preventDefault();
+                    });
+                    drop.addEventListener("dragleave", () =>
+                        drop.classList.remove("over"),
+                    );
+                    drop.addEventListener("drop", (event) => {
+                        event.preventDefault();
                         drop.classList.remove("over");
-                        const f =
-                            e.dataTransfer &&
-                            e.dataTransfer.files &&
-                            e.dataTransfer.files[0];
-                        if (f) loadFile(f);
-                    };
+                        const selected = event.dataTransfer?.files?.[0];
+                        if (selected) loadFile(selected);
+                    });
                 }
-                for (const sel of document.querySelectorAll(".map-sel")) {
-                    sel.onchange = (e) => {
-                        const field = e.target.dataset.field;
-                        S.mapping[field] = Number(e.target.value);
-                        // The date format and energy unit were read off the column
-                        // that was mapped a moment ago, so a remap invalidates
-                        // them: sniff the newly chosen column instead.
-                        if (field === "logged_at") resniffDateFormat();
-                        if (field === "calories") resniffEnergyUnit();
-                        render();
-                    };
-                }
-                // Re-rendering on change is what makes the worked example live.
-                const dateFormat = document.getElementById("dateFormat");
-                if (dateFormat)
-                    dateFormat.onchange = (e) => {
-                        S.dateFormat = e.target.value;
-                        // The user has now stated it, so stop asking.
+                document.querySelectorAll(".map-select").forEach((select) =>
+                    select.addEventListener("change", (event) => {
+                        S.mapping[event.target.dataset.field] = Number(
+                            event.target.value,
+                        );
+                    }),
+                );
+                document
+                    .getElementById("date-format")
+                    ?.addEventListener("change", (event) => {
+                        S.dateFormat = event.target.value;
                         S.dateAmbiguous = false;
                         render();
-                    };
-                const energyUnit = document.getElementById("energyUnit");
-                if (energyUnit)
-                    energyUnit.onchange = (e) => {
-                        S.energyUnit = e.target.value;
+                    });
+                document
+                    .getElementById("energy-unit")
+                    ?.addEventListener("change", (event) => {
+                        S.energyUnit = event.target.value;
+                    });
+                document
+                    .getElementById("source-app")
+                    ?.addEventListener("input", (event) => {
+                        S.sourceApp = event.target.value.trim();
+                    });
+                document
+                    .getElementById("to-preview")
+                    ?.addEventListener("click", () => {
+                        if (buildRows()) S.step = "preview";
                         render();
-                    };
-                const srcapp = document.getElementById("srcapp");
-                if (srcapp)
-                    srcapp.oninput = (e) => {
-                        S.sourceApp = e.target.value.trim();
-                    };
-                const toPreview = document.getElementById("toPreview");
-                if (toPreview)
-                    toPreview.onclick = () => {
-                        buildRows();
-                        S.step = "preview";
-                        S.result = null;
-                        render();
-                    };
-                const backToFile = document.getElementById("backToFile");
-                if (backToFile)
-                    backToFile.onclick = () => {
-                        S.step = "file";
-                        render();
-                    };
-                const backToMap = document.getElementById("backToMap");
-                if (backToMap)
-                    backToMap.onclick = () => {
+                    });
+                document
+                    .getElementById("back-file")
+                    ?.addEventListener("click", reset);
+                document
+                    .getElementById("back-map")
+                    ?.addEventListener("click", () => {
                         S.step = "map";
                         render();
-                    };
-                const doImport = document.getElementById("doImport");
-                if (doImport) doImport.onclick = () => runImport();
-                const restart = document.getElementById("restart");
-                if (restart)
-                    restart.onclick = () => {
-                        S.step = "file";
-                        S.table = null;
-                        S.rows = [];
-                        S.result = null;
-                        S.errors = [];
-                        S.dateFormat = "iso";
-                        S.dateAmbiguous = false;
-                        S.energyUnit = "kcal";
-                        S.badDates = 0;
-                        S.badDateSample = null;
+                    });
+                document
+                    .getElementById("do-import")
+                    ?.addEventListener("click", runImport);
+                document
+                    .getElementById("restart")
+                    ?.addEventListener("click", reset);
+                document
+                    .getElementById("finish")
+                    ?.addEventListener("click", async () => {
+                        await API?.requestDisplayMode("inline");
+                        S.step = "launch";
+                        document.documentElement.dataset.displayMode = "inline";
                         render();
-                    };
+                    });
             }
 
             initWidget({
                 name: "import-meals-widget",
-                loading:
-                    '<div class="empty"><div class="big">📥</div><div>Preparing import…</div></div>',
-                coerce: (payload) => {
+                displayModes: ["inline", "fullscreen"],
+                loading: '<div class="card loading">Preparing importer…</div>',
+                coerce(payload) {
                     if (!payload || typeof payload !== "object") return null;
-                    // start_meal_import's own payload, or a wrapper round it.
                     if (payload.import_tool_name || payload.tz) return payload;
-                    if (payload.structuredContent)
-                        return payload.structuredContent;
-                    return null;
+                    return payload.structuredContent || null;
                 },
-                render: (data) => {
-                    if (data && data.import_tool_name) {
-                        CFG = Object.assign({}, CFG, data);
-                    }
+                render(data) {
+                    if (data && typeof data === "object")
+                        CFG = { ...CFG, ...data };
                     render();
                 },
-                sample: {
-                    tz: "Europe/Kyiv",
-                    today: "2026-07-25",
-                    max_rows_per_call: 50,
-                    import_tool_name: "bulk_import_meals",
-                    known_source_apps: ["myfitnesspal", "cronometer"],
-                    tz_configured: true,
-                    // Tracking off is the default account state, so it is what
-                    // the standalone preview shows.
-                    drink_unit: null,
-                },
-                onReady: (api) => {
+                sample: CFG,
+                onReady(api) {
                     API = api;
+                    render();
+                },
+                onHostContext(context) {
+                    API.hostContext = { ...API.hostContext, ...context };
                     render();
                 },
             });
