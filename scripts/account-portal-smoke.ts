@@ -313,3 +313,4 @@ await closePlatformDatabase();
 console.log(
     "Munch account portal, timezone-aware zero-calorie meal history, household controls, complete export, preferences, and OAuth connection smoke test passed.",
 );
+process.exit(0);
