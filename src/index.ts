@@ -3,6 +3,7 @@ import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { createAccountRouter } from "./accounts/routes.js";
 import { betterAuthIsEnabled } from "./auth/config.js";
+import { resolveMcpAuthMode } from "./auth/mcp-auth-mode.js";
 import { registerBetterAuthRoutes } from "./auth/routes.js";
 import { createBillingRouter } from "./billing/routes.js";
 import { registerDiscoveryRoutes } from "./discovery.js";
@@ -27,6 +28,10 @@ validateStartupConfiguration();
 const app = new Hono();
 const railwayAuthEnabled = process.env.MUNCH_RAILWAY_AUTH_ENABLED === "true";
 const betterAuthEnabled = betterAuthIsEnabled();
+const mcpAuthMode = resolveMcpAuthMode(
+    betterAuthEnabled,
+    railwayAuthEnabled,
+);
 
 app.use("*", async (c, next) => {
     const path = new URL(c.req.url).pathname;
@@ -117,7 +122,9 @@ if (!betterAuthEnabled && railwayAuthEnabled) {
 app.all(
     "/mcp",
     banRepeatAuthFailures,
-    railwayAuthEnabled ? authenticatePlatformBearer : authenticateBearer,
+    mcpAuthMode === "railway"
+        ? authenticatePlatformBearer
+        : authenticateBearer,
     rateLimit,
     handleMcp,
 );
@@ -263,7 +270,7 @@ app.onError((_error, c) => {
 
 const port = parseInt(process.env.PORT || "8080");
 console.log(
-    `Munch server listening on 0.0.0.0:${port} auth=${betterAuthEnabled ? "better-auth" : railwayAuthEnabled ? "railway" : "inherited"}`,
+    `Munch server listening on 0.0.0.0:${port} auth=${mcpAuthMode}`,
 );
 
 await warmWidgets();
