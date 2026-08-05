@@ -31,6 +31,16 @@ jobs:
           set -euo pipefail
           cat .codegen/part-* | tr -d '\n' | base64 -d > /tmp/munch-payload.tar.gz
           tar -xzf /tmp/munch-payload.tar.gz -C .
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/meal-review-tools.ts')
+          text = path.read_text()
+          text = text.replace(
+              'args.answers?.map((answer) => ({',
+              'args.answers?.map((answer: z.infer<typeof reviewAnswerInput>) => ({',
+          )
+          path.write_text(text)
+          PY
           rm -rf .codegen
           rm -f .github/workflows/apply-atomic-meal-review-payload.yml
 
