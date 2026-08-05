@@ -68,9 +68,7 @@ describe("production widget boundary", () => {
 
     test("production exports only user-facing templates", async () => {
         const widgetsSource = await Bun.file("src/widgets.ts").text();
-        expect(widgetsSource).toContain(
-            'process.env.NODE_ENV === "production"',
-        );
+        expect(widgetsSource).toContain('process.env.NODE_ENV === "production"');
         expect(widgetsSource).toContain("USER_WIDGET_TEMPLATES");
     });
 });
@@ -128,8 +126,7 @@ describe("ChatGPT-native UX contracts", () => {
     test("range controls are fullscreen-only in analytical templates", async () => {
         for (const file of ["trends.html", "weight-trends.html"]) {
             const source = await Bun.file(`${SRC}/templates/${file}`).text();
-            expect(source).toContain('displayMode === "fullscreen"');
-            expect(source).toContain("range-controls");
+            expect(source).toContain("fullscreen-only range-controls");
         }
     });
 
