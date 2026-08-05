@@ -19,10 +19,10 @@ jobs:
         run: |
           set -u
           echo '=== SUPABASE identifiers ==='
-          rg -n --hidden --glob '!supabase/**' --glob '!docs/**' --glob '!CLAUDE.md' 'SUPABASE_|getSupabase|@supabase/supabase-js|inherited-supabase|\.\/supabase\.js' . || true
+          grep -RInE --exclude-dir=.git --exclude-dir=supabase --exclude-dir=docs --exclude=CLAUDE.md 'SUPABASE_|getSupabase|@supabase/supabase-js|inherited-supabase|/supabase\.js' . || true
           echo '=== Source imports from supabase facade ==='
-          rg -n 'from ["'"']\.\/supabase\.js["'"']' src || true
+          grep -RInE 'from .\./supabase\.js.' src || true
           echo '=== Package references ==='
-          rg -n 'supabase' package.json bun.lock .env.example README.md railway.json || true
+          grep -nEi 'supabase' package.json bun.lock .env.example README.md railway.json || true
           echo '=== Legacy directory ==='
           find supabase -maxdepth 2 -type f -print 2>/dev/null || true
