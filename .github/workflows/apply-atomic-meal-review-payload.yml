@@ -1,6 +1,7 @@
 name: Apply atomic meal review payload
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - feat/atomic-meal-review-latency
