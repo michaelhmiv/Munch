@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
 
+// Scan the deployable source, scripts, migrations, and public assets rather than
+// historical handoff documents, so the guard tracks active production paths.
 const ACTIVE_ROOTS = ["src", "scripts", "db", "public"];
 const ACTIVE_FILES = [
     ".env.example",
