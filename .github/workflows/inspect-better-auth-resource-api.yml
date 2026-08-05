@@ -20,10 +20,7 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Inspect installed resource-server APIs
         run: |
-          echo '=== introspection API names ==='
-          grep -R -n -i -A30 -B15 "introspect.*verify\|verify.*introspect\|oauth2introspect" \
-            node_modules/@better-auth/oauth-provider/dist \
-            node_modules/better-auth/dist \
-            | head -n 800
-          echo '=== oauth provider endpoint definitions ==='
-          grep -R -n -i -A30 -B15 'introspect' node_modules/@better-auth/oauth-provider/dist/*.d.mts | head -n 800
+          echo '=== introspection endpoint implementation ==='
+          sed -n '3270,3425p' node_modules/@better-auth/oauth-provider/dist/index.mjs
+          echo '=== introspection helpers ==='
+          grep -n -E "function .*ntrospect|const .*ntrospect|introspectToken|tokenIntrospection" node_modules/@better-auth/oauth-provider/dist/index.mjs | head -n 100
