@@ -19,9 +19,16 @@ function days(name: string, fallback: number, min = 0.01, max = 3650): number {
 }
 
 export function foodCatalogConfig(): CatalogConfig {
+    const databaseConfigured = Boolean(process.env.DATABASE_URL?.trim());
     return {
-        readsEnabled: bool("MUNCH_FOOD_CATALOG_READS_ENABLED", true),
-        writesEnabled: bool("MUNCH_FOOD_CATALOG_WRITES_ENABLED", true),
+        readsEnabled: bool(
+            "MUNCH_FOOD_CATALOG_READS_ENABLED",
+            databaseConfigured,
+        ),
+        writesEnabled: bool(
+            "MUNCH_FOOD_CATALOG_WRITES_ENABLED",
+            databaseConfigured,
+        ),
         staleOnError: bool("MUNCH_FOOD_CATALOG_STALE_ON_ERROR", true),
         packagedTtlMs: days("MUNCH_FOOD_CATALOG_PACKAGED_TTL_DAYS", 90),
         genericTtlMs: days("MUNCH_FOOD_CATALOG_GENERIC_TTL_DAYS", 180),
