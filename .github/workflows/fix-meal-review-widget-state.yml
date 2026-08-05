@@ -1,0 +1,63 @@
+name: Fix meal review completion state
+
+on:
+  push:
+    branches:
+      - feat/atomic-meal-review-latency
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - name: Lock completed review actions permanently
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          widget = Path('public/widgets/src/templates/meal-review.html')
+          text = widget.read_text()
+          old = '''document
+                        .querySelectorAll(".actions button")
+                        .forEach((button) => (button.disabled = true));'''
+          new = '''document
+                        .querySelectorAll(".actions button")
+                        .forEach((button) => {
+                            button.dataset.locked = "true";
+                            button.disabled = true;
+                        });'''
+          count = text.count(old)
+          if count != 2:
+              raise SystemExit(f'expected two completion lock sites, found {count}')
+          widget.write_text(text.replace(old, new))
+
+          test = Path('src/meal-review-policy.test.ts')
+          test_text = test.read_text()
+          needle = '    expect(html).toContain("min-height: 44px");\n'
+          replacement = needle + '    expect(html.match(/button\\.dataset\\.locked = "true"/g)?.length).toBe(2);\n'
+          if needle not in test_text:
+              raise SystemExit('widget policy test insertion point not found')
+          test.write_text(test_text.replace(needle, replacement, 1))
+          PY
+      - run: bun install --frozen-lockfile
+      - run: bunx prettier --write public/widgets/src/templates/meal-review.html src/meal-review-policy.test.ts
+      - run: bun test src/meal-review-policy.test.ts src/widgets.test.ts
+      - name: Commit fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/widgets/src/templates/meal-review.html src/meal-review-policy.test.ts
+          git commit -m "fix(widget): keep completed meal review actions locked"
+          git push
