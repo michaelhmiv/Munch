@@ -23,9 +23,10 @@ jobs:
         with:
           bun-version: 1
 
-      - name: Add the submission gate to CI
+      - name: Complete descriptor metadata and add the CI gate
         shell: python
         run: |
+          import re
           from pathlib import Path
 
           workflow = Path(".github/workflows/ci.yml")
@@ -46,12 +47,59 @@ jobs:
               text = text.replace(marker, replacement)
               workflow.write_text(text)
 
+          mcp = Path("src/mcp.ts")
+          text = mcp.read_text()
+          no_argument_tools = [
+              "export_meals",
+              "get_alcohol_tracking",
+              "get_meals_today",
+              "get_nutrition_goals",
+              "get_timezone",
+              "get_water_today",
+              "get_weight_today",
+              "get_weight_unit",
+              "get_widget_display",
+          ]
+          for name in no_argument_tools:
+              pattern = re.compile(
+                  rf'(toolServer\.registerTool\(\s*"{name}",\s*\{{)(.*?)(\n\s*annotations\s*:)',
+                  re.S,
+              )
+              match = pattern.search(text)
+              assert match, name
+              if "inputSchema:" not in match.group(2):
+                  replacement = (
+                      match.group(1)
+                      + match.group(2).rstrip()
+                      + "\n            inputSchema: {},"
+                      + match.group(3)
+                  )
+                  text = text[: match.start()] + replacement + text[match.end() :]
+
+          for name in ["start_meal_import", "bulk_import_meals"]:
+              pattern = re.compile(
+                  rf'(toolServer\.registerTool\(\s*"{name}",\s*\{{.*?annotations\s*:\s*\{{)(.*?)(\n\s*\}})',
+                  re.S,
+              )
+              match = pattern.search(text)
+              assert match, name
+              if "openWorldHint:" not in match.group(2):
+                  replacement = (
+                      match.group(1)
+                      + match.group(2).rstrip()
+                      + "\n                openWorldHint: false,"
+                      + match.group(3)
+                  )
+                  text = text[: match.start()] + replacement + text[match.end() :]
+          mcp.write_text(text)
+
       - name: Generate and validate submission package
         run: |
           bun install --frozen-lockfile
           bun run submission:generate
           bunx prettier --write \
             .github/workflows/ci.yml \
+            src/mcp.ts \
             chatgpt-app-submission.json \
             docs/openai-submission \
             scripts/openai-tool-inventory.ts \
@@ -70,6 +118,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
             .github/workflows/ci.yml \
+            src/mcp.ts \
             chatgpt-app-submission.json \
             docs/openai-submission \
             scripts/openai-tool-inventory.ts \
