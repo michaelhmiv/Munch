@@ -5,6 +5,7 @@ export interface ToolInventoryEntry {
     description: string | null;
     hasInputSchema: boolean;
     hasOutputSchema: boolean;
+    hasStructuredContent: boolean;
     readOnlyHint: boolean | null;
     openWorldHint: boolean | null;
     destructiveHint: boolean | null;
@@ -109,7 +110,13 @@ function inventoryFromSource(
     const callPattern = /\b[a-zA-Z_$][\w$]*\.registerTool\s*\(/g;
 
     for (const call of source.matchAll(callPattern)) {
-        const callStart = (call.index ?? 0) + call[0].length;
+        const openParen = (call.index ?? 0) + call[0].length - 1;
+        const callEnd = matchingDelimiter(source, openParen, "(", ")");
+        if (callEnd < 0) {
+            throw new Error(`${sourcePath} has an unclosed registerTool call`);
+        }
+        const fullCall = source.slice(openParen + 1, callEnd);
+        const callStart = openParen + 1;
         const remaining = source.slice(callStart);
         const nameMatch = /^\s*(["'])([a-zA-Z0-9_-]+)\1\s*,/.exec(remaining);
         if (!nameMatch) continue;
@@ -132,6 +139,7 @@ function inventoryFromSource(
             description: declaredTextProperty(config, "description"),
             hasInputSchema: /\binputSchema\s*:/.test(config),
             hasOutputSchema: /\boutputSchema\s*:/.test(config),
+            hasStructuredContent: /\bstructuredContent\s*:/.test(fullCall),
             readOnlyHint: booleanProperty(annotations, "readOnlyHint"),
             openWorldHint: booleanProperty(annotations, "openWorldHint"),
             destructiveHint: booleanProperty(annotations, "destructiveHint"),
