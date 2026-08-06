@@ -80,6 +80,10 @@ import {
 } from "./import.js";
 import { normalizeBarcode, lookupBarcode, formatFoodResult } from "./foods.js";
 import { formatMealSearchResults } from "./search.js";
+import {
+    WIDGET_RESOURCE_METADATA,
+    widgetToolMeta,
+} from "./openai-submission.js";
 import { getWidgetHtml } from "./widgets.js";
 
 // MCP Apps UI (https://blog.modelcontextprotocol.io/posts/2026-01-26-mcp-apps/):
@@ -980,7 +984,7 @@ export function registerTools(
     // per-user setting: with widgets off, tools/list advertises no UI link, so
     // hosts render no widget. Spreads to nothing when disabled.
     const uiMeta = (resourceUri: string) =>
-        widgetsEnabled ? { _meta: { ui: { resourceUri } } } : {};
+        widgetsEnabled ? widgetToolMeta(resourceUri) : {};
 
     toolServer.registerTool(
         "log_meal",
@@ -1128,7 +1132,7 @@ export function registerTools(
                         uri: uri.href,
                         mimeType: APP_UI_MIME_TYPE,
                         text: await getWidgetHtml("import-meals"),
-                        _meta: { ui: { prefersBorder: true } },
+                        _meta: WIDGET_RESOURCE_METADATA,
                     },
                 ],
             };
@@ -1148,6 +1152,7 @@ export function registerTools(
                 readOnlyHint: true,
                 destructiveHint: false,
                 idempotentHint: true,
+                openWorldHint: false,
             },
             ...uiMeta(IMPORT_MEALS_WIDGET_URI),
         },
@@ -1241,6 +1246,7 @@ export function registerTools(
                 readOnlyHint: false,
                 destructiveHint: false,
                 idempotentHint: true,
+                openWorldHint: false,
             },
         },
         async (args) => {
@@ -1367,7 +1373,7 @@ export function registerTools(
                 readOnlyHint: true,
                 destructiveHint: false,
                 idempotentHint: true,
-                openWorldHint: true,
+                openWorldHint: false,
             },
             inputSchema: {
                 barcode: z
@@ -1440,6 +1446,7 @@ export function registerTools(
         {
             title: "Get Today's Meals",
             description: "Get all meals logged today",
+            inputSchema: {},
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -1734,7 +1741,7 @@ export function registerTools(
                         mimeType: APP_UI_MIME_TYPE,
                         text: await getWidgetHtml("nutrition-summary"),
                         // Prefer a bordered container in hosts that honor it.
-                        _meta: { ui: { prefersBorder: true } },
+                        _meta: WIDGET_RESOURCE_METADATA,
                     },
                 ],
             };
@@ -1759,7 +1766,7 @@ export function registerTools(
                         uri: uri.href,
                         mimeType: APP_UI_MIME_TYPE,
                         text: await getWidgetHtml("goal-progress"),
-                        _meta: { ui: { prefersBorder: true } },
+                        _meta: WIDGET_RESOURCE_METADATA,
                     },
                 ],
             };
@@ -1784,7 +1791,7 @@ export function registerTools(
                         uri: uri.href,
                         mimeType: APP_UI_MIME_TYPE,
                         text: await getWidgetHtml("meal-logged"),
-                        _meta: { ui: { prefersBorder: true } },
+                        _meta: WIDGET_RESOURCE_METADATA,
                     },
                 ],
             };
@@ -1809,7 +1816,7 @@ export function registerTools(
                         uri: uri.href,
                         mimeType: APP_UI_MIME_TYPE,
                         text: await getWidgetHtml("trends"),
-                        _meta: { ui: { prefersBorder: true } },
+                        _meta: WIDGET_RESOURCE_METADATA,
                     },
                 ],
             };
@@ -1834,7 +1841,7 @@ export function registerTools(
                         uri: uri.href,
                         mimeType: APP_UI_MIME_TYPE,
                         text: await getWidgetHtml("weight-trends"),
-                        _meta: { ui: { prefersBorder: true } },
+                        _meta: WIDGET_RESOURCE_METADATA,
                     },
                 ],
             };
@@ -2249,6 +2256,7 @@ export function registerTools(
             title: "Get Nutrition Goals",
             description:
                 "Get the user's current daily calorie and macro targets.",
+            inputSchema: {},
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -2599,6 +2607,7 @@ export function registerTools(
             title: "Get Today's Water",
             description:
                 "Get today's total water intake (ml) and the list of entries.",
+            inputSchema: {},
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -2817,6 +2826,7 @@ export function registerTools(
             title: "Get Today's Weight",
             description:
                 "Get today's weight entries, shown in the user's preferred unit.",
+            inputSchema: {},
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -3302,6 +3312,7 @@ export function registerTools(
             title: "Get Weight Unit",
             description:
                 "Get the user's preferred weight unit. Reports if none is set.",
+            inputSchema: {},
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -3379,6 +3390,7 @@ export function registerTools(
             title: "Get Widget Display",
             description:
                 "Get whether the in-chat visual widgets are currently enabled for the user. Enabled by default.",
+            inputSchema: {},
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -3485,6 +3497,7 @@ export function registerTools(
             title: "Get Alcohol Tracking",
             description:
                 "Get whether alcohol tracking is enabled for the user and which standard drink it is displayed in. Disabled by default.",
+            inputSchema: {},
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -3704,6 +3717,7 @@ export function registerTools(
             title: "Export Meals",
             description:
                 "Export all of the user's logged meals as a CSV file and return a private, time-limited download link (valid 60 minutes). Timestamps use the user's timezone if set, otherwise UTC. Share the link with the user so they can download their data.",
+            inputSchema: {},
             annotations: {
                 readOnlyHint: false,
                 destructiveHint: false,
@@ -3830,6 +3844,7 @@ export function registerTools(
             title: "Get Timezone",
             description:
                 "Get the user's configured IANA timezone. Returns UTC if no profile has been set.",
+            inputSchema: {},
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,

@@ -72,6 +72,148 @@ const groceryItemSchema = z.object({
     provider_food_id: z.string().max(300).optional(),
 });
 
+const nutritionStatusOutputSchema = z.enum([
+    "complete",
+    "partial",
+    "unavailable",
+]);
+const savedRecipeResultOutputSchema = z.object({
+    recipeId: z.string().uuid(),
+    revisionId: z.string().uuid(),
+    revisionNumber: z.number().int().positive(),
+    nutritionStatus: nutritionStatusOutputSchema,
+    totals: nutrientSchema,
+    perServing: nutrientSchema,
+    deduplicated: z.boolean(),
+});
+const recipeSummaryOutputSchema = z.object({
+    recipe_id: z.string().uuid(),
+    revision_id: z.string().uuid(),
+    name: z.string(),
+    ownership: z.enum(["personal", "household"]),
+    servings: z.number().positive(),
+    nutrition_status: nutritionStatusOutputSchema,
+    nutrition_per_serving: nutrientSchema,
+    preparation_minutes: z.number().int().nonnegative().nullable(),
+    cooking_minutes: z.number().int().nonnegative().nullable(),
+    times_scheduled: z.number().int().nonnegative(),
+    last_scheduled_date: z.string().nullable(),
+    times_logged: z.number().int().nonnegative(),
+    last_logged_at: z.string().nullable(),
+    updated_at: z.string(),
+});
+const recipeIngredientOutputSchema = z.object({
+    id: z.string().uuid(),
+    position: z.number().int().nonnegative(),
+    name: z.string(),
+    quantity: z.number().nullable(),
+    unit: z.string().nullable(),
+    preparation: z.string().nullable(),
+    optional: z.boolean(),
+    gram_weight: z.number().nullable(),
+    nutrients: nutrientSchema,
+    provider: z.string().nullable(),
+    provider_food_id: z.string().nullable(),
+    source_type: z.string(),
+    source_url: z.string().nullable(),
+    confidence: z.number().nullable(),
+});
+const recipeDetailOutputSchema = z.object({
+    id: z.string().uuid(),
+    name: z.string(),
+    ownership: z.union([
+        z.object({ type: z.literal("personal") }),
+        z.object({
+            type: z.literal("household"),
+            household_id: z.string().uuid(),
+        }),
+    ]),
+    revision_id: z.string().uuid(),
+    revision_number: z.number().int().positive(),
+    servings: z.number().positive(),
+    description: z.string().nullable(),
+    instructions: z.array(z.string()),
+    preparation_minutes: z.number().int().nonnegative().nullable(),
+    cooking_minutes: z.number().int().nonnegative().nullable(),
+    source: z.object({
+        type: z.string(),
+        title: z.string().nullable(),
+        url: z.string().nullable(),
+    }),
+    nutrition_status: nutritionStatusOutputSchema,
+    nutrition_total: nutrientSchema,
+    nutrition_per_serving: nutrientSchema,
+    ingredients: z.array(recipeIngredientOutputSchema),
+    created_at: z.string(),
+    updated_at: z.string(),
+});
+const plannedMealOutputSchema = z.object({
+    planned_meal_id: z.string().uuid(),
+    planned_date: z.string(),
+    meal_slot: z.enum(["breakfast", "lunch", "dinner", "snack"]).nullable(),
+    recipe_id: z.string().uuid().optional(),
+    recipe_revision_id: z.string().uuid().optional(),
+    recipe_name: z.string().optional(),
+    servings: z.number().positive(),
+    note: z.string().nullable().optional(),
+    ownership: z.enum(["personal", "household"]).optional(),
+    created_by: z.string().nullable().optional(),
+    nutrition_per_serving: nutrientSchema.optional(),
+    version: z.number().int().positive().optional(),
+});
+const groceryListItemOutputSchema = z.object({
+    grocery_item_id: z.string().uuid(),
+    name: z.string(),
+    quantity: z.number().nullable(),
+    unit: z.string().nullable(),
+    note: z.string().nullable(),
+    purchased_at: z.string().nullable(),
+    source_recipe_id: z.string().uuid().nullable(),
+    source_planned_meal_id: z.string().uuid().nullable(),
+    added_by: z.string().nullable(),
+    version: z.number().int().positive(),
+});
+const groceryMutationItemOutputSchema = z.object({
+    id: z.string().uuid(),
+    name: z.string(),
+    quantity: z.union([z.number(), z.string()]).nullable(),
+    unit: z.string().nullable(),
+    purchased_at: z.string().nullable(),
+    version: z.union([z.number(), z.string()]),
+    merged: z.boolean(),
+});
+const groceryListOutputSchema = z.object({
+    groceryListId: z.string().uuid().nullable(),
+    items: z.array(groceryListItemOutputSchema),
+});
+const groceryMutationOutputSchema = z.object({
+    groceryListId: z.string().uuid().nullable(),
+    items: z.array(groceryMutationItemOutputSchema),
+});
+const groceryPurchasedOutputSchema = z.object({
+    grocery_item_id: z.string().uuid(),
+    purchased_at: z.string().nullable(),
+    version: z.number().int().positive(),
+});
+
+const planningOutputSchemas = {
+    search_recipes: { recipes: z.array(recipeSummaryOutputSchema) },
+    get_recipe: { recipe: recipeDetailOutputSchema.nullable() },
+    save_recipe: { recipe: savedRecipeResultOutputSchema },
+    get_meal_plan: { planned_meals: z.array(plannedMealOutputSchema) },
+    get_grocery_list: { grocery: groceryListOutputSchema },
+    schedule_recipe: { planned_meal: plannedMealOutputSchema },
+    add_grocery_items: { grocery: groceryMutationOutputSchema },
+    mark_grocery_item_purchased: {
+        grocery_item: groceryPurchasedOutputSchema,
+    },
+    save_recipe_and_plan: {
+        recipe: savedRecipeResultOutputSchema,
+        plannedMeal: plannedMealOutputSchema,
+        grocery: groceryMutationOutputSchema,
+    },
+} as const;
+
 function toRecipeInput(value: z.infer<typeof recipeSchema>): RecipeInput {
     return {
         name: value.name,
@@ -137,6 +279,15 @@ function groceryInputs(items: z.infer<typeof groceryItemSchema>[]) {
     }));
 }
 
+function serializeScheduledMeal(planned: Record<string, unknown>) {
+    return {
+        planned_meal_id: String(planned.id),
+        planned_date: String(planned.planned_date),
+        meal_slot: planned.meal_slot == null ? null : String(planned.meal_slot),
+        servings: Number(planned.servings),
+    };
+}
+
 export function registerRecipePlanningTools(
     server: McpServer,
     userId: string,
@@ -170,6 +321,7 @@ export function registerRecipePlanningTools(
                 scope: z.enum(["personal", "household", "all"]).optional(),
                 limit: z.number().int().min(1).max(50).optional(),
             },
+            outputSchema: planningOutputSchemas.search_recipes,
         },
         async ({ query, scope, limit }) =>
             withAnalytics(
@@ -211,6 +363,7 @@ export function registerRecipePlanningTools(
                 openWorldHint: false,
             },
             inputSchema: { recipe_id: z.string().uuid() },
+            outputSchema: planningOutputSchemas.get_recipe,
         },
         async ({ recipe_id }) =>
             withAnalytics(
@@ -253,6 +406,7 @@ export function registerRecipePlanningTools(
                     recipe: recipeSchema,
                     idempotency_key: z.string().min(1).max(255),
                 },
+                outputSchema: planningOutputSchemas.save_recipe,
             },
             async ({ scope, recipe, idempotency_key }) =>
                 withAnalytics(
@@ -301,6 +455,7 @@ export function registerRecipePlanningTools(
                     end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
                     scope: z.enum(["personal", "household", "all"]).optional(),
                 },
+                outputSchema: planningOutputSchemas.get_meal_plan,
             },
             async ({ start_date, end_date, scope }) =>
                 withAnalytics(
@@ -345,6 +500,7 @@ export function registerRecipePlanningTools(
                     scope: z.enum(["personal", "household"]),
                     include_purchased: z.boolean().optional(),
                 },
+                outputSchema: planningOutputSchemas.get_grocery_list,
             },
             async ({ scope, include_purchased }) =>
                 withAnalytics(
@@ -401,6 +557,7 @@ export function registerRecipePlanningTools(
                 note: z.string().max(500).optional(),
                 idempotency_key: z.string().min(1).max(255),
             },
+            outputSchema: planningOutputSchemas.schedule_recipe,
         },
         async (args) =>
             withAnalytics(
@@ -419,7 +576,9 @@ export function registerRecipePlanningTools(
                     });
                     return {
                         content: [{ type: "text", text: "Recipe scheduled." }],
-                        structuredContent: { planned_meal: planned },
+                        structuredContent: {
+                            planned_meal: serializeScheduledMeal(planned),
+                        },
                     };
                 },
                 { userId },
@@ -442,6 +601,7 @@ export function registerRecipePlanningTools(
                 scope: z.enum(["personal", "household"]),
                 items: z.array(groceryItemSchema).min(1).max(100),
             },
+            outputSchema: planningOutputSchemas.add_grocery_items,
         },
         async ({ scope, items }) =>
             withAnalytics(
@@ -483,6 +643,7 @@ export function registerRecipePlanningTools(
                 purchased: z.boolean(),
                 expected_version: z.number().int().positive(),
             },
+            outputSchema: planningOutputSchemas.mark_grocery_item_purchased,
         },
         async ({ grocery_item_id, purchased, expected_version }) =>
             withAnalytics(
@@ -534,6 +695,7 @@ export function registerRecipePlanningTools(
                 grocery_items_needed: z.array(groceryItemSchema).max(100),
                 idempotency_key: z.string().min(1).max(200),
             },
+            outputSchema: planningOutputSchemas.save_recipe_and_plan,
         },
         async (args) =>
             withAnalytics(

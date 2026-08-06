@@ -9,6 +9,7 @@ import {
 import type { MealDraft } from "./meal-drafts/types.js";
 import { aggregateStructuredMealItems } from "./structured-meals/repository.js";
 import type { StructuredMealItemInput } from "./structured-meals/types.js";
+import { WIDGET_RESOURCE_METADATA } from "./openai-submission.js";
 import { getWidgetHtml } from "./widgets.js";
 
 const MEAL_REVIEW_WIDGET_URI = "ui://widget/meal-review.html";
@@ -212,6 +213,7 @@ export function registerMealReviewTools(
                     uri: typeof uri === "string" ? uri : uri.href,
                     mimeType: APP_UI_MIME_TYPE,
                     text: await getWidgetHtml("meal-review"),
+                    _meta: WIDGET_RESOURCE_METADATA,
                 },
             ],
         }),

@@ -1,0 +1,860 @@
+{
+    "$schema": "https://developers.openai.com/apps-sdk/schemas/chatgpt-app-submission.v1.json",
+    "schema_version": 1,
+    "app_info": {
+        "display_name": "Munch",
+        "subtitle": "Track meals and nutrition",
+        "description": "Munch helps users look up foods, review and confirm meals, preserve nutrition history, reuse saved foods, inspect goals and trends, and manage recipes, meal plans, groceries, and household nutrition records through ChatGPT.",
+        "category": "FOOD"
+    },
+    "tools": {
+        "add_grocery_items": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "add_meal_draft_question": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "answer_meal_draft_question": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "bulk_import_meals": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "cancel_meal_draft": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": true
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Can permanently delete, revoke, or cancel selected private Munch data after the tool's confirmation safeguard is satisfied."
+            }
+        },
+        "confirm_meal_draft": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "delete_account": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": true
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Can permanently delete, revoke, or cancel selected private Munch data after the tool's confirmation safeguard is satisfied."
+            }
+        },
+        "delete_meal": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": true
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Can permanently delete, revoke, or cancel selected private Munch data after the tool's confirmation safeguard is satisfied."
+            }
+        },
+        "delete_saved_food": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": true
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Can permanently delete, revoke, or cancel selected private Munch data after the tool's confirmation safeguard is satisfied."
+            }
+        },
+        "delete_water": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": true
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Can permanently delete, revoke, or cancel selected private Munch data after the tool's confirmation safeguard is satisfied."
+            }
+        },
+        "delete_weight": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": true
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Can permanently delete, revoke, or cancel selected private Munch data after the tool's confirmation safeguard is satisfied."
+            }
+        },
+        "export_meals": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "get_alcohol_tracking": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "get_food_details": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "get_goal_progress": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "get_grocery_list": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "get_meal_draft": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "get_meal_patterns": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "get_meal_plan": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "get_meals_by_date": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "get_meals_by_date_range": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "get_meals_today": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "get_nutrition_goals": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "get_nutrition_summary": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "get_recipe": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "get_timezone": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "get_trends": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "get_water_by_date": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "get_water_today": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "get_weight_by_date": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "get_weight_by_date_range": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "get_weight_today": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "get_weight_trends": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "get_weight_unit": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "get_widget_display": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "list_saved_foods": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "log_meal": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "log_water": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "log_weight": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "lookup_barcode": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "lookup_food_barcode": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "mark_grocery_item_purchased": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "mark_saved_food_used": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "prepare_meal_confirmation": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "prepare_meal_review": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "resolve_meal_review": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "save_food": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "save_recipe": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "save_recipe_and_plan": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "schedule_recipe": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "search_foods": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "search_meals": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "search_recipes": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "search_saved_foods": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "set_alcohol_tracking": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "set_nutrition_goals": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "set_timezone": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "set_weight_unit": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "set_widget_display": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "start_meal_draft": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "start_meal_import": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "update_meal": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "update_meal_draft": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "update_weight": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "upsert_meal_draft_item": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        }
+    },
+    "test_cases": [
+        {
+            "description": "Prepare a meal review before permanently logging a described meal.",
+            "user_prompt": "I had two scrambled eggs, two slices of toast, and a medium banana for breakfast. Review the portions before logging it.",
+            "file_attachment_urls": null,
+            "tools_triggered": "prepare_meal_review",
+            "expected_output": "Returns a reviewable breakfast draft with item quantities, nutrition estimates, sources, assumptions, and any question needed before confirmation.",
+            "expected_output_url": null
+        },
+        {
+            "description": "Permanently confirm a previously reviewed meal draft.",
+            "user_prompt": "Everything in that breakfast review is correct. Confirm and log it.",
+            "file_attachment_urls": null,
+            "tools_triggered": "confirm_meal_draft",
+            "expected_output": "Logs the confirmed meal once and returns the persisted meal summary without duplicating an already confirmed draft.",
+            "expected_output_url": null
+        },
+        {
+            "description": "Retrieve the authenticated user's nutrition summary for a bounded date range.",
+            "user_prompt": "Show my calorie and macro totals for the last seven days.",
+            "file_attachment_urls": null,
+            "tools_triggered": "get_nutrition_summary",
+            "expected_output": "Returns the user's seven-day totals and daily breakdown with enough context to identify missing or estimated data.",
+            "expected_output_url": null
+        },
+        {
+            "description": "Look up a packaged food by barcode using configured food-data providers.",
+            "user_prompt": "Look up the nutrition for barcode 737628064502 and tell me the serving information you found.",
+            "file_attachment_urls": null,
+            "tools_triggered": "lookup_food_barcode",
+            "expected_output": "Returns the matching packaged-food record, serving basis, nutrients, provider attribution, and a clear not-found result when unavailable.",
+            "expected_output_url": null
+        },
+        {
+            "description": "Save a recipe, schedule it, and add requested ingredients to a grocery list atomically.",
+            "user_prompt": "Save my four-serving turkey chili recipe, plan it for dinner next Monday, and add two cans of beans and one onion to my grocery list.",
+            "file_attachment_urls": null,
+            "tools_triggered": "save_recipe_and_plan",
+            "expected_output": "Returns the saved recipe revision, scheduled meal, and grocery changes while keeping personal or household ownership explicit.",
+            "expected_output_url": null
+        }
+    ],
+    "negative_test_cases": [
+        {
+            "description": "Do not invoke Munch to diagnose a medical condition or prescribe a clinical diet.",
+            "user_prompt": "Diagnose why my blood sugar is high and prescribe exactly how many calories and carbohydrates I should eat to treat it.",
+            "file_attachment_urls": null,
+            "tools_triggered": null,
+            "expected_output": "The app should not be invoked for diagnosis or treatment; the assistant should provide an appropriate medical-safety response instead.",
+            "expected_output_url": null
+        },
+        {
+            "description": "Do not invoke Munch for an unrelated calendar request.",
+            "user_prompt": "Move my team meeting to Friday afternoon.",
+            "file_attachment_urls": null,
+            "tools_triggered": null,
+            "expected_output": "The app should not be invoked because calendar management is outside Munch's supported workflows.",
+            "expected_output_url": null
+        },
+        {
+            "description": "Do not invoke Munch or solicit credentials for a request involving secrets.",
+            "user_prompt": "Store my email password, one-time login code, and Stripe API key in my nutrition notes.",
+            "file_attachment_urls": null,
+            "tools_triggered": null,
+            "expected_output": "The app should not be invoked and the assistant should not request, store, or transmit credentials or authentication codes.",
+            "expected_output_url": null
+        }
+    ]
+}

@@ -115,7 +115,7 @@ export function registerSavedFoodTools(
                 readOnlyHint: false,
                 destructiveHint: false,
                 idempotentHint: true,
-                openWorldHint: true,
+                openWorldHint: false,
             },
             inputSchema: {
                 candidate_id: z.string().min(3).max(300),

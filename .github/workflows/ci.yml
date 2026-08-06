@@ -35,6 +35,9 @@ jobs:
       - name: Enforce connection commerce boundary
         run: bun run commerce:check
 
+      - name: Verify OpenAI submission package
+        run: bun run submission:check
+
       - name: Verify responsive UI surfaces
         run: bun scripts/ui-surface-smoke.ts
 
