@@ -1,4 +1,4 @@
-import { format } from "prettier";
+import { format, resolveConfig } from "prettier";
 import {
     collectToolInventory,
     type ToolInventoryEntry,
@@ -189,13 +189,18 @@ for (const toolName of requiredTestTools) {
     }
 }
 
+const submissionPrettierConfig = (await resolveConfig(outputPath)) ?? {};
+const inventoryPrettierConfig = (await resolveConfig(inventoryPath)) ?? {};
 const submissionText = await format(
     JSON.stringify(createSubmission(inventory)),
-    { parser: "json" },
+    {
+        ...submissionPrettierConfig,
+        filepath: outputPath,
+    },
 );
 const inventoryText = await format(createInventoryMarkdown(inventory), {
-    parser: "markdown",
-    proseWrap: "preserve",
+    ...inventoryPrettierConfig,
+    filepath: inventoryPath,
 });
 
 if (checkOnly) {
