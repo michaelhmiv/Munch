@@ -26,55 +26,28 @@ jobs:
       - name: Finalize public policies and support details
         shell: python
         run: |
+          import re
           from pathlib import Path
 
+          def replace_section(text: str, section_id: str, replacement: str) -> str:
+              pattern = re.compile(
+                  rf'\s*<section id="{re.escape(section_id)}">.*?</section>',
+                  re.S,
+              )
+              updated, count = pattern.subn("\n" + replacement, text, count=1)
+              assert count == 1, section_id
+              return updated
+
           terms = Path("public/terms.html")
-          text = terms.read_text()
-          text = text.replace(
+          text = terms.read_text().replace(
               "Last updated: August 4, 2026",
               "Last updated: August 5, 2026",
           )
-          old_plans = '''                        <h2>
-                            2. Free access, Premium, trial, and cancellation
-                        </h2>
-                        <p>
-                            Munch Free provides permanent core access without a
-                            payment method, subject to the limits shown on the
-                            Munch website. Connecting Munch to ChatGPT does not
-                            require Premium.
-                        </p>
-                        <p>
-                            Munch Premium is purchased independently on the
-                            Munch website. The current offer is a 30-day trial
-                            followed by $4.99 per month, plus applicable taxes.
-                            Payment information is collected by Stripe when the
-                            Premium trial begins. Trial availability may be
-                            limited to eligible accounts.
-                        </p>
-                        <p>
-                            Unless canceled before the trial ends, Premium
-                            automatically converts to a paid monthly
-                            subscription and renews each month until canceled.
-                            You authorize Stripe to charge the saved payment
-                            method for recurring fees and applicable taxes.
-                        </p>
-                        <p>
-                            Payment methods, invoices, and cancellation are
-                            managed through the Stripe-hosted customer portal
-                            linked from the Munch account portal. Cancellation
-                            normally takes effect at the end of the current paid
-                            period unless Stripe or applicable law provides
-                            otherwise. Canceling Premium does not delete the
-                            Munch account or personal data; the account returns
-                            to applicable Free capabilities.
-                        </p>
-                        <p>
-                            Promotions, refunds, credits, and trial eligibility
-                            may be limited. Except where required by law or
-                            expressly stated, fees already charged are
-                            non-refundable.
-                        </p>'''
-          new_plans = '''                        <h2>2. Free access, Premium, and cancellation</h2>
+          text = replace_section(
+              text,
+              "plans",
+              '''                    <section id="plans">
+                        <h2>2. Free access, Premium, and cancellation</h2>
                         <p>
                             Munch Free provides permanent core access without a
                             payment method, subject to the limits shown on the
@@ -104,24 +77,15 @@ jobs:
                             Promotions, refunds, and credits may be limited.
                             Except where required by law or expressly stated,
                             fees already charged are non-refundable.
-                        </p>'''
-          assert text.count(old_plans) == 1
-          text = text.replace(old_plans, new_plans)
-
-          old_law = '''                        <p>
-                            Formal governing-law and legal-contact provisions
-                            may be supplemented before broader commercial
-                            availability. Consumer rights that cannot lawfully
-                            be waived remain unaffected.
                         </p>
+                    </section>''',
+          )
+          text = replace_section(
+              text,
+              "law",
+              '''                    <section id="law">
+                        <h2>11. Governing law, consumer rights, and contact</h2>
                         <p>
-                            Do not place sensitive nutrition, household, or
-                            account information in public GitHub issues.
-                            Official support and legal contact information will
-                            be provided through Munch account communications and
-                            website notices.
-                        </p>'''
-          new_law = '''                        <p>
                             These terms are governed by the laws of the State of
                             South Carolina, without regard to conflict-of-law
                             principles. Any dispute that must be resolved in
@@ -139,32 +103,35 @@ jobs:
                                 >support@munch.business</a
                             >. Munch may send service and legal notices to the
                             email address associated with the account.
-                        </p>'''
-          assert text.count(old_law) == 1
-          text = text.replace(old_law, new_law)
+                        </p>
+                        <h3>Changes to these terms</h3>
+                        <p>
+                            Updated terms will be posted with a revised date.
+                            Continued use after an effective update constitutes
+                            acceptance where permitted by law.
+                        </p>
+                    </section>''',
+          )
           assert "trial" not in text.lower()
           terms.write_text(text)
 
           privacy = Path("public/privacy.html")
-          text = privacy.read_text()
-          text = text.replace(
+          text = privacy.read_text().replace(
               "Last updated: August 4, 2026",
               "Last updated: August 5, 2026",
           )
-          text = text.replace(
-              "subscription, entitlement,\n                                trial, renewal, cancellation, and payment-status",
-              "subscription, entitlement,\n                                renewal, cancellation, and payment-status",
+          text = re.sub(
+              r"subscription, entitlement,\s*trial, renewal, cancellation, and payment-status",
+              "subscription, entitlement, renewal, cancellation, and payment-status",
+              text,
+              count=1,
           )
-          old_retention = '''                        <p>
-                            Active account and workspace data is retained while
-                            needed to provide the service. Expired login
-                            challenges, sessions, OAuth artifacts, invitation
-                            tokens, export files, and operational records are
-                            subject to bounded cleanup. Exports expire after one
-                            hour. Backups and legally required billing records
-                            can persist after deletion for a limited period.
-                        </p>'''
-          new_retention = '''                        <p>
+          text = replace_section(
+              text,
+              "retention",
+              '''                    <section id="retention">
+                        <h2>Retention</h2>
+                        <p>
                             Active account and workspace data is retained while
                             the account or workspace remains active. Passwordless
                             login challenges normally expire after 10 minutes;
@@ -187,16 +154,15 @@ jobs:
                             overwrites them. Stripe may retain billing,
                             accounting, fraud, dispute, and tax records for the
                             periods required by law and its own policies.
-                        </p>'''
-          assert text.count(old_retention) == 1
-          text = text.replace(old_retention, new_retention)
-          old_contact = '''                        <p>
-                            Do not place sensitive nutrition or account data in
-                            public GitHub issues. Privacy and support contact
-                            information will be provided through official Munch
-                            account communications and website notices.
-                        </p>'''
-          new_contact = '''                        <p>
+                        </p>
+                    </section>''',
+          )
+          contact_pattern = re.compile(
+              r"(<h3>Contact</h3>)\s*<p>.*?</p>",
+              re.S,
+          )
+          contact_replacement = '''\1
+                        <p>
                             Do not place sensitive nutrition or account data in
                             public GitHub issues. Send privacy and support
                             requests to
@@ -207,34 +173,36 @@ jobs:
                                 >security@munch.business</a
                             >.
                         </p>'''
-          assert text.count(old_contact) == 1
-          text = text.replace(old_contact, new_contact)
+          text, contact_count = contact_pattern.subn(
+              contact_replacement,
+              text,
+              count=1,
+          )
+          assert contact_count == 1
           assert "trial" not in text.lower()
           privacy.write_text(text)
 
           help_page = Path("public/help.html")
           text = help_page.read_text()
-          old_problem = '''                        <p>
-                            Use private security reporting for vulnerabilities
-                            and avoid placing sensitive account or nutrition
-                            data in public issues.
-                        </p>
-                        <a class="text-link" href="/security"
-                            >Security guidance →</a
-                        >'''
-          new_problem = '''                        <p>
+          problem_pattern = re.compile(
+              r"(<h3>Report a problem</h3>)\s*<p>.*?</p>",
+              re.S,
+          )
+          problem_replacement = '''\1
+                        <p>
                             Email
                             <a href="mailto:support@munch.business"
                                 >support@munch.business</a
                             > for account or product help. Use private security
                             reporting for vulnerabilities and avoid placing
                             sensitive account or nutrition data in public issues.
-                        </p>
-                        <a class="text-link" href="/security"
-                            >Security guidance →</a
-                        >'''
-          assert text.count(old_problem) == 1
-          text = text.replace(old_problem, new_problem)
+                        </p>'''
+          text, problem_count = problem_pattern.subn(
+              problem_replacement,
+              text,
+              count=1,
+          )
+          assert problem_count == 1
           help_page.write_text(text)
 
       - name: Format and validate public surfaces
