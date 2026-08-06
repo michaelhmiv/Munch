@@ -1,0 +1,79 @@
+name: Submission readiness codemod
+
+on:
+  push:
+    branches:
+      - feat/openai-submission-readiness
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[submission-codemod]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/openai-submission-readiness
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+
+      - name: Apply exact widget metadata updates
+        shell: python
+        run: |
+          from pathlib import Path
+
+          mcp = Path("src/mcp.ts")
+          text = mcp.read_text()
+          old_import = 'import { getWidgetHtml } from "./widgets.js";'
+          new_import = 'import {\n    WIDGET_RESOURCE_METADATA,\n    widgetToolMeta,\n} from "./openai-submission.js";\nimport { getWidgetHtml } from "./widgets.js";'
+          assert text.count(old_import) == 1
+          text = text.replace(old_import, new_import)
+
+          old_ui = '''    const uiMeta = (resourceUri: string) =>
+          widgetsEnabled ? { _meta: { ui: { resourceUri } } } : {};'''
+          new_ui = '''    const uiMeta = (resourceUri: string) =>
+          widgetsEnabled ? widgetToolMeta(resourceUri) : {};'''
+          assert text.count(old_ui) == 1
+          text = text.replace(old_ui, new_ui)
+
+          old_resource_meta = '_meta: { ui: { prefersBorder: true } },'
+          resource_count = text.count(old_resource_meta)
+          assert resource_count == 6, resource_count
+          text = text.replace(old_resource_meta, '_meta: WIDGET_RESOURCE_METADATA,')
+          mcp.write_text(text)
+
+          review = Path("src/meal-review-tools.ts")
+          text = review.read_text()
+          old_import = 'import { getWidgetHtml } from "./widgets.js";'
+          new_import = 'import { WIDGET_RESOURCE_METADATA } from "./openai-submission.js";\nimport { getWidgetHtml } from "./widgets.js";'
+          assert text.count(old_import) == 1
+          text = text.replace(old_import, new_import)
+          old_content = '''                    text: await getWidgetHtml("meal-review"),
+                },'''
+          new_content = '''                    text: await getWidgetHtml("meal-review"),
+                    _meta: WIDGET_RESOURCE_METADATA,
+                },'''
+          assert text.count(old_content) == 1
+          text = text.replace(old_content, new_content)
+          review.write_text(text)
+
+      - name: Install and validate
+        run: |
+          bun install --frozen-lockfile
+          bunx prettier --write src/mcp.ts src/meal-review-tools.ts
+          bun run typecheck
+          bun test src/openai-submission.test.ts
+
+      - name: Commit codemod result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/mcp.ts src/meal-review-tools.ts
+          git commit -m "fix(widgets): declare exact OpenAI CSP metadata [submission-codemod]"
+          git push origin HEAD:feat/openai-submission-readiness
