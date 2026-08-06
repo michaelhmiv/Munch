@@ -2,6 +2,10 @@ import { PRODUCT_CONFIG, formatMonthlyPrice } from "../src/product-config.js";
 
 const errors: string[] = [];
 
+function normalizedText(source: string): string {
+    return source.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
 if (PRODUCT_CONFIG.trialEnabled) {
     errors.push("PRODUCT_CONFIG.trialEnabled must remain false");
 }
@@ -12,7 +16,7 @@ if (!PRODUCT_CONFIG.freeTierEnabled) {
 const publicHtml = new Bun.Glob("public/**/*.html");
 for await (const path of publicHtml.scan({ cwd: "." })) {
     const source = await Bun.file(path).text();
-    if (/\btrial\b/i.test(source)) {
+    if (/\btrial\b/i.test(normalizedText(source))) {
         errors.push(`${path}: contains user-facing trial language`);
     }
 }
@@ -28,7 +32,7 @@ for (const forbidden of [
     }
 }
 
-const terms = await Bun.file("public/terms.html").text();
+const terms = normalizedText(await Bun.file("public/terms.html").text());
 for (const required of [
     "permanent core access",
     "optional subscription",
@@ -41,7 +45,7 @@ for (const required of [
     }
 }
 
-const privacy = await Bun.file("public/privacy.html").text();
+const privacy = normalizedText(await Bun.file("public/privacy.html").text());
 for (const required of [
     "10 minutes",
     "30 days",
