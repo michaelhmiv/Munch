@@ -9,11 +9,14 @@ const expectedResource = `${baseUrl}/mcp`;
 
 async function expectStatus(path: string, status: number): Promise<Response> {
     const response = await fetch(`${baseUrl}${path}`, {
-        headers: { accept: "application/json" },
+        headers: { accept: "application/json, text/html, text/plain" },
         redirect: "manual",
     });
     if (response.status !== status) {
         throw new Error(`${path} returned ${response.status}; expected ${status}`);
+    }
+    if (response.headers.get("location")) {
+        throw new Error(`${path} unexpectedly redirected`);
     }
     return response;
 }
@@ -27,8 +30,48 @@ async function fetchJson(path: string): Promise<Record<string, unknown>> {
     return (await response.json()) as Record<string, unknown>;
 }
 
+async function expectHtml(path: string): Promise<void> {
+    const response = await expectStatus(path, 200);
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.startsWith("text/html")) {
+        throw new Error(`${path} returned ${contentType || "no content type"}`);
+    }
+    if ((await response.text()).length < 200) {
+        throw new Error(`${path} returned an incomplete page`);
+    }
+}
+
 await expectStatus("/health/live", 200);
 await expectStatus("/health/ready", 200);
+
+for (const path of [
+    "/privacy",
+    "/terms",
+    "/help",
+    "/security",
+    "/review/sign-in",
+]) {
+    await expectHtml(path);
+}
+
+const configuredChallenge = process.env.OPENAI_APPS_CHALLENGE?.trim();
+if (configuredChallenge) {
+    const challengeResponse = await expectStatus(
+        "/.well-known/openai-apps-challenge",
+        200,
+    );
+    if (!(challengeResponse.headers.get("content-type") ?? "").startsWith("text/plain")) {
+        throw new Error("OpenAI challenge has the wrong content type");
+    }
+    if (challengeResponse.headers.get("cache-control") !== "no-store") {
+        throw new Error("OpenAI challenge must not be cached");
+    }
+    if ((await challengeResponse.text()).trim() !== configuredChallenge) {
+        throw new Error("OpenAI challenge response does not match the configured value");
+    }
+} else {
+    await expectStatus("/.well-known/openai-apps-challenge", 404);
+}
 
 const protectedResource = await fetchJson(
     "/.well-known/oauth-protected-resource/mcp",
@@ -111,6 +154,9 @@ console.log(
         tokenEndpoint: authorization.token_endpoint,
         registrationEndpoint: authorization.registration_endpoint,
         compatibilityDiscovery: true,
+        publicPolicyPages: true,
+        reviewerSignInPage: true,
+        openAiChallengeConfigured: Boolean(configuredChallenge),
         portalStylesheet: true,
         mealHistoryRequiresAuthentication: true,
     }),
