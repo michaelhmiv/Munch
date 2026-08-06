@@ -1,0 +1,39 @@
+name: Regenerate submission artifacts
+
+on:
+  push:
+    branches:
+      - feat/openai-submission-readiness
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    if: ${{ !contains(github.event.head_commit.message, '[submission-regenerated]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/openai-submission-readiness
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+
+      - name: Generate canonical artifacts
+        run: |
+          bun install --frozen-lockfile
+          bun run submission:generate
+          bun run submission:check
+          bun run format:check
+
+      - name: Commit generated artifacts
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add chatgpt-app-submission.json docs/openai-submission/tool-inventory.md
+          git commit -m "fix(submission): regenerate canonical artifacts [submission-regenerated]"
+          git push origin HEAD:feat/openai-submission-readiness
