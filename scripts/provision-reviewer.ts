@@ -29,6 +29,15 @@ if (
     throw new Error("MUNCH_REVIEWER_EXPIRES_AT must be a future ISO date");
 }
 
+function dateAfterDays(days: number): string {
+    const value = new Date();
+    value.setUTCDate(value.getUTCDate() + days);
+    return value.toISOString().slice(0, 10);
+}
+
+const personalPlanDate = dateAfterDays(1);
+const householdPlanDate = dateAfterDays(5);
+
 const { Pool } = await import("pg");
 const { getMunchBetterAuth } = await import("../src/auth/auth.js");
 const { grantPremiumOverride } = await import("../src/billing/override.js");
@@ -162,11 +171,11 @@ await saveRecipeAndPlan({
             },
         ],
     },
-    plannedDate: "2026-08-06",
+    plannedDate: personalPlanDate,
     mealSlot: "breakfast",
     plannedServings: 1,
     groceryItems: [{ name: "Blueberries", quantity: 1, unit: "pint" }],
-    idempotencyKey: "reviewer-seed-personal-v1",
+    idempotencyKey: `reviewer-seed-personal-${personalPlanDate}`,
 });
 
 await saveRecipeAndPlan({
@@ -228,11 +237,11 @@ await saveRecipeAndPlan({
             },
         ],
     },
-    plannedDate: "2026-08-10",
+    plannedDate: householdPlanDate,
     mealSlot: "dinner",
     plannedServings: 4,
     groceryItems: [{ name: "Yellow onion", quantity: 1, unit: "whole" }],
-    idempotencyKey: "reviewer-seed-household-v1",
+    idempotencyKey: `reviewer-seed-household-${householdPlanDate}`,
 });
 
 await pool.query(
