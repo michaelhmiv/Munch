@@ -23,17 +23,55 @@ jobs:
         with:
           bun-version: 1
 
+      - name: Align generator with repository formatting
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("scripts/generate-openai-submission.ts")
+          text = path.read_text()
+          text = text.replace(
+              'import { format } from "prettier";',
+              'import { format, resolveConfig } from "prettier";',
+          )
+          old = '''const submissionText = await format(
+              JSON.stringify(createSubmission(inventory)),
+              { parser: "json" },
+          );
+          const inventoryText = await format(createInventoryMarkdown(inventory), {
+              parser: "markdown",
+              proseWrap: "preserve",
+          });'''
+          new = '''const submissionPrettierConfig =
+              (await resolveConfig(outputPath)) ?? {};
+          const inventoryPrettierConfig =
+              (await resolveConfig(inventoryPath)) ?? {};
+          const submissionText = await format(
+              JSON.stringify(createSubmission(inventory)),
+              {
+                  ...submissionPrettierConfig,
+                  filepath: outputPath,
+              },
+          );
+          const inventoryText = await format(createInventoryMarkdown(inventory), {
+              ...inventoryPrettierConfig,
+              filepath: inventoryPath,
+          });'''
+          assert text.count(old) == 1
+          path.write_text(text.replace(old, new))
+
       - name: Generate canonical artifacts
         run: |
           bun install --frozen-lockfile
+          bunx prettier --write scripts/generate-openai-submission.ts
           bun run submission:generate
           bun run submission:check
-          bun run format:check
+          bunx prettier --check chatgpt-app-submission.json docs/openai-submission/tool-inventory.md scripts/generate-openai-submission.ts
 
       - name: Commit generated artifacts
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add chatgpt-app-submission.json docs/openai-submission/tool-inventory.md
+          git add scripts/generate-openai-submission.ts chatgpt-app-submission.json docs/openai-submission/tool-inventory.md
           git commit -m "fix(submission): regenerate canonical artifacts [submission-regenerated]"
           git push origin HEAD:feat/openai-submission-readiness
