@@ -23,6 +23,11 @@ for (const tool of inventory) {
         errors.push(`${tool.name}: missing readOnlyHint`);
     if (tool.openWorldHint === null)
         errors.push(`${tool.name}: missing openWorldHint`);
+    if (tool.openWorldHint === true) {
+        errors.push(
+            `${tool.name}: openWorldHint must be false because no Munch MCP tool publishes, sends, or mutates public or third-party state`,
+        );
+    }
     if (tool.destructiveHint === null)
         errors.push(`${tool.name}: missing destructiveHint`);
     if (tool.idempotentHint === null)
