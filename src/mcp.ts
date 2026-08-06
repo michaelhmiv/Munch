@@ -80,6 +80,10 @@ import {
 } from "./import.js";
 import { normalizeBarcode, lookupBarcode, formatFoodResult } from "./foods.js";
 import { formatMealSearchResults } from "./search.js";
+import {
+    WIDGET_RESOURCE_METADATA,
+    widgetToolMeta,
+} from "./openai-submission.js";
 import { getWidgetHtml } from "./widgets.js";
 
 // MCP Apps UI (https://blog.modelcontextprotocol.io/posts/2026-01-26-mcp-apps/):
@@ -980,7 +984,7 @@ export function registerTools(
     // per-user setting: with widgets off, tools/list advertises no UI link, so
     // hosts render no widget. Spreads to nothing when disabled.
     const uiMeta = (resourceUri: string) =>
-        widgetsEnabled ? { _meta: { ui: { resourceUri } } } : {};
+        widgetsEnabled ? widgetToolMeta(resourceUri) : {};
 
     toolServer.registerTool(
         "log_meal",
@@ -1128,7 +1132,7 @@ export function registerTools(
                         uri: uri.href,
                         mimeType: APP_UI_MIME_TYPE,
                         text: await getWidgetHtml("import-meals"),
-                        _meta: { ui: { prefersBorder: true } },
+                        _meta: WIDGET_RESOURCE_METADATA,
                     },
                 ],
             };
@@ -1734,7 +1738,7 @@ export function registerTools(
                         mimeType: APP_UI_MIME_TYPE,
                         text: await getWidgetHtml("nutrition-summary"),
                         // Prefer a bordered container in hosts that honor it.
-                        _meta: { ui: { prefersBorder: true } },
+                        _meta: WIDGET_RESOURCE_METADATA,
                     },
                 ],
             };
@@ -1759,7 +1763,7 @@ export function registerTools(
                         uri: uri.href,
                         mimeType: APP_UI_MIME_TYPE,
                         text: await getWidgetHtml("goal-progress"),
-                        _meta: { ui: { prefersBorder: true } },
+                        _meta: WIDGET_RESOURCE_METADATA,
                     },
                 ],
             };
@@ -1784,7 +1788,7 @@ export function registerTools(
                         uri: uri.href,
                         mimeType: APP_UI_MIME_TYPE,
                         text: await getWidgetHtml("meal-logged"),
-                        _meta: { ui: { prefersBorder: true } },
+                        _meta: WIDGET_RESOURCE_METADATA,
                     },
                 ],
             };
@@ -1809,7 +1813,7 @@ export function registerTools(
                         uri: uri.href,
                         mimeType: APP_UI_MIME_TYPE,
                         text: await getWidgetHtml("trends"),
-                        _meta: { ui: { prefersBorder: true } },
+                        _meta: WIDGET_RESOURCE_METADATA,
                     },
                 ],
             };
@@ -1834,7 +1838,7 @@ export function registerTools(
                         uri: uri.href,
                         mimeType: APP_UI_MIME_TYPE,
                         text: await getWidgetHtml("weight-trends"),
-                        _meta: { ui: { prefersBorder: true } },
+                        _meta: WIDGET_RESOURCE_METADATA,
                     },
                 ],
             };
