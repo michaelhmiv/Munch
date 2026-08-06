@@ -3,14 +3,21 @@ import { collectToolInventory } from "./openai-tool-inventory.js";
 
 const inventory = await collectToolInventory();
 const errors: string[] = [];
+const warnings: string[] = [];
 
 if (inventory.length === 0) errors.push("No exposed MCP tools were discovered.");
 
 for (const tool of inventory) {
-    if (!tool.title) errors.push(`${tool.name}: missing literal title`);
-    if (!tool.description) errors.push(`${tool.name}: missing literal description`);
+    if (!tool.title) errors.push(`${tool.name}: missing title`);
+    if (!tool.description) errors.push(`${tool.name}: missing description`);
     if (!tool.hasInputSchema) errors.push(`${tool.name}: missing inputSchema`);
-    if (!tool.hasOutputSchema) errors.push(`${tool.name}: missing outputSchema`);
+    if (tool.hasStructuredContent && !tool.hasOutputSchema) {
+        errors.push(`${tool.name}: structuredContent requires outputSchema`);
+    } else if (!tool.hasOutputSchema) {
+        warnings.push(
+            `${tool.name}: text-only result has no outputSchema; add one if structuredContent is introduced`,
+        );
+    }
     if (tool.readOnlyHint === null)
         errors.push(`${tool.name}: missing readOnlyHint`);
     if (tool.openWorldHint === null)
@@ -96,6 +103,11 @@ if (!(await submissionFile.exists())) {
             }
         }
     }
+}
+
+if (warnings.length > 0) {
+    console.warn("OpenAI submission audit warnings:");
+    for (const warning of warnings) console.warn(`- ${warning}`);
 }
 
 if (errors.length > 0) {
