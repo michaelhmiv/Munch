@@ -22,6 +22,9 @@ for await (const path of publicHtml.scan({ cwd: "." })) {
     if (/\btrial\b/i.test(normalizedText(source))) {
         errors.push(`${path}: contains user-facing trial language`);
     }
+    if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(source)) {
+        errors.push(`${path}: contains an invalid control character`);
+    }
 }
 
 const stripeClient = await Bun.file("src/billing/stripe-client.ts").text();
@@ -56,6 +59,7 @@ for (const required of [
     "15 minutes",
     "90 days",
     "one hour",
+    "Contact",
     "support@munch.business",
     "security@munch.business",
 ]) {
@@ -66,9 +70,11 @@ for (const required of [
     }
 }
 
-const help = await Bun.file("public/help.html").text();
-if (!help.includes("mailto:support@munch.business")) {
-    errors.push("Help page must provide a direct support email");
+const help = normalizedText(await Bun.file("public/help.html").text());
+for (const required of ["Report a problem", "support@munch.business"]) {
+    if (!help.includes(required)) {
+        errors.push(`Help page is missing required support text: ${required}`);
+    }
 }
 
 const environmentExample = await Bun.file(".env.example").text();
