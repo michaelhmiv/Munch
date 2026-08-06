@@ -71,9 +71,7 @@ function matchingDelimiter(
 }
 
 function literalProperty(source: string, property: string): string | null {
-    const pattern = new RegExp(
-        `${property}\\s*:\\s*(["'])([\\s\\S]*?)\\1`,
-    );
+    const pattern = new RegExp(`${property}\\s*:\\s*(["'])([\\s\\S]*?)\\1`);
     return pattern.exec(source)?.[2]?.replace(/\\n/g, " ").trim() ?? null;
 }
 
@@ -122,11 +120,16 @@ function inventoryFromSource(
         if (!nameMatch) continue;
 
         const name = nameMatch[2];
-        const configStart = source.indexOf("{", callStart + nameMatch[0].length);
+        const configStart = source.indexOf(
+            "{",
+            callStart + nameMatch[0].length,
+        );
         if (configStart < 0) continue;
         const configEnd = matchingDelimiter(source, configStart);
         if (configEnd < 0) {
-            throw new Error(`${sourcePath}:${name} has an unclosed tool config`);
+            throw new Error(
+                `${sourcePath}:${name} has an unclosed tool config`,
+            );
         }
         const config = source.slice(configStart, configEnd + 1);
         const annotations = propertyBlock(config, "annotations");

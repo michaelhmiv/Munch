@@ -1,0 +1,71 @@
+# OpenAI tool inventory
+
+Generated from the production MCP source. Do not edit manually.
+
+| Tool | Source | Read only | Open world | Destructive | Idempotent | Output schema |
+|---|---|---:|---:|---:|---:|---:|
+| `add_grocery_items` | `src/recipe-planning-tools.ts` | false | false | false | true | true |
+| `add_meal_draft_question` | `src/meal-draft-tools.ts` | false | false | false | true | true |
+| `answer_meal_draft_question` | `src/meal-draft-tools.ts` | false | false | false | false | true |
+| `bulk_import_meals` | `src/mcp.ts` | false | false | false | true | true |
+| `cancel_meal_draft` | `src/meal-draft-tools.ts` | false | false | true | false | true |
+| `confirm_meal_draft` | `src/meal-draft-tools.ts` | false | false | false | true | true |
+| `delete_account` | `src/mcp.ts` | false | false | true | false | false |
+| `delete_meal` | `src/mcp.ts` | false | false | true | true | false |
+| `delete_saved_food` | `src/saved-food-tools.ts` | false | false | true | true | true |
+| `delete_water` | `src/mcp.ts` | false | false | true | true | false |
+| `delete_weight` | `src/mcp.ts` | false | false | true | true | false |
+| `export_meals` | `src/mcp.ts` | false | false | false | false | false |
+| `get_alcohol_tracking` | `src/mcp.ts` | true | false | false | true | false |
+| `get_food_details` | `src/food-tools.ts` | true | true | false | true | true |
+| `get_goal_progress` | `src/mcp.ts` | true | false | false | true | true |
+| `get_grocery_list` | `src/recipe-planning-tools.ts` | true | false | false | true | true |
+| `get_meal_draft` | `src/meal-draft-tools.ts` | true | false | false | true | true |
+| `get_meal_patterns` | `src/mcp.ts` | true | false | false | true | false |
+| `get_meal_plan` | `src/recipe-planning-tools.ts` | true | false | false | true | true |
+| `get_meals_by_date` | `src/mcp.ts` | true | false | false | true | false |
+| `get_meals_by_date_range` | `src/mcp.ts` | true | false | false | true | false |
+| `get_meals_today` | `src/mcp.ts` | true | false | false | true | false |
+| `get_nutrition_goals` | `src/mcp.ts` | true | false | false | true | false |
+| `get_nutrition_summary` | `src/mcp.ts` | true | false | false | true | true |
+| `get_recipe` | `src/recipe-planning-tools.ts` | true | false | false | true | true |
+| `get_timezone` | `src/mcp.ts` | true | false | false | true | false |
+| `get_trends` | `src/mcp.ts` | true | false | false | true | true |
+| `get_water_by_date` | `src/mcp.ts` | true | false | false | true | false |
+| `get_water_today` | `src/mcp.ts` | true | false | false | true | false |
+| `get_weight_by_date` | `src/mcp.ts` | true | false | false | true | false |
+| `get_weight_by_date_range` | `src/mcp.ts` | true | false | false | true | false |
+| `get_weight_today` | `src/mcp.ts` | true | false | false | true | false |
+| `get_weight_trends` | `src/mcp.ts` | true | false | false | true | true |
+| `get_weight_unit` | `src/mcp.ts` | true | false | false | true | false |
+| `get_widget_display` | `src/mcp.ts` | true | false | false | true | false |
+| `list_saved_foods` | `src/saved-food-tools.ts` | true | false | false | true | true |
+| `log_meal` | `src/mcp.ts` | false | false | false | false | true |
+| `log_water` | `src/mcp.ts` | false | false | false | false | false |
+| `log_weight` | `src/mcp.ts` | false | false | false | false | false |
+| `lookup_barcode` | `src/mcp.ts` | true | true | false | true | false |
+| `lookup_food_barcode` | `src/food-tools.ts` | true | true | false | true | true |
+| `mark_grocery_item_purchased` | `src/recipe-planning-tools.ts` | false | false | false | true | true |
+| `mark_saved_food_used` | `src/saved-food-tools.ts` | false | false | false | false | true |
+| `prepare_meal_confirmation` | `src/meal-draft-tools.ts` | false | false | false | false | true |
+| `prepare_meal_review` | `src/meal-review-tools.ts` | false | false | false | true | true |
+| `resolve_meal_review` | `src/meal-review-tools.ts` | false | false | false | false | true |
+| `save_food` | `src/saved-food-tools.ts` | false | true | false | true | true |
+| `save_recipe` | `src/recipe-planning-tools.ts` | false | false | false | true | true |
+| `save_recipe_and_plan` | `src/recipe-planning-tools.ts` | false | false | false | true | true |
+| `schedule_recipe` | `src/recipe-planning-tools.ts` | false | false | false | true | true |
+| `search_foods` | `src/food-tools.ts` | true | true | false | true | true |
+| `search_meals` | `src/mcp.ts` | true | false | false | true | false |
+| `search_recipes` | `src/recipe-planning-tools.ts` | true | false | false | true | true |
+| `search_saved_foods` | `src/saved-food-tools.ts` | true | false | false | true | true |
+| `set_alcohol_tracking` | `src/mcp.ts` | false | false | false | true | false |
+| `set_nutrition_goals` | `src/mcp.ts` | false | false | false | true | false |
+| `set_timezone` | `src/mcp.ts` | false | false | false | true | false |
+| `set_weight_unit` | `src/mcp.ts` | false | false | false | true | false |
+| `set_widget_display` | `src/mcp.ts` | false | false | false | true | false |
+| `start_meal_draft` | `src/meal-draft-tools.ts` | false | false | false | false | true |
+| `start_meal_import` | `src/mcp.ts` | true | false | false | true | true |
+| `update_meal` | `src/mcp.ts` | false | false | false | true | true |
+| `update_meal_draft` | `src/meal-draft-tools.ts` | false | false | false | true | true |
+| `update_weight` | `src/mcp.ts` | false | false | false | true | false |
+| `upsert_meal_draft_item` | `src/meal-draft-tools.ts` | false | false | false | true | true |

@@ -3,7 +3,10 @@ import { PRODUCT_CONFIG, formatMonthlyPrice } from "../src/product-config.js";
 const errors: string[] = [];
 
 function normalizedText(source: string): string {
-    return source.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    return source
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
 }
 
 if (PRODUCT_CONFIG.trialEnabled) {
@@ -57,7 +60,9 @@ for (const required of [
     "security@munch.business",
 ]) {
     if (!privacy.includes(required)) {
-        errors.push(`Privacy Policy is missing retention/contact text: ${required}`);
+        errors.push(
+            `Privacy Policy is missing retention/contact text: ${required}`,
+        );
     }
 }
 

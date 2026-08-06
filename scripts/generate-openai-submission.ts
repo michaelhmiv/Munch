@@ -1,4 +1,7 @@
-import { collectToolInventory, type ToolInventoryEntry } from "./openai-tool-inventory.js";
+import {
+    collectToolInventory,
+    type ToolInventoryEntry,
+} from "./openai-tool-inventory.js";
 
 const outputPath = "chatgpt-app-submission.json";
 const inventoryPath = "docs/openai-submission/tool-inventory.md";
@@ -38,7 +41,8 @@ function createSubmission(entries: ToolInventoryEntry[]) {
     );
 
     return {
-        $schema: "https://developers.openai.com/apps-sdk/schemas/chatgpt-app-submission.v1.json",
+        $schema:
+            "https://developers.openai.com/apps-sdk/schemas/chatgpt-app-submission.v1.json",
         schema_version: 1,
         app_info: {
             display_name: "Munch",

@@ -5,7 +5,8 @@ const inventory = await collectToolInventory();
 const errors: string[] = [];
 const warnings: string[] = [];
 
-if (inventory.length === 0) errors.push("No exposed MCP tools were discovered.");
+if (inventory.length === 0)
+    errors.push("No exposed MCP tools were discovered.");
 
 for (const tool of inventory) {
     if (!tool.title) errors.push(`${tool.name}: missing title`);
@@ -73,13 +74,17 @@ if (!(await submissionFile.exists())) {
         errors.push("Submission must contain exactly five positive test cases");
     }
     if (submission.negative_test_cases?.length !== 3) {
-        errors.push("Submission must contain exactly three negative test cases");
+        errors.push(
+            "Submission must contain exactly three negative test cases",
+        );
     }
 
     const expectedNames = inventory.map((tool) => tool.name).sort();
     const submittedNames = Object.keys(submission.tools ?? {}).sort();
     if (JSON.stringify(expectedNames) !== JSON.stringify(submittedNames)) {
-        errors.push("Submission tool inventory does not match exposed MCP tools");
+        errors.push(
+            "Submission tool inventory does not match exposed MCP tools",
+        );
     }
 
     for (const name of submittedNames) {

@@ -18,7 +18,8 @@ let htmlResourceCount = 0;
 let cspMetadataCount = 0;
 for (const path of resourceSources) {
     const source = await Bun.file(path).text();
-    htmlResourceCount += source.match(/text:\s*await getWidgetHtml\(/g)?.length ?? 0;
+    htmlResourceCount +=
+        source.match(/text:\s*await getWidgetHtml\(/g)?.length ?? 0;
     cspMetadataCount +=
         source.match(/_meta:\s*WIDGET_RESOURCE_METADATA/g)?.length ?? 0;
 }
