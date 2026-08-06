@@ -1,5 +1,4 @@
 const STRIPE_API_BASE = "https://api.stripe.com/v1";
-const MUNCH_TRIAL_DAYS = 30;
 
 interface StripeErrorEnvelope {
     error?: {
@@ -49,7 +48,6 @@ export interface CreateCheckoutInput {
     successUrl: string;
     cancelUrl: string;
     pendingOAuthSessionId?: string | null;
-    trialDays?: number | null;
 }
 
 function stripeSecretKey(): string {
@@ -107,15 +105,6 @@ export async function createStripeCheckoutSession(
         payment_method_collection: "always",
         allow_promotion_codes: "true",
     });
-
-    const trialDays =
-        input.trialDays === undefined ? MUNCH_TRIAL_DAYS : input.trialDays;
-    if (trialDays !== null) {
-        if (!Number.isInteger(trialDays) || trialDays < 1) {
-            throw new Error("Checkout trial days must be a positive integer");
-        }
-        body.set("subscription_data[trial_period_days]", String(trialDays));
-    }
 
     if (input.customerId) {
         body.set("customer", input.customerId);
