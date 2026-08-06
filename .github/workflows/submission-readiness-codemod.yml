@@ -26,6 +26,7 @@ jobs:
       - name: Apply exact widget metadata updates
         shell: python
         run: |
+          import re
           from pathlib import Path
 
           mcp = Path("src/mcp.ts")
@@ -35,12 +36,14 @@ jobs:
           assert text.count(old_import) == 1
           text = text.replace(old_import, new_import)
 
-          old_ui = '''    const uiMeta = (resourceUri: string) =>
-          widgetsEnabled ? { _meta: { ui: { resourceUri } } } : {};'''
-          new_ui = '''    const uiMeta = (resourceUri: string) =>
-          widgetsEnabled ? widgetToolMeta(resourceUri) : {};'''
-          assert text.count(old_ui) == 1
-          text = text.replace(old_ui, new_ui)
+          ui_pattern = re.compile(
+              r"(?m)^(\s*)const uiMeta = \(resourceUri: string\) =>\s*\n\s*widgetsEnabled \? \{ _meta: \{ ui: \{ resourceUri \} \} \} : \{\};"
+          )
+          text, ui_count = ui_pattern.subn(
+              lambda match: f"{match.group(1)}const uiMeta = (resourceUri: string) =>\n{match.group(1)}    widgetsEnabled ? widgetToolMeta(resourceUri) : {{}};",
+              text,
+          )
+          assert ui_count == 1, ui_count
 
           old_resource_meta = '_meta: { ui: { prefersBorder: true } },'
           resource_count = text.count(old_resource_meta)
@@ -54,13 +57,15 @@ jobs:
           new_import = 'import { WIDGET_RESOURCE_METADATA } from "./openai-submission.js";\nimport { getWidgetHtml } from "./widgets.js";'
           assert text.count(old_import) == 1
           text = text.replace(old_import, new_import)
-          old_content = '''                    text: await getWidgetHtml("meal-review"),
-                },'''
-          new_content = '''                    text: await getWidgetHtml("meal-review"),
-                    _meta: WIDGET_RESOURCE_METADATA,
-                },'''
-          assert text.count(old_content) == 1
-          text = text.replace(old_content, new_content)
+          content_pattern = re.compile(
+              r'(text: await getWidgetHtml\("meal-review"\),\s*\n)(\s*)(},)'
+          )
+          text, content_count = content_pattern.subn(
+              lambda match: f"{match.group(1)}{match.group(2)}_meta: WIDGET_RESOURCE_METADATA,\n{match.group(2)}{match.group(3)}",
+              text,
+              count=1,
+          )
+          assert content_count == 1, content_count
           review.write_text(text)
 
       - name: Install and validate
