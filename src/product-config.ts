@@ -8,21 +8,27 @@ export const PRODUCT_CONFIG = Object.freeze({
     freeSavedFoodLimit: 25,
     householdMemberLimit: 6,
     supportEmail: "support@munch.business",
+    privacyEmail: "support@munch.business",
+    legalEmail: "support@munch.business",
     securityEmail: "security@munch.business",
 });
 
 export const PROTECTED_COMMERCE_TERMS = Object.freeze([
     "start free trial",
-    "30-day trial",
-    "after trial",
-    "seven-day trial",
-    "7-day trial",
-    "premium required",
+    "free trial",
+    "trial period",
+    "trial ends",
+    "subscribe to continue",
+    "subscription required",
     "upgrade to continue",
     "upgrade your plan",
-    "subscribe to continue",
+    "premium required",
+    "premium plan",
+    "premium subscription",
     "stripe checkout",
+    "billing portal",
     "pricing plan",
+    "$4.99",
 ]);
 
 export const PROTECTED_COMMERCE_PATHS = Object.freeze([
@@ -32,8 +38,10 @@ export const PROTECTED_COMMERCE_PATHS = Object.freeze([
     "src/auth/email.ts",
     "src/accounts/login-delivery.ts",
     "src/mcp.ts",
-    "src/planning-tools.ts",
-    "public/widgets",
+    "src/mcp-runtime.ts",
+    "src/*-tools.ts",
+    "src/**/*-tools.ts",
+    "public/widgets/**/*.{html,ts,js}",
 ]);
 
 export function formatMonthlyPrice(): string {
