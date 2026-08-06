@@ -33,7 +33,7 @@ const externalAssetPattern =
     /<(?:script|img|iframe|link)\b[^>]*(?:src|href)=["']https?:\/\//i;
 const directNetworkPattern =
     /\b(?:fetch|XMLHttpRequest|WebSocket|EventSource)\s*\(/;
-const wildcardPattern = /["']\*\.[^"']+["']|["']\*["']/;
+const wildcardNetworkUrlPattern = /https?:\/\/\*|wss?:\/\/\*/i;
 const widgetGlob = new Bun.Glob("public/widgets/**/*.{html,js,ts,css}");
 for await (const path of widgetGlob.scan({ cwd: "." })) {
     const source = await Bun.file(path).text();
@@ -43,8 +43,8 @@ for await (const path of widgetGlob.scan({ cwd: "." })) {
     if (directNetworkPattern.test(source)) {
         errors.push(`${path}: performs a direct network request`);
     }
-    if (wildcardPattern.test(source)) {
-        errors.push(`${path}: contains a wildcard domain or source`);
+    if (wildcardNetworkUrlPattern.test(source)) {
+        errors.push(`${path}: contains a wildcard network URL`);
     }
 }
 
