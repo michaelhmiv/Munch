@@ -96,17 +96,15 @@ jobs:
       - name: Generate and validate submission package
         run: |
           bun install --frozen-lockfile
-          bun run submission:generate
           bunx prettier --write \
             .github/workflows/ci.yml \
             src/mcp.ts \
-            chatgpt-app-submission.json \
-            docs/openai-submission \
             scripts/openai-tool-inventory.ts \
             scripts/generate-openai-submission.ts \
             scripts/openai-submission-audit.ts \
             scripts/widget-csp-audit.ts \
             scripts/policy-consistency-check.ts
+          bun run submission:generate
           bun run commerce:check
           bun run submission:check
           bun run typecheck
