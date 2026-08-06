@@ -39,7 +39,7 @@
                         service designed to work through ChatGPT and compatible
                         MCP clients.
                     </p>
-                    <p class="tiny spacer-top">Last updated: August 4, 2026</p>
+                    <p class="tiny spacer-top">Last updated: August 5, 2026</p>
                 </div>
             </section>
             <div class="container legal-layout">
@@ -103,7 +103,7 @@
                             </li>
                             <li>
                                 Stripe customer, subscription, entitlement,
-                                trial, renewal, cancellation, and payment-status
+                                renewal, cancellation, and payment-status
                                 identifiers. Munch does not store raw card
                                 numbers.
                             </li>
@@ -283,12 +283,27 @@
                         <h2>Retention</h2>
                         <p>
                             Active account and workspace data is retained while
-                            needed to provide the service. Expired login
-                            challenges, sessions, OAuth artifacts, invitation
-                            tokens, export files, and operational records are
-                            subject to bounded cleanup. Exports expire after one
-                            hour. Backups and legally required billing records
-                            can persist after deletion for a limited period.
+                            the account or workspace remains active.
+                            Passwordless login challenges normally expire after
+                            10 minutes; website sessions expire after 30 days
+                            and may be refreshed during active use. OAuth
+                            authorization codes expire after 5 minutes, access
+                            tokens after 15 minutes, and refresh tokens after 90
+                            days. Expired or revoked authentication artifacts
+                            remain only until the next applicable cleanup cycle.
+                        </p>
+                        <p>
+                            Downloadable account exports expire after one hour.
+                            Operational and security records are retained only
+                            for the period reasonably needed to investigate
+                            failures, prevent abuse, respond to incidents, and
+                            meet legal obligations; Munch does not intentionally
+                            place nutrition-record contents in ordinary access
+                            logs. Database backups may retain deleted data until
+                            the hosting provider's configured backup rotation
+                            overwrites them. Stripe may retain billing,
+                            accounting, fraud, dispute, and tax records for the
+                            periods required by law and its own policies.
                         </p>
                     </section>
                     <section id="limits">
@@ -307,12 +322,17 @@
                             reflected by a revised date and, where appropriate,
                             an in-product notice.
                         </p>
-                        <h3>Contact</h3>
+                        
                         <p>
                             Do not place sensitive nutrition or account data in
-                            public GitHub issues. Privacy and support contact
-                            information will be provided through official Munch
-                            account communications and website notices.
+                            public GitHub issues. Send privacy and support
+                            requests to
+                            <a href="mailto:support@munch.business"
+                                >support@munch.business</a
+                            >. Report security vulnerabilities privately to
+                            <a href="mailto:security@munch.business"
+                                >security@munch.business</a
+                            >.
                         </p>
                     </section>
                 </article>
