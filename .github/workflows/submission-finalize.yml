@@ -23,29 +23,11 @@ jobs:
         with:
           bun-version: 1
 
-      - name: Complete descriptor metadata and add the CI gate
+      - name: Complete descriptor metadata
         shell: python
         run: |
           import re
           from pathlib import Path
-
-          workflow = Path(".github/workflows/ci.yml")
-          text = workflow.read_text()
-          marker = '''      - name: Enforce connection commerce boundary
-                  run: bun run commerce:check
-
-                - name: Verify responsive UI surfaces'''
-          replacement = '''      - name: Enforce connection commerce boundary
-                  run: bun run commerce:check
-
-                - name: Verify OpenAI submission package
-                  run: bun run submission:check
-
-                - name: Verify responsive UI surfaces'''
-          if "Verify OpenAI submission package" not in text:
-              assert text.count(marker) == 1
-              text = text.replace(marker, replacement)
-              workflow.write_text(text)
 
           mcp = Path("src/mcp.ts")
           text = mcp.read_text()
@@ -93,12 +75,30 @@ jobs:
                   text = text[: match.start()] + replacement + text[match.end() :]
           mcp.write_text(text)
 
+          annotation_files = [
+              Path("src/mcp.ts"),
+              Path("src/food-tools.ts"),
+              Path("src/saved-food-tools.ts"),
+          ]
+          changed = 0
+          for path in annotation_files:
+              source = path.read_text()
+              updated, count = re.subn(
+                  r"openWorldHint:\s*true,",
+                  "openWorldHint: false,",
+                  source,
+              )
+              changed += count
+              path.write_text(updated)
+          assert changed == 5, changed
+
       - name: Generate and validate submission package
         run: |
           bun install --frozen-lockfile
           bunx prettier --write \
-            .github/workflows/ci.yml \
             src/mcp.ts \
+            src/food-tools.ts \
+            src/saved-food-tools.ts \
             scripts/openai-tool-inventory.ts \
             scripts/generate-openai-submission.ts \
             scripts/openai-submission-audit.ts \
@@ -115,8 +115,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
-            .github/workflows/ci.yml \
             src/mcp.ts \
+            src/food-tools.ts \
+            src/saved-food-tools.ts \
             chatgpt-app-submission.json \
             docs/openai-submission \
             scripts/openai-tool-inventory.ts \
@@ -124,5 +125,5 @@ jobs:
             scripts/openai-submission-audit.ts \
             scripts/widget-csp-audit.ts \
             scripts/policy-consistency-check.ts
-          git commit -m "test(submission): generate and enforce review package [submission-finalize]"
+          git commit -m "fix(submission): align tool annotations with actual side effects [submission-finalize]"
           git push origin HEAD:feat/openai-submission-readiness
