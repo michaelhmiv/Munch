@@ -1,3 +1,4 @@
+import { format } from "prettier";
 import {
     collectToolInventory,
     type ToolInventoryEntry,
@@ -188,8 +189,14 @@ for (const toolName of requiredTestTools) {
     }
 }
 
-const submissionText = `${JSON.stringify(createSubmission(inventory), null, 2)}\n`;
-const inventoryText = createInventoryMarkdown(inventory);
+const submissionText = await format(
+    JSON.stringify(createSubmission(inventory)),
+    { parser: "json" },
+);
+const inventoryText = await format(createInventoryMarkdown(inventory), {
+    parser: "markdown",
+    proseWrap: "preserve",
+});
 
 if (checkOnly) {
     await requireExactFile(outputPath, submissionText);
