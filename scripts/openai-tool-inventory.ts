@@ -76,6 +76,14 @@ function literalProperty(source: string, property: string): string | null {
     return pattern.exec(source)?.[2]?.replace(/\\n/g, " ").trim() ?? null;
 }
 
+function declaredTextProperty(source: string, property: string): string | null {
+    const literal = literalProperty(source, property);
+    if (literal) return literal;
+    return new RegExp(`\\b${property}\\s*:`).test(source)
+        ? "[declared expression]"
+        : null;
+}
+
 function booleanProperty(source: string, property: string): boolean | null {
     const match = new RegExp(`${property}\\s*:\\s*(true|false)`).exec(source);
     return match ? match[1] === "true" : null;
@@ -98,7 +106,7 @@ function inventoryFromSource(
     sourcePath: string,
 ): ToolInventoryEntry[] {
     const entries: ToolInventoryEntry[] = [];
-    const callPattern = /\b(?:server|toolServer)\.registerTool\s*\(/g;
+    const callPattern = /\b[a-zA-Z_$][\w$]*\.registerTool\s*\(/g;
 
     for (const call of source.matchAll(callPattern)) {
         const callStart = (call.index ?? 0) + call[0].length;
@@ -120,8 +128,8 @@ function inventoryFromSource(
         entries.push({
             name,
             sourcePath,
-            title: literalProperty(config, "title"),
-            description: literalProperty(config, "description"),
+            title: declaredTextProperty(config, "title"),
+            description: declaredTextProperty(config, "description"),
             hasInputSchema: /\binputSchema\s*:/.test(config),
             hasOutputSchema: /\boutputSchema\s*:/.test(config),
             readOnlyHint: booleanProperty(annotations, "readOnlyHint"),
