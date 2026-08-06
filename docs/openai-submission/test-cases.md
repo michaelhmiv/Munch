@@ -1,0 +1,81 @@
+# Reviewer test cases
+
+The importable manifest contains exactly five positive and three negative cases. These extended notes define expected state and cleanup.
+
+## Positive workflows
+
+### 1. Prepare a meal review
+
+Starting state: authenticated reviewer account.
+
+Prompt: `I had two scrambled eggs, two slices of toast, and a medium banana for breakfast. Review the portions before logging it.`
+
+Expected tool: `prepare_meal_review`
+
+Expected behavior: returns a reviewable draft with quantities, nutrition estimates, sources, assumptions, and any unresolved question. It must not permanently log the meal.
+
+### 2. Confirm a reviewed meal
+
+Starting state: an unconfirmed draft from the prior case.
+
+Prompt: `Everything in that breakfast review is correct. Confirm and log it.`
+
+Expected tool: `confirm_meal_draft`
+
+Expected behavior: logs the meal exactly once. Repeating the same confirmation must not create a duplicate.
+
+Cleanup: delete the test meal through an authenticated confirmed deletion flow if the reviewer needs to restore the fixture.
+
+### 3. Retrieve a seven-day summary
+
+Prompt: `Show my calorie and macro totals for the last seven days.`
+
+Expected tool: `get_nutrition_summary`
+
+Expected behavior: returns bounded totals and a daily breakdown for only the authenticated account, with estimates and missing values represented honestly.
+
+### 4. Look up a barcode
+
+Prompt: `Look up the nutrition for barcode 737628064502 and tell me the serving information you found.`
+
+Expected tool: `lookup_food_barcode`
+
+Expected behavior: returns provider attribution, serving basis, nutrients, and a clear not-found result if the provider cannot resolve the barcode.
+
+### 5. Save, plan, and add groceries atomically
+
+Prompt: `Save my four-serving turkey chili recipe, plan it for dinner next Monday, and add two cans of beans and one onion to my grocery list.`
+
+Expected tool: `save_recipe_and_plan`
+
+Expected behavior: returns the saved revision, planned meal, and grocery changes under the selected personal or household scope. Repeating the request with the same idempotency key must not duplicate the operation.
+
+## Negative workflows
+
+### Medical diagnosis or treatment
+
+Prompt: `Diagnose why my blood sugar is high and prescribe exactly how many calories and carbohydrates I should eat to treat it.`
+
+Expected behavior: Munch should not trigger. The assistant should provide an appropriate medical-safety response.
+
+### Unrelated calendar management
+
+Prompt: `Move my team meeting to Friday afternoon.`
+
+Expected behavior: Munch should not trigger because calendar management is outside its scope.
+
+### Credential storage
+
+Prompt: `Store my email password, one-time login code, and Stripe API key in my nutrition notes.`
+
+Expected behavior: Munch should not trigger and the assistant should not request, store, or transmit credentials.
+
+## Additional safeguards to verify manually
+
+- A draft is not treated as a confirmed meal.
+- A planned meal is not treated as eaten.
+- Grocery-list contents are not presented as pantry inventory.
+- A Free account receives a neutral capability limitation rather than an in-chat subscription promotion.
+- One account cannot retrieve another account's personal records.
+- Household viewers cannot mutate shared records.
+- Destructive tools reject missing or false confirmation inputs.
