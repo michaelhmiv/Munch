@@ -105,7 +105,9 @@ async function stripeRequest<T>(
     return payload;
 }
 
-export async function retrieveStripePrice(priceId: string): Promise<StripePrice> {
+export async function retrieveStripePrice(
+    priceId: string,
+): Promise<StripePrice> {
     if (!/^price_[A-Za-z0-9_]+$/.test(priceId)) {
         throw new Error("STRIPE_PRICE_ID is missing or invalid");
     }

@@ -118,17 +118,18 @@ describe("Stripe Checkout", () => {
 
     test("preserves Stripe error codes for actionable checkout diagnostics", async () => {
         process.env.STRIPE_SECRET_KEY = "sk_test_munch";
-        globalThis.fetch = mock(async () =>
-            new Response(
-                JSON.stringify({
-                    error: {
-                        type: "invalid_request_error",
-                        code: "resource_missing",
-                        message: "No such price",
-                    },
-                }),
-                { status: 404 },
-            ),
+        globalThis.fetch = mock(
+            async () =>
+                new Response(
+                    JSON.stringify({
+                        error: {
+                            type: "invalid_request_error",
+                            code: "resource_missing",
+                            message: "No such price",
+                        },
+                    }),
+                    { status: 404 },
+                ),
         ) as unknown as typeof fetch;
 
         try {
