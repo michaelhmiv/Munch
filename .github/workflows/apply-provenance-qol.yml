@@ -1,0 +1,489 @@
+name: Apply provenance QoL integration
+
+on:
+  push:
+    branches:
+      - feat/nutrition-provenance-qol
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/nutrition-provenance-qol
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - name: Apply integration patches
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"anchor missing in {path}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          # Wire MCP read-side audit tools.
+          replace(
+              "src/mcp-runtime.ts",
+              'import { registerMealDraftTools } from "./meal-draft-tools.js";\n',
+              'import { registerMealDetailTools } from "./meal-detail-tools.js";\nimport { registerMealDraftTools } from "./meal-draft-tools.js";\n',
+          )
+          replace(
+              "src/mcp-runtime.ts",
+              '    registerSavedFoodTools(server, userId, capabilities);\n    registerMealReviewTools(server, userId);\n',
+              '    registerSavedFoodTools(server, userId, capabilities);\n    registerMealDetailTools(server, userId);\n    registerMealReviewTools(server, userId);\n',
+          )
+          replace(
+              "src/mcp-runtime.ts",
+              'For a complete text meal whose foods and portions are already known, use log_meal with items[]',
+              'For a complete text meal whose foods and portions are already known, use log_meal with items[]',
+          )
+
+          # Wire website provenance endpoint and module.
+          replace(
+              "src/index.ts",
+              'import { createAppRouter } from "./app/routes.js";\n',
+              'import { createProvenanceRouter } from "./app/provenance-routes.js";\nimport { createAppRouter } from "./app/routes.js";\n',
+          )
+          replace(
+              "src/index.ts",
+              'app.route("/", createAppRouter());\n',
+              'app.route("/", createAppRouter());\napp.route("/", createProvenanceRouter());\n',
+          )
+          replace(
+              "src/index.ts",
+              'app.get("/app-patches.js", async (c) =>\n    c.body(await Bun.file("./public/app-patches.js").text(), 200, {\n        "Content-Type": "text/javascript; charset=utf-8",\n        "Cache-Control": "no-cache",\n    }),\n);\n',
+              'app.get("/app-patches.js", async (c) =>\n    c.body(await Bun.file("./public/app-patches.js").text(), 200, {\n        "Content-Type": "text/javascript; charset=utf-8",\n        "Cache-Control": "no-cache",\n    }),\n);\napp.get("/app-provenance.js", async (c) =>\n    c.body(await Bun.file("./public/app-provenance.js").text(), 200, {\n        "Content-Type": "text/javascript; charset=utf-8",\n        "Cache-Control": "no-cache",\n    }),\n);\n',
+          )
+          replace(
+              "public/app.html",
+              '        <script type="module" src="/app-patches.js"></script>\n',
+              '        <script type="module" src="/app-patches.js"></script>\n        <script type="module" src="/app-provenance.js"></script>\n',
+          )
+
+          # Consolidate legacy portal meal history onto the modern item-aware repository.
+          replace(
+              "src/portal/meal-history.ts",
+              'import { getMealsByDate } from "../nutrition-platform/meals.js";\n',
+              'import { getMealHistoryWorkspace } from "../app/repository.js";\n',
+          )
+          replace(
+              "src/portal/meal-history.ts",
+              '''        const meals = await getMealsByDate(
+            c.get("munchUserId"),
+            date,
+            timezone,
+        );
+        return c.json(
+            {
+                date,
+                timezone,
+                meals: meals.map(
+                    ({ user_id: _userId, idempotency_key: _key, ...meal }) =>
+                        meal,
+                ),
+            },
+''',
+              '''        const workspace = await getMealHistoryWorkspace(
+            c.get("munchUserId"),
+            date,
+            date,
+        );
+        return c.json(
+            {
+                date,
+                timezone: workspace.timezone,
+                meals: workspace.meals.map(
+                    ({ user_id: _userId, idempotency_key: _key, ...meal }) =>
+                        meal,
+                ),
+            },
+''',
+          )
+          replace(
+              "src/portal/meal-history.ts",
+              "  if(meal.notes){const notes=document.createElement('small');notes.className='meal-notes';notes.textContent=meal.notes;item.append(notes)}\n  list.append(item);\n",
+              "  if(meal.notes){const notes=document.createElement('small');notes.className='meal-notes';notes.textContent=meal.notes;item.append(notes)}\n  if(meal.items&&meal.items.length){const details=document.createElement('details');const ds=document.createElement('summary');ds.textContent=meal.items.length+' food'+(meal.items.length===1?'':'s')+' · source details';details.append(ds);const foods=document.createElement('ul');for(const food of meal.items){const row=document.createElement('li');const source=food.sourceType==='user_supplied'&&food.sourceSnapshot&&food.sourceSnapshot.resolution_layer==='external_web'?'external web':(food.provider||food.sourceType||'source recorded');row.textContent=food.name+(food.portionLabel?' · '+food.portionLabel:'')+(food.calories==null?'':' · '+food.calories+' kcal')+' · '+source;foods.append(row)}details.append(foods);item.append(details)}\n  list.append(item);\n",
+          )
+
+          # Make item edits auditable and allow adding a new structured food.
+          replace(
+              "src/app/meal-mutations.ts",
+              'import {\n    getStructuredMeal,\n    insertStructuredMeal,\n} from "../structured-meals/repository.js";\n',
+              'import {\n    getStructuredMeal,\n    insertStructuredMeal,\n} from "../structured-meals/repository.js";\nimport type { StructuredMealItemInput } from "../structured-meals/types.js";\n',
+          )
+          replace(
+              "src/app/meal-mutations.ts",
+              'export interface MealItemPatch {\n    quantity?: number;\n',
+              'export interface MealItemPatch {\n    name?: string;\n    quantity?: number;\n',
+          )
+          replace(
+              "src/app/meal-mutations.ts",
+              '''        const currentQuantity = numberFromRow(current.quantity);
+        const nextQuantity = patch.quantity ?? currentQuantity;
+''',
+              '''        const currentQuantity = numberFromRow(current.quantity);
+        const nextQuantity = patch.quantity ?? currentQuantity;
+        const correctedFields = [
+            ...(patch.name !== undefined ? ["name"] : []),
+            ...Object.keys(patch.nutrients ?? {}),
+        ];
+        const explicitCorrection = correctedFields.length > 0;
+        const existingSnapshot =
+            current.source_snapshot && typeof current.source_snapshot === "object"
+                ? (current.source_snapshot as Record<string, unknown>)
+                : {};
+        const nextSnapshot = explicitCorrection
+            ? {
+                  ...existingSnapshot,
+                  user_correction: {
+                      corrected_at: new Date().toISOString(),
+                      original_source_type: current.source_type ?? null,
+                      original_provider: current.provider ?? null,
+                      changed_fields: correctedFields,
+                  },
+              }
+            : existingSnapshot;
+''',
+          )
+          replace(
+              "src/app/meal-mutations.ts",
+              '''            update munch.meal_items
+            set quantity = ${nextQuantity},
+''',
+              '''            update munch.meal_items
+            set name = ${patch.name?.trim() || current.name},
+                quantity = ${nextQuantity},
+''',
+          )
+          replace(
+              "src/app/meal-mutations.ts",
+              '''                potassium_mg = ${nextNutrients.potassium_mg}
+            where id = ${itemId}
+''',
+              '''                potassium_mg = ${nextNutrients.potassium_mg},
+                source_type = ${explicitCorrection ? "user_supplied" : current.source_type},
+                provider = ${explicitCorrection ? "user_correction" : current.provider},
+                source_snapshot = ${nextSnapshot}::jsonb
+            where id = ${itemId}
+''',
+          )
+          add_function = r'''
+export async function addStructuredMealItem(
+    userId: string,
+    mealId: string,
+    item: StructuredMealItemInput,
+) {
+    const name = item.name.trim();
+    if (!name) throw new Error("Meal item name is required");
+    if (item.sourceUpdatedAt && !Number.isFinite(new Date(item.sourceUpdatedAt).getTime())) {
+        throw new Error("Meal item source date is invalid");
+    }
+    await withUserDatabase(userId, async (tx) => {
+        const mealRows = await tx<Array<{ id: string }>>`
+            select id from munch.meals
+            where id = ${mealId} and user_id = ${userId}
+            limit 1
+        `;
+        if (!mealRows[0]) throw new Error("Meal not found");
+        const positionRows = await tx<Array<{ position: number | string; count: number | string }>>`
+            select coalesce(max(position), -1)::integer + 1 as position,
+                   count(*)::integer as count
+            from munch.meal_items
+            where meal_id = ${mealId} and user_id = ${userId}
+        `;
+        if (Number(positionRows[0]?.count ?? 0) >= 100) {
+            throw new Error("Structured meal cannot contain more than 100 items");
+        }
+        const position = Number(positionRows[0]?.position ?? 0);
+        await tx`
+            insert into munch.meal_items (
+                meal_id, user_id, position, name, quantity, portion_label,
+                gram_weight, calories, protein_g, carbs_g, fat_g, fiber_g,
+                sugar_g, alcohol_g, sodium_mg, saturated_fat_g,
+                cholesterol_mg, potassium_mg, source_type, provider,
+                provider_food_id, provider_revision, source_url,
+                source_updated_at, confidence, assumptions, source_snapshot
+            ) values (
+                ${mealId}, ${userId}, ${position}, ${name},
+                ${item.quantity ?? null}, ${item.portionLabel ?? null},
+                ${item.gramWeight ?? null}, ${item.nutrients.calories ?? null},
+                ${item.nutrients.protein_g ?? null}, ${item.nutrients.carbs_g ?? null},
+                ${item.nutrients.fat_g ?? null}, ${item.nutrients.fiber_g ?? null},
+                ${item.nutrients.sugar_g ?? null}, ${item.nutrients.alcohol_g ?? null},
+                ${item.nutrients.sodium_mg ?? null},
+                ${item.nutrients.saturated_fat_g ?? null},
+                ${item.nutrients.cholesterol_mg ?? null},
+                ${item.nutrients.potassium_mg ?? null}, ${item.sourceType},
+                ${item.provider ?? null}, ${item.providerFoodId ?? null},
+                ${item.providerRevision ?? null}, ${item.sourceUrl ?? null},
+                ${item.sourceUpdatedAt ? new Date(item.sourceUpdatedAt) : null},
+                ${item.confidence ?? null}, ${item.assumptions ?? []}::jsonb,
+                ${item.sourceSnapshot ?? {}}::jsonb
+            )
+        `;
+        await recomputeParentTotals(tx, userId, mealId);
+    });
+    const meal = await getStructuredMeal(userId, mealId);
+    if (!meal) throw new Error("Meal not found");
+    return meal;
+}
+
+'''
+          replace(
+              "src/app/meal-mutations.ts",
+              'export async function deleteStructuredMealItem(\n',
+              add_function + 'export async function deleteStructuredMealItem(\n',
+          )
+
+          # Web route validation and create-item endpoint.
+          replace(
+              "src/app/routes.ts",
+              '    copyMeal,\n    deleteStructuredMealItem,\n',
+              '    addStructuredMealItem,\n    copyMeal,\n    deleteStructuredMealItem,\n',
+          )
+          source_helper = r'''
+function structuredSourceType(value: unknown) {
+    if (
+        value === "usda" ||
+        value === "open_food_facts" ||
+        value === "published_restaurant" ||
+        value === "saved_food" ||
+        value === "past_meal" ||
+        value === "user_supplied" ||
+        value === "model_estimate" ||
+        value === "legacy_aggregate"
+    ) {
+        return value;
+    }
+    throw new Error("Invalid food source type");
+}
+
+'''
+          replace(
+              "src/app/routes.ts",
+              'const STRUCTURED_NUTRIENT_FIELDS = [\n',
+              source_helper + 'const STRUCTURED_NUTRIENT_FIELDS = [\n',
+          )
+          post_route = r'''
+    app.post(
+        "/api/app/meals/:mealId/items",
+        requireSameOrigin,
+        async (c) => {
+            const body = (await c.req.json()) as Record<string, unknown>;
+            const name = typeof body.name === "string" ? body.name.trim() : "";
+            if (!name) throw new Error("Meal item name is required");
+            const nutrientBody =
+                body.nutrients && typeof body.nutrients === "object"
+                    ? (body.nutrients as Record<string, unknown>)
+                    : {};
+            const nutrients: Record<string, number> = {};
+            for (const field of [
+                "calories",
+                "protein_g",
+                "carbs_g",
+                "fat_g",
+                "fiber_g",
+                "sugar_g",
+                "alcohol_g",
+                "sodium_mg",
+                "saturated_fat_g",
+                "cholesterol_mg",
+                "potassium_mg",
+            ]) {
+                const value = numberOrNull(nutrientBody[field]);
+                if (typeof value === "number") nutrients[field] = value;
+            }
+            const assumptions = Array.isArray(body.assumptions)
+                ? body.assumptions.filter(
+                      (value): value is string =>
+                          typeof value === "string" && value.trim().length > 0,
+                  )
+                : [];
+            const sourceSnapshot =
+                body.source_snapshot && typeof body.source_snapshot === "object"
+                    ? (body.source_snapshot as Record<string, unknown>)
+                    : {};
+            const meal = await addStructuredMealItem(
+                c.get("munchUserId"),
+                c.req.param("mealId")!,
+                {
+                    name,
+                    ...(body.quantity !== undefined
+                        ? { quantity: positiveNumber(body.quantity) }
+                        : {}),
+                    ...(typeof body.portion_label === "string"
+                        ? { portionLabel: body.portion_label }
+                        : {}),
+                    nutrients,
+                    sourceType: structuredSourceType(body.source_type),
+                    ...(typeof body.provider === "string"
+                        ? { provider: body.provider }
+                        : {}),
+                    ...(typeof body.source_url === "string"
+                        ? { sourceUrl: body.source_url }
+                        : {}),
+                    ...(typeof body.confidence === "number"
+                        ? { confidence: body.confidence }
+                        : {}),
+                    assumptions,
+                    sourceSnapshot,
+                },
+            );
+            return privateJson(c, { meal });
+        },
+    );
+
+'''
+          replace(
+              "src/app/routes.ts",
+              '    app.delete(\n        "/api/app/meals/:mealId/items/:itemId",\n',
+              post_route + '    app.delete(\n        "/api/app/meals/:mealId/items/:itemId",\n',
+          )
+
+          # Website editor: editable identity + auditable manual add.
+          replace(
+              "public/app-patches.js",
+              '                <div class="summary-grid" style="grid-template-columns:repeat(2,minmax(0,1fr))">\n                    <label class="field"><span>Quantity</span>',
+              '                <div class="summary-grid" style="grid-template-columns:repeat(2,minmax(0,1fr))">\n                    <label class="field" style="grid-column:1/-1"><span>Food name</span><input name="name" value="${patchEscape(item.name)}" data-original="${patchEscape(item.name)}" required /></label>\n                    <label class="field"><span>Quantity</span>',
+          )
+          add_form = '''}</div><details class="meal-card"><summary><strong>Add another food</strong></summary><form class="auth-form spacer-top" data-patch-new-item-form data-meal-id="${patchEscape(meal.id)}"><div class="summary-grid" style="grid-template-columns:repeat(2,minmax(0,1fr))"><label class="field" style="grid-column:1/-1"><span>Food name</span><input name="name" required /></label><label class="field"><span>Quantity</span><input name="quantity" type="number" min="0.01" step="0.01" /></label><label class="field"><span>Portion</span><input name="portion_label" placeholder="e.g. 1 cup" /></label><label class="field"><span>Calories</span><input name="calories" type="number" min="0" step="0.1" /></label><label class="field"><span>Protein (g)</span><input name="protein_g" type="number" min="0" step="0.1" /></label><label class="field"><span>Carbs (g)</span><input name="carbs_g" type="number" min="0" step="0.1" /></label><label class="field"><span>Fat (g)</span><input name="fat_g" type="number" min="0" step="0.1" /></label><label class="field"><span>Source</span><select name="source_type"><option value="user_supplied">Label / manual value</option><option value="model_estimate">Estimate</option></select></label></div><label class="field"><span>Assumption or note</span><input name="assumption" placeholder="Optional" /></label><button class="button button-secondary button-small" type="submit">Add food</button></form></details>'''
+          replace(
+              "public/app-patches.js",
+              '        .join("")}</div>`;\n}\n\nasync function showMealEditor',
+              '        .join("")}' + add_form + '`;\n}\n\nasync function showMealEditor',
+          )
+          new_submit = r'''
+        if (!(form instanceof HTMLFormElement)) return;
+        if (form.matches("[data-patch-new-item-form]")) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            const mealId = form.dataset.mealId || "";
+            const values = Object.fromEntries(new FormData(form));
+            const nutrients = {};
+            for (const field of ["calories", "protein_g", "carbs_g", "fat_g"]) {
+                if (values[field] !== "") nutrients[field] = values[field];
+            }
+            const body = {
+                name: values.name,
+                ...(values.quantity !== "" ? { quantity: values.quantity } : {}),
+                ...(values.portion_label !== ""
+                    ? { portion_label: values.portion_label }
+                    : {}),
+                nutrients,
+                source_type: values.source_type || "user_supplied",
+                provider:
+                    values.source_type === "model_estimate"
+                        ? "manual_estimate"
+                        : "user_correction",
+                assumptions:
+                    values.assumption === "" ? [] : [String(values.assumption)],
+                source_snapshot: { resolution_layer: "website_manual_add" },
+            };
+            const submit = form.querySelector("button[type='submit']");
+            if (submit) submit.disabled = true;
+            try {
+                await patchApi(
+                    `/api/app/meals/${encodeURIComponent(mealId)}/items`,
+                    { method: "POST", body: JSON.stringify(body) },
+                );
+                patchToast("Food added and meal totals recalculated.");
+                await showMealEditor(mealId);
+                refreshCurrentView();
+            } catch (error) {
+                patchToast(error.message || "Could not add food", "error");
+            } finally {
+                if (submit) submit.disabled = false;
+            }
+            return;
+        }
+        if (!form.matches("[data-patch-item-form]")) return;
+'''
+          replace(
+              "public/app-patches.js",
+              '''        if (
+            !(form instanceof HTMLFormElement) ||
+            !form.matches("[data-patch-item-form]")
+        )
+            return;
+''',
+              new_submit,
+          )
+          replace(
+              "public/app-patches.js",
+              '''        const body = {
+            ...(values.quantity !== "" ? { quantity: values.quantity } : {}),
+''',
+              '''        const nameInput = form.elements.namedItem("name");
+        const body = {
+            ...(nameInput instanceof HTMLInputElement &&
+            nameInput.value !== nameInput.dataset.original
+                ? { name: nameInput.value }
+                : {}),
+            ...(values.quantity !== "" ? { quantity: values.quantity } : {}),
+''',
+          )
+
+          # Add mutation coverage to DB smoke test.
+          replace(
+              "scripts/structured-meal-smoke.ts",
+              'import {\n    copyMeal,\n',
+              'import {\n    addStructuredMealItem,\n    copyMeal,\n',
+          )
+          smoke = r'''
+    const added = await addStructuredMealItem(userA, meal.id, {
+        name: "Added salad",
+        quantity: 1,
+        portionLabel: "1 bowl",
+        nutrients: { calories: 80, protein_g: 3, carbs_g: 12, fat_g: 2 },
+        sourceType: "user_supplied",
+        provider: "user_correction",
+        confidence: 1,
+        assumptions: ["Added in website editor"],
+        sourceSnapshot: { resolution_layer: "website_manual_add" },
+    });
+    assert.equal(added.items.length, 3);
+    assert.equal(added.calories, 490);
+
+'''
+          replace(
+              "scripts/structured-meal-smoke.ts",
+              '    const copied = await copyMeal(userA, meal.id, {\n',
+              smoke + '    const copied = await copyMeal(userA, meal.id, {\n',
+          )
+
+          PY
+      - name: Regenerate OpenAI submission inventory
+        run: bun run submission:generate
+      - name: Format changed files
+        run: |
+          bunx prettier --write \
+            src/mcp-runtime.ts src/index.ts src/portal/meal-history.ts \
+            src/app/meal-mutations.ts src/app/routes.ts \
+            src/nutrition-provenance.ts src/nutrition-provenance.test.ts \
+            src/meal-detail-tools.ts src/app/provenance-routes.ts \
+            public/app.html public/app-patches.js public/app-provenance.js \
+            scripts/structured-meal-smoke.ts \
+            chatgpt-app-submission.json docs/openai-submission/tool-inventory.md
+      - name: Validate focused tests and types
+        run: |
+          bun test src/nutrition-provenance.test.ts
+          bun run typecheck
+          bun run submission:check
+      - name: Commit integrated implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: complete nutrition provenance QoL integration"
+          git push origin HEAD:feat/nutrition-provenance-qol
