@@ -5,103 +5,13 @@ import { getStructuredMeal } from "./structured-meals/repository.js";
 import { getUserTimezone } from "./storage.js";
 import { shiftLocalDate, todayInTz } from "./tz.js";
 
-const nutrientOutput = z.object({
-    calories: z.number().nullable(),
-    protein_g: z.number().nullable(),
-    carbs_g: z.number().nullable(),
-    fat_g: z.number().nullable(),
-    fiber_g: z.number().nullable(),
-    sugar_g: z.number().nullable(),
-    alcohol_g: z.number().nullable(),
-    sodium_mg: z.number().nullable(),
-    saturated_fat_g: z.number().nullable(),
-    cholesterol_mg: z.number().nullable(),
-    potassium_mg: z.number().nullable(),
-});
-
-const mealItemOutput = z.object({
-    id: z.string(),
-    position: z.number(),
-    name: z.string(),
-    quantity: z.number().nullable(),
-    portion_label: z.string().nullable(),
-    gram_weight: z.number().nullable(),
-    nutrients: nutrientOutput,
-    source_type: z.string(),
-    provider: z.string().nullable(),
-    provider_food_id: z.string().nullable(),
-    provider_revision: z.string().nullable(),
-    source_url: z.string().nullable(),
-    source_updated_at: z.string().nullable(),
-    confidence: z.number().nullable(),
-    assumptions: z.array(z.string()),
-    source_snapshot: z.record(z.string(), z.unknown()),
-});
-
-const mealDetailOutput = {
-    meal: z.object({
-        id: z.string(),
-        logged_at: z.string(),
-        meal_type: z.string().nullable(),
-        description: z.string(),
-        calories: z.number().nullable(),
-        protein_g: z.number().nullable(),
-        carbs_g: z.number().nullable(),
-        fat_g: z.number().nullable(),
-        fiber_g: z.number().nullable(),
-        sugar_g: z.number().nullable(),
-        alcohol_g: z.number().nullable(),
-        notes: z.string().nullable(),
-        item_count: z.number(),
-        items: z.array(mealItemOutput),
-        legacy_aggregate: z.boolean(),
-    }),
-};
-
-const contributorOutput = z.object({
-    meal_id: z.string(),
-    item_id: z.string(),
-    name: z.string(),
-    value: z.number(),
-    source: z.string(),
-    provider: z.string().nullable(),
-});
-
-const provenanceOutput = {
-    start_date: z.string(),
-    end_date: z.string(),
-    timezone: z.string(),
-    coverage: z.object({
-        meal_count: z.number(),
-        structured_meal_count: z.number(),
-        legacy_meal_count: z.number(),
-        item_count: z.number(),
-        total_calories: z.number(),
-        itemized_calories: z.number(),
-        itemized_calorie_percent: z.number(),
-    }),
-    sources: z.array(
-        z.object({
-            source: z.string(),
-            item_count: z.number(),
-            calories: z.number(),
-            percent_of_items: z.number(),
-        }),
-    ),
-    confidence: z.object({
-        recorded_item_count: z.number(),
-        average: z.number().nullable(),
-        high_confidence_item_count: z.number(),
-        estimated_item_count: z.number(),
-    }),
-    contributors: z.record(z.string(), z.array(contributorOutput)),
-};
-
 function nullable(value: number | undefined): number | null {
     return value ?? null;
 }
 
-function serializeItem(item: NonNullable<Awaited<ReturnType<typeof getStructuredMeal>>>["items"][number]) {
+function serializeItem(
+    item: NonNullable<Awaited<ReturnType<typeof getStructuredMeal>>>["items"][number],
+) {
     return {
         id: item.id,
         position: item.position,
@@ -135,14 +45,20 @@ function serializeItem(item: NonNullable<Awaited<ReturnType<typeof getStructured
 }
 
 function validDate(value: string): boolean {
-    return /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(`${value}T00:00:00Z`));
+    return (
+        /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+        Number.isFinite(Date.parse(`${value}T00:00:00Z`))
+    );
 }
 
 function rangeDays(startDate: string, endDate: string): number {
-    return Math.floor(
-        (Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) /
-            86_400_000,
-    ) + 1;
+    return (
+        Math.floor(
+            (Date.parse(`${endDate}T00:00:00Z`) -
+                Date.parse(`${startDate}T00:00:00Z`)) /
+                86_400_000,
+        ) + 1
+    );
 }
 
 export function registerMealDetailTools(server: McpServer, userId: string): void {
@@ -155,7 +71,6 @@ export function registerMealDetailTools(server: McpServer, userId: string): void
             inputSchema: {
                 meal_id: z.string().uuid().describe("UUID of the logged meal"),
             },
-            outputSchema: mealDetailOutput,
             annotations: {
                 title: "Get Meal Details",
                 readOnlyHint: true,
@@ -214,10 +129,19 @@ export function registerMealDetailTools(server: McpServer, userId: string): void
             description:
                 "Analyze how the user's logged nutrition was sourced over a date range. Returns itemized coverage, provider/source mix, confidence coverage, estimate count, and the foods contributing most calories, protein, carbs, fat, fiber, sugar, and sodium. This is factual audit data, not dietary advice.",
             inputSchema: {
-                start_date: z.string().optional().describe("Start date YYYY-MM-DD; defaults to 29 days before the end date"),
-                end_date: z.string().optional().describe("End date YYYY-MM-DD; defaults to today in the user's timezone"),
+                start_date: z
+                    .string()
+                    .optional()
+                    .describe(
+                        "Start date YYYY-MM-DD; defaults to 29 days before the end date",
+                    ),
+                end_date: z
+                    .string()
+                    .optional()
+                    .describe(
+                        "End date YYYY-MM-DD; defaults to today in the user's timezone",
+                    ),
             },
-            outputSchema: provenanceOutput,
             annotations: {
                 title: "Get Nutrition Provenance",
                 readOnlyHint: true,
@@ -235,7 +159,9 @@ export function registerMealDetailTools(server: McpServer, userId: string): void
             }
             const days = rangeDays(resolvedStart, resolvedEnd);
             if (days < 1 || days > 366) {
-                throw new Error("Provenance range must contain between 1 and 366 days");
+                throw new Error(
+                    "Provenance range must contain between 1 and 366 days",
+                );
             }
             const analysis = await getNutritionProvenanceAnalysis(
                 userId,
@@ -249,12 +175,14 @@ export function registerMealDetailTools(server: McpServer, userId: string): void
                 timezone,
                 coverage: {
                     meal_count: analysis.coverage.mealCount,
-                    structured_meal_count: analysis.coverage.structuredMealCount,
+                    structured_meal_count:
+                        analysis.coverage.structuredMealCount,
                     legacy_meal_count: analysis.coverage.legacyMealCount,
                     item_count: analysis.coverage.itemCount,
                     total_calories: analysis.coverage.totalCalories,
                     itemized_calories: analysis.coverage.itemizedCalories,
-                    itemized_calorie_percent: analysis.coverage.itemizedCaloriePercent,
+                    itemized_calorie_percent:
+                        analysis.coverage.itemizedCaloriePercent,
                 },
                 sources: analysis.sources.map((source) => ({
                     source: source.source,
@@ -267,25 +195,31 @@ export function registerMealDetailTools(server: McpServer, userId: string): void
                     average: analysis.confidence.average,
                     high_confidence_item_count:
                         analysis.confidence.highConfidenceItemCount,
-                    estimated_item_count: analysis.confidence.estimatedItemCount,
+                    estimated_item_count:
+                        analysis.confidence.estimatedItemCount,
                 },
                 contributors: Object.fromEntries(
-                    Object.entries(analysis.contributors).map(([nutrient, values]) => [
-                        nutrient,
-                        values.map((value) => ({
-                            meal_id: value.mealId,
-                            item_id: value.itemId,
-                            name: value.name,
-                            value: value.value,
-                            source: value.source,
-                            provider: value.provider,
-                        })),
-                    ]),
+                    Object.entries(analysis.contributors).map(
+                        ([nutrient, values]) => [
+                            nutrient,
+                            values.map((value) => ({
+                                meal_id: value.mealId,
+                                item_id: value.itemId,
+                                name: value.name,
+                                value: value.value,
+                                source: value.source,
+                                provider: value.provider,
+                            })),
+                        ],
+                    ),
                 ),
             };
             const sources = analysis.sources.length
                 ? analysis.sources
-                      .map((source) => `${source.source}: ${source.itemCount}`)
+                      .map(
+                          (source) =>
+                              `${source.source}: ${source.itemCount}`,
+                      )
                       .join(", ")
                 : "no structured items";
             return {
