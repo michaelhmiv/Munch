@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { Context } from "hono";
 import { resolveMunchCapabilities } from "./billing/capabilities.js";
+import { withCanonicalFoodSearch } from "./canonical-food-search.js";
 import { registerFoodTools } from "./food-tools.js";
 import { registerMealDraftTools } from "./meal-draft-tools.js";
 import { registerMealReviewTools } from "./meal-review-tools.js";
@@ -70,7 +71,7 @@ async function buildMunchMcpServer(
         alcoholTrackingEnabledFromProfile(profile) ? (drinkUnit ?? "us") : null,
         capabilities,
     );
-    registerFoodTools(server, userId);
+    registerFoodTools(withCanonicalFoodSearch(server), userId);
     registerSavedFoodTools(server, userId, capabilities);
     registerMealReviewTools(server, userId);
     registerMealDraftTools(server, userId);
