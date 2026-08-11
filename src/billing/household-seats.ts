@@ -13,11 +13,11 @@ import {
     leaveHousehold,
 } from "../households/lifecycle.js";
 import { getPlatformConfig } from "../platform/config.js";
-import { subscriptionProvidesPremium } from "./capabilities.js";
 import {
     getLatestStripeSubscriptionRecord,
     getSubscriptionItemQuantity,
     replaceSubscriptionItems,
+    type LatestStripeSubscriptionRecord,
 } from "./repository.js";
 import {
     setStripeSubscriptionItemQuantity,
@@ -49,6 +49,18 @@ function subscriptionItems(subscription: StripeSubscription) {
             stripePriceId: item.price?.id as string,
             quantity: Math.max(0, Number(item.quantity ?? 0)),
         }));
+}
+
+function recordProvidesPremium(
+    record: LatestStripeSubscriptionRecord,
+    now = new Date(),
+): boolean {
+    if (record.status === "active" || record.status === "trialing") return true;
+    return Boolean(
+        record.status === "past_due" &&
+        record.graceExpiresAt &&
+        record.graceExpiresAt.getTime() > now.getTime(),
+    );
 }
 
 export function paidHouseholdSeatCoverage(
@@ -84,7 +96,7 @@ async function billableOwnerSubscription(ownerUserId: string) {
     if (
         !record ||
         record.stripePriceId !== config.stripePriceId ||
-        !subscriptionProvidesPremium(record, new Date())
+        !recordProvidesPremium(record)
     ) {
         throw new Error("household_owner_paid_premium_required");
     }
@@ -223,7 +235,9 @@ export async function acceptPaidHouseholdInvitation(input: {
             ownerUserId: reservation.ownerUserId,
             householdId: reservation.householdId,
             operationKey,
-        }).catch((reconcileError) => logSeatFailure("accept_reconcile", reconcileError));
+        }).catch((reconcileError) =>
+            logSeatFailure("accept_reconcile", reconcileError),
+        );
         throw error;
     }
 }
@@ -261,7 +275,9 @@ export async function removePaidHouseholdMember(input: {
             ownerUserId: reservation.ownerUserId,
             householdId: reservation.householdId,
             operationKey,
-        }).catch((reconcileError) => logSeatFailure("remove_reconcile", reconcileError));
+        }).catch((reconcileError) =>
+            logSeatFailure("remove_reconcile", reconcileError),
+        );
         throw error;
     }
 }
@@ -296,7 +312,9 @@ export async function leavePaidHousehold(userId: string): Promise<boolean> {
             ownerUserId: reservation.ownerUserId,
             householdId: reservation.householdId,
             operationKey,
-        }).catch((reconcileError) => logSeatFailure("leave_reconcile", reconcileError));
+        }).catch((reconcileError) =>
+            logSeatFailure("leave_reconcile", reconcileError),
+        );
         throw error;
     }
 }
