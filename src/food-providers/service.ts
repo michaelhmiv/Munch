@@ -31,6 +31,9 @@ export interface FoodCandidateSummary {
     } | null;
 }
 
+const PROVIDER_SEARCH_TIMEOUT_MS = 2_500;
+export const LOCAL_SHORT_CIRCUIT_CONFIDENCE = 0.9;
+
 export function encodeFoodCandidateId(
     candidate: Pick<FoodCandidate, "provider" | "providerFoodId">,
 ): string {
@@ -80,6 +83,25 @@ export function summarizeFoodCandidate(
     };
 }
 
+export function isStrongLocalMatch(
+    query: string,
+    candidate: FoodCandidate | undefined,
+): boolean {
+    if (!candidate || candidate.confidence < LOCAL_SHORT_CIRCUIT_CONFIDENCE) {
+        return false;
+    }
+    const normalizedQuery = normalizeFoodText(query);
+    if (!normalizedQuery) return false;
+    const normalizedName = normalizeFoodText(candidate.name);
+    const normalizedBrandedName = normalizeFoodText(
+        [candidate.brand, candidate.name].filter(Boolean).join(" "),
+    );
+    return (
+        normalizedQuery === normalizedName ||
+        normalizedQuery === normalizedBrandedName
+    );
+}
+
 function dedupe(candidates: FoodCandidate[]): FoodCandidate[] {
     const seen = new Set<string>();
     return candidates.filter((candidate) => {
@@ -96,8 +118,12 @@ export class FoodSearchService {
 
     constructor(
         private readonly registry = new FoodProviderRegistry([
-            new UsdaFoodDataCentralProvider(),
-            new OpenFoodFactsProvider(),
+            new UsdaFoodDataCentralProvider({
+                timeoutMs: PROVIDER_SEARCH_TIMEOUT_MS,
+            }),
+            new OpenFoodFactsProvider({
+                timeoutMs: PROVIDER_SEARCH_TIMEOUT_MS,
+            }),
         ]),
         catalog?: FoodCatalogRepository,
     ) {
@@ -108,24 +134,30 @@ export class FoodSearchService {
         query: string,
         limit = 10,
     ): Promise<AggregatedFoodSearchResult> {
+        const startedAt = performance.now();
         const normalized = normalizeFoodText(query);
         if (!normalized) return { candidates: [], failures: [] };
         const boundedLimit = Math.max(1, Math.min(25, limit));
+        const localStartedAt = performance.now();
         const local = await this.catalog.searchLocal(normalized, boundedLimit);
-        if (local.length >= boundedLimit) {
+        const localMs = Math.round(performance.now() - localStartedAt);
+        const strongLocal = isStrongLocalMatch(normalized, local[0]);
+        if (strongLocal || local.length >= boundedLimit) {
             console.info(
-                `[food_catalog] local_hit operation=search count=${local.length}`,
+                `[food_resolution] operation=search resolution_layer=local_cache local_count=${local.length} local_ms=${localMs} total_ms=${Math.round(performance.now() - startedAt)} reason=${strongLocal ? "strong_exact_match" : "result_limit_satisfied"}`,
             );
             return { candidates: local.slice(0, boundedLimit), failures: [] };
         }
 
         console.info(
-            `[food_catalog] local_miss operation=search count=${local.length}`,
+            `[food_catalog] local_miss operation=search count=${local.length} local_ms=${localMs}`,
         );
+        const providerStartedAt = performance.now();
         const result = await this.registry.search({
             query: normalized,
             limit: boundedLimit,
         });
+        const providerMs = Math.round(performance.now() - providerStartedAt);
         if (result.candidates.length > 0) {
             await this.catalog.upsertMany(result.candidates);
             console.info(
@@ -136,6 +168,9 @@ export class FoodSearchService {
             { query: normalized },
             dedupe([...local, ...result.candidates]),
         ).slice(0, boundedLimit);
+        console.info(
+            `[food_resolution] operation=search resolution_layer=providers local_count=${local.length} provider_count=${result.candidates.length} failures=${result.failures.length} local_ms=${localMs} provider_ms=${providerMs} total_ms=${Math.round(performance.now() - startedAt)}`,
+        );
         return { candidates: combined, failures: result.failures };
     }
 
@@ -192,7 +227,7 @@ export class FoodSearchService {
             .map((hit) => hit.candidate);
         if (fresh.length > 0) {
             console.info(
-                `[food_catalog] local_hit operation=barcode count=${fresh.length}`,
+                `[food_resolution] operation=barcode resolution_layer=local_cache count=${fresh.length}`,
             );
             return { candidates: fresh, failures: [] };
         }
@@ -205,11 +240,13 @@ export class FoodSearchService {
         console.info(
             `[food_catalog] local_miss operation=barcode stale=${local.length}`,
         );
+        const providerStartedAt = performance.now();
         const result = await this.registry.lookupBarcode({ barcode: digits });
+        const providerMs = Math.round(performance.now() - providerStartedAt);
         if (result.candidates.length > 0) {
             await this.catalog.upsertMany(result.candidates);
             console.info(
-                `[food_catalog] provider_write operation=barcode count=${result.candidates.length}`,
+                `[food_resolution] operation=barcode resolution_layer=providers count=${result.candidates.length} provider_ms=${providerMs}`,
             );
             return result;
         }
@@ -225,6 +262,9 @@ export class FoodSearchService {
                 failures: result.failures,
             };
         }
+        console.info(
+            `[food_resolution] operation=barcode resolution_layer=providers count=0 failures=${result.failures.length} provider_ms=${providerMs}`,
+        );
         return result;
     }
 }
