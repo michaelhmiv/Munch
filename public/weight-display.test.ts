@@ -34,7 +34,9 @@ describe("web weight display units", () => {
         expect(app).toContain(
             "weightFromGrams(latestWeight.weight_g, weightUnit)",
         );
-        expect(app).toContain('metricCard("Weight", latestWeightValue, ` ${weightUnit}`, null)');
+        expect(app).toContain(
+            'metricCard("Weight", latestWeightValue, ` ${weightUnit}`, null)',
+        );
         expect(app).not.toContain("latestWeight.weight_g / 1000");
         expect(patches).toContain("fetchPatchedPreferredWeightUnit");
         expect(patches).not.toContain('?.value || "lb"');

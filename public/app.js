@@ -1,4 +1,8 @@
-import { displayWeightUnit, savedWeightUnit, weightFromGrams } from "./weight-display.js";
+import {
+    displayWeightUnit,
+    savedWeightUnit,
+    weightFromGrams,
+} from "./weight-display.js";
 
 const state = {
     bootstrap: null,
