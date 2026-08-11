@@ -169,7 +169,9 @@ const added = await addStructuredMealItem(userA, first.meal.id, {
     sourceSnapshot: { resolution_layer: "website_manual_add" },
 });
 if (added.items.length !== 3 || added.calories !== 853) {
-    throw new Error("Structured item addition did not recalculate parent totals");
+    throw new Error(
+        "Structured item addition did not recalculate parent totals",
+    );
 }
 const addedItem = added.items.find((item) => item.name === "Added salad");
 if (!addedItem || addedItem.provider !== "user_correction") {
@@ -216,10 +218,14 @@ if (
     correctedItem.provider !== "user_correction" ||
     correctedItem.sourceSnapshot.user_correction == null
 ) {
-    throw new Error("Manual correction did not retain an auditable provenance trail");
+    throw new Error(
+        "Manual correction did not retain an auditable provenance trail",
+    );
 }
 if (corrected.calories !== 755) {
-    throw new Error("Manual nutrient correction did not recalculate parent totals");
+    throw new Error(
+        "Manual nutrient correction did not recalculate parent totals",
+    );
 }
 
 const afterDelete = await deleteStructuredMealItem(
