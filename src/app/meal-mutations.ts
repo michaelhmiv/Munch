@@ -1,10 +1,12 @@
-import { withUserDatabase } from "../platform/database.js";
+import {
+    withUserDatabase,
+    type DatabaseTransaction,
+} from "../platform/database.js";
 import { insertMeal } from "../storage.js";
 import {
     getStructuredMeal,
     insertStructuredMeal,
 } from "../structured-meals/repository.js";
-import type { NutrientValues } from "../food-providers/types.js";
 
 const NUTRIENT_COLUMNS = [
     "calories",
@@ -39,11 +41,11 @@ function numberFromRow(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null;
 }
 
-function nutrientKey(column: NutrientColumn): keyof NutrientValues {
-    return column;
-}
-
-async function recomputeParentTotals(tx: any, userId: string, mealId: string) {
+async function recomputeParentTotals(
+    tx: DatabaseTransaction,
+    userId: string,
+    mealId: string,
+) {
     const rows = await tx<Array<Record<string, unknown>>>`
         select
             round(coalesce(sum(calories), 0))::integer as calories,
@@ -99,10 +101,7 @@ export async function updateStructuredMealItem(
                 ? patch.quantity / currentQuantity
                 : null;
 
-        const nextNutrients: Record<NutrientColumn, number | null> = {} as Record<
-            NutrientColumn,
-            number | null
-        >;
+        const nextNutrients = {} as Record<NutrientColumn, number | null>;
         for (const column of NUTRIENT_COLUMNS) {
             const explicit = patch.nutrients?.[column];
             const currentValue = numberFromRow(current[column]);
@@ -234,4 +233,4 @@ export async function copyMeal(
     return { mealId: result.meal.id, structured: false };
 }
 
-export { NUTRIENT_COLUMNS, nutrientKey };
+export { NUTRIENT_COLUMNS };
