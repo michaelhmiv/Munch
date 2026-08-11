@@ -70,3 +70,5 @@ const appHtml = await Bun.file("public/app.html").text();
     "browser module route smoke",
 )
 smoke_path.write_text(smoke)
+
+# One-shot branch mutation helper; removed before PR merge.
