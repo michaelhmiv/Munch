@@ -83,6 +83,11 @@ function sourceLabel(item) {
     return item.provider || item.sourceType || "Source recorded";
 }
 
+function nutrientInput(name, label, value) {
+    const serialized = value == null ? "" : String(value);
+    return `<label class="field"><span>${patchEscape(label)}</span><input name="${patchEscape(name)}" type="number" min="0" step="0.1" value="${patchEscape(serialized)}" data-original="${patchEscape(serialized)}" /></label>`;
+}
+
 function structuredItemEditor(meal) {
     if (!meal.items?.length) {
         return `<div class="meal-card spacer-top"><strong>Legacy aggregate entry</strong><p class="tiny">This meal predates item-level storage, so its original ingredient breakdown cannot be edited without inventing historical data.</p></div>`;
@@ -100,10 +105,10 @@ function structuredItemEditor(meal) {
                 <div class="summary-grid" style="grid-template-columns:repeat(2,minmax(0,1fr))">
                     <label class="field"><span>Quantity</span><input name="quantity" type="number" min="0.01" step="0.01" value="${patchEscape(item.quantity ?? "")}" placeholder="Not recorded" /></label>
                     <label class="field"><span>Portion</span><input name="portion_label" value="${patchEscape(item.portionLabel ?? "")}" placeholder="e.g. 2 slices" /></label>
-                    <label class="field"><span>Calories</span><input name="calories" type="number" min="0" step="0.1" value="${patchEscape(n.calories ?? "")}" /></label>
-                    <label class="field"><span>Protein (g)</span><input name="protein_g" type="number" min="0" step="0.1" value="${patchEscape(n.protein_g ?? "")}" /></label>
-                    <label class="field"><span>Carbs (g)</span><input name="carbs_g" type="number" min="0" step="0.1" value="${patchEscape(n.carbs_g ?? "")}" /></label>
-                    <label class="field"><span>Fat (g)</span><input name="fat_g" type="number" min="0" step="0.1" value="${patchEscape(n.fat_g ?? "")}" /></label>
+                    ${nutrientInput("calories", "Calories", n.calories)}
+                    ${nutrientInput("protein_g", "Protein (g)", n.protein_g)}
+                    ${nutrientInput("carbs_g", "Carbs (g)", n.carbs_g)}
+                    ${nutrientInput("fat_g", "Fat (g)", n.fat_g)}
                 </div>
                 ${item.sourceUrl ? `<a class="text-link tiny" href="${patchEscape(item.sourceUrl)}" target="_blank" rel="noreferrer">View nutrition source →</a>` : ""}
                 ${item.assumptions?.length ? `<p class="tiny">Assumptions: ${patchEscape(item.assumptions.join("; "))}</p>` : ""}
@@ -114,7 +119,7 @@ function structuredItemEditor(meal) {
 }
 
 async function showMealEditor(id) {
-    const [{ meal }] = await Promise.all([fetchMealDetail(id)]);
+    const { meal } = await fetchMealDetail(id);
     const type = ["breakfast", "lunch", "dinner", "snack"].includes(
         meal.mealType,
     )
@@ -223,7 +228,10 @@ document.addEventListener(
     "submit",
     async (event) => {
         const form = event.target;
-        if (!(form instanceof HTMLFormElement) || !form.matches("[data-patch-item-form]"))
+        if (
+            !(form instanceof HTMLFormElement) ||
+            !form.matches("[data-patch-item-form]")
+        )
             return;
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -232,7 +240,14 @@ document.addEventListener(
         const values = Object.fromEntries(new FormData(form));
         const nutrients = {};
         for (const field of ["calories", "protein_g", "carbs_g", "fat_g"]) {
-            if (values[field] !== "") nutrients[field] = values[field];
+            const input = form.elements.namedItem(field);
+            if (
+                input instanceof HTMLInputElement &&
+                input.value !== "" &&
+                input.value !== input.dataset.original
+            ) {
+                nutrients[field] = input.value;
+            }
         }
         const body = {
             ...(values.quantity !== "" ? { quantity: values.quantity } : {}),
