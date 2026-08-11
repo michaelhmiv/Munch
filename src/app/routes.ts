@@ -17,8 +17,14 @@ import {
     upsertNutritionGoals,
     upsertProfile,
 } from "../storage.js";
+import { getStructuredMeal } from "../structured-meals/repository.js";
 import { validateTz } from "../tz.js";
 import { isPlausibleWeightGrams, isWeightUnit, toGrams } from "../units.js";
+import {
+    copyMeal,
+    deleteStructuredMealItem,
+    updateStructuredMealItem,
+} from "./meal-mutations.js";
 import {
     getAppBootstrap,
     getFoodsWorkspace,
@@ -44,6 +50,15 @@ function numberOrNull(value: unknown): number | null | undefined {
     return parsed;
 }
 
+function positiveNumber(value: unknown): number | undefined {
+    if (value === undefined) return undefined;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        throw new Error("Invalid quantity");
+    }
+    return parsed;
+}
+
 function privateJson(c: Context, data: unknown) {
     return c.json(data, 200, {
         "Cache-Control": "no-store, private",
@@ -62,6 +77,16 @@ function mealType(value: unknown) {
     }
     throw new Error("Invalid meal type");
 }
+
+const STRUCTURED_NUTRIENT_FIELDS = [
+    "calories",
+    "protein_g",
+    "carbs_g",
+    "fat_g",
+    "fiber_g",
+    "sugar_g",
+    "alcohol_g",
+] as const;
 
 export function createAppRouter(): Hono {
     const app = new Hono();
@@ -172,58 +197,133 @@ export function createAppRouter(): Hono {
 
     app.patch("/api/app/meals/:id", requireSameOrigin, async (c) => {
         const body = (await c.req.json()) as Record<string, unknown>;
-        const meal = await updateMeal(
-            c.get("munchUserId"),
-            c.req.param("id")!,
-            {
-                ...(typeof body.description === "string"
-                    ? { description: body.description }
-                    : {}),
-                ...(body.meal_type !== undefined
-                    ? { meal_type: mealType(body.meal_type) }
-                    : {}),
-                ...(body.calories !== undefined
-                    ? {
-                          calories: numberOrNull(body.calories) ?? undefined,
-                      }
-                    : {}),
-                ...(body.protein_g !== undefined
-                    ? {
-                          protein_g: numberOrNull(body.protein_g) ?? undefined,
-                      }
-                    : {}),
-                ...(body.carbs_g !== undefined
-                    ? {
-                          carbs_g: numberOrNull(body.carbs_g) ?? undefined,
-                      }
-                    : {}),
-                ...(body.fat_g !== undefined
-                    ? { fat_g: numberOrNull(body.fat_g) ?? undefined }
-                    : {}),
-                ...(body.fiber_g !== undefined
-                    ? {
-                          fiber_g: numberOrNull(body.fiber_g) ?? undefined,
-                      }
-                    : {}),
-                ...(body.sugar_g !== undefined
-                    ? {
-                          sugar_g: numberOrNull(body.sugar_g) ?? undefined,
-                      }
-                    : {}),
-                ...(body.alcohol_g !== undefined
-                    ? {
-                          alcohol_g: numberOrNull(body.alcohol_g) ?? undefined,
-                      }
-                    : {}),
-                ...(typeof body.logged_at === "string"
-                    ? { logged_at: body.logged_at }
-                    : {}),
-                ...(body.notes === null || typeof body.notes === "string"
-                    ? { notes: body.notes as string | null }
-                    : {}),
-            },
-        );
+        const userId = c.get("munchUserId");
+        if (STRUCTURED_NUTRIENT_FIELDS.some((field) => body[field] !== undefined)) {
+            const structured = await getStructuredMeal(userId, c.req.param("id")!);
+            if (structured?.items.length) {
+                throw new Error(
+                    "Structured meal nutrition must be edited by item",
+                );
+            }
+        }
+        const meal = await updateMeal(userId, c.req.param("id")!, {
+            ...(typeof body.description === "string"
+                ? { description: body.description }
+                : {}),
+            ...(body.meal_type !== undefined
+                ? { meal_type: mealType(body.meal_type) }
+                : {}),
+            ...(body.calories !== undefined
+                ? {
+                      calories: numberOrNull(body.calories) ?? undefined,
+                  }
+                : {}),
+            ...(body.protein_g !== undefined
+                ? {
+                      protein_g: numberOrNull(body.protein_g) ?? undefined,
+                  }
+                : {}),
+            ...(body.carbs_g !== undefined
+                ? {
+                      carbs_g: numberOrNull(body.carbs_g) ?? undefined,
+                  }
+                : {}),
+            ...(body.fat_g !== undefined
+                ? { fat_g: numberOrNull(body.fat_g) ?? undefined }
+                : {}),
+            ...(body.fiber_g !== undefined
+                ? {
+                      fiber_g: numberOrNull(body.fiber_g) ?? undefined,
+                  }
+                : {}),
+            ...(body.sugar_g !== undefined
+                ? {
+                      sugar_g: numberOrNull(body.sugar_g) ?? undefined,
+                  }
+                : {}),
+            ...(body.alcohol_g !== undefined
+                ? {
+                      alcohol_g: numberOrNull(body.alcohol_g) ?? undefined,
+                  }
+                : {}),
+            ...(typeof body.logged_at === "string"
+                ? { logged_at: body.logged_at }
+                : {}),
+            ...(body.notes === null || typeof body.notes === "string"
+                ? { notes: body.notes as string | null }
+                : {}),
+        });
         return privateJson(c, { meal });
+    });
+
+    app.patch(
+        "/api/app/meals/:mealId/items/:itemId",
+        requireSameOrigin,
+        async (c) => {
+            const body = (await c.req.json()) as Record<string, unknown>;
+            const nutrientBody =
+                body.nutrients && typeof body.nutrients === "object"
+                    ? (body.nutrients as Record<string, unknown>)
+                    : {};
+            const nutrients: Record<string, number | null> = {};
+            for (const field of [
+                "calories",
+                "protein_g",
+                "carbs_g",
+                "fat_g",
+                "fiber_g",
+                "sugar_g",
+                "alcohol_g",
+                "sodium_mg",
+                "saturated_fat_g",
+                "cholesterol_mg",
+                "potassium_mg",
+            ]) {
+                const value = numberOrNull(nutrientBody[field]);
+                if (value !== undefined) nutrients[field] = value;
+            }
+            const meal = await updateStructuredMealItem(
+                c.get("munchUserId"),
+                c.req.param("mealId")!,
+                c.req.param("itemId")!,
+                {
+                    ...(body.quantity !== undefined
+                        ? { quantity: positiveNumber(body.quantity) }
+                        : {}),
+                    ...(typeof body.portion_label === "string"
+                        ? { portionLabel: body.portion_label }
+                        : {}),
+                    ...(Object.keys(nutrients).length ? { nutrients } : {}),
+                },
+            );
+            return privateJson(c, { meal });
+        },
+    );
+
+    app.delete(
+        "/api/app/meals/:mealId/items/:itemId",
+        requireSameOrigin,
+        async (c) => {
+            const meal = await deleteStructuredMealItem(
+                c.get("munchUserId"),
+                c.req.param("mealId")!,
+                c.req.param("itemId")!,
+            );
+            return privateJson(c, { meal });
+        },
+    );
+
+    app.post("/api/app/meals/:id/copy", requireSameOrigin, async (c) => {
+        const body = (await c.req.json()) as Record<string, unknown>;
+        const copied = await copyMeal(c.get("munchUserId"), c.req.param("id")!, {
+            ...(typeof body.logged_at === "string"
+                ? { loggedAt: body.logged_at }
+                : {}),
+            ...(body.meal_type !== undefined
+                ? { mealType: mealType(body.meal_type) }
+                : {}),
+        });
+        return privateJson(c, copied);
     });
 
     app.delete("/api/app/meals/:id", requireSameOrigin, async (c) => {
@@ -357,7 +457,7 @@ export function createAppRouter(): Hono {
         console.error("App route failed", { name: error.name });
         const knownMessage =
             error instanceof Error &&
-            /^(Invalid|Connection not found|Date range|Weight|Target weight)/.test(
+            /^(Invalid|Connection not found|Date range|Weight|Target weight|Meal item|Meal not found|Structured meal|A structured meal)/.test(
                 error.message,
             )
                 ? error.message
