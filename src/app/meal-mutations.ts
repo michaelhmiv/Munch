@@ -7,6 +7,7 @@ import {
     getStructuredMeal,
     insertStructuredMeal,
 } from "../structured-meals/repository.js";
+import type { StructuredMealItemInput } from "../structured-meals/types.js";
 
 const NUTRIENT_COLUMNS = [
     "calories",
@@ -25,6 +26,7 @@ const NUTRIENT_COLUMNS = [
 type NutrientColumn = (typeof NUTRIENT_COLUMNS)[number];
 
 export interface MealItemPatch {
+    name?: string;
     quantity?: number;
     portionLabel?: string;
     nutrients?: Partial<Record<NutrientColumn, number | null>>;
@@ -94,6 +96,27 @@ export async function updateStructuredMealItem(
 
         const currentQuantity = numberFromRow(current.quantity);
         const nextQuantity = patch.quantity ?? currentQuantity;
+        const correctedFields = [
+            ...(patch.name !== undefined ? ["name"] : []),
+            ...Object.keys(patch.nutrients ?? {}),
+        ];
+        const explicitCorrection = correctedFields.length > 0;
+        const existingSnapshot =
+            current.source_snapshot &&
+            typeof current.source_snapshot === "object"
+                ? (current.source_snapshot as Record<string, unknown>)
+                : {};
+        const nextSnapshot = explicitCorrection
+            ? {
+                  ...existingSnapshot,
+                  user_correction: {
+                      corrected_at: new Date().toISOString(),
+                      original_source_type: current.source_type ?? null,
+                      original_provider: current.provider ?? null,
+                      changed_fields: correctedFields,
+                  },
+              }
+            : existingSnapshot;
         const ratio =
             patch.quantity !== undefined &&
             currentQuantity !== null &&
@@ -115,7 +138,8 @@ export async function updateStructuredMealItem(
 
         await tx`
             update munch.meal_items
-            set quantity = ${nextQuantity},
+            set name = ${patch.name?.trim() || current.name},
+                quantity = ${nextQuantity},
                 portion_label = ${patch.portionLabel ?? current.portion_label ?? null},
                 calories = ${nextNutrients.calories},
                 protein_g = ${nextNutrients.protein_g},
@@ -127,7 +151,10 @@ export async function updateStructuredMealItem(
                 sodium_mg = ${nextNutrients.sodium_mg},
                 saturated_fat_g = ${nextNutrients.saturated_fat_g},
                 cholesterol_mg = ${nextNutrients.cholesterol_mg},
-                potassium_mg = ${nextNutrients.potassium_mg}
+                potassium_mg = ${nextNutrients.potassium_mg},
+                source_type = ${explicitCorrection ? "user_supplied" : current.source_type},
+                provider = ${explicitCorrection ? "user_correction" : current.provider},
+                source_snapshot = ${nextSnapshot}::jsonb
             where id = ${itemId}
               and meal_id = ${mealId}
               and user_id = ${userId}
@@ -135,6 +162,73 @@ export async function updateStructuredMealItem(
         await recomputeParentTotals(tx, userId, mealId);
     });
 
+    const meal = await getStructuredMeal(userId, mealId);
+    if (!meal) throw new Error("Meal not found");
+    return meal;
+}
+
+export async function addStructuredMealItem(
+    userId: string,
+    mealId: string,
+    item: StructuredMealItemInput,
+) {
+    const name = item.name.trim();
+    if (!name) throw new Error("Meal item name is required");
+    if (
+        item.sourceUpdatedAt &&
+        !Number.isFinite(new Date(item.sourceUpdatedAt).getTime())
+    ) {
+        throw new Error("Meal item source date is invalid");
+    }
+    await withUserDatabase(userId, async (tx) => {
+        const mealRows = await tx<Array<{ id: string }>>`
+            select id from munch.meals
+            where id = ${mealId} and user_id = ${userId}
+            limit 1
+        `;
+        if (!mealRows[0]) throw new Error("Meal not found");
+        const positionRows = await tx<
+            Array<{ position: number | string; count: number | string }>
+        >`
+            select coalesce(max(position), -1)::integer + 1 as position,
+                   count(*)::integer as count
+            from munch.meal_items
+            where meal_id = ${mealId} and user_id = ${userId}
+        `;
+        if (Number(positionRows[0]?.count ?? 0) >= 100) {
+            throw new Error(
+                "Structured meal cannot contain more than 100 items",
+            );
+        }
+        const position = Number(positionRows[0]?.position ?? 0);
+        await tx`
+            insert into munch.meal_items (
+                meal_id, user_id, position, name, quantity, portion_label,
+                gram_weight, calories, protein_g, carbs_g, fat_g, fiber_g,
+                sugar_g, alcohol_g, sodium_mg, saturated_fat_g,
+                cholesterol_mg, potassium_mg, source_type, provider,
+                provider_food_id, provider_revision, source_url,
+                source_updated_at, confidence, assumptions, source_snapshot
+            ) values (
+                ${mealId}, ${userId}, ${position}, ${name},
+                ${item.quantity ?? null}, ${item.portionLabel ?? null},
+                ${item.gramWeight ?? null}, ${item.nutrients.calories ?? null},
+                ${item.nutrients.protein_g ?? null}, ${item.nutrients.carbs_g ?? null},
+                ${item.nutrients.fat_g ?? null}, ${item.nutrients.fiber_g ?? null},
+                ${item.nutrients.sugar_g ?? null}, ${item.nutrients.alcohol_g ?? null},
+                ${item.nutrients.sodium_mg ?? null},
+                ${item.nutrients.saturated_fat_g ?? null},
+                ${item.nutrients.cholesterol_mg ?? null},
+                ${item.nutrients.potassium_mg ?? null}, ${item.sourceType},
+                ${item.provider ?? null}, ${item.providerFoodId ?? null},
+                ${item.providerRevision ?? null}, ${item.sourceUrl ?? null},
+                ${item.sourceUpdatedAt ? new Date(item.sourceUpdatedAt) : null},
+                ${item.confidence ?? null}, ${item.assumptions ?? []}::jsonb,
+                ${item.sourceSnapshot ?? {}}::jsonb
+            )
+        `;
+        await recomputeParentTotals(tx, userId, mealId);
+    });
     const meal = await getStructuredMeal(userId, mealId);
     if (!meal) throw new Error("Meal not found");
     return meal;

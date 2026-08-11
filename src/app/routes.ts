@@ -21,6 +21,7 @@ import { getStructuredMeal } from "../structured-meals/repository.js";
 import { validateTz } from "../tz.js";
 import { isPlausibleWeightGrams, isWeightUnit, toGrams } from "../units.js";
 import {
+    addStructuredMealItem,
     copyMeal,
     deleteStructuredMealItem,
     updateStructuredMealItem,
@@ -76,6 +77,22 @@ function mealType(value: unknown) {
         return value;
     }
     throw new Error("Invalid meal type");
+}
+
+function structuredSourceType(value: unknown) {
+    if (
+        value === "usda" ||
+        value === "open_food_facts" ||
+        value === "published_restaurant" ||
+        value === "saved_food" ||
+        value === "past_meal" ||
+        value === "user_supplied" ||
+        value === "model_estimate" ||
+        value === "legacy_aggregate"
+    ) {
+        return value;
+    }
+    throw new Error("Invalid food source type");
 }
 
 const STRUCTURED_NUTRIENT_FIELDS = [
@@ -303,6 +320,70 @@ export function createAppRouter(): Hono {
             return privateJson(c, { meal });
         },
     );
+
+    app.post("/api/app/meals/:mealId/items", requireSameOrigin, async (c) => {
+        const body = (await c.req.json()) as Record<string, unknown>;
+        const name = typeof body.name === "string" ? body.name.trim() : "";
+        if (!name) throw new Error("Meal item name is required");
+        const nutrientBody =
+            body.nutrients && typeof body.nutrients === "object"
+                ? (body.nutrients as Record<string, unknown>)
+                : {};
+        const nutrients: Record<string, number> = {};
+        for (const field of [
+            "calories",
+            "protein_g",
+            "carbs_g",
+            "fat_g",
+            "fiber_g",
+            "sugar_g",
+            "alcohol_g",
+            "sodium_mg",
+            "saturated_fat_g",
+            "cholesterol_mg",
+            "potassium_mg",
+        ]) {
+            const value = numberOrNull(nutrientBody[field]);
+            if (typeof value === "number") nutrients[field] = value;
+        }
+        const assumptions = Array.isArray(body.assumptions)
+            ? body.assumptions.filter(
+                  (value): value is string =>
+                      typeof value === "string" && value.trim().length > 0,
+              )
+            : [];
+        const sourceSnapshot =
+            body.source_snapshot && typeof body.source_snapshot === "object"
+                ? (body.source_snapshot as Record<string, unknown>)
+                : {};
+        const meal = await addStructuredMealItem(
+            c.get("munchUserId"),
+            c.req.param("mealId")!,
+            {
+                name,
+                ...(body.quantity !== undefined
+                    ? { quantity: positiveNumber(body.quantity) }
+                    : {}),
+                ...(typeof body.portion_label === "string"
+                    ? { portionLabel: body.portion_label }
+                    : {}),
+                nutrients,
+                sourceType: structuredSourceType(body.source_type),
+                ...(typeof body.provider === "string"
+                    ? { provider: body.provider }
+                    : {}),
+                ...(typeof body.source_url === "string"
+                    ? { sourceUrl: body.source_url }
+                    : {}),
+                ...(typeof body.confidence === "number"
+                    ? { confidence: body.confidence }
+                    : {}),
+                assumptions,
+                sourceSnapshot,
+            },
+        );
+        return privateJson(c, { meal });
+    });
 
     app.delete(
         "/api/app/meals/:mealId/items/:itemId",

@@ -105,6 +105,7 @@ function structuredItemEditor(meal) {
             return `<form class="meal-card auth-form" data-patch-item-form data-meal-id="${patchEscape(meal.id)}" data-item-id="${patchEscape(item.id)}">
                 <div class="meal-card-head"><div><h4>${patchEscape(item.name)}</h4><small>${patchEscape(source)}</small></div><strong>${n.calories == null ? "—" : `${patchNumber(n.calories, 0)} kcal`}</strong></div>
                 <div class="summary-grid" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+                    <label class="field" style="grid-column:1/-1"><span>Food name</span><input name="name" value="${patchEscape(item.name)}" data-original="${patchEscape(item.name)}" required /></label>
                     <label class="field"><span>Quantity</span><input name="quantity" type="number" min="0.01" step="0.01" value="${patchEscape(item.quantity ?? "")}" placeholder="Not recorded" /></label>
                     <label class="field"><span>Portion</span><input name="portion_label" value="${patchEscape(item.portionLabel ?? "")}" placeholder="e.g. 2 slices" /></label>
                     ${nutrientInput("calories", "Calories", n.calories)}
@@ -117,7 +118,9 @@ function structuredItemEditor(meal) {
                 <div class="auth-actions"><button class="button button-secondary button-small" type="submit">Save food</button>${meal.items.length > 1 ? `<button class="button button-quiet button-small" type="button" data-patch-delete-item data-meal-id="${patchEscape(meal.id)}" data-item-id="${patchEscape(item.id)}" data-item-name="${patchEscape(item.name)}">Remove food</button>` : ""}</div>
             </form>`;
         })
-        .join("")}</div>`;
+        .join(
+            "",
+        )}}</div><details class="meal-card"><summary><strong>Add another food</strong></summary><form class="auth-form spacer-top" data-patch-new-item-form data-meal-id="${patchEscape(meal.id)}"><div class="summary-grid" style="grid-template-columns:repeat(2,minmax(0,1fr))"><label class="field" style="grid-column:1/-1"><span>Food name</span><input name="name" required /></label><label class="field"><span>Quantity</span><input name="quantity" type="number" min="0.01" step="0.01" /></label><label class="field"><span>Portion</span><input name="portion_label" placeholder="e.g. 1 cup" /></label><label class="field"><span>Calories</span><input name="calories" type="number" min="0" step="0.1" /></label><label class="field"><span>Protein (g)</span><input name="protein_g" type="number" min="0" step="0.1" /></label><label class="field"><span>Carbs (g)</span><input name="carbs_g" type="number" min="0" step="0.1" /></label><label class="field"><span>Fat (g)</span><input name="fat_g" type="number" min="0" step="0.1" /></label><label class="field"><span>Source</span><select name="source_type"><option value="user_supplied">Label / manual value</option><option value="model_estimate">Estimate</option></select></label></div><label class="field"><span>Assumption or note</span><input name="assumption" placeholder="Optional" /></label><button class="button button-secondary button-small" type="submit">Add food</button></form></details>`;
 }
 
 async function showMealEditor(id) {
@@ -239,11 +242,53 @@ document.addEventListener(
     "submit",
     async (event) => {
         const form = event.target;
-        if (
-            !(form instanceof HTMLFormElement) ||
-            !form.matches("[data-patch-item-form]")
-        )
+
+        if (!(form instanceof HTMLFormElement)) return;
+        if (form.matches("[data-patch-new-item-form]")) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            const mealId = form.dataset.mealId || "";
+            const values = Object.fromEntries(new FormData(form));
+            const nutrients = {};
+            for (const field of ["calories", "protein_g", "carbs_g", "fat_g"]) {
+                if (values[field] !== "") nutrients[field] = values[field];
+            }
+            const body = {
+                name: values.name,
+                ...(values.quantity !== ""
+                    ? { quantity: values.quantity }
+                    : {}),
+                ...(values.portion_label !== ""
+                    ? { portion_label: values.portion_label }
+                    : {}),
+                nutrients,
+                source_type: values.source_type || "user_supplied",
+                provider:
+                    values.source_type === "model_estimate"
+                        ? "manual_estimate"
+                        : "user_correction",
+                assumptions:
+                    values.assumption === "" ? [] : [String(values.assumption)],
+                source_snapshot: { resolution_layer: "website_manual_add" },
+            };
+            const submit = form.querySelector("button[type='submit']");
+            if (submit) submit.disabled = true;
+            try {
+                await patchApi(
+                    `/api/app/meals/${encodeURIComponent(mealId)}/items`,
+                    { method: "POST", body: JSON.stringify(body) },
+                );
+                patchToast("Food added and meal totals recalculated.");
+                await showMealEditor(mealId);
+                refreshCurrentView();
+            } catch (error) {
+                patchToast(error.message || "Could not add food", "error");
+            } finally {
+                if (submit) submit.disabled = false;
+            }
             return;
+        }
+        if (!form.matches("[data-patch-item-form]")) return;
         event.preventDefault();
         event.stopImmediatePropagation();
         const mealId = form.dataset.mealId || "";
@@ -260,7 +305,12 @@ document.addEventListener(
                 nutrients[field] = input.value;
             }
         }
+        const nameInput = form.elements.namedItem("name");
         const body = {
+            ...(nameInput instanceof HTMLInputElement &&
+            nameInput.value !== nameInput.dataset.original
+                ? { name: nameInput.value }
+                : {}),
             ...(values.quantity !== "" ? { quantity: values.quantity } : {}),
             ...(values.portion_label !== ""
                 ? { portion_label: values.portion_label }

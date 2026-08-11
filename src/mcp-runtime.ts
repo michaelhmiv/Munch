@@ -4,6 +4,7 @@ import type { Context } from "hono";
 import { resolveMunchCapabilities } from "./billing/capabilities.js";
 import { withCanonicalFoodSearch } from "./canonical-food-search.js";
 import { registerFoodTools } from "./food-tools.js";
+import { registerMealDetailTools } from "./meal-detail-tools.js";
 import { registerMealDraftTools } from "./meal-draft-tools.js";
 import { registerMealReviewTools } from "./meal-review-tools.js";
 import { registerRecipePlanningTools } from "./recipe-planning-tools.js";
@@ -76,6 +77,7 @@ async function buildMunchMcpServer(
     );
     registerFoodTools(withCanonicalFoodSearch(server), userId);
     registerSavedFoodTools(server, userId, capabilities);
+    registerMealDetailTools(server, userId);
     registerMealReviewTools(server, userId);
     registerMealDraftTools(server, userId);
     registerRecipePlanningTools(server, userId, capabilities);

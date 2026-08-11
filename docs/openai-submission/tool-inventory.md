@@ -20,6 +20,7 @@ Generated from the production MCP source. Do not edit manually.
 | `get_food_details`            | `src/food-tools.ts`            |      true |      false |       false |       true |          true |
 | `get_goal_progress`           | `src/mcp.ts`                   |      true |      false |       false |       true |          true |
 | `get_grocery_list`            | `src/recipe-planning-tools.ts` |      true |      false |       false |       true |          true |
+| `get_meal_details`            | `src/meal-detail-tools.ts`     |      true |      false |       false |       true |         false |
 | `get_meal_draft`              | `src/meal-draft-tools.ts`      |      true |      false |       false |       true |          true |
 | `get_meal_patterns`           | `src/mcp.ts`                   |      true |      false |       false |       true |         false |
 | `get_meal_plan`               | `src/recipe-planning-tools.ts` |      true |      false |       false |       true |          true |
@@ -27,6 +28,7 @@ Generated from the production MCP source. Do not edit manually.
 | `get_meals_by_date_range`     | `src/mcp.ts`                   |      true |      false |       false |       true |         false |
 | `get_meals_today`             | `src/mcp.ts`                   |      true |      false |       false |       true |         false |
 | `get_nutrition_goals`         | `src/mcp.ts`                   |      true |      false |       false |       true |         false |
+| `get_nutrition_provenance`    | `src/meal-detail-tools.ts`     |      true |      false |       false |       true |         false |
 | `get_nutrition_summary`       | `src/mcp.ts`                   |      true |      false |       false |       true |          true |
 | `get_recipe`                  | `src/recipe-planning-tools.ts` |      true |      false |       false |       true |          true |
 | `get_timezone`                | `src/mcp.ts`                   |      true |      false |       false |       true |         false |
