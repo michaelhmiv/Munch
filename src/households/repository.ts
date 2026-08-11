@@ -1,5 +1,9 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { withAuthDatabase, withUserDatabase } from "../platform/database.js";
+import {
+    withAuthDatabase,
+    withUserDatabase,
+    type DatabaseTransaction,
+} from "../platform/database.js";
 
 export type HouseholdRole = "owner" | "member" | "viewer";
 
@@ -26,6 +30,20 @@ export interface HouseholdInvitationResult {
     expiresAt: string;
 }
 
+export interface HouseholdSeatReservation {
+    invitationId: string;
+    householdId: string;
+    ownerUserId: string;
+    targetSeatQuantity: number;
+}
+
+export interface HouseholdSeatReleaseReservation {
+    membershipId: string;
+    householdId: string;
+    ownerUserId: string;
+    targetSeatQuantity: number;
+}
+
 function tokenHash(token: string): Buffer {
     return createHash("sha256").update(token, "utf8").digest();
 }
@@ -40,6 +58,68 @@ function cleanDisplayName(value: string): string {
         throw new Error("Household display name must be 1 to 80 characters");
     }
     return name;
+}
+
+async function desiredSeatQuantityTx(
+    tx: DatabaseTransaction,
+    householdId: string,
+): Promise<number> {
+    const [activeRows, inviteRows, releaseRows] = await Promise.all([
+        tx<Array<{ count: number }>>`
+            select count(*)::int as count
+            from munch.household_memberships
+            where household_id = ${householdId}
+              and status = 'active'
+              and role <> 'owner'
+              and user_id is not null
+        `,
+        tx<Array<{ count: number }>>`
+            select count(*)::int as count
+            from munch.household_invitations
+            where household_id = ${householdId}
+              and seat_reserved_at is not null
+              and accepted_at is null
+              and revoked_at is null
+              and expires_at > now()
+        `,
+        tx<Array<{ count: number }>>`
+            select count(*)::int as count
+            from munch.household_memberships
+            where household_id = ${householdId}
+              and status = 'active'
+              and role <> 'owner'
+              and user_id is not null
+              and seat_release_reserved_at is not null
+        `,
+    ]);
+    const desired =
+        Number(activeRows[0]?.count ?? 0) +
+        Number(inviteRows[0]?.count ?? 0) -
+        Number(releaseRows[0]?.count ?? 0);
+    if (!Number.isInteger(desired) || desired < 0 || desired > 5) {
+        throw new Error("Household paid seat count is invalid");
+    }
+    return desired;
+}
+
+export async function getHouseholdSeatCounts(householdId: string): Promise<{
+    activeNonOwnerCount: number;
+    desiredSeatQuantity: number;
+}> {
+    return withAuthDatabase(async (tx) => {
+        const activeRows = await tx<Array<{ count: number }>>`
+            select count(*)::int as count
+            from munch.household_memberships
+            where household_id = ${householdId}
+              and status = 'active'
+              and role <> 'owner'
+              and user_id is not null
+        `;
+        return {
+            activeNonOwnerCount: Number(activeRows[0]?.count ?? 0),
+            desiredSeatQuantity: await desiredSeatQuantityTx(tx, householdId),
+        };
+    });
 }
 
 export async function createHousehold(input: {
@@ -62,11 +142,6 @@ export async function createHousehold(input: {
         `;
         if (existing[0]) throw new Error("User already belongs to a household");
 
-        // Do not use INSERT ... RETURNING here. PostgreSQL also applies the
-        // household SELECT policy to RETURNING, but owner visibility depends on
-        // the membership inserted in the next statement. Generate the UUID
-        // before the transaction so both rows can be created without a circular
-        // RLS dependency.
         await tx`
             insert into munch.households (id, name, owner_user_id)
             values (${householdId}, ${name}, ${input.userId})
@@ -213,7 +288,8 @@ export async function createHouseholdInvitation(input: {
                 token_hash = excluded.token_hash,
                 expires_at = excluded.expires_at,
                 invited_by_user_id = excluded.invited_by_user_id,
-                created_at = now()
+                created_at = now(),
+                seat_reserved_at = null
             returning id
         `;
         if (!rows[0]) throw new Error("Invitation creation returned no row");
@@ -222,6 +298,83 @@ export async function createHouseholdInvitation(input: {
             rawToken,
             expiresAt: expiresAt.toISOString(),
         };
+    });
+}
+
+export async function reserveHouseholdInvitationSeat(input: {
+    userId: string;
+    token: string;
+}): Promise<HouseholdSeatReservation> {
+    const hash = tokenHash(input.token);
+    return withAuthDatabase(async (tx) => {
+        const rows = await tx<
+            Array<{
+                invitation_id: string;
+                household_id: string;
+                owner_user_id: string;
+                user_email: string;
+                invitation_email: string;
+                seat_reserved_at: Date | null;
+            }>
+        >`
+            select
+                invitation.id as invitation_id,
+                invitation.household_id,
+                household.owner_user_id,
+                users.email as user_email,
+                invitation.email as invitation_email,
+                invitation.seat_reserved_at
+            from munch.household_invitations invitation
+            join munch.households household on household.id = invitation.household_id
+            join munch.users users on users.id = ${input.userId}
+            where invitation.token_hash = ${hash}
+              and invitation.accepted_at is null
+              and invitation.revoked_at is null
+              and invitation.expires_at > now()
+              and household.archived_at is null
+            for update of invitation, household
+        `;
+        const invitation = rows[0];
+        if (!invitation) throw new Error("Invitation is invalid or expired");
+        if (invitation.user_email !== invitation.invitation_email) {
+            throw new Error("Invitation belongs to a different email address");
+        }
+        const existing = await tx<Array<{ id: string }>>`
+            select id from munch.household_memberships
+            where user_id = ${input.userId} and status = 'active'
+            limit 1
+        `;
+        if (existing[0]) throw new Error("User already belongs to a household");
+
+        if (!invitation.seat_reserved_at) {
+            await tx`
+                update munch.household_invitations
+                set seat_reserved_at = now()
+                where id = ${invitation.invitation_id}
+            `;
+        }
+        return {
+            invitationId: invitation.invitation_id,
+            householdId: invitation.household_id,
+            ownerUserId: invitation.owner_user_id,
+            targetSeatQuantity: await desiredSeatQuantityTx(
+                tx,
+                invitation.household_id,
+            ),
+        };
+    });
+}
+
+export async function clearHouseholdInvitationSeatReservation(
+    invitationId: string,
+): Promise<void> {
+    await withAuthDatabase(async (tx) => {
+        await tx`
+            update munch.household_invitations
+            set seat_reserved_at = null
+            where id = ${invitationId}
+              and accepted_at is null
+        `;
     });
 }
 
@@ -291,7 +444,7 @@ export async function acceptHouseholdInvitation(input: {
         `;
         await tx`
             update munch.household_invitations
-            set accepted_at = now()
+            set accepted_at = now(), seat_reserved_at = null
             where id = ${invitation.invitation_id}
         `;
 
@@ -303,6 +456,91 @@ export async function acceptHouseholdInvitation(input: {
             displayName,
             version: Number(invitation.version),
         };
+    });
+}
+
+export async function reserveHouseholdSeatRelease(input: {
+    requesterUserId: string;
+    householdId: string;
+    membershipId?: string;
+    selfLeave?: boolean;
+}): Promise<HouseholdSeatReleaseReservation> {
+    return withAuthDatabase(async (tx) => {
+        const householdRows = await tx<Array<{ owner_user_id: string }>>`
+            select owner_user_id
+            from munch.households
+            where id = ${input.householdId}
+              and archived_at is null
+            for update
+        `;
+        const household = householdRows[0];
+        if (!household) throw new Error("Household not found");
+
+        const members = input.selfLeave
+            ? await tx<
+                  Array<{
+                      id: string;
+                      user_id: string;
+                      role: HouseholdRole;
+                  }>
+              >`
+                  select id, user_id, role
+                  from munch.household_memberships
+                  where household_id = ${input.householdId}
+                    and user_id = ${input.requesterUserId}
+                    and status = 'active'
+                    and role <> 'owner'
+                  for update
+              `
+            : await tx<
+                  Array<{
+                      id: string;
+                      user_id: string;
+                      role: HouseholdRole;
+                  }>
+              >`
+                  select id, user_id, role
+                  from munch.household_memberships
+                  where household_id = ${input.householdId}
+                    and id = ${input.membershipId ?? ""}
+                    and status = 'active'
+                    and role <> 'owner'
+                  for update
+              `;
+        const member = members[0];
+        if (!member) throw new Error("Household member not found");
+        if (input.selfLeave) {
+            if (member.user_id !== input.requesterUserId) {
+                throw new Error("Household member required");
+            }
+        } else if (household.owner_user_id !== input.requesterUserId) {
+            throw new Error("Household owner required");
+        }
+
+        await tx`
+            update munch.household_memberships
+            set seat_release_reserved_at = coalesce(seat_release_reserved_at, now())
+            where id = ${member.id}
+        `;
+        return {
+            membershipId: member.id,
+            householdId: input.householdId,
+            ownerUserId: household.owner_user_id,
+            targetSeatQuantity: await desiredSeatQuantityTx(tx, input.householdId),
+        };
+    });
+}
+
+export async function clearHouseholdSeatReleaseReservation(
+    membershipId: string,
+): Promise<void> {
+    await withAuthDatabase(async (tx) => {
+        await tx`
+            update munch.household_memberships
+            set seat_release_reserved_at = null
+            where id = ${membershipId}
+              and status = 'active'
+        `;
     });
 }
 
@@ -334,7 +572,9 @@ export async function removeHouseholdMember(input: {
     return withUserDatabase(input.userId, async (tx) => {
         const rows = await tx<Array<{ id: string }>>`
             update munch.household_memberships
-            set status = 'removed', updated_at = now()
+            set status = 'removed',
+                seat_release_reserved_at = null,
+                updated_at = now()
             where id = ${input.membershipId}
               and household_id = ${input.householdId}
               and role <> 'owner'
