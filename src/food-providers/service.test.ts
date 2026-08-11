@@ -5,6 +5,7 @@ import {
     FoodSearchService,
     decodeFoodCandidateId,
     encodeFoodCandidateId,
+    isStrongLocalMatch,
     summarizeFoodCandidate,
 } from "./service.js";
 import type { FoodCandidate, FoodProvider } from "./types.js";
@@ -72,6 +73,37 @@ describe("food candidate summaries", () => {
                 },
             }),
         );
+    });
+});
+
+describe("local food resolution", () => {
+    test("short-circuits a high-confidence exact generic match", () => {
+        expect(isStrongLocalMatch("Apples, raw, with skin", candidate())).toBe(
+            true,
+        );
+    });
+
+    test("short-circuits an exact brand plus product match", () => {
+        expect(
+            isStrongLocalMatch(
+                "Simply Nature Creamy Peanut Butter",
+                candidate({
+                    name: "Creamy Peanut Butter",
+                    brand: "Simply Nature",
+                    confidence: 0.94,
+                }),
+            ),
+        ).toBe(true);
+    });
+
+    test("does not short-circuit a fuzzy or low-confidence match", () => {
+        expect(isStrongLocalMatch("apple", candidate())).toBe(false);
+        expect(
+            isStrongLocalMatch(
+                "Apples, raw, with skin",
+                candidate({ confidence: 0.74 }),
+            ),
+        ).toBe(false);
     });
 });
 

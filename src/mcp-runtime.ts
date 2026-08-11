@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { Context } from "hono";
 import { resolveMunchCapabilities } from "./billing/capabilities.js";
+import { withCanonicalFoodSearch } from "./canonical-food-search.js";
 import { registerFoodTools } from "./food-tools.js";
 import { registerMealDraftTools } from "./meal-draft-tools.js";
 import { registerMealReviewTools } from "./meal-review-tools.js";
@@ -14,12 +15,15 @@ import {
     preferredDrinkUnitFromProfile,
     widgetsEnabledFromProfile,
 } from "./storage.js";
+import { withCanonicalStructuredLogMeal } from "./structured-log-meal.js";
 
 const MUNCH_SERVER_INSTRUCTIONS = `Munch stores and retrieves factual food, serving, macro, meal, hydration, weight, recipe, planning, and grocery data. Nutrition values are estimates and Munch does not provide medical or dietary advice. Do not ask Munch to determine what a user should eat, set a calorie target, diagnose a condition, or judge whether a food is healthy. ChatGPT may reason from the factual data under its own policies.
 
-Before estimating a generic or branded food, search personal foods first when the user says "my usual" or refers to something eaten before. Otherwise call search_foods only when database lookup is likely to materially improve product identity, hidden ingredients, or serving accuracy. For a visible packaged-food barcode, call lookup_food_barcode and use verified label values when available. Always identify the source and do not present model estimates as database facts.
+Resolve nutrition with a fast confidence-driven ladder. When the user says "my usual", refers to something eaten before, or a prior personal match is likely, search_saved_foods first. For every generic or branded food that still needs nutrition, call search_foods before using outside information: search_foods checks Munch's persistent local food catalog first and only falls through to USDA FoodData Central and Open Food Facts when the local catalog does not contain an adequate match. USDA and Open Food Facts are queried concurrently. For a visible packaged-food barcode, call lookup_food_barcode and use verified label values when available. If Munch returns a strong matching database record, use it and do not perform an external web search merely to double-check it. If Munch returns no adequate match, a materially wrong brand/product, or materially incomplete nutrition, then use external web search as the next fallback; prefer manufacturer, restaurant, or retailer nutrition pages. Use a model/generic estimate only after both Munch's database path and an appropriate external lookup fail. Never present an estimate as database data.
 
-For photos and any meal that still needs approval, use prepare_meal_review. Build the complete item list, nutrition estimates, confidence, assumptions, and any materially important unresolved question in one call. For a clear plated photo, infer homemade versus restaurant from the evidence instead of asking by default. No menu, restaurant branding, receipt, takeout packaging, or venue context generally supports a homemade inference. Use visible scale references such as forks, plates, bowls, cups, hands, and packaging. Put low-impact uncertainty into explicit assumptions rather than asking about every ordinary estimate. Ask only the highest-impact question when identity, portion, preparation, or calories would materially change. Use resolve_meal_review to apply the answer or any edits atomically. If the user says to stop asking or accepts the assumptions, resolve with accept_remaining_assumptions. Present the complete review and call confirm_meal_draft only after an explicit yes. Do not use log_meal for photo or ambiguous flows.
+For a complete text meal whose foods and portions are already known, use log_meal with items[] so each food is stored separately with the exact nutrition values used, source, provider identifiers, confidence, assumptions, and source snapshot. Munch derives the parent meal totals from those items. For external webpage nutrition, use source_type=user_supplied, set a descriptive provider such as manufacturer_web or retailer_web, include source_url, and put resolution_layer=external_web in source_snapshot. For an unavoidable estimate, use source_type=model_estimate and record the assumptions. Do not use the aggregate-only log_meal form for normal new meals; it remains only for compatibility and historical/import workflows.
+
+For photos and any meal that still needs approval, use prepare_meal_review. Build the complete item list, nutrition estimates, confidence, assumptions, and any materially important unresolved question in one call. For a clear plated photo, infer homemade versus restaurant from the evidence instead of asking by default. No menu, restaurant branding, receipt, takeout packaging, or venue context generally supports a homemade inference. Use visible scale references such as forks, plates, bowls, cups, hands, and packaging. Put low-impact uncertainty into explicit assumptions rather than asking about every ordinary estimate. Ask only the highest-impact question when identity, portion, preparation, or calories would materially change. Use resolve_meal_review to apply the answer or any edits atomically. If the user says to stop asking or accepts the assumptions, resolve with accept_remaining_assumptions. Present the complete review and call confirm_meal_draft only after an explicit yes. Do not use aggregate-only log_meal for photo or ambiguous flows.
 
 Legacy start_meal_draft and granular draft mutation tools remain for compatibility, but prefer prepare_meal_review and resolve_meal_review for new work because they reduce tool round trips while preserving server-enforced confirmation, version checks, RLS, and idempotency.
 
@@ -40,7 +44,7 @@ async function buildMunchMcpServer(
     const server = new McpServer(
         {
             name: "Munch",
-            version: "0.7.0",
+            version: "0.8.0",
             icons: [
                 {
                     src: `${baseUrl}/favicon.ico`,
@@ -59,14 +63,18 @@ async function buildMunchMcpServer(
         resolveMunchCapabilities(userId),
     ]);
     const drinkUnit = preferredDrinkUnitFromProfile(profile);
-    registerTools(
+    const structuredLegacyServer = withCanonicalStructuredLogMeal(
         server,
+        userId,
+    );
+    registerTools(
+        structuredLegacyServer,
         userId,
         widgetsEnabledFromProfile(profile),
         alcoholTrackingEnabledFromProfile(profile) ? (drinkUnit ?? "us") : null,
         capabilities,
     );
-    registerFoodTools(server, userId);
+    registerFoodTools(withCanonicalFoodSearch(server), userId);
     registerSavedFoodTools(server, userId, capabilities);
     registerMealReviewTools(server, userId);
     registerMealDraftTools(server, userId);

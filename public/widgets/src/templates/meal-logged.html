@@ -29,6 +29,46 @@
             .today-strip strong {
                 font-variant-numeric: tabular-nums;
             }
+            .foods {
+                margin-top: 12px;
+                border-top: 1px solid var(--border);
+                padding-top: 8px;
+            }
+            .foods summary {
+                cursor: pointer;
+                font-weight: 650;
+                font-size: 13px;
+                padding: 3px 0 7px;
+            }
+            .food-row {
+                padding: 8px 0;
+                border-top: 1px solid var(--border);
+            }
+            .food-row:first-of-type {
+                border-top: 0;
+            }
+            .food-head {
+                display: flex;
+                gap: 10px;
+                justify-content: space-between;
+                align-items: baseline;
+            }
+            .food-name {
+                min-width: 0;
+                font-weight: 650;
+                overflow-wrap: anywhere;
+            }
+            .food-kcal {
+                flex: 0 0 auto;
+                font-variant-numeric: tabular-nums;
+            }
+            .food-meta,
+            .food-source {
+                margin-top: 2px;
+                color: var(--text-muted);
+                font-size: 12px;
+                line-height: 1.35;
+            }
         </style>
     </head>
     <body>
@@ -48,6 +88,30 @@
                     carbs_g: 28,
                     fat_g: 22,
                 },
+                meal_items: [
+                    {
+                        id: "sample-1",
+                        position: 0,
+                        name: "Grilled chicken breast",
+                        quantity: 1,
+                        portion_label: "5 oz",
+                        nutrients: {
+                            calories: 235,
+                            protein_g: 44,
+                            carbs_g: 0,
+                            fat_g: 5,
+                        },
+                        source_type: "usda",
+                        provider: "usda",
+                        provider_food_id: "sample",
+                        provider_revision: null,
+                        source_url: null,
+                        source_updated_at: null,
+                        confidence: 0.96,
+                        assumptions: [],
+                        source_snapshot: {},
+                    },
+                ],
                 has_goals: true,
                 goals: {
                     calories: 2200,
@@ -70,9 +134,58 @@
                     return payload;
                 return payload.structuredContent || null;
             }
+            function sourceLabel(item) {
+                if (item.source_type === "usda") return "USDA";
+                if (item.source_type === "open_food_facts")
+                    return "Open Food Facts";
+                if (item.source_type === "published_restaurant")
+                    return "Restaurant nutrition";
+                if (item.source_type === "saved_food") return "Saved food";
+                if (item.source_type === "past_meal") return "Past meal";
+                if (item.source_type === "model_estimate") return "Estimated";
+                if (
+                    item.source_type === "user_supplied" &&
+                    item.source_snapshot?.resolution_layer === "external_web"
+                )
+                    return item.provider
+                        ? `External · ${item.provider.replaceAll("_", " ")}`
+                        : "External source";
+                if (item.source_type === "user_supplied")
+                    return "Provided data";
+                return item.provider || "Recorded source";
+            }
+            function itemRows(items) {
+                if (!items.length) return "";
+                return `<details class="foods"><summary>${items.length} food${items.length === 1 ? "" : "s"} · nutrition sources</summary>${items
+                    .map((item) => {
+                        const n = item.nutrients || {};
+                        const macro = [
+                            n.protein_g != null
+                                ? `${fmt(n.protein_g, 1)}P`
+                                : null,
+                            n.carbs_g != null ? `${fmt(n.carbs_g, 1)}C` : null,
+                            n.fat_g != null ? `${fmt(n.fat_g, 1)}F` : null,
+                        ]
+                            .filter(Boolean)
+                            .join(" · ");
+                        const confidence =
+                            item.confidence == null
+                                ? ""
+                                : ` · ${Math.round(item.confidence * 100)}% confidence`;
+                        return `<div class="food-row">
+                            <div class="food-head"><div class="food-name">${esc(item.name || "Food")}</div>${n.calories != null ? `<div class="food-kcal">${fmt(n.calories)} kcal</div>` : ""}</div>
+                            <div class="food-meta">${esc(item.portion_label || (item.quantity != null ? `Qty ${fmt(item.quantity, 1)}` : "Portion recorded"))}${macro ? ` · ${esc(macro)}` : ""}</div>
+                            <div class="food-source">${esc(sourceLabel(item))}${esc(confidence)}</div>
+                        </div>`;
+                    })
+                    .join("")}</details>`;
+            }
             function render(data) {
                 DATA = data;
                 const meal = data.logged_meal || {};
+                const items = Array.isArray(data.meal_items)
+                    ? data.meal_items
+                    : [];
                 const action = data.action === "updated" ? "updated" : "logged";
                 const title = meal.description || "Meal";
                 const macros = [
@@ -116,6 +229,7 @@
                 ${macros ? `<div class="meta num">${esc(macros)}</div>` : '<div class="meta">Saved to your Munch log.</div>'}
             </div>
         </div>
+        ${itemRows(items)}
         ${today}
         <div class="actions single"><button class="btn btn-quiet" id="adjust">Adjust meal</button></div>
         <div class="status" id="status" role="status" aria-live="polite"></div>

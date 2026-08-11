@@ -2,6 +2,8 @@
 
 const { consumeLoginChallenge, createLoginChallenge } =
     await import("../src/accounts/repository.js");
+const { copyMeal, deleteStructuredMealItem, updateStructuredMealItem } =
+    await import("../src/app/meal-mutations.js");
 const { getStructuredMeal, insertStructuredMeal } =
     await import("../src/structured-meals/repository.js");
 const { closePlatformDatabase } = await import("../src/platform/database.js");
@@ -118,5 +120,79 @@ if (!(await getStructuredMeal(userA, first.meal.id))) {
     throw new Error("Structured meal owner could not reload the meal");
 }
 
+const chickenId = first.meal.items[0]!.id;
+const riceId = first.meal.items[1]!.id;
+const doubled = await updateStructuredMealItem(
+    userA,
+    first.meal.id,
+    chickenId,
+    { quantity: 2 },
+);
+if (doubled.items[0]?.quantity !== 2) {
+    throw new Error("Structured item quantity was not updated");
+}
+if (Math.abs((doubled.items[0]?.nutrients.calories ?? 0) - 567.6) > 0.001) {
+    throw new Error("Quantity edit did not scale item nutrition");
+}
+if (doubled.calories !== 773) {
+    throw new Error("Parent calories were not recomputed after item edit");
+}
+if (Math.abs((doubled.proteinG ?? 0) - 110.89) > 0.001) {
+    throw new Error("Parent protein was not recomputed after item edit");
+}
+
+let crossTenantMutationBlocked = false;
+try {
+    await updateStructuredMealItem(userB, first.meal.id, chickenId, {
+        quantity: 3,
+    });
+} catch {
+    crossTenantMutationBlocked = true;
+}
+if (!crossTenantMutationBlocked) {
+    throw new Error("Cross-tenant structured item mutation was allowed");
+}
+
+const copied = await copyMeal(userA, first.meal.id, {
+    loggedAt: "2026-08-04T17:00:00.000Z",
+});
+if (!copied.structured || copied.mealId === first.meal.id) {
+    throw new Error("Structured meal copy did not create a new meal");
+}
+const copiedMeal = await getStructuredMeal(userA, copied.mealId);
+if (!copiedMeal || copiedMeal.items.length !== 2) {
+    throw new Error("Structured meal copy lost child items");
+}
+if (copiedMeal.items[0]?.sourceSnapshot.provider !== "usda") {
+    throw new Error("Structured meal copy lost provider provenance");
+}
+if (copiedMeal.items[0]?.providerFoodId !== "555") {
+    throw new Error("Structured meal copy lost provider food identity");
+}
+
+const afterDelete = await deleteStructuredMealItem(
+    userA,
+    first.meal.id,
+    riceId,
+);
+if (afterDelete.items.length !== 1 || afterDelete.items[0]?.id !== chickenId) {
+    throw new Error("Structured item deletion produced the wrong children");
+}
+if (afterDelete.calories !== 568) {
+    throw new Error("Parent totals were not recomputed after item deletion");
+}
+
+let lastItemProtected = false;
+try {
+    await deleteStructuredMealItem(userA, first.meal.id, chickenId);
+} catch {
+    lastItemProtected = true;
+}
+if (!lastItemProtected) {
+    throw new Error("Structured meal allowed deletion of its final item");
+}
+
 await closePlatformDatabase();
-console.log("Munch structured meal items and RLS smoke test passed.");
+console.log(
+    "Munch structured meal items, provenance, mutations, copying, totals, and RLS smoke test passed.",
+);
