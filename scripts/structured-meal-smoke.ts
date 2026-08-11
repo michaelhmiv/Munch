@@ -2,8 +2,12 @@
 
 const { consumeLoginChallenge, createLoginChallenge } =
     await import("../src/accounts/repository.js");
-const { copyMeal, deleteStructuredMealItem, updateStructuredMealItem } =
-    await import("../src/app/meal-mutations.js");
+const {
+    addStructuredMealItem,
+    copyMeal,
+    deleteStructuredMealItem,
+    updateStructuredMealItem,
+} = await import("../src/app/meal-mutations.js");
 const { getStructuredMeal, insertStructuredMeal } =
     await import("../src/structured-meals/repository.js");
 const { closePlatformDatabase } = await import("../src/platform/database.js");
@@ -153,6 +157,33 @@ if (!crossTenantMutationBlocked) {
     throw new Error("Cross-tenant structured item mutation was allowed");
 }
 
+const added = await addStructuredMealItem(userA, first.meal.id, {
+    name: "Added salad",
+    quantity: 1,
+    portionLabel: "1 bowl",
+    nutrients: { calories: 80, protein_g: 3, carbs_g: 12, fat_g: 2 },
+    sourceType: "user_supplied",
+    provider: "user_correction",
+    confidence: 1,
+    assumptions: ["Added in website editor"],
+    sourceSnapshot: { resolution_layer: "website_manual_add" },
+});
+if (added.items.length !== 3 || added.calories !== 853) {
+    throw new Error("Structured item addition did not recalculate parent totals");
+}
+const addedItem = added.items.find((item) => item.name === "Added salad");
+if (!addedItem || addedItem.provider !== "user_correction") {
+    throw new Error("Added structured item provenance was not retained");
+}
+const afterAddedDelete = await deleteStructuredMealItem(
+    userA,
+    first.meal.id,
+    addedItem.id,
+);
+if (afterAddedDelete.items.length !== 2 || afterAddedDelete.calories !== 773) {
+    throw new Error("Added structured item cleanup did not restore totals");
+}
+
 const copied = await copyMeal(userA, first.meal.id, {
     loggedAt: "2026-08-04T17:00:00.000Z",
 });
@@ -168,6 +199,27 @@ if (copiedMeal.items[0]?.sourceSnapshot.provider !== "usda") {
 }
 if (copiedMeal.items[0]?.providerFoodId !== "555") {
     throw new Error("Structured meal copy lost provider food identity");
+}
+
+const corrected = await updateStructuredMealItem(
+    userA,
+    copied.mealId,
+    copiedMeal.items[0]!.id,
+    {
+        name: "Corrected chicken breast",
+        nutrients: { calories: 550 },
+    },
+);
+const correctedItem = corrected.items[0];
+if (
+    correctedItem?.sourceType !== "user_supplied" ||
+    correctedItem.provider !== "user_correction" ||
+    correctedItem.sourceSnapshot.user_correction == null
+) {
+    throw new Error("Manual correction did not retain an auditable provenance trail");
+}
+if (corrected.calories !== 755) {
+    throw new Error("Manual nutrient correction did not recalculate parent totals");
 }
 
 const afterDelete = await deleteStructuredMealItem(
@@ -194,5 +246,5 @@ if (!lastItemProtected) {
 
 await closePlatformDatabase();
 console.log(
-    "Munch structured meal items, provenance, mutations, copying, totals, and RLS smoke test passed.",
+    "Munch structured meal items, provenance, corrections, additions, copying, totals, and RLS smoke test passed.",
 );
