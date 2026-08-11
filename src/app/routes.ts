@@ -72,6 +72,12 @@ export function createAppRouter(): Hono {
             "Cache-Control": "no-cache",
         }),
     );
+    app.get("/weight-display.js", async (c) =>
+        c.body(await Bun.file("./public/weight-display.js").text(), 200, {
+            "Content-Type": "text/javascript; charset=utf-8",
+            "Cache-Control": "no-cache",
+        }),
+    );
     app.get("/app", async (c) =>
         c.html(await Bun.file("./public/app.html").text(), 200, {
             "Cache-Control": "no-store, private",

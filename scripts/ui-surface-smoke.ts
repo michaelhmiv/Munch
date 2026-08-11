@@ -5,6 +5,7 @@ const requiredFiles = [
     "public/app.js",
     "public/app-overrides.css",
     "public/app-patches.js",
+    "public/weight-display.js",
     "public/help.html",
     "public/help-connect.html",
     "public/security.html",
@@ -78,6 +79,27 @@ for (const route of [
 ]) {
     if (!indexSource.includes(route)) {
         throw new Error(`Server is missing required route wiring: ${route}`);
+    }
+}
+
+const appRouterSource = await Bun.file("src/app/routes.ts").text();
+const browserEntryPoints = ["public/app.js", "public/app-patches.js"];
+for (const entryPoint of browserEntryPoints) {
+    const source = await Bun.file(entryPoint).text();
+    for (const match of source.matchAll(/from\s+["']\.\/([^"']+\.js)["']/g)) {
+        const moduleName = match[1];
+        const publicPath = `public/${moduleName}`;
+        const route = `/${moduleName}`;
+        if (!(await Bun.file(publicPath).exists())) {
+            throw new Error(
+                `${entryPoint} imports missing browser module ${publicPath}`,
+            );
+        }
+        if (!appRouterSource.includes(`app.get("${route}"`)) {
+            throw new Error(
+                `${entryPoint} imports ${route}, but the app router does not serve it`,
+            );
+        }
     }
 }
 
