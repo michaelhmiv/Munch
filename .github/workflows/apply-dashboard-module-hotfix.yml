@@ -17,6 +17,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: hotfix/dashboard-module-route
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
       - name: Apply hotfix
         run: python scripts/apply-dashboard-module-hotfix.py
       - name: Format and commit
