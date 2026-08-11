@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { createStripeCheckoutSession } from "./stripe-client.js";
+import {
+    createStripeCheckoutSession,
+    retrieveStripePrice,
+    StripeRequestError,
+} from "./stripe-client.js";
 
 const originalFetch = globalThis.fetch;
 const originalKey = process.env.STRIPE_SECRET_KEY;
@@ -85,5 +89,55 @@ describe("Stripe Checkout", () => {
         expect(params.get("customer")).toBe("cus_returning");
         expect(params.has("subscription_data[trial_period_days]")).toBe(false);
         expect(params.get("payment_method_collection")).toBe("always");
+    });
+
+    test("retrieves the configured recurring price using the app Stripe key", async () => {
+        process.env.STRIPE_SECRET_KEY = "sk_test_munch";
+        let requestedUrl = "";
+        globalThis.fetch = mock(async (url) => {
+            requestedUrl = String(url);
+            return new Response(
+                JSON.stringify({
+                    id: "price_munch_monthly",
+                    active: true,
+                    livemode: false,
+                    type: "recurring",
+                    recurring: { interval: "month", interval_count: 1 },
+                }),
+                { status: 200 },
+            );
+        }) as unknown as typeof fetch;
+
+        const price = await retrieveStripePrice("price_munch_monthly");
+        expect(requestedUrl.endsWith("/v1/prices/price_munch_monthly")).toBe(
+            true,
+        );
+        expect(price.active).toBe(true);
+        expect(price.type).toBe("recurring");
+    });
+
+    test("preserves Stripe error codes for actionable checkout diagnostics", async () => {
+        process.env.STRIPE_SECRET_KEY = "sk_test_munch";
+        globalThis.fetch = mock(async () =>
+            new Response(
+                JSON.stringify({
+                    error: {
+                        type: "invalid_request_error",
+                        code: "resource_missing",
+                        message: "No such price",
+                    },
+                }),
+                { status: 404 },
+            ),
+        ) as unknown as typeof fetch;
+
+        try {
+            await retrieveStripePrice("price_missing");
+            throw new Error("expected StripeRequestError");
+        } catch (error) {
+            expect(error).toBeInstanceOf(StripeRequestError);
+            expect((error as StripeRequestError).code).toBe("resource_missing");
+            expect((error as StripeRequestError).status).toBe(404);
+        }
     });
 });
