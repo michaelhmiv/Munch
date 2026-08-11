@@ -5,6 +5,14 @@ import { getStructuredMeal } from "./structured-meals/repository.js";
 import { getUserTimezone } from "./storage.js";
 import { shiftLocalDate, todayInTz } from "./tz.js";
 
+type ToolServer = {
+    registerTool: (
+        name: string,
+        config: Record<string, unknown>,
+        handler: (args: Record<string, any>) => Promise<any> | any,
+    ) => unknown;
+};
+
 function nullable(value: number | undefined): number | null {
     return value ?? null;
 }
@@ -62,7 +70,9 @@ function rangeDays(startDate: string, endDate: string): number {
 }
 
 export function registerMealDetailTools(server: McpServer, userId: string): void {
-    server.registerTool(
+    const toolServer = server as unknown as ToolServer;
+
+    toolServer.registerTool(
         "get_meal_details",
         {
             title: "Get Meal Details",
@@ -122,7 +132,7 @@ export function registerMealDetailTools(server: McpServer, userId: string): void
         },
     );
 
-    server.registerTool(
+    toolServer.registerTool(
         "get_nutrition_provenance",
         {
             title: "Get Nutrition Provenance",
