@@ -45,7 +45,9 @@ async function patchApi(path, options = {}) {
 
 async function fetchPatchedPreferredWeightUnit() {
     try {
-        const data = await patchApi("/api/app/bootstrap", { cache: "no-store" });
+        const data = await patchApi("/api/app/bootstrap", {
+            cache: "no-store",
+        });
         return savedWeightUnit(data.profile?.preferred_weight_unit);
     } catch {
         return null;
@@ -173,9 +175,12 @@ document.addEventListener(
         const action = button.dataset.action;
         if (
             !action ||
-            !["edit-meal", "duplicate-meal", "add-water", "add-weight"].includes(
-                action,
-            )
+            ![
+                "edit-meal",
+                "duplicate-meal",
+                "add-water",
+                "add-weight",
+            ].includes(action)
         ) {
             return;
         }
@@ -195,14 +200,20 @@ document.addEventListener(
         if (action === "duplicate-meal") {
             const id = button.dataset.id || "";
             try {
-                await patchApi(`/api/app/meals/${encodeURIComponent(id)}/copy`, {
-                    method: "POST",
-                    body: "{}",
-                });
+                await patchApi(
+                    `/api/app/meals/${encodeURIComponent(id)}/copy`,
+                    {
+                        method: "POST",
+                        body: "{}",
+                    },
+                );
                 patchToast("Meal duplicated with its original food sources.");
                 refreshCurrentView();
             } catch (error) {
-                patchToast(error.message || "Could not duplicate meal", "error");
+                patchToast(
+                    error.message || "Could not duplicate meal",
+                    "error",
+                );
             }
             return;
         }

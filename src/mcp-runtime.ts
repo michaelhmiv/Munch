@@ -63,7 +63,10 @@ async function buildMunchMcpServer(
         resolveMunchCapabilities(userId),
     ]);
     const drinkUnit = preferredDrinkUnitFromProfile(profile);
-    const structuredLegacyServer = withCanonicalStructuredLogMeal(server, userId);
+    const structuredLegacyServer = withCanonicalStructuredLogMeal(
+        server,
+        userId,
+    );
     registerTools(
         structuredLegacyServer,
         userId,

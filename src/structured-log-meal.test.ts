@@ -6,8 +6,8 @@ import { withCanonicalStructuredLogMeal } from "./structured-log-meal.js";
 describe("canonical structured log_meal adapter", () => {
     test("extends log_meal while preserving aggregate compatibility", async () => {
         let capturedConfig: Record<string, any> | null = null;
-        let capturedHandler: ((args: Record<string, any>) => Promise<any>) | null =
-            null;
+        let capturedHandler:
+            ((args: Record<string, any>) => Promise<any>) | null = null;
         let legacyCalls = 0;
         const fakeServer = {
             registerTool(

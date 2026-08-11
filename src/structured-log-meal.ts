@@ -166,9 +166,9 @@ export function withCanonicalStructuredLogMeal(
     server: McpServer,
     userId: string,
 ): McpServer {
-    const originalRegisterTool = (server as unknown as ToolServer).registerTool.bind(
-        server,
-    );
+    const originalRegisterTool = (
+        server as unknown as ToolServer
+    ).registerTool.bind(server);
 
     return new Proxy(server, {
         get(target, property) {
@@ -176,10 +176,16 @@ export function withCanonicalStructuredLogMeal(
                 return (
                     name: string,
                     config: Record<string, any>,
-                    legacyHandler: (args: Record<string, any>) => Promise<any> | any,
+                    legacyHandler: (
+                        args: Record<string, any>,
+                    ) => Promise<any> | any,
                 ) => {
                     if (name !== "log_meal") {
-                        return originalRegisterTool(name, config, legacyHandler);
+                        return originalRegisterTool(
+                            name,
+                            config,
+                            legacyHandler,
+                        );
                     }
 
                     const wrappedConfig = {
@@ -209,8 +215,7 @@ export function withCanonicalStructuredLogMeal(
                         wrappedConfig,
                         async (rawArgs: Record<string, any>) => {
                             const structuredArgs = rawArgs.items as
-                                | StructuredItemArgs[]
-                                | undefined;
+                                StructuredItemArgs[] | undefined;
                             if (!structuredArgs?.length) {
                                 console.info(
                                     "[meal_log] mode=legacy_aggregate reason=items_missing",
@@ -243,14 +248,17 @@ export function withCanonicalStructuredLogMeal(
                                     loggedAt,
                                 );
 
-                            const inserted = await insertStructuredMeal(userId, {
-                                mealType: rawArgs.meal_type,
-                                description: rawArgs.description,
-                                loggedAt,
-                                notes: rawArgs.notes,
-                                idempotencyKey,
-                                items,
-                            });
+                            const inserted = await insertStructuredMeal(
+                                userId,
+                                {
+                                    mealType: rawArgs.meal_type,
+                                    description: rawArgs.description,
+                                    loggedAt,
+                                    notes: rawArgs.notes,
+                                    idempotencyKey,
+                                    items,
+                                },
+                            );
 
                             const result = await legacyHandler({
                                 ...legacyInput,
@@ -264,15 +272,22 @@ export function withCanonicalStructuredLogMeal(
                             if (result?.structuredContent) {
                                 result.structuredContent = {
                                     ...result.structuredContent,
-                                    meal_items: inserted.meal.items.map(
-                                        serializeMealItem,
-                                    ),
+                                    meal_items:
+                                        inserted.meal.items.map(
+                                            serializeMealItem,
+                                        ),
                                 };
                             }
 
-                            if (!inserted.deduplicated && Array.isArray(result?.content)) {
+                            if (
+                                !inserted.deduplicated &&
+                                Array.isArray(result?.content)
+                            ) {
                                 for (const item of result.content) {
-                                    if (item?.type === "text" && typeof item.text === "string") {
+                                    if (
+                                        item?.type === "text" &&
+                                        typeof item.text === "string"
+                                    ) {
                                         item.text = item.text.replace(
                                             /^Meal already logged \(idempotent retry\):/,
                                             "Meal logged:",

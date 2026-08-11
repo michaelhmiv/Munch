@@ -150,7 +150,8 @@
                     return item.provider
                         ? `External · ${item.provider.replaceAll("_", " ")}`
                         : "External source";
-                if (item.source_type === "user_supplied") return "Provided data";
+                if (item.source_type === "user_supplied")
+                    return "Provided data";
                 return item.provider || "Recorded source";
             }
             function itemRows(items) {

@@ -2,11 +2,8 @@
 
 const { consumeLoginChallenge, createLoginChallenge } =
     await import("../src/accounts/repository.js");
-const {
-    copyMeal,
-    deleteStructuredMealItem,
-    updateStructuredMealItem,
-} = await import("../src/app/meal-mutations.js");
+const { copyMeal, deleteStructuredMealItem, updateStructuredMealItem } =
+    await import("../src/app/meal-mutations.js");
 const { getStructuredMeal, insertStructuredMeal } =
     await import("../src/structured-meals/repository.js");
 const { closePlatformDatabase } = await import("../src/platform/database.js");

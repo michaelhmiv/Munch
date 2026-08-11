@@ -207,8 +207,15 @@ export function createAppRouter(): Hono {
     app.patch("/api/app/meals/:id", requireSameOrigin, async (c) => {
         const body = (await c.req.json()) as Record<string, unknown>;
         const userId = c.get("munchUserId");
-        if (STRUCTURED_NUTRIENT_FIELDS.some((field) => body[field] !== undefined)) {
-            const structured = await getStructuredMeal(userId, c.req.param("id")!);
+        if (
+            STRUCTURED_NUTRIENT_FIELDS.some(
+                (field) => body[field] !== undefined,
+            )
+        ) {
+            const structured = await getStructuredMeal(
+                userId,
+                c.req.param("id")!,
+            );
             if (structured?.items.length) {
                 throw new Error(
                     "Structured meal nutrition must be edited by item",
@@ -312,14 +319,18 @@ export function createAppRouter(): Hono {
 
     app.post("/api/app/meals/:id/copy", requireSameOrigin, async (c) => {
         const body = (await c.req.json()) as Record<string, unknown>;
-        const copied = await copyMeal(c.get("munchUserId"), c.req.param("id")!, {
-            ...(typeof body.logged_at === "string"
-                ? { loggedAt: body.logged_at }
-                : {}),
-            ...(body.meal_type !== undefined
-                ? { mealType: mealType(body.meal_type) }
-                : {}),
-        });
+        const copied = await copyMeal(
+            c.get("munchUserId"),
+            c.req.param("id")!,
+            {
+                ...(typeof body.logged_at === "string"
+                    ? { loggedAt: body.logged_at }
+                    : {}),
+                ...(body.meal_type !== undefined
+                    ? { mealType: mealType(body.meal_type) }
+                    : {}),
+            },
+        );
         return privateJson(c, copied);
     });
 

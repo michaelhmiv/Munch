@@ -29,7 +29,10 @@ function fallbackGuidance(result: any): {
     }
 
     const confidence = Number(top.confidence ?? 0);
-    if (!Number.isFinite(confidence) || confidence < ADEQUATE_DATABASE_CONFIDENCE) {
+    if (
+        !Number.isFinite(confidence) ||
+        confidence < ADEQUATE_DATABASE_CONFIDENCE
+    ) {
         return {
             text: `The best Munch database candidate is below the normal acceptance threshold (${Number.isFinite(confidence) ? confidence.toFixed(2) : "unknown"} confidence). If brand/product identity matters, use external web search before estimating.`,
             externalFallbackRecommended: true,
@@ -51,9 +54,9 @@ function fallbackGuidance(result: any): {
  * whether leaving that pipeline for the open web is justified.
  */
 export function withCanonicalFoodSearch(server: McpServer): McpServer {
-    const originalRegisterTool = (server as unknown as ToolServer).registerTool.bind(
-        server,
-    );
+    const originalRegisterTool = (
+        server as unknown as ToolServer
+    ).registerTool.bind(server);
 
     return new Proxy(server, {
         get(target, property) {
