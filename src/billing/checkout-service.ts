@@ -7,7 +7,9 @@ import {
     createStripeCheckoutSession,
     createStripePortalSession,
     retrieveStripeCheckoutSession,
+    retrieveStripePrice,
     retrieveStripeSubscription,
+    type StripePrice,
     type StripeSubscription,
 } from "./stripe-client.js";
 
@@ -32,6 +34,15 @@ function optionalDate(timestamp: number | null | undefined): Date | null {
     return typeof timestamp === "number" && Number.isFinite(timestamp)
         ? new Date(timestamp * 1000)
         : null;
+}
+
+export function assertUsableSubscriptionPrice(price: StripePrice): void {
+    if (!price.active) {
+        throw new Error("Configured Stripe price is inactive");
+    }
+    if (price.type !== "recurring" || !price.recurring) {
+        throw new Error("Configured Stripe price is not recurring");
+    }
 }
 
 async function persistStripeSubscription(
@@ -73,6 +84,9 @@ export async function createCheckoutForUser(input: {
     }
 
     const config = getPlatformConfig();
+    const configuredPrice = await retrieveStripePrice(config.stripePriceId);
+    assertUsableSubscriptionPrice(configuredPrice);
+
     const successReturnTo = encodeURIComponent(
         safeLocalRedirectPath(input.successReturnTo, "/account"),
     );
@@ -83,7 +97,7 @@ export async function createCheckoutForUser(input: {
         userId: account.userId,
         customerId: account.stripeCustomerId,
         customerEmail: account.stripeCustomerId ? null : account.email,
-        priceId: config.stripePriceId,
+        priceId: configuredPrice.id,
         successUrl: `${config.appBaseUrl}/billing/success?session_id={CHECKOUT_SESSION_ID}&return_to=${successReturnTo}`,
         cancelUrl: `${config.appBaseUrl}/billing/canceled?return_to=${cancelReturnTo}`,
         pendingOAuthSessionId: input.pendingOAuthSessionId,
