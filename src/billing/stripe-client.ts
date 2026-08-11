@@ -8,6 +8,16 @@ interface StripeErrorEnvelope {
     };
 }
 
+export class StripeRequestError extends Error {
+    constructor(
+        public readonly code: string,
+        public readonly status: number,
+    ) {
+        super(`Stripe request failed: ${code}`);
+        this.name = "StripeRequestError";
+    }
+}
+
 export interface StripeCheckoutSession {
     id: string;
     url: string | null;
@@ -33,6 +43,17 @@ export interface StripeSubscription {
             price?: { id?: string };
         }>;
     };
+}
+
+export interface StripePrice {
+    id: string;
+    active: boolean;
+    livemode: boolean;
+    type: "one_time" | "recurring";
+    recurring: {
+        interval: string;
+        interval_count: number;
+    } | null;
 }
 
 export interface StripePortalSession {
@@ -79,9 +100,19 @@ async function stripeRequest<T>(
     if (!response.ok) {
         const code =
             payload.error?.code ?? payload.error?.type ?? "stripe_error";
-        throw new Error(`Stripe request failed: ${code}`);
+        throw new StripeRequestError(code, response.status);
     }
     return payload;
+}
+
+export async function retrieveStripePrice(priceId: string): Promise<StripePrice> {
+    if (!/^price_[A-Za-z0-9_]+$/.test(priceId)) {
+        throw new Error("STRIPE_PRICE_ID is missing or invalid");
+    }
+    return stripeRequest<StripePrice>(
+        `/prices/${encodeURIComponent(priceId)}`,
+        "GET",
+    );
 }
 
 export async function createStripeCheckoutSession(
