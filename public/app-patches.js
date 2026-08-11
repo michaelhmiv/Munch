@@ -1,3 +1,5 @@
+import { savedWeightUnit } from "./weight-display.js";
+
 const patchDialog = document.getElementById("app-dialog");
 
 function patchEscape(value) {
@@ -9,6 +11,21 @@ function patchEscape(value) {
         .replaceAll("'", "&#39;");
 }
 
+async function fetchPatchedPreferredWeightUnit() {
+    try {
+        const response = await fetch("/api/app/bootstrap", {
+            credentials: "same-origin",
+            headers: { Accept: "application/json" },
+            cache: "no-store",
+        });
+        if (!response.ok) return null;
+        const data = await response.json();
+        return savedWeightUnit(data.profile?.preferred_weight_unit);
+    } catch {
+        return null;
+    }
+}
+
 function showPatchedDialog(title, body) {
     patchDialog.innerHTML = `<div class="auth-card"><div class="panel-title"><h2 style="font-size:1.6rem">${patchEscape(title)}</h2><button class="button button-quiet button-small" type="button" data-patch-close aria-label="Close dialog">Close</button></div>${body}</div>`;
     patchDialog.showModal();
@@ -16,7 +33,7 @@ function showPatchedDialog(title, body) {
 
 document.addEventListener(
     "click",
-    (event) => {
+    async (event) => {
         const close = event.target.closest("[data-patch-close]");
         if (close) {
             event.preventDefault();
@@ -67,12 +84,10 @@ document.addEventListener(
             return;
         }
 
-        const preferredUnit =
-            document.querySelector("select[name='preferred_weight_unit']")
-                ?.value || "lb";
+        const preferredUnit = await fetchPatchedPreferredWeightUnit();
         showPatchedDialog(
             "Add weight",
-            `<form id="weight-form" class="auth-form"><label class="field"><span>Weight</span><input name="weight" type="number" min="1" step="0.1" inputmode="decimal" required /></label><label class="field"><span>Unit</span><select name="unit"><option value="lb" ${preferredUnit === "lb" ? "selected" : ""}>lb</option><option value="kg" ${preferredUnit === "kg" ? "selected" : ""}>kg</option></select></label><label class="field"><span>Notes</span><input name="notes" placeholder="Optional" /></label><button class="button button-primary" type="submit">Add weight</button></form>`,
+            `<form id="weight-form" class="auth-form"><label class="field"><span>Weight</span><input name="weight" type="number" min="1" step="0.1" inputmode="decimal" required /></label><label class="field"><span>Unit</span><select name="unit" required><option value="" disabled ${preferredUnit ? "" : "selected"}>Select unit</option><option value="lb" ${preferredUnit === "lb" ? "selected" : ""}>lb</option><option value="kg" ${preferredUnit === "kg" ? "selected" : ""}>kg</option></select></label><label class="field"><span>Notes</span><input name="notes" placeholder="Optional" /></label><button class="button button-primary" type="submit">Add weight</button></form>`,
         );
     },
     true,
