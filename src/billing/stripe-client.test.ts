@@ -116,7 +116,7 @@ describe("Stripe Checkout", () => {
         expect(price.type).toBe("recurring");
     });
 
-    test("preserves Stripe error codes for actionable checkout diagnostics", async () => {
+    test("preserves Stripe error details for actionable checkout diagnostics", async () => {
         process.env.STRIPE_SECRET_KEY = "sk_test_munch";
         globalThis.fetch = mock(
             async () =>
@@ -125,10 +125,16 @@ describe("Stripe Checkout", () => {
                         error: {
                             type: "invalid_request_error",
                             code: "resource_missing",
-                            message: "No such price",
+                            message: "No such customer",
+                            param: "customer",
+                            request_log_url:
+                                "https://dashboard.stripe.test/log/request",
                         },
                     }),
-                    { status: 404 },
+                    {
+                        status: 404,
+                        headers: { "request-id": "req_munch_test" },
+                    },
                 ),
         ) as unknown as typeof fetch;
 
@@ -137,8 +143,15 @@ describe("Stripe Checkout", () => {
             throw new Error("expected StripeRequestError");
         } catch (error) {
             expect(error).toBeInstanceOf(StripeRequestError);
-            expect((error as StripeRequestError).code).toBe("resource_missing");
-            expect((error as StripeRequestError).status).toBe(404);
+            const stripeError = error as StripeRequestError;
+            expect(stripeError.code).toBe("resource_missing");
+            expect(stripeError.status).toBe(404);
+            expect(stripeError.stripeMessage).toBe("No such customer");
+            expect(stripeError.param).toBe("customer");
+            expect(stripeError.requestId).toBe("req_munch_test");
+            expect(stripeError.requestLogUrl).toBe(
+                "https://dashboard.stripe.test/log/request",
+            );
         }
     });
 });

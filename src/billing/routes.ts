@@ -21,6 +21,19 @@ function checkoutFailureReason(error: unknown): string {
     return "unknown_error";
 }
 
+function logCheckoutFailure(error: unknown, reason: string): void {
+    if (error instanceof StripeRequestError) {
+        const message = error.stripeMessage
+            ?.replace(/[\r\n]+/g, " ")
+            .slice(0, 300);
+        console.error(
+            `[billing] checkout_failed reason=${reason} status=${error.status} code=${error.code} param=${error.param ?? "unknown"} request_id=${error.requestId ?? "unknown"}${message ? ` stripe_message=${JSON.stringify(message)}` : ""}`,
+        );
+        return;
+    }
+    console.error(`[billing] checkout_failed reason=${reason}`);
+}
+
 export function createBillingRouter(): Hono {
     const billing = new Hono();
 
@@ -71,7 +84,7 @@ export function createBillingRouter(): Hono {
                 return c.json(checkout);
             } catch (error) {
                 const reason = checkoutFailureReason(error);
-                console.error(`[billing] checkout_failed reason=${reason}`);
+                logCheckoutFailure(error, reason);
                 return c.json(
                     {
                         error: "billing_checkout_unavailable",

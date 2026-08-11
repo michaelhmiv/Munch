@@ -98,6 +98,19 @@ export async function upsertStripeCustomer(
     });
 }
 
+export async function deleteStripeCustomerIfMatches(
+    userId: string,
+    stripeCustomerId: string,
+): Promise<void> {
+    await withBillingDatabase(async (tx) => {
+        await tx`
+            delete from munch.stripe_customers
+            where user_id = ${userId}
+              and stripe_customer_id = ${stripeCustomerId}
+        `;
+    });
+}
+
 export async function findStripeCustomerId(
     userId: string,
 ): Promise<string | null> {
