@@ -146,9 +146,10 @@ export function summarizeNutritionProvenance(
                         ? 100
                         : 0
                     : Number(
-                          Math.min(100, (itemizedCalories / totalCalories) * 100).toFixed(
-                              1,
-                          ),
+                          Math.min(
+                              100,
+                              (itemizedCalories / totalCalories) * 100,
+                          ).toFixed(1),
                       ),
         },
         sources: [...sources.entries()]
@@ -159,7 +160,11 @@ export function summarizeNutritionProvenance(
                 percentOfItems:
                     items.length === 0
                         ? 0
-                        : Number(((value.itemCount / items.length) * 100).toFixed(1)),
+                        : Number(
+                              ((value.itemCount / items.length) * 100).toFixed(
+                                  1,
+                              ),
+                          ),
             }))
             .sort((left, right) => right.itemCount - left.itemCount),
         confidence: {
@@ -169,8 +174,10 @@ export function summarizeNutritionProvenance(
                     ? null
                     : Number(
                           (
-                              confidences.reduce((sum, value) => sum + value, 0) /
-                              confidences.length
+                              confidences.reduce(
+                                  (sum, value) => sum + value,
+                                  0,
+                              ) / confidences.length
                           ).toFixed(3),
                       ),
             highConfidenceItemCount,

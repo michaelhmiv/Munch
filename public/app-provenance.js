@@ -37,7 +37,12 @@ function contributorRows(values, nutrient) {
     if (!values?.length) {
         return `<div class="empty-state"><div><h3>No item-level values</h3><p>This nutrient has no structured contributors in the selected audit window.</p></div></div>`;
     }
-    const unit = nutrient === "calories" ? "kcal" : nutrient === "sodium_mg" ? "mg" : "g";
+    const unit =
+        nutrient === "calories"
+            ? "kcal"
+            : nutrient === "sodium_mg"
+              ? "mg"
+              : "g";
     return `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Food</th><th>Source</th><th>Contribution</th></tr></thead><tbody>${values
         .map(
             (entry) =>
@@ -88,7 +93,8 @@ async function loadProvenance() {
         });
         if (!response.ok) return;
         const data = await response.json();
-        if (token !== renderToken || title.textContent?.trim() !== "Insights") return;
+        if (token !== renderToken || title.textContent?.trim() !== "Insights")
+            return;
         const grid = content.querySelector(".dashboard-grid");
         if (!grid || document.getElementById("provenance-insights")) return;
         grid.insertAdjacentHTML("beforeend", provenanceMarkup(data));
@@ -109,17 +115,27 @@ document.addEventListener("click", (event) => {
     section
         .querySelectorAll("[data-provenance-nutrient]")
         .forEach((candidate) => {
-            candidate.classList.toggle("button-secondary", candidate === button);
+            candidate.classList.toggle(
+                "button-secondary",
+                candidate === button,
+            );
             candidate.classList.toggle("button-quiet", candidate !== button);
         });
     const target = document.getElementById("provenance-contributors");
-    if (target) target.innerHTML = contributorRows(data.contributors?.[nutrient], nutrient);
+    if (target)
+        target.innerHTML = contributorRows(
+            data.contributors?.[nutrient],
+            nutrient,
+        );
 });
 
 if (content) {
-    new MutationObserver(() => queueMicrotask(loadProvenance)).observe(content, {
-        childList: true,
-        subtree: true,
-    });
+    new MutationObserver(() => queueMicrotask(loadProvenance)).observe(
+        content,
+        {
+            childList: true,
+            subtree: true,
+        },
+    );
 }
 queueMicrotask(loadProvenance);

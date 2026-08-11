@@ -18,7 +18,9 @@ function nullable(value: number | undefined): number | null {
 }
 
 function serializeItem(
-    item: NonNullable<Awaited<ReturnType<typeof getStructuredMeal>>>["items"][number],
+    item: NonNullable<
+        Awaited<ReturnType<typeof getStructuredMeal>>
+    >["items"][number],
 ) {
     return {
         id: item.id,
@@ -69,7 +71,10 @@ function rangeDays(startDate: string, endDate: string): number {
     );
 }
 
-export function registerMealDetailTools(server: McpServer, userId: string): void {
+export function registerMealDetailTools(
+    server: McpServer,
+    userId: string,
+): void {
     const toolServer = server as unknown as ToolServer;
 
     toolServer.registerTool(
@@ -163,7 +168,8 @@ export function registerMealDetailTools(server: McpServer, userId: string): void
         async ({ start_date, end_date }) => {
             const timezone = await getUserTimezone(userId);
             const resolvedEnd = end_date ?? todayInTz(timezone);
-            const resolvedStart = start_date ?? shiftLocalDate(resolvedEnd, -29);
+            const resolvedStart =
+                start_date ?? shiftLocalDate(resolvedEnd, -29);
             if (!validDate(resolvedStart) || !validDate(resolvedEnd)) {
                 throw new Error("Dates must use YYYY-MM-DD");
             }
@@ -226,10 +232,7 @@ export function registerMealDetailTools(server: McpServer, userId: string): void
             };
             const sources = analysis.sources.length
                 ? analysis.sources
-                      .map(
-                          (source) =>
-                              `${source.source}: ${source.itemCount}`,
-                      )
+                      .map((source) => `${source.source}: ${source.itemCount}`)
                       .join(", ")
                 : "no structured items";
             return {

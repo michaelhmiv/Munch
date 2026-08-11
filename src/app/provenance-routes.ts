@@ -5,7 +5,10 @@ import { getUserTimezone } from "../storage.js";
 import { shiftLocalDate, todayInTz } from "../tz.js";
 
 function validDate(value: string): boolean {
-    return /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(`${value}T00:00:00Z`));
+    return (
+        /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+        Number.isFinite(Date.parse(`${value}T00:00:00Z`))
+    );
 }
 
 function dayCount(startDate: string, endDate: string): number {
@@ -40,14 +43,10 @@ export function createProvenanceRouter(): Hono {
             endDate,
             timezone,
         );
-        return c.json(
-            { startDate, endDate, timezone, ...analysis },
-            200,
-            {
-                "Cache-Control": "private, no-store",
-                Pragma: "no-cache",
-            },
-        );
+        return c.json({ startDate, endDate, timezone, ...analysis }, 200, {
+            "Cache-Control": "private, no-store",
+            Pragma: "no-cache",
+        });
     });
 
     return router;

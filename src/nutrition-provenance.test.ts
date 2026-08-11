@@ -6,7 +6,8 @@ import {
 } from "./nutrition-provenance.js";
 
 function item(
-    partial: Partial<ProvenanceItem> & Pick<ProvenanceItem, "id" | "mealId" | "name">,
+    partial: Partial<ProvenanceItem> &
+        Pick<ProvenanceItem, "id" | "mealId" | "name">,
 ): ProvenanceItem {
     return {
         sourceType: "usda",

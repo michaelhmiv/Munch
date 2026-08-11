@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { createAccountRouter } from "./accounts/routes.js";
+import { createProvenanceRouter } from "./app/provenance-routes.js";
 import { createAppRouter } from "./app/routes.js";
 import { betterAuthIsEnabled } from "./auth/config.js";
 import { resolveMcpAuthMode } from "./auth/mcp-auth-mode.js";
@@ -107,6 +108,7 @@ registerBetterAuthRoutes(app);
 app.route("/", createAccountRouter());
 app.route("/", createBillingRouter());
 app.route("/", createAppRouter());
+app.route("/", createProvenanceRouter());
 
 if (!betterAuthEnabled && railwayAuthEnabled) {
     app.use("/token", async (c, next) => {
@@ -270,6 +272,12 @@ app.get("/app-overrides.css", async (c) =>
 );
 app.get("/app-patches.js", async (c) =>
     c.body(await Bun.file("./public/app-patches.js").text(), 200, {
+        "Content-Type": "text/javascript; charset=utf-8",
+        "Cache-Control": "no-cache",
+    }),
+);
+app.get("/app-provenance.js", async (c) =>
+    c.body(await Bun.file("./public/app-provenance.js").text(), 200, {
         "Content-Type": "text/javascript; charset=utf-8",
         "Cache-Control": "no-cache",
     }),

@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { requireWebSession } from "../accounts/session.js";
-import { getMealsByDate } from "../nutrition-platform/meals.js";
+import { getMealHistoryWorkspace } from "../app/repository.js";
 import { getProfile } from "../storage.js";
 import { todayInTz, validateTz } from "../tz.js";
 
@@ -53,6 +53,7 @@ function render(data){
   metrics.append(metric('Calories',meal.calories),metric('Protein',meal.protein_g,' g'),metric('Carbs',meal.carbs_g,' g'),metric('Fat',meal.fat_g,' g'));
   item.append(summary,metrics);
   if(meal.notes){const notes=document.createElement('small');notes.className='meal-notes';notes.textContent=meal.notes;item.append(notes)}
+  if(meal.items&&meal.items.length){const details=document.createElement('details');const ds=document.createElement('summary');ds.textContent=meal.items.length+' food'+(meal.items.length===1?'':'s')+' · source details';details.append(ds);const foods=document.createElement('ul');for(const food of meal.items){const row=document.createElement('li');const source=food.sourceType==='user_supplied'&&food.sourceSnapshot&&food.sourceSnapshot.resolution_layer==='external_web'?'external web':(food.provider||food.sourceType||'source recorded');row.textContent=food.name+(food.portionLabel?' · '+food.portionLabel:'')+(food.calories==null?'':' · '+food.calories+' kcal')+' · '+source;foods.append(row)}details.append(foods);item.append(details)}
   list.append(item);
  }
 }
@@ -114,16 +115,16 @@ export function createMealHistoryRouter(): Hono {
             });
         }
 
-        const meals = await getMealsByDate(
+        const workspace = await getMealHistoryWorkspace(
             c.get("munchUserId"),
             date,
-            timezone,
+            date,
         );
         return c.json(
             {
                 date,
-                timezone,
-                meals: meals.map(
+                timezone: workspace.timezone,
+                meals: workspace.meals.map(
                     ({ user_id: _userId, idempotency_key: _key, ...meal }) =>
                         meal,
                 ),
