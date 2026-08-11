@@ -7,8 +7,19 @@ import {
     createCustomerPortalForUser,
     verifyCheckoutForUser,
 } from "./checkout-service.js";
+import { StripeRequestError } from "./stripe-client.js";
 import { verifyStripeWebhookSignature } from "./stripe-webhook.js";
 import { processStripeWebhook } from "./webhook-service.js";
+
+function checkoutFailureReason(error: unknown): string {
+    if (error instanceof StripeRequestError) {
+        return `stripe_${error.code}`;
+    }
+    if (error instanceof Error) {
+        return error.message.replace(/\s+/g, "_").toLowerCase().slice(0, 120);
+    }
+    return "unknown_error";
+}
 
 export function createBillingRouter(): Hono {
     const billing = new Hono();
@@ -51,12 +62,24 @@ export function createBillingRouter(): Hono {
                 // An empty body is valid for ordinary account checkout.
             }
 
-            const checkout = await createCheckoutForUser({
-                userId: c.get("munchUserId"),
-                successReturnTo: returnTo,
-                cancelReturnTo: returnTo,
-            });
-            return c.json(checkout);
+            try {
+                const checkout = await createCheckoutForUser({
+                    userId: c.get("munchUserId"),
+                    successReturnTo: returnTo,
+                    cancelReturnTo: returnTo,
+                });
+                return c.json(checkout);
+            } catch (error) {
+                const reason = checkoutFailureReason(error);
+                console.error(`[billing] checkout_failed reason=${reason}`);
+                return c.json(
+                    {
+                        error: "billing_checkout_unavailable",
+                        reason,
+                    },
+                    503,
+                );
+            }
         },
     );
 
