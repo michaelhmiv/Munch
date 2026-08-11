@@ -1,5 +1,6 @@
 import { getActiveHouseholdContext } from "../households/repository.js";
 import type { SubscriptionSnapshot } from "./entitlements.js";
+import { getHouseholdSeatCoverage } from "./household-seats.js";
 import { hasActivePremiumOverride } from "./override.js";
 import { getSubscriptionSnapshot } from "./repository.js";
 
@@ -90,6 +91,22 @@ function applyPremiumOverride(
     };
 }
 
+function applyHouseholdPremium(
+    capabilities: MunchCapabilities,
+): MunchCapabilities {
+    return {
+        ...capabilities,
+        tier: "premium",
+        historyDays: null,
+        savedFoodLimit: null,
+        personalRecipesRead: true,
+        personalRecipesWrite: true,
+        personalPlanningRead: true,
+        personalPlanningWrite: true,
+        entitlementSource: "household_subscription",
+    };
+}
+
 export async function resolveMunchCapabilities(
     userId: string,
 ): Promise<MunchCapabilities> {
@@ -101,17 +118,28 @@ export async function resolveMunchCapabilities(
         ],
     );
     const direct = capabilitiesFromSubscription(directSubscription);
-    const result = explicitOverride ? applyPremiumOverride(direct) : direct;
+    let result = explicitOverride ? applyPremiumOverride(direct) : direct;
     if (!household) return result;
 
-    const ownerPremium =
-        household.ownerUserId === userId
-            ? result.tier === "premium"
-            : subscriptionProvidesPremium(
-                  await getSubscriptionSnapshot(household.ownerUserId),
-                  new Date(),
-              ) || (await hasActivePremiumOverride(household.ownerUserId));
-    const canEdit = household.role === "owner" || household.role === "member";
+    const coverage = await getHouseholdSeatCoverage({
+        ownerUserId: household.ownerUserId,
+        householdId: household.householdId,
+    });
+    const isOwner =
+        household.role === "owner" && household.ownerUserId === userId;
+    const inheritedPremium =
+        !isOwner && result.tier !== "premium" && coverage.covered;
+    if (inheritedPremium) {
+        result = applyHouseholdPremium(result);
+    }
+
+    const canEditRole = household.role === "owner" || household.role === "member";
+    // Explicit overrides exist for trusted review/test accounts and preserve
+    // their ability to exercise shared UI. Real paid households require both an
+    // active owner subscription and sufficient paid seat quantity.
+    const sharedBillingActive =
+        result.entitlementSource === "explicit_override" ||
+        (coverage.ownerHasBillablePremium && coverage.covered);
 
     return {
         ...result,
@@ -123,16 +151,13 @@ export async function resolveMunchCapabilities(
             displayName: household.displayName,
         },
         householdRead: true,
-        householdWrite: ownerPremium && canEdit,
-        householdManage:
-            ownerPremium &&
-            household.role === "owner" &&
-            household.ownerUserId === userId,
+        householdWrite: sharedBillingActive && canEditRole,
+        householdManage: sharedBillingActive && isOwner,
         entitlementSource:
-            result.tier === "premium"
-                ? result.entitlementSource
-                : ownerPremium
-                  ? "household_subscription"
+            result.entitlementSource === "household_subscription"
+                ? "household_subscription"
+                : result.tier === "premium"
+                  ? result.entitlementSource
                   : "retained_read_access",
     };
 }
