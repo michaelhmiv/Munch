@@ -5,6 +5,8 @@ interface StripeErrorEnvelope {
         type?: string;
         code?: string;
         message?: string;
+        param?: string;
+        request_log_url?: string;
     };
 }
 
@@ -12,6 +14,10 @@ export class StripeRequestError extends Error {
     constructor(
         public readonly code: string,
         public readonly status: number,
+        public readonly stripeMessage?: string,
+        public readonly param?: string,
+        public readonly requestId?: string,
+        public readonly requestLogUrl?: string,
     ) {
         super(`Stripe request failed: ${code}`);
         this.name = "StripeRequestError";
@@ -100,7 +106,14 @@ async function stripeRequest<T>(
     if (!response.ok) {
         const code =
             payload.error?.code ?? payload.error?.type ?? "stripe_error";
-        throw new StripeRequestError(code, response.status);
+        throw new StripeRequestError(
+            code,
+            response.status,
+            payload.error?.message,
+            payload.error?.param,
+            response.headers.get("request-id") ?? undefined,
+            payload.error?.request_log_url,
+        );
     }
     return payload;
 }
