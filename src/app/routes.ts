@@ -147,6 +147,15 @@ export function createAppRouter(): Hono {
         ),
     );
 
+    app.get("/api/app/meals/:id", async (c) => {
+        const meal = await getStructuredMeal(
+            c.get("munchUserId"),
+            c.req.param("id")!,
+        );
+        if (!meal) throw new Error("Meal not found");
+        return privateJson(c, { meal });
+    });
+
     app.get("/api/app/foods", async (c) =>
         privateJson(c, await getFoodsWorkspace(c.get("munchUserId"))),
     );
@@ -214,37 +223,25 @@ export function createAppRouter(): Hono {
                 ? { meal_type: mealType(body.meal_type) }
                 : {}),
             ...(body.calories !== undefined
-                ? {
-                      calories: numberOrNull(body.calories) ?? undefined,
-                  }
+                ? { calories: numberOrNull(body.calories) ?? undefined }
                 : {}),
             ...(body.protein_g !== undefined
-                ? {
-                      protein_g: numberOrNull(body.protein_g) ?? undefined,
-                  }
+                ? { protein_g: numberOrNull(body.protein_g) ?? undefined }
                 : {}),
             ...(body.carbs_g !== undefined
-                ? {
-                      carbs_g: numberOrNull(body.carbs_g) ?? undefined,
-                  }
+                ? { carbs_g: numberOrNull(body.carbs_g) ?? undefined }
                 : {}),
             ...(body.fat_g !== undefined
                 ? { fat_g: numberOrNull(body.fat_g) ?? undefined }
                 : {}),
             ...(body.fiber_g !== undefined
-                ? {
-                      fiber_g: numberOrNull(body.fiber_g) ?? undefined,
-                  }
+                ? { fiber_g: numberOrNull(body.fiber_g) ?? undefined }
                 : {}),
             ...(body.sugar_g !== undefined
-                ? {
-                      sugar_g: numberOrNull(body.sugar_g) ?? undefined,
-                  }
+                ? { sugar_g: numberOrNull(body.sugar_g) ?? undefined }
                 : {}),
             ...(body.alcohol_g !== undefined
-                ? {
-                      alcohol_g: numberOrNull(body.alcohol_g) ?? undefined,
-                  }
+                ? { alcohol_g: numberOrNull(body.alcohol_g) ?? undefined }
                 : {}),
             ...(typeof body.logged_at === "string"
                 ? { logged_at: body.logged_at }
