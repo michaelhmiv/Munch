@@ -5,10 +5,11 @@ def replace(path: str, old: str, new: str) -> None:
     file = Path(path)
     text = file.read_text()
     if old not in text:
-        raise SystemExit(f"anchor missing in {path}: {old[:100]!r}")
+        raise SystemExit(f"anchor missing in {path}: {old[:120]!r}")
     file.write_text(text.replace(old, new, 1))
 
 
+# MCP read-side audit tools.
 replace(
     "src/mcp-runtime.ts",
     'import { registerMealDraftTools } from "./meal-draft-tools.js";\n',
@@ -20,6 +21,7 @@ replace(
     "    registerSavedFoodTools(server, userId, capabilities);\n    registerMealDetailTools(server, userId);\n    registerMealReviewTools(server, userId);\n",
 )
 
+# Website provenance endpoint/module.
 replace(
     "src/index.ts",
     'import { createAppRouter } from "./app/routes.js";\n',
@@ -59,6 +61,7 @@ replace(
     '        <script type="module" src="/app-patches.js"></script>\n        <script type="module" src="/app-provenance.js"></script>\n',
 )
 
+# Legacy portal now uses the item-aware app repository and can show source details.
 replace(
     "src/portal/meal-history.ts",
     'import { getMealsByDate } from "../nutrition-platform/meals.js";\n',
@@ -103,6 +106,7 @@ replace(
     "  if(meal.notes){const notes=document.createElement('small');notes.className='meal-notes';notes.textContent=meal.notes;item.append(notes)}\n  if(meal.items&&meal.items.length){const details=document.createElement('details');const ds=document.createElement('summary');ds.textContent=meal.items.length+' food'+(meal.items.length===1?'':'s')+' · source details';details.append(ds);const foods=document.createElement('ul');for(const food of meal.items){const row=document.createElement('li');const source=food.sourceType==='user_supplied'&&food.sourceSnapshot&&food.sourceSnapshot.resolution_layer==='external_web'?'external web':(food.provider||food.sourceType||'source recorded');row.textContent=food.name+(food.portionLabel?' · '+food.portionLabel:'')+(food.calories==null?'':' · '+food.calories+' kcal')+' · '+source;foods.append(row)}details.append(foods);item.append(details)}\n  list.append(item);\n",
 )
 
+# Structured item corrections retain an audit trail and support adding food.
 replace(
     "src/app/meal-mutations.ts",
     'import {\n    getStructuredMeal,\n    insertStructuredMeal,\n} from "../structured-meals/repository.js";\n',
@@ -164,6 +168,7 @@ replace(
             where id = ${itemId}
 ''',
 )
+
 add_function = r'''
 export async function addStructuredMealItem(
     userId: string,
@@ -237,6 +242,7 @@ replace(
     add_function + "export async function deleteStructuredMealItem(\n",
 )
 
+# Web API validation and add-item route.
 replace(
     "src/app/routes.ts",
     "    copyMeal,\n    deleteStructuredMealItem,\n",
@@ -341,6 +347,7 @@ replace(
     post_route + '    app.delete(\n        "/api/app/meals/:mealId/items/:itemId",\n',
 )
 
+# Website editor: editable identity and a manual add-food flow.
 replace(
     "public/app-patches.js",
     '                <div class="summary-grid" style="grid-template-columns:repeat(2,minmax(0,1fr))">\n                    <label class="field"><span>Quantity</span>',
@@ -421,31 +428,4 @@ replace(
                 : {}),
             ...(values.quantity !== "" ? { quantity: values.quantity } : {}),
 ''',
-)
-
-replace(
-    "scripts/structured-meal-smoke.ts",
-    "import {\n    copyMeal,\n",
-    "import {\n    addStructuredMealItem,\n    copyMeal,\n",
-)
-smoke = r'''
-    const added = await addStructuredMealItem(userA, meal.id, {
-        name: "Added salad",
-        quantity: 1,
-        portionLabel: "1 bowl",
-        nutrients: { calories: 80, protein_g: 3, carbs_g: 12, fat_g: 2 },
-        sourceType: "user_supplied",
-        provider: "user_correction",
-        confidence: 1,
-        assumptions: ["Added in website editor"],
-        sourceSnapshot: { resolution_layer: "website_manual_add" },
-    });
-    assert.equal(added.items.length, 3);
-    assert.equal(added.calories, 490);
-
-'''
-replace(
-    "scripts/structured-meal-smoke.ts",
-    "    const copied = await copyMeal(userA, meal.id, {\n",
-    smoke + "    const copied = await copyMeal(userA, meal.id, {\n",
 )
