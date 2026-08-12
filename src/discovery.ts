@@ -134,6 +134,15 @@ export function registerDiscoveryRoutes(app: Hono): void {
                 "public, max-age=15, stale-while-revalidate=15, stale-if-error=86400",
         });
 
+    app.get("/.well-known/openai-apps-challenge", (c) => {
+        const challenge = process.env.OPENAI_APPS_CHALLENGE?.trim();
+        if (!challenge) return c.notFound();
+        return c.text(challenge, 200, {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Cache-Control": "no-store",
+        });
+    });
+
     app.get(
         "/.well-known/oauth-protected-resource",
         protectedResource((baseUrl) => baseUrl),
