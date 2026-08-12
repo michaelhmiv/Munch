@@ -164,8 +164,7 @@ export function verifyOAuthConsentCsrfToken(
     const parts = token.split(".");
     if (parts.length !== 7 || parts[0] !== "v1") return false;
 
-    const [, expiry, userId, clientId, scope, oauthQuery, signature] =
-        parts;
+    const [, expiry, userId, clientId, scope, oauthQuery, signature] = parts;
     const payload = parts.slice(0, -1).join(".");
     if (!safeEqual(signature, signCsrfPayload(payload))) return false;
 
