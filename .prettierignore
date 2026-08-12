@@ -19,10 +19,3 @@ scripts/certification/public.ts
 
 # Local Claude Code state — untracked, not ours to format.
 .claude/
-
-# Temporary capture list used only by the progressive-density branch while the
-# CI runner emits the repository-exact Prettier output. Removed before merge.
-public/app.html
-public/widgets/src/templates/meal-logged.html
-src/ui-density.test.ts
-src/format-density-output.test.ts
