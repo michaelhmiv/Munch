@@ -210,17 +210,18 @@ if (consentPage.status !== 200) {
 const oauthQuery = hiddenValue(consentHtml, "oauth_query");
 const scope = hiddenValue(consentHtml, "scope");
 const clientId = hiddenValue(consentHtml, "client_id");
+const csrfToken = hiddenValue(consentHtml, "csrf_token");
 const consent = await app.request("https://munch.example/connect/consent", {
     method: "POST",
     headers: {
         cookie,
-        origin: "https://munch.example",
         "content-type": "application/x-www-form-urlencoded",
     },
     body: new URLSearchParams({
         client_id: clientId,
         scope,
         oauth_query: oauthQuery,
+        csrf_token: csrfToken,
         decision: "approve",
     }),
     redirect: "manual",
