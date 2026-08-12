@@ -165,6 +165,16 @@ export function verifyOAuthConsentCsrfToken(
     if (parts.length !== 7 || parts[0] !== "v1") return false;
 
     const [, expiry, userId, clientId, scope, oauthQuery, signature] = parts;
+    if (
+        !expiry ||
+        !userId ||
+        !clientId ||
+        !scope ||
+        !oauthQuery ||
+        !signature
+    ) {
+        return false;
+    }
     const payload = parts.slice(0, -1).join(".");
     if (!safeEqual(signature, signCsrfPayload(payload))) return false;
 
