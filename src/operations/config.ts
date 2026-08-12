@@ -118,6 +118,7 @@ export function configurationIssues(): ConfigurationIssue[] {
     requireValue(issues, "STRIPE_SECRET_KEY");
     requireValue(issues, "STRIPE_WEBHOOK_SECRET");
     requireValue(issues, "STRIPE_PRICE_ID");
+    requireValue(issues, "STRIPE_HOUSEHOLD_MEMBER_PRICE_ID");
     requireValue(issues, "OFF_USER_AGENT");
     requireValue(
         issues,
