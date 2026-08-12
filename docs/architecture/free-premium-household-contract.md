@@ -8,11 +8,21 @@ Every active account can connect through OAuth and use core food search, barcode
 
 ## Premium
 
-Premium is purchased independently on the Munch website. It adds unlimited personal history and saved foods, structured recipes, recipe nutrition arithmetic, meal calendars, grocery lists, and household sharing. Existing subscribers receive these capabilities automatically after authentication.
+Premium is purchased independently on the Munch website for $4.99 per month. It adds unlimited personal history and saved foods, structured recipes, recipe nutrition arithmetic, meal calendars, grocery lists, and household ownership. Existing direct subscribers receive these capabilities automatically after authentication.
 
-## Household
+## Paid household seats
 
-A directly entitled account may own one household with up to six connected accounts. Members share household recipes, planned meals, and grocery lists. Personal meal, hydration, and weight histories remain private. Shared objects retain the factual household display name recorded for an action when a non-owner account is later deleted.
+A directly paid Premium account may own one household with up to six connected accounts total: the owner plus up to five additional members. The owner is included in the $4.99 Premium price. Each active non-owner household membership adds one $2.00 per month recurring seat to the owner's Stripe subscription. Pending invitations are not billed; the seat is added, with Stripe proration, when an invitation is accepted.
+
+A paid household seat grants that member full Premium only while the member remains in the household and the owner's active subscription contains enough paid household seats to cover the active non-owner roster. A household seat is not a standalone $2 Premium plan. Leaving or being removed from the household ends household-provided Premium unless the member also has an independent active Premium entitlement.
+
+The household relationship is the eligibility condition for the discounted seat. Household recipes, planned meals, and grocery lists are therefore collaborative household resources and cannot be disabled while retaining household-seat pricing. Role differences may control whether a member can edit shared resources, but every active non-owner role consumes a paid seat.
+
+Personal meal, hydration, weight, goals, and other personal nutrition history remain private to each account. Shared objects retain the factual household display name recorded for an action when a non-owner account is later deleted.
+
+Stripe subscription-item quantities are persisted and reconciled from webhooks. Household-provided Premium fails closed if the active household roster exceeds the billed seat quantity or the owner's qualifying Premium subscription is no longer active. Shared records are retained rather than silently deleted when billing access ends.
+
+Paid household ownership is tied to the owner's Stripe subscription and is not transferred implicitly between billing customers. An owner who wants another person to become the billing owner must dissolve the household and the new owner can create a new household from their own directly paid Premium account.
 
 ## Model boundary
 

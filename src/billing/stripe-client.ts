@@ -34,6 +34,12 @@ export interface StripeCheckoutSession {
     client_reference_id: string | null;
 }
 
+export interface StripeSubscriptionItem {
+    id: string;
+    quantity?: number | null;
+    price?: { id?: string };
+}
+
 export interface StripeSubscription {
     id: string;
     customer: string;
@@ -45,9 +51,7 @@ export interface StripeSubscription {
     canceled_at?: number | null;
     metadata?: Record<string, string>;
     items?: {
-        data?: Array<{
-            price?: { id?: string };
-        }>;
+        data?: StripeSubscriptionItem[];
     };
 }
 
@@ -89,6 +93,7 @@ async function stripeRequest<T>(
     path: string,
     method: "GET" | "POST",
     parameters?: URLSearchParams,
+    idempotencyKey?: string,
 ): Promise<T> {
     const response = await fetch(`${STRIPE_API_BASE}${path}`, {
         method,
@@ -97,6 +102,7 @@ async function stripeRequest<T>(
             ...(method === "POST"
                 ? { "Content-Type": "application/x-www-form-urlencoded" }
                 : {}),
+            ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
         },
         body: method === "POST" ? parameters?.toString() : undefined,
         signal: AbortSignal.timeout(10_000),
@@ -193,6 +199,83 @@ export async function retrieveStripeSubscription(
     return stripeRequest<StripeSubscription>(
         `/subscriptions/${encodeURIComponent(subscriptionId)}`,
         "GET",
+    );
+}
+
+export function subscriptionItemQuantity(
+    subscription: StripeSubscription,
+    priceId: string,
+): number {
+    const item = subscription.items?.data?.find(
+        (candidate) => candidate.price?.id === priceId,
+    );
+    const quantity = Number(item?.quantity ?? 0);
+    return Number.isInteger(quantity) && quantity > 0 ? quantity : 0;
+}
+
+export async function setStripeSubscriptionItemQuantity(input: {
+    subscriptionId: string;
+    priceId: string;
+    quantity: number;
+    idempotencyKey: string;
+}): Promise<StripeSubscription> {
+    if (
+        !Number.isInteger(input.quantity) ||
+        input.quantity < 0 ||
+        input.quantity > 5
+    ) {
+        throw new Error("Household seat quantity must be between 0 and 5");
+    }
+    if (!/^price_[A-Za-z0-9_]+$/.test(input.priceId)) {
+        throw new Error(
+            "STRIPE_HOUSEHOLD_MEMBER_PRICE_ID is missing or invalid",
+        );
+    }
+    if (!input.idempotencyKey.trim()) {
+        throw new Error(
+            "Stripe subscription update requires an idempotency key",
+        );
+    }
+
+    const current = await retrieveStripeSubscription(input.subscriptionId);
+    const existingItem = current.items?.data?.find(
+        (candidate) => candidate.price?.id === input.priceId,
+    );
+    const currentQuantity = subscriptionItemQuantity(current, input.priceId);
+    if (currentQuantity === input.quantity) return current;
+
+    const body = new URLSearchParams();
+    body.set(
+        "proration_behavior",
+        input.quantity > currentQuantity
+            ? "always_invoice"
+            : "create_prorations",
+    );
+    // A paid seat is not considered provisioned unless Stripe can apply the
+    // subscription update. If an immediate upgrade invoice cannot be paid,
+    // Stripe returns an error and Munch leaves the membership unprovisioned.
+    body.set("payment_behavior", "error_if_incomplete");
+    body.set("off_session", "true");
+
+    if (existingItem?.id) {
+        body.set("items[0][id]", existingItem.id);
+        if (input.quantity === 0) {
+            body.set("items[0][deleted]", "true");
+        } else {
+            body.set("items[0][quantity]", String(input.quantity));
+        }
+    } else if (input.quantity > 0) {
+        body.set("items[0][price]", input.priceId);
+        body.set("items[0][quantity]", String(input.quantity));
+    } else {
+        return current;
+    }
+
+    return stripeRequest<StripeSubscription>(
+        `/subscriptions/${encodeURIComponent(input.subscriptionId)}`,
+        "POST",
+        body,
+        input.idempotencyKey,
     );
 }
 

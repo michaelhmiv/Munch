@@ -2,6 +2,7 @@ import type { SubscriptionStatus } from "./entitlements.js";
 import {
     markStripeWebhookProcessed,
     recordStripeWebhookEvent,
+    replaceSubscriptionItems,
     upsertStripeCustomer,
     upsertSubscription,
 } from "./repository.js";
@@ -28,6 +29,8 @@ interface StripeSubscriptionObject {
     metadata?: Record<string, string>;
     items?: {
         data?: Array<{
+            id?: string;
+            quantity?: number | null;
             price?: {
                 id?: string;
             };
@@ -146,12 +149,29 @@ async function processSubscription(
         status === "past_due"
             ? new Date((eventCreated + 3 * 24 * 60 * 60) * 1000)
             : null;
+    const items = (subscription.items?.data ?? [])
+        .filter(
+            (item) =>
+                typeof item.id === "string" &&
+                typeof item.price?.id === "string",
+        )
+        .map((item) => ({
+            stripeSubscriptionItemId: item.id as string,
+            stripePriceId: item.price?.id as string,
+            quantity: Math.max(0, Number(item.quantity ?? 0)),
+        }));
+    const premiumPriceId = process.env.STRIPE_PRICE_ID?.trim();
+    const primaryPriceId =
+        items.find((item) => item.stripePriceId === premiumPriceId)
+            ?.stripePriceId ??
+        items[0]?.stripePriceId ??
+        null;
 
     await upsertStripeCustomer(userId, subscription.customer);
     await upsertSubscription({
         userId,
         stripeSubscriptionId: subscription.id,
-        stripePriceId: subscription.items?.data?.[0]?.price?.id ?? null,
+        stripePriceId: primaryPriceId,
         status,
         currentPeriodStart: optionalDate(subscription.current_period_start),
         currentPeriodEnd: optionalDate(subscription.current_period_end),
@@ -160,6 +180,7 @@ async function processSubscription(
         canceledAt: optionalDate(subscription.canceled_at),
         graceExpiresAt,
     });
+    await replaceSubscriptionItems(subscription.id, items);
 }
 
 function processingErrorCode(error: unknown): string {

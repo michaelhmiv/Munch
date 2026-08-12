@@ -3,13 +3,20 @@
 process.env.MUNCH_RAILWAY_DATA_ENABLED = "true";
 process.env.MUNCH_RAILWAY_AUTH_ENABLED = "true";
 process.env.MUNCH_APP_BASE_URL = "https://munch.example";
+process.env.MUNCH_SESSION_SECRET =
+    "portal-smoke-session-secret-0123456789abcdef";
+process.env.STRIPE_SECRET_KEY = "sk_test_portal_smoke";
+process.env.STRIPE_WEBHOOK_SECRET = "whsec_portal_smoke";
+process.env.STRIPE_PRICE_ID = "price_portal_smoke";
+process.env.STRIPE_HOUSEHOLD_MEMBER_PRICE_ID = "price_household_portal_smoke";
 
 const { Hono } = await import("hono");
 const { createAccountRouter } = await import("../src/accounts/routes.js");
 const { consumeLoginChallenge, createLoginChallenge } =
     await import("../src/accounts/repository.js");
 const { MUNCH_SESSION_COOKIE } = await import("../src/accounts/session.js");
-const { upsertSubscription } = await import("../src/billing/repository.js");
+const { replaceSubscriptionItems, upsertSubscription } =
+    await import("../src/billing/repository.js");
 const {
     acceptHouseholdInvitation,
     createHousehold,
@@ -46,9 +53,10 @@ const owner = await createUser("portal-owner");
 const member = await createUser("portal-member");
 const userId = owner.userId;
 
+const stripeSubscriptionId = `sub_portal_${crypto.randomUUID().replaceAll("-", "")}`;
 await upsertSubscription({
     userId,
-    stripeSubscriptionId: `sub_portal_${crypto.randomUUID().replaceAll("-", "")}`,
+    stripeSubscriptionId,
     stripePriceId: "price_portal_smoke",
     status: "active",
     currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1_000),
@@ -69,6 +77,13 @@ await acceptHouseholdInvitation({
     token: invitation.rawToken,
     displayName: "Dad",
 });
+await replaceSubscriptionItems(stripeSubscriptionId, [
+    {
+        stripeSubscriptionItemId: "si_household_portal_smoke",
+        stripePriceId: "price_household_portal_smoke",
+        quantity: 1,
+    },
+]);
 
 const client = await registerOAuthClient({
     clientName: "Portal smoke client",
@@ -144,14 +159,23 @@ if (
     !portalHtml.includes(owner.email) ||
     !portalHtml.includes("Portal Household") ||
     !portalHtml.includes("Send invitation") ||
-    !portalHtml.includes("Transfer ownership") ||
+    !portalHtml.includes("Household billing") ||
+    !portalHtml.includes("$6.99/month") ||
+    !portalHtml.includes("+$2.00/month") ||
     !portalHtml.includes("Dissolve household") ||
     !portalHtml.includes("Export complete account data") ||
     !portalHtml.includes("Premium · ChatGPT access active") ||
     !portalHtml.includes('id="meal-history-card"') ||
     !portalHtml.includes("Zero-calorie entries are included")
 ) {
-    throw new Error("Portal HTML omitted account, household, or meal controls");
+    throw new Error(
+        "Portal HTML omitted account, paid household, or meal controls",
+    );
+}
+if (portalHtml.includes("Transfer ownership")) {
+    throw new Error(
+        "Paid household portal exposed unsupported ownership transfer",
+    );
 }
 if (portalResponse.headers.get("cache-control") !== "private, no-store") {
     throw new Error("Portal response was cacheable");

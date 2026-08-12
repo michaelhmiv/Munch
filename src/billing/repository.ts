@@ -18,6 +18,17 @@ export interface StripeSubscriptionRecord {
     graceExpiresAt?: Date | null;
 }
 
+export interface StripeSubscriptionItemRecord {
+    stripeSubscriptionItemId: string;
+    stripePriceId: string;
+    quantity: number;
+}
+
+export interface LatestStripeSubscriptionRecord extends SubscriptionSnapshot {
+    stripeSubscriptionId: string;
+    stripePriceId: string | null;
+}
+
 // Claim a Stripe event for processing. A successfully processed event is a
 // duplicate and returns false. A previously failed event remains unprocessed and
 // can be claimed again when Stripe retries it. The stored digest must match so a
@@ -167,18 +178,69 @@ export async function upsertSubscription(
     });
 }
 
-export async function getSubscriptionSnapshot(
+export async function replaceSubscriptionItems(
+    stripeSubscriptionId: string,
+    items: StripeSubscriptionItemRecord[],
+): Promise<void> {
+    await withBillingDatabase(async (tx) => {
+        await tx`
+            delete from munch.subscription_items
+            where stripe_subscription_id = ${stripeSubscriptionId}
+        `;
+        for (const item of items) {
+            if (!item.stripeSubscriptionItemId || !item.stripePriceId) continue;
+            const quantity = Number.isInteger(item.quantity)
+                ? Math.max(0, item.quantity)
+                : 0;
+            await tx`
+                insert into munch.subscription_items (
+                    stripe_subscription_item_id,
+                    stripe_subscription_id,
+                    stripe_price_id,
+                    quantity
+                ) values (
+                    ${item.stripeSubscriptionItemId},
+                    ${stripeSubscriptionId},
+                    ${item.stripePriceId},
+                    ${quantity}
+                )
+            `;
+        }
+    });
+}
+
+export async function getSubscriptionItemQuantity(
+    stripeSubscriptionId: string,
+    stripePriceId: string,
+): Promise<number> {
+    return withBillingDatabase(async (tx) => {
+        const rows = await tx<Array<{ quantity: number }>>`
+            select quantity
+            from munch.subscription_items
+            where stripe_subscription_id = ${stripeSubscriptionId}
+              and stripe_price_id = ${stripePriceId}
+            limit 1
+        `;
+        return Number(rows[0]?.quantity ?? 0);
+    });
+}
+
+export async function getLatestStripeSubscriptionRecord(
     userId: string,
-): Promise<SubscriptionSnapshot> {
+): Promise<LatestStripeSubscriptionRecord | null> {
     return withBillingDatabase(async (tx) => {
         const rows = await tx<
             Array<{
+                stripe_subscription_id: string;
+                stripe_price_id: string | null;
                 status: SubscriptionStatus;
                 current_period_end: Date | null;
                 grace_expires_at: Date | null;
             }>
         >`
             select
+                stripe_subscription_id,
+                stripe_price_id,
                 status::text as status,
                 current_period_end,
                 grace_expires_at
@@ -190,10 +252,25 @@ export async function getSubscriptionSnapshot(
         const row = rows[0];
         return row
             ? {
+                  stripeSubscriptionId: row.stripe_subscription_id,
+                  stripePriceId: row.stripe_price_id,
                   status: row.status,
                   currentPeriodEnd: row.current_period_end,
                   graceExpiresAt: row.grace_expires_at,
               }
-            : { status: null };
+            : null;
     });
+}
+
+export async function getSubscriptionSnapshot(
+    userId: string,
+): Promise<SubscriptionSnapshot> {
+    const record = await getLatestStripeSubscriptionRecord(userId);
+    return record
+        ? {
+              status: record.status,
+              currentPeriodEnd: record.currentPeriodEnd,
+              graceExpiresAt: record.graceExpiresAt,
+          }
+        : { status: null };
 }

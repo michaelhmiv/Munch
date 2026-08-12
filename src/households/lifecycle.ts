@@ -1,6 +1,11 @@
 import { withAuthDatabase, withUserDatabase } from "../platform/database.js";
 import { getActiveHouseholdContext } from "./repository.js";
 
+// Kept as a trusted repository primitive for migration/test tooling. Paid
+// production households do not expose ownership transfer because changing the
+// billing owner would require moving an active Stripe subscription between two
+// customers. The public route rejects transfers and directs owners to dissolve
+// and recreate the household instead.
 export async function transferHouseholdOwnership(input: {
     userId: string;
     householdId: string;
@@ -81,7 +86,9 @@ export async function leaveHousehold(userId: string): Promise<boolean> {
     return withUserDatabase(userId, async (tx) => {
         const rows = await tx<Array<{ id: string }>>`
             update munch.household_memberships
-            set status = 'left', updated_at = now()
+            set status = 'left',
+                seat_release_reserved_at = null,
+                updated_at = now()
             where household_id = ${household.householdId}
               and user_id = ${userId}
               and status = 'active'

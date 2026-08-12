@@ -12,6 +12,7 @@ Object.assign(process.env, {
     STRIPE_SECRET_KEY: "sk_test_operations",
     STRIPE_WEBHOOK_SECRET: "whsec_operations",
     STRIPE_PRICE_ID: "price_operations",
+    STRIPE_HOUSEHOLD_MEMBER_PRICE_ID: "price_household_operations",
     OFF_USER_AGENT: "Munch operations smoke (test@example.com)",
     USDA_FDC_API_KEY: "operations-usda-key",
     MUNCH_DB_POOL_SIZE: "5",
