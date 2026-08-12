@@ -1,5 +1,8 @@
 import { Hono, type Context } from "hono";
-import { requireSameOrigin } from "../accounts/csrf.js";
+import {
+    createOAuthConsentCsrfToken,
+    requireSameOrigin,
+} from "../accounts/csrf.js";
 import { getMunchBetterAuth } from "./auth.js";
 import { safeMagicLinkReturnPath } from "./magic-link-url.js";
 import { describeOAuthScope } from "./oauth-scopes.js";
@@ -192,6 +195,13 @@ export function createBetterAuthConnectRouter(): Hono {
             );
         }
 
+        const csrfToken = createOAuthConsentCsrfToken({
+            userId: session.user.id,
+            clientId,
+            scope,
+            oauthQuery,
+        });
+
         let clientName = "ChatGPT or this MCP client";
         try {
             clientName = publicClientName(
@@ -219,46 +229,10 @@ export function createBetterAuthConnectRouter(): Hono {
             c,
             shell(
                 "Authorize Munch",
-                `<h1>Connect ${escapeHtml(clientName)}</h1><p>ChatGPT is requesting the permissions listed below. It does not receive unrelated ChatGPT conversations.</p><ul class="consent-scope-list">${scopeItems}</ul><form class="consent-actions" method="post" action="/connect/consent"><input type="hidden" name="client_id" value="${escapeHtml(clientId)}"><input type="hidden" name="scope" value="${escapeHtml(scope)}"><input type="hidden" name="oauth_query" value="${escapeHtml(oauthQuery)}"><button class="button button-primary" type="submit" name="decision" value="approve">Approve connection</button><button class="button button-quiet" type="submit" name="decision" value="deny">Deny</button></form><p class="auth-footnote">You can revoke this connection later from your Munch account.</p>`,
+                `<h1>Connect ${escapeHtml(clientName)}</h1><p>ChatGPT is requesting the permissions listed below. It does not receive unrelated ChatGPT conversations.</p><ul class="consent-scope-list">${scopeItems}</ul><form class="consent-actions" method="post" action="/connect/consent"><input type="hidden" name="client_id" value="${escapeHtml(clientId)}"><input type="hidden" name="scope" value="${escapeHtml(scope)}"><input type="hidden" name="oauth_query" value="${escapeHtml(oauthQuery)}"><input type="hidden" name="csrf_token" value="${escapeHtml(csrfToken)}"><button class="button button-primary" type="submit" name="decision" value="approve">Approve connection</button><button class="button button-quiet" type="submit" name="decision" value="deny">Deny</button></form><p class="auth-footnote">You can revoke this connection later from your Munch account.</p>`,
                 "Review permissions",
             ),
         );
-    });
-
-    connect.post("/connect/consent", requireSameOrigin, async (c) => {
-        const body = await c.req.parseBody();
-        const clientId =
-            typeof body.client_id === "string" ? body.client_id : "";
-        const scope = typeof body.scope === "string" ? body.scope : "";
-        const oauthQuery = boundedOAuthQuery(body.oauth_query);
-        const accept = body.decision === "approve";
-        if (!clientId || !scope || !oauthQuery) {
-            return connectionError(c, "consent_submission");
-        }
-
-        const auth = getMunchBetterAuth();
-        let session;
-        try {
-            session = await auth.api.getSession({ headers: c.req.raw.headers });
-        } catch (error) {
-            return connectionError(c, "consent_post_session", error);
-        }
-        if (!session?.user) {
-            return c.redirect(
-                `/connect/sign-in?oauth_query=${encodeURIComponent(oauthQuery)}`,
-                303,
-            );
-        }
-
-        try {
-            return await auth.api.oauth2Consent({
-                headers: c.req.raw.headers,
-                body: { accept, scope, oauth_query: oauthQuery },
-                asResponse: true,
-            });
-        } catch (error) {
-            return connectionError(c, "oauth2_consent", error);
-        }
     });
 
     connect.get("/connect/error", (c) =>
