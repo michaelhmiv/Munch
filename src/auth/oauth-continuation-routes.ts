@@ -20,11 +20,7 @@ function consentAuthHeaders(c: Context): Headers | null {
         return headers;
     }
 
-    return requestOriginMatches(
-        origin,
-        configuredBaseUrl,
-        getBaseUrl(c),
-    )
+    return requestOriginMatches(origin, configuredBaseUrl, getBaseUrl(c))
         ? headers
         : null;
 }
@@ -120,15 +116,12 @@ export function createOAuthContinuationRouter(): Hono {
         }
 
         if (
-            !verifyOAuthConsentCsrfToken(
-                csrfToken,
-                {
-                    userId: session.user.id,
-                    clientId,
-                    scope,
-                    oauthQuery,
-                },
-            )
+            !verifyOAuthConsentCsrfToken(csrfToken, {
+                userId: session.user.id,
+                clientId,
+                scope,
+                oauthQuery,
+            })
         ) {
             return c.json({ error: "invalid_csrf_token" }, 403);
         }
@@ -157,4 +150,3 @@ export function createOAuthContinuationRouter(): Hono {
 
     return router;
 }
-
