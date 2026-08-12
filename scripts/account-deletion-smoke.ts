@@ -130,16 +130,21 @@ try {
         );
     }
 
-    const cancelled = await client.callTool({
+    // Destructive tools now enforce confirmation in the input schema itself.
+    // A false value must therefore be rejected before the handler runs, and the
+    // rejection must leave every persisted row untouched.
+    const rejected = await client.callTool({
         name: "delete_account",
         arguments: { confirm: false },
     });
-    if (!toolText(cancelled).includes("Account deletion cancelled")) {
-        throw new Error("delete_account did not honor confirm=false");
+    if ((rejected as { isError?: boolean }).isError !== true) {
+        throw new Error(
+            `delete_account accepted confirm=false instead of rejecting it: ${toolText(rejected)}`,
+        );
     }
-    const afterCancellation = await counts();
-    if (JSON.stringify(afterCancellation) !== JSON.stringify(initial)) {
-        throw new Error("Cancelled account deletion changed persisted data");
+    const afterRejection = await counts();
+    if (JSON.stringify(afterRejection) !== JSON.stringify(initial)) {
+        throw new Error("Rejected account deletion changed persisted data");
     }
 
     const deleted = await client.callTool({
@@ -176,7 +181,7 @@ try {
     }
 
     console.log(
-        "Munch delete_account MCP tool confirmation and disposable-account cascade smoke test passed.",
+        "Munch delete_account MCP schema confirmation and disposable-account cascade smoke test passed.",
     );
 } finally {
     console.warn = originalWarn;
