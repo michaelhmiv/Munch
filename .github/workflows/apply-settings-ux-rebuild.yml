@@ -1,0 +1,36 @@
+name: Apply settings UX rebuild
+
+on:
+  push:
+    branches:
+      - feat/settings-account-ux-rebuild
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore: apply unified settings UX') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/settings-account-ux-rebuild
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - name: Apply patches
+        run: bun scripts/apply-settings-ux-rebuild.ts
+      - name: Format changed sources
+        run: bunx prettier --write public/app.html public/app.js src/app/routes.ts src/app/repository.ts src/households/routes.ts src/households/repository.ts
+      - name: Remove temporary helper
+        run: rm scripts/apply-settings-ux-rebuild.ts .github/workflows/apply-settings-ux-rebuild.yml
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: apply unified settings UX"
+          git push origin HEAD:feat/settings-account-ux-rebuild
