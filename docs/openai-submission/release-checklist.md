@@ -6,6 +6,7 @@
 - [ ] Formatting, typecheck, tests, migrations, reviewer smoke tests, submission checks, and container build pass.
 - [ ] `chatgpt-app-submission.json` and `tool-inventory.md` are freshly generated.
 - [ ] Tool names, descriptions, input schemas, output schemas, and annotations match the intended production catalog.
+- [ ] Every tool declares an output schema; destructive tools require schema-enforced `confirm: true` input.
 - [ ] OAuth, MCP, widgets, and connection surfaces contain no pricing, checkout, or upgrade promotion.
 - [ ] No secrets or reviewer credentials are committed.
 

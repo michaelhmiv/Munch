@@ -81,6 +81,7 @@ import {
 import { normalizeBarcode, lookupBarcode, formatFoodResult } from "./foods.js";
 import { formatMealSearchResults } from "./search.js";
 import {
+    TEXT_OUTPUT_SCHEMA,
     WIDGET_RESOURCE_METADATA,
     widgetToolMeta,
 } from "./openai-submission.js";
@@ -1369,6 +1370,7 @@ export function registerTools(
             title: "Look Up Barcode",
             description:
                 "Look up a packaged product's label nutrition by barcode via Open Food Facts. The figures come from the product's own label as transcribed by the Open Food Facts community, so they beat estimating — but they are not verified by this server and can be wrong, stale, or missing entirely. Pass the barcode digits (EAN/UPC, 8–14 digits). The user can type them, or you can read them from a photo of the package — transcribe the human-readable digits printed beneath the barcode. Returns the product name, serving, and macros, which you can then pass to log_meal scaled to the amount eaten. If no product is found, fall back to web search or estimation.",
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -1437,6 +1439,7 @@ export function registerTools(
                 },
                 { userId },
                 { barcode },
+                { textOutput: true },
             );
         },
     );
@@ -1447,6 +1450,7 @@ export function registerTools(
             title: "Get Today's Meals",
             description: "Get all meals logged today",
             inputSchema: {},
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -1480,6 +1484,8 @@ export function registerTools(
                     return { content: [{ type: "text", text }] };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -1489,6 +1495,7 @@ export function registerTools(
         {
             title: "Get Meals by Date",
             description: "Get all meals for a specific date",
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -1538,6 +1545,7 @@ export function registerTools(
                 },
                 { userId },
                 { date },
+                { textOutput: true },
             );
         },
     );
@@ -1548,6 +1556,7 @@ export function registerTools(
             title: "Get Meals by Date Range",
             description:
                 "Get all meals between two dates (inclusive). Use this instead of multiple get_meals_by_date calls when you need meals for more than one day.",
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -1628,6 +1637,7 @@ export function registerTools(
                 },
                 { userId },
                 { start_date, end_date },
+                { textOutput: true },
             );
         },
     );
@@ -1638,6 +1648,7 @@ export function registerTools(
             title: "Search Past Meals",
             description:
                 "Search the user's past logged meals by keyword (case-insensitive match on description and notes), newest first, grouped into recurring variations with counts, last-logged date, and typical macros. Use this BEFORE logging a meal from a photo: past variations reveal ingredients that aren't visible in the picture (raisins vs banana, milk vs water, added honey or oil) — turn each difference between variations into a question for the user rather than picking one silently, and ask those questions one at a time across several turns instead of batching them. Also use it for requests like 'log my usual breakfast': search, interview the user to pin down the variation and the amount, then log_meal. For a restaurant meal, search the restaurant name as well as the dish — a past visit to the same venue is stronger evidence than anything on the web. Pass short food keywords, not full sentences, and include the food name in every language the user may have logged in — always add an English alternative alongside the conversation language, e.g. [\"вівсянка\", \"oatmeal\"].",
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -1716,6 +1727,7 @@ export function registerTools(
                 },
                 { userId },
                 { days: days ?? 365 },
+                { textOutput: true },
             );
         },
     );
@@ -2078,6 +2090,7 @@ export function registerTools(
             title: "Set Nutrition Goals",
             description:
                 "Set the user's daily calorie and macro targets, and optionally a target body weight. Pass only the fields you want to update — omitted fields keep their previous value. Pass null explicitly to clear a target. Calories, protein, carbs, fat, fiber and water are targets to REACH; sugar and alcohol are limits to STAY UNDER, and progress against them is worded accordingly. Targets are the user's own choice; this server does not provide medical or dietary advice.",
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: false,
                 destructiveHint: false,
@@ -2246,6 +2259,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -2257,6 +2272,7 @@ export function registerTools(
             description:
                 "Get the user's current daily calorie and macro targets.",
             inputSchema: {},
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -2282,6 +2298,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -2428,7 +2446,9 @@ export function registerTools(
         "delete_meal",
         {
             title: "Delete Meal",
-            description: "Delete a meal entry by ID",
+            description:
+                "Permanently delete a meal entry by ID. The input schema requires explicit user confirmation.",
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: false,
                 destructiveHint: true,
@@ -2437,6 +2457,11 @@ export function registerTools(
             },
             inputSchema: {
                 id: z.string().describe("UUID of the meal to delete"),
+                confirm: z
+                    .literal(true)
+                    .describe(
+                        "Must be true only after the user explicitly confirms permanent deletion.",
+                    ),
             },
         },
         async ({ id }) => {
@@ -2451,6 +2476,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -2544,6 +2571,7 @@ export function registerTools(
             title: "Log Water",
             description:
                 "Log a hydration entry in milliliters. If the user gives a volume in another unit (cups, oz, liters), convert it: 1 cup = 240 ml, 1 fl oz = 30 ml, 1 L = 1000 ml. If only 'a glass' is mentioned, ask for the size or assume 250 ml and confirm.",
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: false,
                 destructiveHint: false,
@@ -2597,6 +2625,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -2608,6 +2638,7 @@ export function registerTools(
             description:
                 "Get today's total water intake (ml) and the list of entries.",
             inputSchema: {},
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -2650,6 +2681,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -2660,6 +2693,7 @@ export function registerTools(
             title: "Get Water by Date",
             description:
                 "Get water intake total and entries for a specific date.",
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -2702,6 +2736,7 @@ export function registerTools(
                 },
                 { userId },
                 { date },
+                { textOutput: true },
             );
         },
     );
@@ -2710,7 +2745,9 @@ export function registerTools(
         "delete_water",
         {
             title: "Delete Water Entry",
-            description: "Delete a water log entry by ID.",
+            description:
+                "Permanently delete a water log entry by ID. The input schema requires explicit user confirmation.",
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: false,
                 destructiveHint: true,
@@ -2719,6 +2756,11 @@ export function registerTools(
             },
             inputSchema: {
                 id: z.string().describe("UUID of the water entry to delete"),
+                confirm: z
+                    .literal(true)
+                    .describe(
+                        "Must be true only after the user explicitly confirms permanent deletion.",
+                    ),
             },
         },
         async ({ id }) => {
@@ -2736,6 +2778,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -2746,6 +2790,7 @@ export function registerTools(
             title: "Log Weight",
             description:
                 "Log a body-weight measurement. Provide the number in `weight` and its `unit` ('kg' or 'lb'); if you omit the unit, the user's saved preference is used, and if they have no preference set yet the call fails asking you to specify one. IMPORTANT: do NOT convert units yourself — pass the value in whatever unit the user stated and set `unit` accordingly. The server stores weight canonically and converts as needed. Multiple weigh-ins per day are allowed.",
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: false,
                 destructiveHint: false,
@@ -2816,6 +2861,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -2827,6 +2874,7 @@ export function registerTools(
             description:
                 "Get today's weight entries, shown in the user's preferred unit.",
             inputSchema: {},
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -2871,6 +2919,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -2881,6 +2931,7 @@ export function registerTools(
             title: "Get Weight by Date",
             description:
                 "Get weight entries for a specific date, in the user's preferred unit.",
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -2925,6 +2976,7 @@ export function registerTools(
                 },
                 { userId },
                 { date },
+                { textOutput: true },
             );
         },
     );
@@ -2935,6 +2987,7 @@ export function registerTools(
             title: "Get Weight by Date Range",
             description:
                 "Get all weight entries between two dates (inclusive), grouped by day with each day's average. Use this instead of multiple get_weight_by_date calls.",
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -3008,6 +3061,7 @@ export function registerTools(
                 },
                 { userId },
                 { start_date, end_date },
+                { textOutput: true },
             );
         },
     );
@@ -3154,6 +3208,7 @@ export function registerTools(
             title: "Update Weight Entry",
             description:
                 "Update fields of an existing weight entry. Provide `unit` alongside `weight` (defaults to the user's preferred unit); do NOT convert units yourself.",
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: false,
                 destructiveHint: false,
@@ -3217,6 +3272,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -3225,7 +3282,9 @@ export function registerTools(
         "delete_weight",
         {
             title: "Delete Weight Entry",
-            description: "Delete a weight log entry by ID.",
+            description:
+                "Permanently delete a weight log entry by ID. The input schema requires explicit user confirmation.",
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: false,
                 destructiveHint: true,
@@ -3234,6 +3293,11 @@ export function registerTools(
             },
             inputSchema: {
                 id: z.string().describe("UUID of the weight entry to delete"),
+                confirm: z
+                    .literal(true)
+                    .describe(
+                        "Must be true only after the user explicitly confirms permanent deletion.",
+                    ),
             },
         },
         async ({ id }) => {
@@ -3253,6 +3317,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -3263,6 +3329,7 @@ export function registerTools(
             title: "Set Weight Unit",
             description:
                 "Set the user's preferred weight unit ('kg' or 'lb'), or pass null to clear it. This controls how weights are shown and how a bare number is interpreted when logging without an explicit unit. Stored weights are unaffected (they are canonical) — only display and default parsing change. While unset, logging requires an explicit unit and weights display in kg.",
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: false,
                 destructiveHint: false,
@@ -3302,6 +3369,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -3313,6 +3382,7 @@ export function registerTools(
             description:
                 "Get the user's preferred weight unit. Reports if none is set.",
             inputSchema: {},
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -3337,6 +3407,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -3347,6 +3419,7 @@ export function registerTools(
             title: "Set Widget Display",
             description:
                 "Enable or disable the in-chat visual widgets (nutrition dashboard, goal progress, meal-logged rings, trends, weight charts). When disabled, the same tools still return their full text and data — just no rendered widget. Widgets are enabled by default. Note: hosts read the widget list when a session connects, so the change takes effect in new conversations; an already-open chat may keep showing widgets until it reconnects.",
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: false,
                 destructiveHint: false,
@@ -3380,6 +3453,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -3391,6 +3466,7 @@ export function registerTools(
             description:
                 "Get whether the in-chat visual widgets are currently enabled for the user. Enabled by default.",
             inputSchema: {},
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -3415,6 +3491,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -3425,6 +3503,7 @@ export function registerTools(
             title: "Set Alcohol Tracking",
             description:
                 "Turn alcohol tracking on or off for the user, and optionally choose whether drinks are counted in US standard drinks (14 g of ethanol) or UK units (7.9 g). Off by default. Alcohol grams passed to log_meal, update_meal or bulk_import_meals are stored either way — this setting controls whether alcohol is shown in meals, goals and progress. One exception, which matters BEFORE a backfill: the file importer (start_meal_import) skips the file's alcohol column entirely while tracking is off, because it will not write a figure the user was never shown for review — and re-importing the same file later does not backfill it. So if the user wants alcohol from an export, turn this on first. Offer it when the user asks to track drinking; do not enable it on your own initiative, and if they ask to stop seeing alcohol, disable it here rather than deleting their meals. The change is live immediately — the next tool call in this same conversation already honours it, with nothing to reconnect or restart.",
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: false,
                 destructiveHint: false,
@@ -3487,6 +3566,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -3498,6 +3579,7 @@ export function registerTools(
             description:
                 "Get whether alcohol tracking is enabled for the user and which standard drink it is displayed in. Disabled by default.",
             inputSchema: {},
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -3528,6 +3610,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -3652,6 +3736,7 @@ export function registerTools(
             title: "Get Meal Patterns",
             description:
                 "Pre-aggregated behavioural patterns across the logged window: meal-type presence rates, breakfast effect (days with vs without), high-calorie-lunch effect, late-dinner effect, weekday vs weekend, and outlier days. Narrate findings conversationally to the user. Defaults to the last 30 days. Patterns are descriptive estimates, not medical or dietary advice.",
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -3707,6 +3792,7 @@ export function registerTools(
                 },
                 { userId },
                 { days: days ?? 30 },
+                { textOutput: true },
             );
         },
     );
@@ -3718,6 +3804,7 @@ export function registerTools(
             description:
                 "Export all of the user's logged meals as a CSV file and return a private, time-limited download link (valid 60 minutes). Timestamps use the user's timezone if set, otherwise UTC. Share the link with the user so they can download their data.",
             inputSchema: {},
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: false,
                 destructiveHint: false,
@@ -3750,6 +3837,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -3800,6 +3889,7 @@ export function registerTools(
             title: "Set Timezone",
             description:
                 "Set the user's IANA timezone (e.g. 'America/Los_Angeles', 'Europe/Berlin', 'Asia/Tokyo'). This controls which calendar day meals and water are grouped into — e.g. a meal logged at 11pm in LA counts on that LA day, not the next UTC day. If the user hasn't set one yet and logs a meal or asks about 'today', offer to set it.",
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: false,
                 destructiveHint: false,
@@ -3834,6 +3924,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -3845,6 +3937,7 @@ export function registerTools(
             description:
                 "Get the user's configured IANA timezone. Returns UTC if no profile has been set.",
             inputSchema: {},
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -3877,6 +3970,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -3886,7 +3981,8 @@ export function registerTools(
         {
             title: "Delete Account",
             description:
-                "Permanently delete the user's account and all associated data (meals, tokens, auth). This action is irreversible. Always confirm with the user before calling this tool.",
+                "Permanently delete the user's account and all associated data (meals, tokens, auth). This action is irreversible. The input schema requires explicit user confirmation.",
+            outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: false,
                 destructiveHint: true,
@@ -3895,9 +3991,9 @@ export function registerTools(
             },
             inputSchema: {
                 confirm: z
-                    .boolean()
+                    .literal(true)
                     .describe(
-                        "Must be true to confirm deletion. Always ask the user for explicit confirmation before setting this to true.",
+                        "Must be true to confirm deletion. Only set this after the user explicitly confirms the permanent deletion.",
                     ),
             },
         },
@@ -3927,7 +4023,7 @@ export function registerTools(
                 },
                 { userId },
                 undefined,
-                { persistSuccess: !confirm },
+                { persistSuccess: !confirm, textOutput: true },
             );
         },
     );

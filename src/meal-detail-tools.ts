@@ -1,75 +1,108 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
-import { getNutritionProvenanceAnalysis } from "./nutrition-provenance.js";
-import { getStructuredMeal } from "./structured-meals/repository.js";
-import { getUserTimezone } from "./storage.js";
-import { shiftLocalDate, todayInTz } from "./tz.js";
-
-type ToolServer = {
-    registerTool: (
-        name: string,
-        config: Record<string, unknown>,
-        handler: (args: Record<string, any>) => Promise<any> | any,
-    ) => unknown;
+const mealDetailsOutputSchema = {
+    meal: z
+        .object({
+            id: z.string(),
+            logged_at: z.string(),
+            meal_type: z.string().nullable(),
+            description: z.string(),
+            calories: z.number().nullable(),
+            protein_g: z.number().nullable(),
+            carbs_g: z.number().nullable(),
+            fat_g: z.number().nullable(),
+            fiber_g: z.number().nullable(),
+            sugar_g: z.number().nullable(),
+            alcohol_g: z.number().nullable(),
+            notes: z.string().nullable(),
+            item_count: z.number(),
+            items: z.array(
+                z
+                    .object({
+                        id: z.string(),
+                        position: z.number(),
+                        name: z.string(),
+                        quantity: z.number().nullable().optional(),
+                        portion_label: z.string().nullable().optional(),
+                        gram_weight: z.number().nullable().optional(),
+                        nutrients: z
+                            .object({
+                                calories: z.number().nullable(),
+                                protein_g: z.number().nullable(),
+                                carbs_g: z.number().nullable(),
+                                fat_g: z.number().nullable(),
+                                fiber_g: z.number().nullable(),
+                                sugar_g: z.number().nullable(),
+                                alcohol_g: z.number().nullable(),
+                                sodium_mg: z.number().nullable(),
+                                saturated_fat_g: z.number().nullable(),
+                                cholesterol_mg: z.number().nullable(),
+                                potassium_mg: z.number().nullable(),
+                            })
+                            .passthrough(),
+                        source_type: z.string(),
+                        provider: z.string().nullable().optional(),
+                        provider_food_id: z.string().nullable().optional(),
+                        provider_revision: z.string().nullable().optional(),
+                        source_url: z.string().nullable().optional(),
+                        source_updated_at: z.string().nullable().optional(),
+                        confidence: z.number().nullable().optional(),
+                        assumptions: z.array(z.string()).nullable().optional(),
+                        source_snapshot: z.unknown(),
+                    })
+                    .passthrough(),
+            ),
+            legacy_aggregate: z.boolean(),
+        })
+        .passthrough(),
 };
-
-function nullable(value: number | undefined): number | null {
-    return value ?? null;
-}
-
-function serializeItem(
-    item: NonNullable<
-        Awaited<ReturnType<typeof getStructuredMeal>>
-    >["items"][number],
-) {
-    return {
-        id: item.id,
-        position: item.position,
-        name: item.name,
-        quantity: item.quantity,
-        portion_label: item.portionLabel,
-        gram_weight: item.gramWeight,
-        nutrients: {
-            calories: nullable(item.nutrients.calories),
-            protein_g: nullable(item.nutrients.protein_g),
-            carbs_g: nullable(item.nutrients.carbs_g),
-            fat_g: nullable(item.nutrients.fat_g),
-            fiber_g: nullable(item.nutrients.fiber_g),
-            sugar_g: nullable(item.nutrients.sugar_g),
-            alcohol_g: nullable(item.nutrients.alcohol_g),
-            sodium_mg: nullable(item.nutrients.sodium_mg),
-            saturated_fat_g: nullable(item.nutrients.saturated_fat_g),
-            cholesterol_mg: nullable(item.nutrients.cholesterol_mg),
-            potassium_mg: nullable(item.nutrients.potassium_mg),
-        },
-        source_type: item.sourceType,
-        provider: item.provider,
-        provider_food_id: item.providerFoodId,
-        provider_revision: item.providerRevision,
-        source_url: item.sourceUrl,
-        source_updated_at: item.sourceUpdatedAt,
-        confidence: item.confidence,
-        assumptions: item.assumptions,
-        source_snapshot: item.sourceSnapshot,
-    };
-}
-
-function validDate(value: string): boolean {
-    return (
-        /^\d{4}-\d{2}-\d{2}$/.test(value) &&
-        Number.isFinite(Date.parse(`${value}T00:00:00Z`))
-    );
-}
-
-function rangeDays(startDate: string, endDate: string): number {
-    return (
-        Math.floor(
-            (Date.parse(`${endDate}T00:00:00Z`) -
-                Date.parse(`${startDate}T00:00:00Z`)) /
-                86_400_000,
-        ) + 1
-    );
-}
+const nutritionProvenanceOutputSchema = {
+    start_date: z.string(),
+    end_date: z.string(),
+    timezone: z.string(),
+    coverage: z
+        .object({
+            meal_count: z.number(),
+            structured_meal_count: z.number(),
+            legacy_meal_count: z.number(),
+            item_count: z.number(),
+            total_calories: z.number(),
+            itemized_calories: z.number(),
+            itemized_calorie_percent: z.number(),
+        })
+        .passthrough(),
+    sources: z.array(
+        z
+            .object({
+                source: z.string(),
+                item_count: z.number(),
+                calories: z.number(),
+                percent_of_items: z.number(),
+            })
+            .passthrough(),
+    ),
+    confidence: z
+        .object({
+            recorded_item_count: z.number(),
+            average: z.number().nullable(),
+            high_confidence_item_count: z.number(),
+            estimated_item_count: z.number(),
+        })
+        .passthrough(),
+    contributors: z.record(
+        z.string(),
+        z.array(
+            z
+                .object({
+                    meal_id: z.string(),
+                    item_id: z.string(),
+                    name: z.string(),
+                    value: z.number(),
+                    source: z.string(),
+                    provider: z.string().nullable().optional(),
+                })
+                .passthrough(),
+        ),
+    ),
+};
 
 export function registerMealDetailTools(
     server: McpServer,
@@ -86,6 +119,7 @@ export function registerMealDetailTools(
             inputSchema: {
                 meal_id: z.string().uuid().describe("UUID of the logged meal"),
             },
+            outputSchema: mealDetailsOutputSchema,
             annotations: {
                 title: "Get Meal Details",
                 readOnlyHint: true,
@@ -157,6 +191,7 @@ export function registerMealDetailTools(
                         "End date YYYY-MM-DD; defaults to today in the user's timezone",
                     ),
             },
+            outputSchema: nutritionProvenanceOutputSchema,
             annotations: {
                 title: "Get Nutrition Provenance",
                 readOnlyHint: true,
