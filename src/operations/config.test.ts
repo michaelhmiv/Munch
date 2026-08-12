@@ -22,6 +22,7 @@ function validRailwayEnvironment() {
         STRIPE_SECRET_KEY: "sk_test_example",
         STRIPE_WEBHOOK_SECRET: "whsec_example",
         STRIPE_PRICE_ID: "price_example",
+        STRIPE_HOUSEHOLD_MEMBER_PRICE_ID: "price_household_example",
         OFF_USER_AGENT: "Munch (support@example.com)",
         USDA_FDC_API_KEY: "usda-example",
         DATABASE_URL: "postgresql://example",
@@ -76,9 +77,11 @@ describe("Munch startup configuration", () => {
         validRailwayEnvironment();
         delete process.env.USDA_FDC_API_KEY;
         delete process.env.STRIPE_WEBHOOK_SECRET;
+        delete process.env.STRIPE_HOUSEHOLD_MEMBER_PRICE_ID;
         const keys = configurationIssues().map((issue) => issue.key);
         expect(keys).toContain("USDA_FDC_API_KEY");
         expect(keys).toContain("STRIPE_WEBHOOK_SECRET");
+        expect(keys).toContain("STRIPE_HOUSEHOLD_MEMBER_PRICE_ID");
     });
     test("requires Resend and a Better Auth sender", () => {
         validBetterAuthEnvironment();
