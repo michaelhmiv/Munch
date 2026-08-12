@@ -1,4 +1,4 @@
-name: Repair paid household portal smoke fixture
+name: Remove portal smoke repair helper
 
 on:
   push:
@@ -9,57 +9,16 @@ permissions:
   contents: write
 
 jobs:
-  repair:
+  cleanup:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: feat/paid-household-seats
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1
-      - run: bun install --frozen-lockfile
-      - name: Update paid household portal fixture
+      - name: Remove temporary workflow
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('scripts/account-portal-smoke.ts')
-          text = p.read_text()
-          text = text.replace(
-              'process.env.MUNCH_APP_BASE_URL = "https://munch.example";\n',
-              'process.env.MUNCH_APP_BASE_URL = "https://munch.example";\nprocess.env.MUNCH_SESSION_SECRET = "portal-smoke-session-secret-0123456789abcdef";\nprocess.env.STRIPE_SECRET_KEY = "sk_test_portal_smoke";\nprocess.env.STRIPE_WEBHOOK_SECRET = "whsec_portal_smoke";\nprocess.env.STRIPE_PRICE_ID = "price_portal_smoke";\nprocess.env.STRIPE_HOUSEHOLD_MEMBER_PRICE_ID =\n    "price_household_portal_smoke";\n'
-          )
-          text = text.replace(
-              'const { upsertSubscription } = await import("../src/billing/repository.js");',
-              'const { replaceSubscriptionItems, upsertSubscription } =\n    await import("../src/billing/repository.js");'
-          )
-          text = text.replace(
-              'await upsertSubscription({\n    userId,\n    stripeSubscriptionId: `sub_portal_${crypto.randomUUID().replaceAll("-", "")}`,',
-              'const stripeSubscriptionId = `sub_portal_${crypto.randomUUID().replaceAll("-", "")}`;\nawait upsertSubscription({\n    userId,\n    stripeSubscriptionId,'
-          )
-          marker = '''await acceptHouseholdInvitation({\n    userId: member.userId,\n    token: invitation.rawToken,\n    displayName: "Dad",\n});\n'''
-          replacement = marker + '''await replaceSubscriptionItems(stripeSubscriptionId, [\n    {\n        stripeSubscriptionItemId: "si_household_portal_smoke",\n        stripePriceId: "price_household_portal_smoke",\n        quantity: 1,\n    },\n]);\n'''
-          if marker not in text:
-              raise SystemExit('accept marker missing')
-          text = text.replace(marker, replacement, 1)
-          text = text.replace(
-              '    !portalHtml.includes("Transfer ownership") ||\n',
-              '    !portalHtml.includes("Household billing") ||\n    !portalHtml.includes("$6.99/month") ||\n    !portalHtml.includes("+$2.00/month") ||\n'
-          )
-          text = text.replace(
-              ') {\n    throw new Error("Portal HTML omitted account, household, or meal controls");\n}',
-              ') {\n    throw new Error("Portal HTML omitted account, paid household, or meal controls");\n}\nif (portalHtml.includes("Transfer ownership")) {\n    throw new Error("Paid household portal exposed unsupported ownership transfer");\n}'
-          )
-          p.write_text(text)
-          PY
-          bunx prettier --write scripts/account-portal-smoke.ts
-      - name: Commit fixture repair
-        run: |
-          if git diff --quiet; then
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add scripts/account-portal-smoke.ts
-          git commit -m "test: align portal smoke with paid household seats"
+          git rm .github/workflows/repair-paid-household-portal-smoke.yml
+          git commit -m "chore: remove portal smoke repair helper"
           git push origin HEAD:feat/paid-household-seats
