@@ -91,7 +91,7 @@ async function browserRedirectResponse(
 export function createOAuthContinuationRouter(): Hono {
     const router = new Hono();
 
-    router.post("/connect/consent", requireSameOrigin, async (c) => {
+    router.post("/connect/consent", async (c) => {
         const body = await c.req.parseBody();
         const clientId =
             typeof body.client_id === "string" ? body.client_id : "";
