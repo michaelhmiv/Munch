@@ -8,40 +8,67 @@
             /*@include shared/tokens.css@*/
             /*@include shared/base.css@*/
             .receipt {
-                padding: 15px;
+                padding: 12px;
             }
             .receipt-main {
                 min-width: 0;
+                flex: 1;
+            }
+            .receipt-top {
+                align-items: flex-start;
             }
             .receipt-title {
-                font-size: 16px;
+                margin-top: 1px;
+                font-size: 15px;
                 font-weight: 700;
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
             }
-            .today-strip {
-                margin-top: 12px;
-                padding: 10px 12px;
-                border-radius: var(--radius-sm);
-                background: var(--panel-muted);
-            }
-            .today-strip strong {
+            .receipt-kcal {
+                margin-left: auto;
+                flex: 0 0 auto;
+                font-size: 17px;
+                font-weight: 760;
                 font-variant-numeric: tabular-nums;
             }
-            .foods {
-                margin-top: 12px;
-                border-top: 1px solid var(--border);
-                padding-top: 8px;
+            .macro-line {
+                margin-top: 3px;
+                color: var(--text-dim);
+                font-size: 12px;
+                font-variant-numeric: tabular-nums;
             }
-            .foods summary {
+            .today-line {
+                display: flex;
+                justify-content: space-between;
+                gap: 10px;
+                margin-top: 8px;
+                padding-top: 8px;
+                border-top: 1px solid var(--border);
+                color: var(--text-dim);
+                font-size: 11.5px;
+            }
+            .today-line strong {
+                color: var(--text);
+                font-variant-numeric: tabular-nums;
+            }
+            .foods,
+            .log-details {
+                margin-top: 7px;
+                border-top: 1px solid var(--border);
+            }
+            .foods > summary,
+            .log-details > summary {
+                min-height: 38px;
+                display: flex;
+                align-items: center;
                 cursor: pointer;
+                color: var(--text-dim);
                 font-weight: 650;
-                font-size: 13px;
-                padding: 3px 0 7px;
+                font-size: 12px;
             }
             .food-row {
-                padding: 8px 0;
+                padding: 7px 0;
                 border-top: 1px solid var(--border);
             }
             .food-row:first-of-type {
@@ -63,11 +90,47 @@
                 font-variant-numeric: tabular-nums;
             }
             .food-meta,
-            .food-source {
+            .food-source,
+            .log-detail-body {
                 margin-top: 2px;
                 color: var(--text-muted);
-                font-size: 12px;
+                font-size: 11.5px;
                 line-height: 1.35;
+            }
+            .food-audit {
+                margin-top: 3px;
+            }
+            .food-audit > summary {
+                min-height: 30px;
+                display: flex;
+                align-items: center;
+                width: fit-content;
+                cursor: pointer;
+                color: var(--text-muted);
+                font-size: 11px;
+                font-weight: 620;
+            }
+            .log-detail-body {
+                padding: 0 0 8px;
+            }
+            .receipt .actions {
+                margin-top: 5px;
+            }
+            .receipt .status:empty {
+                min-height: 0;
+                margin-top: 0;
+            }
+            @media (max-width: 420px) {
+                .receipt {
+                    padding: 10px;
+                }
+                .icon-badge {
+                    width: 30px;
+                    height: 30px;
+                }
+                .receipt-kcal {
+                    font-size: 16px;
+                }
             }
         </style>
     </head>
@@ -81,7 +144,8 @@
                 action: "logged",
                 date: "2026-08-05",
                 logged_meal: {
-                    description: "Grilled chicken salad",
+                    description:
+                        "Grilled chicken breast (5 oz), mixed greens, tomato, cucumber, and vinaigrette",
                     meal_type: "lunch",
                     calories: 520,
                     protein_g: 42,
@@ -156,7 +220,7 @@
             }
             function itemRows(items) {
                 if (!items.length) return "";
-                return `<details class="foods"><summary>${items.length} food${items.length === 1 ? "" : "s"} · nutrition sources</summary>${items
+                return `<details class="foods"><summary>View ${items.length} food${items.length === 1 ? "" : "s"}</summary>${items
                     .map((item) => {
                         const n = item.nutrients || {};
                         const macro = [
@@ -171,11 +235,17 @@
                         const confidence =
                             item.confidence == null
                                 ? ""
-                                : ` · ${Math.round(item.confidence * 100)}% confidence`;
+                                : `${Math.round(item.confidence * 100)}% confidence`;
+                        const assumptions = Array.isArray(item.assumptions)
+                            ? item.assumptions
+                            : [];
+                        const audit = [sourceLabel(item), confidence]
+                            .filter(Boolean)
+                            .join(" · ");
                         return `<div class="food-row">
                             <div class="food-head"><div class="food-name">${esc(item.name || "Food")}</div>${n.calories != null ? `<div class="food-kcal">${fmt(n.calories)} kcal</div>` : ""}</div>
                             <div class="food-meta">${esc(item.portion_label || (item.quantity != null ? `Qty ${fmt(item.quantity, 1)}` : "Portion recorded"))}${macro ? ` · ${esc(macro)}` : ""}</div>
-                            <div class="food-source">${esc(sourceLabel(item))}${esc(confidence)}</div>
+                            <details class="food-audit"><summary>Source & estimate</summary><div class="food-source">${esc(audit)}${assumptions.length ? `<br />${assumptions.map((value) => esc(value)).join(" · ")}` : ""}</div></details>
                         </div>`;
                     })
                     .join("")}</details>`;
@@ -186,17 +256,18 @@
                 const items = Array.isArray(data.meal_items)
                     ? data.meal_items
                     : [];
+                const structured = items.length > 0;
                 const action = data.action === "updated" ? "updated" : "logged";
-                const title = meal.description || "Meal";
-                const macros = [
-                    meal.calories != null ? `${fmt(meal.calories)} kcal` : null,
+                const originalTitle = meal.description || "Meal";
+                const title = structured
+                    ? `${items.length} food${items.length === 1 ? "" : "s"}`
+                    : originalTitle;
+                const macroLine = [
                     meal.protein_g != null
-                        ? `${fmt(meal.protein_g, 1)} g protein`
+                        ? `P ${fmt(meal.protein_g, 1)}g`
                         : null,
-                    meal.carbs_g != null
-                        ? `${fmt(meal.carbs_g, 1)} g carbs`
-                        : null,
-                    meal.fat_g != null ? `${fmt(meal.fat_g, 1)} g fat` : null,
+                    meal.carbs_g != null ? `C ${fmt(meal.carbs_g, 1)}g` : null,
+                    meal.fat_g != null ? `F ${fmt(meal.fat_g, 1)}g` : null,
                 ]
                     .filter(Boolean)
                     .join(" · ");
@@ -210,26 +281,28 @@
                         data.totals.calories,
                         data.goals.calories,
                     );
-                    const focus =
-                        proteinPct != null
-                            ? `<strong>${fmt(data.totals.protein_g, 1)} / ${fmt(data.goals.protein_g, 1)} g protein</strong> today${proteinPct > 100 ? " · above target" : ` · ${proteinPct}%`}`
-                            : caloriePct != null
-                              ? `<strong>${fmt(data.totals.calories)} / ${fmt(data.goals.calories)} kcal</strong> today · ${caloriePct}%`
-                              : "";
-                    if (focus)
-                        today = `<div class="today-strip"><div class="caption">Today after this meal</div><div>${focus}</div></div>`;
+                    if (proteinPct != null) {
+                        today = `<div class="today-line"><span>Today · protein</span><strong>${fmt(data.totals.protein_g, 1)} / ${fmt(data.goals.protein_g, 1)} g</strong></div>`;
+                    } else if (caloriePct != null) {
+                        today = `<div class="today-line"><span>Today · calories</span><strong>${fmt(data.totals.calories)} / ${fmt(data.goals.calories)} kcal</strong></div>`;
+                    }
                 }
+                const logDetails = structured
+                    ? `<details class="log-details"><summary>Log details</summary><div class="log-detail-body">${esc(originalTitle)}</div></details>`
+                    : "";
                 document.getElementById("root").innerHTML =
                     `<article class="card receipt" aria-label="Meal ${action}">
-        <div class="row">
+        <div class="row receipt-top">
             <div class="icon-badge success" aria-hidden="true">✓</div>
             <div class="receipt-main">
                 <div class="eyebrow">${meal.meal_type ? `${esc(meal.meal_type)} ${action}` : `Meal ${action}`}</div>
                 <div class="receipt-title">${esc(title)}</div>
-                ${macros ? `<div class="meta num">${esc(macros)}</div>` : '<div class="meta">Saved to your Munch log.</div>'}
+                ${macroLine ? `<div class="macro-line">${esc(macroLine)}</div>` : ""}
             </div>
+            ${meal.calories != null ? `<div class="receipt-kcal">${fmt(meal.calories)} kcal</div>` : ""}
         </div>
         ${itemRows(items)}
+        ${logDetails}
         ${today}
         <div class="actions single"><button class="btn btn-quiet" id="adjust">Adjust meal</button></div>
         <div class="status" id="status" role="status" aria-live="polite"></div>
@@ -239,7 +312,7 @@
                     ?.addEventListener("click", async () => {
                         const status = document.getElementById("status");
                         status.textContent = "Opening adjustment in chat…";
-                        const prompt = `Adjust the ${meal.meal_type || "meal"} I just ${action}: ${title}. Ask me what needs to change, then update the existing meal rather than creating a duplicate.`;
+                        const prompt = `Adjust the ${meal.meal_type || "meal"} I just ${action}: ${originalTitle}. Ask me what needs to change, then update the existing meal rather than creating a duplicate.`;
                         try {
                             if (API?.canSendMessages)
                                 await API.sendMessage(prompt);
