@@ -98,7 +98,6 @@ export async function requireSameOrigin(c: Context, next: Next) {
     await next();
 }
 
-
 export interface OAuthConsentCsrfInput {
     userId: string;
     clientId: string;
@@ -171,10 +170,7 @@ export function verifyOAuthConsentCsrfToken(
     if (!safeEqual(signature, signCsrfPayload(payload))) return false;
 
     const expiresAt = Number(expiry);
-    if (
-        !Number.isInteger(expiresAt) ||
-        expiresAt < Math.floor(now / 1000)
-    ) {
+    if (!Number.isInteger(expiresAt) || expiresAt < Math.floor(now / 1000)) {
         return false;
     }
 
@@ -185,4 +181,3 @@ export function verifyOAuthConsentCsrfToken(
         decodeCsrfPart(oauthQuery) === input.oauthQuery
     );
 }
-
