@@ -2457,7 +2457,11 @@ export function registerTools(
             },
             inputSchema: {
                 id: z.string().describe("UUID of the meal to delete"),
-                confirm: z.literal(true).describe("Must be true only after the user explicitly confirms permanent deletion."),
+                confirm: z
+                    .literal(true)
+                    .describe(
+                        "Must be true only after the user explicitly confirms permanent deletion.",
+                    ),
             },
         },
         async ({ id }) => {
@@ -2752,7 +2756,11 @@ export function registerTools(
             },
             inputSchema: {
                 id: z.string().describe("UUID of the water entry to delete"),
-                confirm: z.literal(true).describe("Must be true only after the user explicitly confirms permanent deletion."),
+                confirm: z
+                    .literal(true)
+                    .describe(
+                        "Must be true only after the user explicitly confirms permanent deletion.",
+                    ),
             },
         },
         async ({ id }) => {
@@ -3285,7 +3293,11 @@ export function registerTools(
             },
             inputSchema: {
                 id: z.string().describe("UUID of the weight entry to delete"),
-                confirm: z.literal(true).describe("Must be true only after the user explicitly confirms permanent deletion."),
+                confirm: z
+                    .literal(true)
+                    .describe(
+                        "Must be true only after the user explicitly confirms permanent deletion.",
+                    ),
             },
         },
         async ({ id }) => {

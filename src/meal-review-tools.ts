@@ -249,7 +249,9 @@ export function registerMealReviewTools(
                     .min(1)
                     .max(200)
                     .optional()
-                    .describe("Optional stable key for idempotent retries of the same review preparation."),
+                    .describe(
+                        "Optional stable key for idempotent retries of the same review preparation.",
+                    ),
                 draft_id: z.string().uuid().optional(),
                 expected_version: z.coerce.number().int().positive().optional(),
                 items: z.array(reviewItemInput).min(1).max(100),

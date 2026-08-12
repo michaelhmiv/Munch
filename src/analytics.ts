@@ -75,7 +75,10 @@ function addTextStructuredContent<T>(result: T): T {
     }
 
     const record = result as Record<string, unknown>;
-    if (record.structuredContent !== undefined || !Array.isArray(record.content)) {
+    if (
+        record.structuredContent !== undefined ||
+        !Array.isArray(record.content)
+    ) {
         return result;
     }
 
@@ -90,9 +93,7 @@ function addTextStructuredContent<T>(result: T): T {
         .filter(Boolean)
         .join("\n");
 
-    return text
-        ? ({ ...record, structuredContent: { text } } as T)
-        : result;
+    return text ? ({ ...record, structuredContent: { text } } as T) : result;
 }
 
 function persistAnalytics(record: AnalyticsRecord): void {
