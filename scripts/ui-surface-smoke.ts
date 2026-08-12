@@ -192,7 +192,6 @@ for (const responsiveRule of [
     "@media (max-width: 620px)",
     "font-size: 16px",
     "min-height: 48px",
-    "env(safe-area-inset-bottom)",
 ]) {
     if (!accountCss.includes(responsiveRule)) {
         throw new Error(
@@ -215,6 +214,16 @@ for (const component of [
             `Account settings CSS is missing component: ${component}`,
         );
     }
+}
+
+const globalStyles = await Bun.file("public/styles.css").text();
+if (
+    !globalStyles.includes("env(safe-area-inset-bottom)") ||
+    !globalStyles.includes(".mobile-bottom-nav")
+) {
+    throw new Error(
+        "Global app shell is missing mobile safe-area navigation protection",
+    );
 }
 
 const portalSource = await Bun.file("src/portal/routes.ts").text();
