@@ -133,7 +133,8 @@ export async function resolveMunchCapabilities(
         result = applyHouseholdPremium(result);
     }
 
-    const canEditRole = household.role === "owner" || household.role === "member";
+    const canEditRole =
+        household.role === "owner" || household.role === "member";
     // Explicit overrides exist for trusted review/test accounts and preserve
     // their ability to exercise shared UI. Real paid households require both an
     // active owner subscription and sufficient paid seat quantity.

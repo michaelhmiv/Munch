@@ -8,10 +8,7 @@ import {
     reserveHouseholdInvitationSeat,
     reserveHouseholdSeatRelease,
 } from "../households/repository.js";
-import {
-    dissolveHousehold,
-    leaveHousehold,
-} from "../households/lifecycle.js";
+import { dissolveHousehold, leaveHousehold } from "../households/lifecycle.js";
 import { getPlatformConfig } from "../platform/config.js";
 import {
     getLatestStripeSubscriptionRecord,
@@ -76,7 +73,9 @@ export function paidHouseholdSeatCoverage(
     );
 }
 
-export function householdMonthlyTotalCents(activeNonOwnerCount: number): number {
+export function householdMonthlyTotalCents(
+    activeNonOwnerCount: number,
+): number {
     if (
         !Number.isInteger(activeNonOwnerCount) ||
         activeNonOwnerCount < 0 ||
@@ -341,9 +340,9 @@ export async function dissolvePaidHousehold(input: {
         return true;
     } catch (error) {
         logSeatFailure("dissolve", error);
-        const household = await getActiveHouseholdContext(input.ownerUserId).catch(
-            () => null,
-        );
+        const household = await getActiveHouseholdContext(
+            input.ownerUserId,
+        ).catch(() => null);
         if (household?.householdId === input.householdId) {
             await reconcileDesiredQuantity({
                 ownerUserId: input.ownerUserId,

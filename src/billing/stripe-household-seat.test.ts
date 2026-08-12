@@ -56,8 +56,9 @@ describe("Stripe household seats", () => {
             }
             encoded = String(init?.body ?? "");
             idempotency = String(
-                (init?.headers as Record<string, string>)?.["Idempotency-Key"] ??
-                    "",
+                (init?.headers as Record<string, string>)?.[
+                    "Idempotency-Key"
+                ] ?? "",
             );
             return new Response(JSON.stringify(subscription(1)), {
                 status: 200,

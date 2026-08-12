@@ -219,14 +219,22 @@ export async function setStripeSubscriptionItemQuantity(input: {
     quantity: number;
     idempotencyKey: string;
 }): Promise<StripeSubscription> {
-    if (!Number.isInteger(input.quantity) || input.quantity < 0 || input.quantity > 5) {
+    if (
+        !Number.isInteger(input.quantity) ||
+        input.quantity < 0 ||
+        input.quantity > 5
+    ) {
         throw new Error("Household seat quantity must be between 0 and 5");
     }
     if (!/^price_[A-Za-z0-9_]+$/.test(input.priceId)) {
-        throw new Error("STRIPE_HOUSEHOLD_MEMBER_PRICE_ID is missing or invalid");
+        throw new Error(
+            "STRIPE_HOUSEHOLD_MEMBER_PRICE_ID is missing or invalid",
+        );
     }
     if (!input.idempotencyKey.trim()) {
-        throw new Error("Stripe subscription update requires an idempotency key");
+        throw new Error(
+            "Stripe subscription update requires an idempotency key",
+        );
     }
 
     const current = await retrieveStripeSubscription(input.subscriptionId);
@@ -239,7 +247,9 @@ export async function setStripeSubscriptionItemQuantity(input: {
     const body = new URLSearchParams();
     body.set(
         "proration_behavior",
-        input.quantity > currentQuantity ? "always_invoice" : "create_prorations",
+        input.quantity > currentQuantity
+            ? "always_invoice"
+            : "create_prorations",
     );
     // A paid seat is not considered provisioned unless Stripe can apply the
     // subscription update. If an immediate upgrade invoice cannot be paid,

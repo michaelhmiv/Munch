@@ -526,7 +526,10 @@ export async function reserveHouseholdSeatRelease(input: {
             membershipId: member.id,
             householdId: input.householdId,
             ownerUserId: household.owner_user_id,
-            targetSeatQuantity: await desiredSeatQuantityTx(tx, input.householdId),
+            targetSeatQuantity: await desiredSeatQuantityTx(
+                tx,
+                input.householdId,
+            ),
         };
     });
 }
