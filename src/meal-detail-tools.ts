@@ -1,77 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
-import { getNutritionProvenanceAnalysis } from "./nutrition-provenance.js";
-import { getStructuredMeal } from "./structured-meals/repository.js";
-import { getUserTimezone } from "./storage.js";
-import { shiftLocalDate, todayInTz } from "./tz.js";
-
-type ToolServer = {
-    registerTool: (
-        name: string,
-        config: Record<string, unknown>,
-        handler: (args: Record<string, any>) => Promise<any> | any,
-    ) => unknown;
-};
-
-function nullable(value: number | undefined): number | null {
-    return value ?? null;
-}
-
-function serializeItem(
-    item: NonNullable<
-        Awaited<ReturnType<typeof getStructuredMeal>>
-    >["items"][number],
-) {
-    return {
-        id: item.id,
-        position: item.position,
-        name: item.name,
-        quantity: item.quantity,
-        portion_label: item.portionLabel,
-        gram_weight: item.gramWeight,
-        nutrients: {
-            calories: nullable(item.nutrients.calories),
-            protein_g: nullable(item.nutrients.protein_g),
-            carbs_g: nullable(item.nutrients.carbs_g),
-            fat_g: nullable(item.nutrients.fat_g),
-            fiber_g: nullable(item.nutrients.fiber_g),
-            sugar_g: nullable(item.nutrients.sugar_g),
-            alcohol_g: nullable(item.nutrients.alcohol_g),
-            sodium_mg: nullable(item.nutrients.sodium_mg),
-            saturated_fat_g: nullable(item.nutrients.saturated_fat_g),
-            cholesterol_mg: nullable(item.nutrients.cholesterol_mg),
-            potassium_mg: nullable(item.nutrients.potassium_mg),
-        },
-        source_type: item.sourceType,
-        provider: item.provider,
-        provider_food_id: item.providerFoodId,
-        provider_revision: item.providerRevision,
-        source_url: item.sourceUrl,
-        source_updated_at: item.sourceUpdatedAt,
-        confidence: item.confidence,
-        assumptions: item.assumptions,
-        source_snapshot: item.sourceSnapshot,
-    };
-}
-
-function validDate(value: string): boolean {
-    return (
-        /^\d{4}-\d{2}-\d{2}$/.test(value) &&
-        Number.isFinite(Date.parse(`${value}T00:00:00Z`))
-    );
-}
-
-function rangeDays(startDate: string, endDate: string): number {
-    return (
-        Math.floor(
-            (Date.parse(`${endDate}T00:00:00Z`) -
-                Date.parse(`${startDate}T00:00:00Z`)) /
-                86_400_000,
-        ) + 1
-    );
-}
-
-const mealDetailsOutputSchema = z.object({
+const mealDetailsOutputSchema = {
     meal: z
         .object({
             id: z.string(),
@@ -126,9 +53,8 @@ const mealDetailsOutputSchema = z.object({
             legacy_aggregate: z.boolean(),
         })
         .passthrough(),
-});
-
-const nutritionProvenanceOutputSchema = z.object({
+};
+const nutritionProvenanceOutputSchema = {
     start_date: z.string(),
     end_date: z.string(),
     timezone: z.string(),
@@ -176,7 +102,7 @@ const nutritionProvenanceOutputSchema = z.object({
                 .passthrough(),
         ),
     ),
-});
+};
 
 export function registerMealDetailTools(
     server: McpServer,

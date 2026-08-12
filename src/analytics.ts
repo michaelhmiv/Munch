@@ -120,6 +120,7 @@ export async function withAnalytics<T>(
     args?: Record<string, unknown>,
     options?: {
         outcome?: (result: T) => { success: boolean; errorCategory?: string };
+        textOutput?: boolean;
         // A successful destructive action may remove the user row that owns
         // tool_events. Skip only the success insert in that case; failures are
         // still persisted because the user remains available for diagnosis.
@@ -163,7 +164,7 @@ export async function withAnalytics<T>(
             });
         }
 
-        return addTextStructuredContent(result);
+        return options?.textOutput ? addTextStructuredContent(result) : result;
     } catch (error) {
         const durationMs = Math.round(performance.now() - start);
         const errorCategory = categorizeError(error);
@@ -183,7 +184,7 @@ export async function withAnalytics<T>(
             invoked_at: invokedAt,
         });
 
-        return addTextStructuredContent({
+        const errorResult = {
             content: [
                 {
                     type: "text",
@@ -191,6 +192,9 @@ export async function withAnalytics<T>(
                 },
             ],
             isError: true,
-        } as T);
+        } as T;
+        return options?.textOutput
+            ? addTextStructuredContent(errorResult)
+            : errorResult;
     }
 }

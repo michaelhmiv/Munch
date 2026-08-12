@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { PRODUCT_CONFIG } from "./product-config.js";
 
-export const TEXT_OUTPUT_SCHEMA = z.object({
+export const TEXT_OUTPUT_SCHEMA = {
     text: z.string(),
-});
+};
 
 export const WIDGET_RESOURCE_METADATA = {
     ui: {

@@ -1439,6 +1439,7 @@ export function registerTools(
                 },
                 { userId },
                 { barcode },
+                { textOutput: true },
             );
         },
     );
@@ -1483,6 +1484,8 @@ export function registerTools(
                     return { content: [{ type: "text", text }] };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -1542,6 +1545,7 @@ export function registerTools(
                 },
                 { userId },
                 { date },
+                { textOutput: true },
             );
         },
     );
@@ -1633,6 +1637,7 @@ export function registerTools(
                 },
                 { userId },
                 { start_date, end_date },
+                { textOutput: true },
             );
         },
     );
@@ -1722,6 +1727,7 @@ export function registerTools(
                 },
                 { userId },
                 { days: days ?? 365 },
+                { textOutput: true },
             );
         },
     );
@@ -2253,6 +2259,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -2290,6 +2298,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -2462,6 +2472,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -2609,6 +2621,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -2663,6 +2677,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -2716,6 +2732,7 @@ export function registerTools(
                 },
                 { userId },
                 { date },
+                { textOutput: true },
             );
         },
     );
@@ -2753,6 +2770,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -2834,6 +2853,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -2890,6 +2911,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -2945,6 +2968,7 @@ export function registerTools(
                 },
                 { userId },
                 { date },
+                { textOutput: true },
             );
         },
     );
@@ -3029,6 +3053,7 @@ export function registerTools(
                 },
                 { userId },
                 { start_date, end_date },
+                { textOutput: true },
             );
         },
     );
@@ -3239,6 +3264,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -3278,6 +3305,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -3328,6 +3357,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -3364,6 +3395,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -3408,6 +3441,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -3444,6 +3479,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -3517,6 +3554,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -3559,6 +3598,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -3739,6 +3780,7 @@ export function registerTools(
                 },
                 { userId },
                 { days: days ?? 30 },
+                { textOutput: true },
             );
         },
     );
@@ -3783,6 +3825,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -3868,6 +3912,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -3912,6 +3958,8 @@ export function registerTools(
                     };
                 },
                 { userId },
+                undefined,
+                { textOutput: true },
             );
         },
     );
@@ -3963,7 +4011,7 @@ export function registerTools(
                 },
                 { userId },
                 undefined,
-                { persistSuccess: !confirm },
+                { persistSuccess: !confirm, textOutput: true },
             );
         },
     );
