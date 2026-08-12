@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Context, Next } from "hono";
 import { getBaseUrl } from "../url.js";
 
@@ -95,4 +96,92 @@ export async function requireSameOrigin(c: Context, next: Next) {
     }
 
     await next();
+}
+
+
+export interface OAuthConsentCsrfInput {
+    userId: string;
+    clientId: string;
+    scope: string;
+    oauthQuery: string;
+}
+
+const OAUTH_CONSENT_CSRF_TTL_SECONDS = 15 * 60;
+
+function csrfSigningSecret(): string {
+    const secret = process.env.BETTER_AUTH_SECRET?.trim();
+    if (!secret) throw new Error("BETTER_AUTH_SECRET is required");
+    return secret;
+}
+
+function encodeCsrfPart(value: string): string {
+    return Buffer.from(value, "utf8").toString("base64url");
+}
+
+function decodeCsrfPart(value: string): string | null {
+    try {
+        return Buffer.from(value, "base64url").toString("utf8");
+    } catch {
+        return null;
+    }
+}
+
+function signCsrfPayload(payload: string): string {
+    return createHmac("sha256", csrfSigningSecret())
+        .update(payload, "utf8")
+        .digest("base64url");
+}
+
+function safeEqual(left: string, right: string): boolean {
+    const leftBytes = Buffer.from(left, "utf8");
+    const rightBytes = Buffer.from(right, "utf8");
+    return (
+        leftBytes.length === rightBytes.length &&
+        timingSafeEqual(leftBytes, rightBytes)
+    );
+}
+
+export function createOAuthConsentCsrfToken(
+    input: OAuthConsentCsrfInput,
+    now = Date.now(),
+): string {
+    const expiresAt = Math.floor(now / 1000) + OAUTH_CONSENT_CSRF_TTL_SECONDS;
+    const payload = [
+        "v1",
+        String(expiresAt),
+        encodeCsrfPart(input.userId),
+        encodeCsrfPart(input.clientId),
+        encodeCsrfPart(input.scope),
+        encodeCsrfPart(input.oauthQuery),
+    ].join(".");
+    return `${payload}.${signCsrfPayload(payload)}`;
+}
+
+export function verifyOAuthConsentCsrfToken(
+    token: string,
+    input: OAuthConsentCsrfInput,
+    now = Date.now(),
+): boolean {
+    const parts = token.split(".");
+    if (parts.length !== 7 || parts[0] !== "v1") return false;
+
+    const [version, expiry, userId, clientId, scope, oauthQuery, signature] =
+        parts;
+    const payload = parts.slice(0, -1).join(".");
+    if (!safeEqual(signature, signCsrfPayload(payload))) return false;
+
+    const expiresAt = Number(expiry);
+    if (
+        !Number.isInteger(expiresAt) ||
+        expiresAt < Math.floor(now / 1000)
+    ) {
+        return false;
+    }
+
+    return (
+        decodeCsrfPart(userId) === input.userId &&
+        decodeCsrfPart(clientId) === input.clientId &&
+        decodeCsrfPart(scope) === input.scope &&
+        decodeCsrfPart(oauthQuery) === input.oauthQuery
+    );
 }
