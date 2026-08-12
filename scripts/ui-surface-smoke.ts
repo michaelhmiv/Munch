@@ -3,6 +3,8 @@ const requiredFiles = [
     "public/styles.css",
     "public/app.html",
     "public/app.js",
+    "public/app-account.js",
+    "public/account-settings.css",
     "public/app-overrides.css",
     "public/app-patches.js",
     "public/weight-display.js",
@@ -83,7 +85,11 @@ for (const route of [
 }
 
 const appRouterSource = await Bun.file("src/app/routes.ts").text();
-const browserEntryPoints = ["public/app.js", "public/app-patches.js"];
+const browserEntryPoints = [
+    "public/app.js",
+    "public/app-account.js",
+    "public/app-patches.js",
+];
 for (const entryPoint of browserEntryPoints) {
     const source = await Bun.file(entryPoint).text();
     for (const match of source.matchAll(/from\s+["']\.\/([^"']+\.js)["']/g)) {
@@ -102,6 +108,16 @@ for (const entryPoint of browserEntryPoints) {
         }
     }
 }
+if (!appRouterSource.includes('app.get("/account-settings.css"')) {
+    throw new Error(
+        "App router does not serve the account settings stylesheet",
+    );
+}
+if (!appRouterSource.includes('"/api/app/household/manage"')) {
+    throw new Error(
+        "App router is missing the household management read model",
+    );
+}
 
 const appHtml = await Bun.file("public/app.html").text();
 for (const route of [
@@ -113,10 +129,117 @@ for (const route of [
     "/app/groceries",
     "/app/household",
     "/app/settings",
+    "/app/more",
 ]) {
     if (!appHtml.includes(route)) {
         throw new Error(`App navigation is missing ${route}`);
     }
 }
+if (
+    !appHtml.includes('href="/account-settings.css"') ||
+    !appHtml.includes('data-route="more" href="/app/more"')
+) {
+    throw new Error(
+        "App shell is missing the unified settings styles or mobile More route",
+    );
+}
 
-console.log("UI surface smoke checks passed.");
+const accountModule = await Bun.file("public/app-account.js").text();
+for (const route of [
+    "/app/settings/profile",
+    "/app/settings/goals",
+    "/app/settings/billing",
+    "/app/settings/connections",
+    "/app/settings/data",
+    "/app/settings/account",
+]) {
+    if (!accountModule.includes(route)) {
+        throw new Error(`Unified settings module is missing ${route}`);
+    }
+}
+for (const behavior of [
+    "settings-profile-form",
+    "settings-goals-form",
+    "household-create-form",
+    "household-invite-form",
+    "household-member-remove",
+    "household-role-save",
+    "household-leave",
+    "household-dissolve",
+    "connection-revoke",
+    "account-delete",
+    "$4.99",
+    "$2.00",
+    "Premium through household",
+    "Pending invitations",
+]) {
+    if (!accountModule.includes(behavior)) {
+        throw new Error(
+            `Unified account UI is missing behavior/copy: ${behavior}`,
+        );
+    }
+}
+if (accountModule.includes("Advanced account controls")) {
+    throw new Error(
+        "Unified settings still exposes the legacy advanced account UX",
+    );
+}
+
+const accountCss = await Bun.file("public/account-settings.css").text();
+for (const responsiveRule of [
+    "@media (max-width: 980px)",
+    "@media (max-width: 840px)",
+    "@media (max-width: 620px)",
+    "font-size: 16px",
+    "min-height: 48px",
+]) {
+    if (!accountCss.includes(responsiveRule)) {
+        throw new Error(
+            `Account settings CSS is missing responsive/accessibility rule: ${responsiveRule}`,
+        );
+    }
+}
+for (const component of [
+    ".settings-layout",
+    ".settings-local-nav",
+    ".settings-index-card",
+    ".settings-toggle-row",
+    ".segmented-control",
+    ".connection-card",
+    ".household-member",
+    ".settings-danger",
+]) {
+    if (!accountCss.includes(component)) {
+        throw new Error(
+            `Account settings CSS is missing component: ${component}`,
+        );
+    }
+}
+
+const globalStyles = await Bun.file("public/styles.css").text();
+if (
+    !globalStyles.includes("env(safe-area-inset-bottom)") ||
+    !globalStyles.includes(".mobile-bottom-nav")
+) {
+    throw new Error(
+        "Global app shell is missing mobile safe-area navigation protection",
+    );
+}
+
+const portalSource = await Bun.file("src/portal/routes.ts").text();
+if (
+    !portalSource.includes('c.redirect("/app/settings", 303)') ||
+    portalSource.includes("Account control center") ||
+    portalSource.includes("Advanced account controls")
+) {
+    throw new Error("Legacy account portal was not cleanly retired");
+}
+
+const householdRoutes = await Bun.file("src/households/routes.ts").text();
+if (!householdRoutes.includes('c.redirect("/app/household", 303)')) {
+    throw new Error(
+        "Household invitation acceptance does not return to the new workspace",
+    );
+}
+
+console.log("UI surface and unified account responsive smoke checks passed.");

@@ -12,6 +12,7 @@ process.env.STRIPE_HOUSEHOLD_MEMBER_PRICE_ID = "price_household_portal_smoke";
 
 const { Hono } = await import("hono");
 const { createAccountRouter } = await import("../src/accounts/routes.js");
+const { createAppRouter } = await import("../src/app/routes.js");
 const { consumeLoginChallenge, createLoginChallenge } =
     await import("../src/accounts/repository.js");
 const { MUNCH_SESSION_COOKIE } = await import("../src/accounts/session.js");
@@ -32,12 +33,11 @@ const {
 const { codeChallengeForVerifier } =
     await import("../src/oauth-platform/pkce.js");
 const { closePlatformDatabase } = await import("../src/platform/database.js");
-const { listOAuthConnections, revokeOAuthConnection } =
-    await import("../src/portal/repository.js");
+const { listOAuthConnections } = await import("../src/portal/repository.js");
 const storage = await import("../src/storage.js");
 
 if (!process.env.DATABASE_URL) {
-    throw new Error("DATABASE_URL is required for account portal smoke tests");
+    throw new Error("DATABASE_URL is required for account app smoke tests");
 }
 
 async function createUser(prefix: string) {
@@ -45,15 +45,15 @@ async function createUser(prefix: string) {
         `${prefix}-${crypto.randomUUID()}@example.test`,
     );
     const session = await consumeLoginChallenge(challenge.token);
-    if (!session) throw new Error("Unable to activate portal smoke user");
+    if (!session) throw new Error("Unable to activate account app smoke user");
     return { ...challenge, session };
 }
 
-const owner = await createUser("portal-owner");
-const member = await createUser("portal-member");
+const owner = await createUser("settings-owner");
+const member = await createUser("settings-member");
 const userId = owner.userId;
 
-const stripeSubscriptionId = `sub_portal_${crypto.randomUUID().replaceAll("-", "")}`;
+const stripeSubscriptionId = `sub_settings_${crypto.randomUUID().replaceAll("-", "")}`;
 await upsertSubscription({
     userId,
     stripeSubscriptionId,
@@ -63,8 +63,8 @@ await upsertSubscription({
 });
 const household = await createHousehold({
     userId,
-    name: "Portal Household",
-    displayName: "Mom",
+    name: "Settings Household",
+    displayName: "Owner",
 });
 const invitation = await createHouseholdInvitation({
     userId,
@@ -75,30 +75,37 @@ const invitation = await createHouseholdInvitation({
 await acceptHouseholdInvitation({
     userId: member.userId,
     token: invitation.rawToken,
-    displayName: "Dad",
+    displayName: "Member",
 });
 await replaceSubscriptionItems(stripeSubscriptionId, [
     {
-        stripeSubscriptionItemId: "si_household_portal_smoke",
+        stripeSubscriptionItemId: "si_household_settings_smoke",
         stripePriceId: "price_household_portal_smoke",
         quantity: 1,
     },
 ]);
+const pendingEmail = `pending-${crypto.randomUUID()}@example.test`;
+await createHouseholdInvitation({
+    userId,
+    householdId: household.householdId,
+    email: pendingEmail,
+    role: "viewer",
+});
 
 const client = await registerOAuthClient({
-    clientName: "Portal smoke client",
+    clientName: "Settings smoke client",
     redirectUris: ["http://127.0.0.1:4567/callback"],
     tokenEndpointAuthMethod: "none",
 });
-const verifier = "portal-smoke-verifier-abcdefghijklmnopqrstuvwxyz0123456789";
+const verifier = "settings-smoke-verifier-abcdefghijklmnopqrstuvwxyz0123456789";
 const authorization = await createAuthorizationSession({
     clientId: client.clientId,
     redirectUri: client.redirectUris[0]!,
-    state: "portal-smoke-state",
+    state: "settings-smoke-state",
     codeChallenge: codeChallengeForVerifier(verifier),
 });
 if (!(await authorizeSession(authorization.id, userId))) {
-    throw new Error("Unable to authorize portal smoke connection");
+    throw new Error("Unable to authorize settings smoke connection");
 }
 const code = await issueAuthorizationCode(authorization.id, userId);
 await exchangeAuthorizationCode({
@@ -108,21 +115,12 @@ await exchangeAuthorizationCode({
     codeVerifier: verifier,
 });
 
-const connections = await listOAuthConnections(userId);
-if (
-    connections.length !== 1 ||
-    connections[0]?.clientName !== "Portal smoke client" ||
-    connections[0].activeRefreshTokens < 1
-) {
-    throw new Error("Portal did not list the active OAuth connection");
-}
-
 await storage.upsertProfile(userId, {
     timezone: "America/New_York",
     preferred_weight_unit: "kg",
 });
 await storage.insertMeal(userId, {
-    description: "Portal export smoke meal",
+    description: "Settings export smoke meal",
     meal_type: "lunch",
     calories: 500,
     protein_g: 30,
@@ -131,7 +129,7 @@ await storage.insertMeal(userId, {
     logged_at: "2026-08-03T18:00:00.000Z",
 });
 await storage.insertMeal(userId, {
-    description: "Portal zero calorie boundary meal",
+    description: "Settings zero calorie boundary meal",
     meal_type: "snack",
     calories: 0,
     protein_g: 0,
@@ -143,50 +141,243 @@ await storage.insertMeal(userId, {
 
 const app = new Hono();
 app.route("/", createAccountRouter());
-const cookie = `${MUNCH_SESSION_COOKIE}=${owner.session.sessionToken}`;
-const portalResponse = await app.request(
-    "https://munch.example/account/portal",
-    {
-        headers: { cookie },
-    },
-);
-if (portalResponse.status !== 200) {
-    throw new Error(`Authenticated portal returned ${portalResponse.status}`);
-}
-const portalHtml = await portalResponse.text();
+app.route("/", createAppRouter());
+const ownerCookie = `${MUNCH_SESSION_COOKIE}=${owner.session.sessionToken}`;
+const memberCookie = `${MUNCH_SESSION_COOKIE}=${member.session.sessionToken}`;
+const mutationHeaders = {
+    cookie: ownerCookie,
+    origin: "https://munch.example",
+    "content-type": "application/json",
+};
+
+const legacyPortal = await app.request("https://munch.example/account/portal", {
+    headers: { cookie: ownerCookie },
+});
 if (
-    !portalHtml.includes("Munch account") ||
-    !portalHtml.includes(owner.email) ||
-    !portalHtml.includes("Portal Household") ||
-    !portalHtml.includes("Send invitation") ||
-    !portalHtml.includes("Household billing") ||
-    !portalHtml.includes("$6.99/month") ||
-    !portalHtml.includes("+$2.00/month") ||
-    !portalHtml.includes("Dissolve household") ||
-    !portalHtml.includes("Export complete account data") ||
-    !portalHtml.includes("Premium · ChatGPT access active") ||
-    !portalHtml.includes('id="meal-history-card"') ||
-    !portalHtml.includes("Zero-calorie entries are included")
+    legacyPortal.status !== 303 ||
+    legacyPortal.headers.get("location") !== "/app/settings" ||
+    legacyPortal.headers.get("cache-control") !== "private, no-store"
 ) {
     throw new Error(
-        "Portal HTML omitted account, paid household, or meal controls",
+        "Legacy account portal did not redirect into unified settings",
     );
 }
-if (portalHtml.includes("Transfer ownership")) {
+
+for (const path of [
+    "/app/settings",
+    "/app/settings/profile",
+    "/app/settings/goals",
+    "/app/settings/billing",
+    "/app/settings/connections",
+    "/app/settings/data",
+    "/app/settings/account",
+    "/app/household",
+    "/app/more",
+]) {
+    const response = await app.request(`https://munch.example${path}`, {
+        headers: { cookie: ownerCookie },
+    });
+    if (
+        response.status !== 200 ||
+        !(await response.text()).includes("app-content")
+    ) {
+        throw new Error(`App shell route failed: ${path}`);
+    }
+}
+
+const accountModule = await app.request("https://munch.example/app-account.js");
+const accountCss = await app.request(
+    "https://munch.example/account-settings.css",
+);
+if (
+    accountModule.status !== 200 ||
+    !accountModule.headers.get("content-type")?.includes("text/javascript") ||
+    !(await accountModule.text()).includes("settings-profile-form") ||
+    accountCss.status !== 200 ||
+    !accountCss.headers.get("content-type")?.includes("text/css") ||
+    !(await accountCss.text()).includes("@media (max-width: 620px)")
+) {
     throw new Error(
-        "Paid household portal exposed unsupported ownership transfer",
+        "Unified account module or responsive stylesheet is unavailable",
     );
 }
-if (portalResponse.headers.get("cache-control") !== "private, no-store") {
-    throw new Error("Portal response was cacheable");
+
+const settingsResponse = await app.request(
+    "https://munch.example/api/app/settings",
+    { headers: { cookie: ownerCookie } },
+);
+if (settingsResponse.status !== 200) {
+    throw new Error(`Settings API returned ${settingsResponse.status}`);
+}
+const settings = (await settingsResponse.json()) as any;
+if (
+    settings.user?.email !== owner.email ||
+    settings.profile?.timezone !== "America/New_York" ||
+    settings.capabilities?.tier !== "premium" ||
+    settings.capabilities?.entitlementSource === "household_subscription" ||
+    settings.connections?.length !== 1 ||
+    settings.connections[0]?.clientName !== "Settings smoke client"
+) {
+    throw new Error(
+        "Settings API omitted identity, entitlement, profile, or connection data",
+    );
+}
+
+const householdResponse = await app.request(
+    "https://munch.example/api/app/household/manage",
+    { headers: { cookie: ownerCookie } },
+);
+if (householdResponse.status !== 200) {
+    throw new Error(
+        `Household management API returned ${householdResponse.status}`,
+    );
+}
+const householdView = (await householdResponse.json()) as any;
+if (
+    householdView.household?.householdName !== "Settings Household" ||
+    householdView.household?.role !== "owner" ||
+    householdView.members?.length !== 2 ||
+    householdView.activeNonOwnerCount !== 1 ||
+    householdView.billedSeatQuantity !== 1 ||
+    householdView.seatCoverage !== true ||
+    householdView.canInvite !== true ||
+    householdView.pendingInvitations?.length !== 1 ||
+    householdView.pendingInvitations[0]?.email !== pendingEmail
+) {
+    throw new Error(
+        "Household management API did not reconcile roster, billing, or pending invitations",
+    );
+}
+
+const memberHouseholdResponse = await app.request(
+    "https://munch.example/api/app/household/manage",
+    { headers: { cookie: memberCookie } },
+);
+const memberHousehold = (await memberHouseholdResponse.json()) as any;
+if (
+    memberHouseholdResponse.status !== 200 ||
+    memberHousehold.entitlementSource !== "household_subscription" ||
+    memberHousehold.tier !== "premium" ||
+    memberHousehold.pendingInvitations?.length !== 0 ||
+    memberHousehold.household?.role !== "member"
+) {
+    throw new Error(
+        "Household member view exposed owner-only data or lost inherited Premium",
+    );
+}
+
+const preferences = await app.request(
+    "https://munch.example/api/app/preferences",
+    {
+        method: "PUT",
+        headers: mutationHeaders,
+        body: JSON.stringify({
+            timezone: "America/New_York",
+            preferred_weight_unit: "lb",
+            widgets_enabled: false,
+            alcohol_tracking_enabled: true,
+            preferred_drink_unit: "us",
+        }),
+    },
+);
+if (preferences.status !== 200) {
+    throw new Error(`Settings preference save returned ${preferences.status}`);
+}
+const profile = await storage.getProfile(userId);
+if (
+    profile?.timezone !== "America/New_York" ||
+    profile.preferred_weight_unit !== "lb" ||
+    profile.widgets_enabled !== false ||
+    profile.alcohol_tracking_enabled !== true ||
+    profile.preferred_drink_unit !== "us"
+) {
+    throw new Error("Unified profile preferences were not persisted");
+}
+
+const goalsResponse = await app.request("https://munch.example/api/app/goals", {
+    method: "PUT",
+    headers: mutationHeaders,
+    body: JSON.stringify({
+        daily_calories: "2200",
+        daily_protein_g: "160",
+        daily_carbs_g: "210",
+        daily_fat_g: "75",
+        daily_fiber_g: "30",
+        daily_sugar_g: "60",
+        daily_water_ml: "3000",
+        daily_alcohol_g: "0",
+        target_weight: "190",
+        unit: "lb",
+    }),
+});
+if (goalsResponse.status !== 200) {
+    throw new Error(`Nutrition target save returned ${goalsResponse.status}`);
+}
+const goals = await storage.getNutritionGoals(userId);
+if (
+    Number(goals?.daily_calories) !== 2200 ||
+    Number(goals?.daily_protein_g) !== 160 ||
+    Number(goals?.daily_water_ml) !== 3000 ||
+    Number(goals?.target_weight_g) < 86100 ||
+    Number(goals?.target_weight_g) > 86300
+) {
+    throw new Error("Expanded nutrition targets were not persisted correctly");
+}
+
+const connections = await listOAuthConnections(userId);
+const tokenFamilyId = connections[0]?.tokenFamilyId;
+if (!tokenFamilyId) throw new Error("Missing OAuth connection for revoke test");
+const revokeResponse = await app.request(
+    `https://munch.example/api/app/connections/${encodeURIComponent(tokenFamilyId)}`,
+    {
+        method: "DELETE",
+        headers: mutationHeaders,
+    },
+);
+if (
+    revokeResponse.status !== 200 ||
+    (await listOAuthConnections(userId)).length !== 0
+) {
+    throw new Error(
+        "Unified Connections screen backend could not revoke access",
+    );
+}
+
+const exportResponse = await app.request(
+    "https://munch.example/account/portal/export",
+    {
+        method: "POST",
+        headers: mutationHeaders,
+        body: "{}",
+    },
+);
+if (exportResponse.status !== 200) {
+    throw new Error(`Account export returned ${exportResponse.status}`);
+}
+const exported = (await exportResponse.json()) as { url?: string };
+if (!exported.url) throw new Error("Account export did not issue a URL");
+const downloadResponse = await app.request(exported.url);
+const exportDocument = JSON.parse(await downloadResponse.text()) as {
+    meals?: Array<{ description?: string }>;
+};
+if (
+    downloadResponse.status !== 200 ||
+    downloadResponse.headers.get("cache-control") !== "private, no-store" ||
+    !exportDocument.meals?.some(
+        (meal) => meal.description === "Settings export smoke meal",
+    )
+) {
+    throw new Error("Account export failed security or content checks");
 }
 
 const boundaryResponse = await app.request(
     "https://munch.example/account/portal/meals?date=2026-08-04",
-    { headers: { cookie } },
+    { headers: { cookie: ownerCookie } },
 );
 if (boundaryResponse.status !== 200) {
-    throw new Error(`Portal meal history returned ${boundaryResponse.status}`);
+    throw new Error(
+        `Compatibility meal history returned ${boundaryResponse.status}`,
+    );
 }
 const boundary = (await boundaryResponse.json()) as {
     date: string;
@@ -198,7 +389,7 @@ const boundary = (await boundaryResponse.json()) as {
     }>;
 };
 const zeroMeal = boundary.meals.find(
-    (meal) => meal.description === "Portal zero calorie boundary meal",
+    (meal) => meal.description === "Settings zero calorie boundary meal",
 );
 if (
     boundary.date !== "2026-08-04" ||
@@ -207,134 +398,29 @@ if (
     zeroMeal.logged_at !== "2026-08-05T03:30:00.000Z"
 ) {
     throw new Error(
-        "Portal meal history changed timestamps, lost zero calories, or used the wrong local day",
-    );
-}
-const adjacentResponse = await app.request(
-    "https://munch.example/account/portal/meals?date=2026-08-05",
-    { headers: { cookie } },
-);
-const adjacent = (await adjacentResponse.json()) as {
-    meals: Array<{ description: string }>;
-};
-if (
-    adjacent.meals.some(
-        (meal) => meal.description === "Portal zero calorie boundary meal",
-    )
-) {
-    throw new Error(
-        "Timezone grouping duplicated the meal onto an adjacent day",
-    );
-}
-if (
-    boundaryResponse.headers.get("cache-control") !== "private, no-store" ||
-    (
-        await app.request(
-            "https://munch.example/account/portal/meals?date=2026-02-30",
-            { headers: { cookie } },
-        )
-    ).status !== 400
-) {
-    throw new Error("Portal meal endpoint caching or date validation failed");
-}
-
-const stylesheet = await app.request(
-    "https://munch.example/portal-controls.css",
-);
-if (
-    stylesheet.status !== 200 ||
-    !stylesheet.headers.get("content-type")?.includes("text/css")
-) {
-    throw new Error("Portal controls stylesheet is not publicly reachable");
-}
-
-const unauthorized = await app.request("https://munch.example/account/portal");
-const unauthorizedMeals = await app.request(
-    "https://munch.example/account/portal/meals?date=2026-08-04",
-);
-if (unauthorized.status !== 401 || unauthorizedMeals.status !== 401) {
-    throw new Error(
-        "Portal or meal history allowed access without a web session",
+        "Compatibility meal history changed timezone or zero-calorie semantics",
     );
 }
 
-const preferences = await app.request(
-    "https://munch.example/account/portal/preferences",
-    {
-        method: "POST",
-        headers: {
-            cookie,
-            origin: "https://munch.example",
-            "content-type": "application/json",
-        },
-        body: JSON.stringify({
-            timezone: "America/New_York",
-            preferred_weight_unit: "lb",
-            widgets_enabled: false,
-            alcohol_tracking_enabled: true,
-            preferred_drink_unit: "us",
-        }),
-    },
+const unauthorizedPortal = await app.request(
+    "https://munch.example/account/portal",
 );
-if (preferences.status !== 200) {
-    throw new Error(`Portal preference save returned ${preferences.status}`);
-}
-const profile = await storage.getProfile(userId);
-if (
-    profile?.timezone !== "America/New_York" ||
-    profile.preferred_weight_unit !== "lb" ||
-    profile.widgets_enabled !== false ||
-    profile.alcohol_tracking_enabled !== true
-) {
-    throw new Error("Portal preferences were not persisted");
-}
-
-const exportResponse = await app.request(
-    "https://munch.example/account/portal/export",
-    {
-        method: "POST",
-        headers: {
-            cookie,
-            origin: "https://munch.example",
-            "content-type": "application/json",
-        },
-        body: "{}",
-    },
+const unauthorizedSettings = await app.request(
+    "https://munch.example/api/app/settings",
 );
-if (exportResponse.status !== 200) {
-    throw new Error(`Portal export returned ${exportResponse.status}`);
-}
-const exported = (await exportResponse.json()) as { url?: string };
-if (!exported.url) throw new Error("Portal export did not issue a URL");
-const exportUrl = new URL(exported.url);
-const downloadResponse = await app.request(exportUrl.toString());
-const exportDocument = JSON.parse(await downloadResponse.text()) as {
-    meals?: Array<{ description?: string }>;
-};
+const unauthorizedHousehold = await app.request(
+    "https://munch.example/api/app/household/manage",
+);
 if (
-    downloadResponse.status !== 200 ||
-    !downloadResponse.headers
-        .get("content-disposition")
-        ?.includes("munch-account-") ||
-    downloadResponse.headers.get("content-type") !==
-        "application/json; charset=utf-8" ||
-    downloadResponse.headers.get("cache-control") !== "private, no-store" ||
-    !exportDocument.meals?.some(
-        (meal) => meal.description === "Portal export smoke meal",
-    )
+    unauthorizedPortal.status !== 401 ||
+    unauthorizedSettings.status !== 401 ||
+    unauthorizedHousehold.status !== 401
 ) {
-    throw new Error("Portal account export failed security or content checks");
-}
-
-if (
-    !(await revokeOAuthConnection(userId, connections[0].tokenFamilyId)) ||
-    (await listOAuthConnections(userId)).length !== 0
-) {
-    throw new Error("Portal OAuth connection revocation failed");
+    throw new Error("Account surfaces allowed access without a web session");
 }
 
 await closePlatformDatabase();
 console.log(
-    "Munch account portal, timezone-aware zero-calorie meal history, household controls, complete export, preferences, and OAuth connection smoke test passed.",
+    "Unified settings, responsive account assets, household billing view, preferences, targets, connections, export, privacy boundaries, and legacy redirect smoke test passed.",
 );
 process.exit(0);

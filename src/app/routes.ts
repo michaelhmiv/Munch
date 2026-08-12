@@ -1,4 +1,13 @@
 import { Hono, type Context } from "hono";
+import { resolveMunchCapabilities } from "../billing/capabilities.js";
+import {
+    getHouseholdSeatCoverage,
+    ownerCanPurchaseHouseholdSeats,
+} from "../billing/household-seats.js";
+import {
+    listHouseholdMembers,
+    listPendingHouseholdInvitations,
+} from "../households/repository.js";
 import { requireSameOrigin } from "../accounts/csrf.js";
 import { requireWebSession } from "../accounts/session.js";
 import { getSubscriptionSnapshot } from "../billing/repository.js";
@@ -120,6 +129,18 @@ export function createAppRouter(): Hono {
             "Cache-Control": "no-cache",
         }),
     );
+    app.get("/app-account.js", async (c) =>
+        c.body(await Bun.file("./public/app-account.js").text(), 200, {
+            "Content-Type": "text/javascript; charset=utf-8",
+            "Cache-Control": "no-cache",
+        }),
+    );
+    app.get("/account-settings.css", async (c) =>
+        c.body(await Bun.file("./public/account-settings.css").text(), 200, {
+            "Content-Type": "text/css; charset=utf-8",
+            "Cache-Control": "no-cache",
+        }),
+    );
     app.get("/app", async (c) =>
         c.html(await Bun.file("./public/app.html").text(), 200, {
             "Cache-Control": "no-store, private",
@@ -202,6 +223,68 @@ export function createAppRouter(): Hono {
     app.get("/api/app/household", async (c) =>
         privateJson(c, await getHouseholdWorkspace(c.get("munchUserId"))),
     );
+
+    app.get("/api/app/household/manage", async (c) => {
+        const userId = c.get("munchUserId");
+        const capabilities = await resolveMunchCapabilities(userId);
+        const household = capabilities.household;
+        if (!household) {
+            return privateJson(c, {
+                household: null,
+                members: [],
+                pendingInvitations: [],
+                tier: capabilities.tier,
+                entitlementSource: capabilities.entitlementSource,
+                canInvite: false,
+                canWrite: false,
+                activeNonOwnerCount: 0,
+                billedSeatQuantity: 0,
+                seatCoverage: true,
+            });
+        }
+
+        const owner = household.role === "owner";
+        const [members, coverage, pendingInvitations, canInvite] =
+            await Promise.all([
+                listHouseholdMembers(userId, household.householdId),
+                getHouseholdSeatCoverage({
+                    ownerUserId: household.ownerUserId,
+                    householdId: household.householdId,
+                }),
+                owner
+                    ? listPendingHouseholdInvitations(
+                          userId,
+                          household.householdId,
+                      )
+                    : Promise.resolve([]),
+                owner
+                    ? ownerCanPurchaseHouseholdSeats(userId)
+                    : Promise.resolve(false),
+            ]);
+
+        return privateJson(c, {
+            household: {
+                householdId: household.householdId,
+                householdName: household.householdName,
+                role: household.role,
+                displayName: household.displayName,
+            },
+            members: members.map((member) => ({
+                membershipId: member.membershipId,
+                displayName: member.displayName,
+                role: member.role,
+                joinedAt: member.joinedAt,
+            })),
+            pendingInvitations,
+            tier: capabilities.tier,
+            entitlementSource: capabilities.entitlementSource,
+            canInvite,
+            canWrite: capabilities.householdWrite,
+            activeNonOwnerCount: coverage.activeNonOwnerCount,
+            billedSeatQuantity: coverage.billedSeatQuantity,
+            seatCoverage: coverage.covered,
+        });
+    });
 
     app.get("/api/app/settings", async (c) => {
         const userId = c.get("munchUserId");

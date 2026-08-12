@@ -218,7 +218,7 @@ export function createHouseholdRouter(): Hono {
                     token: body.token,
                     displayName: body.display_name,
                 });
-                return c.redirect("/account/portal", 303);
+                return c.redirect("/app/household", 303);
             } catch (error) {
                 return jsonError(c, error);
             }

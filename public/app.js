@@ -3,6 +3,14 @@ import {
     savedWeightUnit,
     weightFromGrams,
 } from "./weight-display.js";
+import {
+    accountRoutes,
+    accountTitles,
+    handleAccountAction,
+    handleAccountSubmit,
+    isAccountRoute,
+    renderAccountRoute,
+} from "./app-account.js";
 
 const state = {
     bootstrap: null,
@@ -28,14 +36,7 @@ const routes = {
     "/app/recipes": "recipes",
     "/app/plan": "plan",
     "/app/groceries": "groceries",
-    "/app/household": "household",
-    "/app/settings": "settings",
-    "/app/settings/profile": "settings",
-    "/app/settings/goals": "settings",
-    "/app/settings/connections": "settings",
-    "/app/settings/billing": "settings",
-    "/app/settings/import-export": "settings",
-    "/app/settings/privacy": "settings",
+    ...accountRoutes,
 };
 
 const titles = {
@@ -46,8 +47,7 @@ const titles = {
     recipes: ["Structured cooking memory", "Recipes"],
     plan: ["Personal and household", "Meal Plan"],
     groceries: ["Shopping workspace", "Groceries"],
-    household: ["Shared workspace", "Household"],
-    settings: ["Account and preferences", "Settings"],
+    ...accountTitles,
 };
 
 const sourceLabels = {
@@ -197,10 +197,28 @@ function errorState(error) {
 }
 
 function setActiveRoute(route) {
+    const moreRoutes = new Set([
+        "more",
+        "household",
+        "insights",
+        "foods",
+        "recipes",
+        "settings",
+        "settings-profile",
+        "settings-goals",
+        "settings-billing",
+        "settings-connections",
+        "settings-data",
+        "settings-account",
+    ]);
+    const primaryRoute = route.startsWith("settings-") ? "settings" : route;
     document.querySelectorAll("[data-route]").forEach((link) => {
-        link.classList.toggle("is-active", link.dataset.route === route);
-        if (link.dataset.route === route)
-            link.setAttribute("aria-current", "page");
+        const requested = link.dataset.route;
+        const active =
+            requested === primaryRoute ||
+            (requested === "more" && moreRoutes.has(route));
+        link.classList.toggle("is-active", active);
+        if (active) link.setAttribute("aria-current", "page");
         else link.removeAttribute("aria-current");
     });
     const [kicker, title] = titles[route] || titles.today;
@@ -369,26 +387,16 @@ async function renderGroceries() {
     content.innerHTML = `<div class="page-heading"><div><h2>Groceries</h2><p>Explicit shopping lists only. Munch does not infer pantry inventory.</p></div><button class="button button-secondary button-small" data-action="shopping-mode">Shopping mode</button></div><div class="dashboard-grid">${data.groceries.map((list) => `<section class="panel panel-span-6"><div class="panel-title"><h3>${list.scope === "household" ? "Household list" : "Personal list"}</h3><span>${list.items.length} items</span></div>${list.items.length ? `<div class="meal-groups">${list.items.map((item) => `<label class="food-row"><div><strong>${escapeHtml(item.name)}</strong><small>${item.quantity == null ? "" : `${number(item.quantity, 2)} ${escapeHtml(item.unit || "")}`}${item.note ? ` · ${escapeHtml(item.note)}` : ""}</small></div><input type="checkbox" ${item.purchased_at ? "checked" : ""} disabled aria-label="${escapeHtml(item.name)} purchased" /></label>`).join("")}</div>` : `<div class="empty-state"><div><h3>The list is empty</h3><p>Ask ChatGPT to add the groceries you explicitly need.</p></div></div>`}</section>`).join("")}</div>`;
 }
 
-async function renderHousehold() {
-    setLoading("Loading household workspace…");
-    const data = await api("/api/app/household");
-    if (!data.household) {
-        content.innerHTML = `<div class="empty-state"><div><h2>No household is connected</h2><p>Create or join a household to share recipes, planned meals, and grocery lists. Personal nutrition records remain private.</p><a class="button button-primary spacer-top" href="/app/settings">Open household settings</a></div></div>`;
-        return;
-    }
-    content.innerHTML = `<div class="page-heading"><div><h2>${escapeHtml(data.household.householdName)}</h2><p>Your role: ${escapeHtml(data.household.role)}. Shared activity uses the display name ${escapeHtml(data.household.displayName)}.</p></div></div><div class="dashboard-grid"><section class="panel panel-span-7"><div class="panel-title"><h3>Members</h3><span>${data.members.length}</span></div><div class="data-table-wrap"><table class="data-table"><thead><tr><th>Name</th><th>Role</th><th>Joined</th></tr></thead><tbody>${data.members.map((member) => `<tr><td><strong>${escapeHtml(member.displayName)}</strong></td><td>${escapeHtml(member.role)}</td><td>${escapeHtml(formatDate(member.joinedAt.slice(0, 10), { year: true }))}</td></tr>`).join("")}</tbody></table></div></section><aside class="panel panel-span-5"><div class="panel-title"><h3>Privacy boundary</h3></div><p>Household recipes, planned meals, and grocery lists are shared. Personal meals, water, weight, goals, and saved foods are not shared merely because you belong to this household.</p><a class="text-link" href="/privacy#households">Review household privacy →</a></aside></div>`;
-}
-
-function settingSection(title, description, body) {
-    return `<section class="panel"><div class="panel-title"><div><h3>${escapeHtml(title)}</h3><p>${escapeHtml(description)}</p></div></div>${body}</section>`;
-}
-
-async function renderSettings() {
-    setLoading("Loading settings…");
-    const data = await api("/api/app/settings");
-    const profile = data.profile || {};
-    const subscription = data.subscription || {};
-    content.innerHTML = `<div class="page-heading"><div><h2>Settings</h2><p>Profile, goals, connections, website billing, import, export, and privacy controls.</p></div></div><div class="dashboard-grid"><div class="panel-span-7" style="display:grid;gap:18px">${settingSection("Profile and display", "Timezone and units control how records are grouped and shown.", `<form id="preferences-form" class="auth-form"><label class="field"><span>Timezone</span><input name="timezone" value="${escapeHtml(profile.timezone || "UTC")}" required /></label><label class="field"><span>Weight unit</span><select name="preferred_weight_unit"><option value="">Require an explicit unit</option><option value="lb" ${profile.preferred_weight_unit === "lb" ? "selected" : ""}>Pounds</option><option value="kg" ${profile.preferred_weight_unit === "kg" ? "selected" : ""}>Kilograms</option></select></label><label class="field"><span><input name="widgets_enabled" type="checkbox" ${profile.widgets_enabled !== false ? "checked" : ""} /> Show visual widgets in supported ChatGPT clients</span></label><button class="button button-primary" type="submit">Save preferences</button></form>`)}${settingSection("Nutrition goals", "Targets are values you choose. Munch does not determine medical or dietary goals.", `<form id="goals-form" class="auth-form"><div class="summary-grid"><label class="field"><span>Calories</span><input name="daily_calories" type="number" min="0" value="${escapeHtml(data.goals?.daily_calories || "")}" /></label><label class="field"><span>Protein (g)</span><input name="daily_protein_g" type="number" min="0" step="0.1" value="${escapeHtml(data.goals?.daily_protein_g || "")}" /></label><label class="field"><span>Carbs (g)</span><input name="daily_carbs_g" type="number" min="0" step="0.1" value="${escapeHtml(data.goals?.daily_carbs_g || "")}" /></label><label class="field"><span>Fat (g)</span><input name="daily_fat_g" type="number" min="0" step="0.1" value="${escapeHtml(data.goals?.daily_fat_g || "")}" /></label></div><button class="button button-primary" type="submit">Save goals</button></form>`)}</div><div class="panel-span-5" style="display:grid;gap:18px">${settingSection("Website billing", "Commerce is managed only on the Munch website.", `<p><strong>${escapeHtml(subscription.status || "No active subscription")}</strong></p><div class="auth-actions">${data.capabilities.tier === "premium" ? `<button class="button button-secondary" data-action="billing-portal">Manage billing</button>` : `<button class="button button-primary" data-action="billing-checkout">Get Premium — $4.99/month</button>`}</div>`)}${settingSection("Authorized connections", "Revoke a specific ChatGPT or MCP connection without deleting your data.", data.connections.length ? data.connections.map((connection) => `<div class="food-row"><div><strong>${escapeHtml(connection.clientName || connection.clientId)}</strong><small>${number(connection.activeAccessTokens)} access token · expires ${escapeHtml(formatDate(connection.expiresAt.slice(0, 10), { year: true }))}</small></div><a class="button button-secondary button-small" href="/account/portal">Manage</a></div>`).join("") : `<p>No active connections were found.</p>`)}${settingSection("Import and export", "Bring in supported history or download a private copy of your data.", `<div class="auth-actions"><button class="button button-secondary" data-action="open-chatgpt-import">Import meals</button><button class="button button-secondary" data-action="export-account">Export account data</button></div>`)}${settingSection("Privacy and account", "Review policies or use the protected account controls.", `<div class="auth-actions"><a class="button button-secondary" href="/privacy">Privacy policy</a><a class="button button-secondary" href="/security">Security</a><a class="button button-quiet" href="/account/portal">Advanced account controls</a><button class="button button-quiet" data-action="logout">Sign out</button></div>`)}</div></div>`;
+function accountContext() {
+    return {
+        content,
+        api,
+        state,
+        toast,
+        setLoading,
+        renderRoute,
+        navigate,
+    };
 }
 
 async function renderRoute() {
@@ -401,6 +409,9 @@ async function renderRoute() {
                 state.bootstrap.profile?.timezone || "UTC",
             );
         }
+        if (isAccountRoute(state.route) && !accountTitles[state.route]) {
+            throw new Error("Unknown account route");
+        }
         const renderers = {
             today: renderToday,
             log: renderLog,
@@ -409,8 +420,21 @@ async function renderRoute() {
             recipes: renderRecipes,
             plan: renderPlan,
             groceries: renderGroceries,
-            household: renderHousehold,
-            settings: renderSettings,
+            more: () => renderAccountRoute("more", accountContext()),
+            household: () => renderAccountRoute("household", accountContext()),
+            settings: () => renderAccountRoute("settings", accountContext()),
+            "settings-profile": () =>
+                renderAccountRoute("settings-profile", accountContext()),
+            "settings-goals": () =>
+                renderAccountRoute("settings-goals", accountContext()),
+            "settings-billing": () =>
+                renderAccountRoute("settings-billing", accountContext()),
+            "settings-connections": () =>
+                renderAccountRoute("settings-connections", accountContext()),
+            "settings-data": () =>
+                renderAccountRoute("settings-data", accountContext()),
+            "settings-account": () =>
+                renderAccountRoute("settings-account", accountContext()),
         };
         await (renderers[state.route] || renderToday)();
         content.focus({ preventScroll: true });
@@ -446,6 +470,7 @@ async function editMeal(id) {
 async function handleAction(button) {
     const action = button.dataset.action;
     if (!action) return;
+    if (await handleAccountAction(button, accountContext())) return;
     if (action === "refresh") return renderRoute();
     if (action === "date-prev") state.date = shiftDate(state.date, -1);
     if (action === "date-next") state.date = shiftDate(state.date, 1);
@@ -576,6 +601,22 @@ document.addEventListener("input", (event) => {
 document.addEventListener("submit", async (event) => {
     const form = event.target;
     if (!(form instanceof HTMLFormElement)) return;
+    if (
+        [
+            "settings-profile-form",
+            "settings-goals-form",
+            "household-create-form",
+            "household-invite-form",
+        ].includes(form.id)
+    ) {
+        event.preventDefault();
+        try {
+            await handleAccountSubmit(form, accountContext());
+        } catch (error) {
+            toast(error.message || "Save failed", "error");
+        }
+        return;
+    }
     if (
         ![
             "edit-meal-form",

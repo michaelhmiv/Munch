@@ -231,6 +231,7 @@ export async function getAppBootstrap(userId: string, email: string) {
         profile,
         capabilities: {
             tier: capabilities.tier,
+            entitlementSource: capabilities.entitlementSource,
             historyDays: capabilities.historyDays,
             savedFoodLimit: capabilities.savedFoodLimit,
             recipes:
