@@ -815,43 +815,43 @@
     },
     "test_cases": [
         {
-            "description": "Prepare a meal review before permanently logging a described meal.",
+            "description": "Using the provisioned reviewer account, prepare a meal review before permanently logging a described meal.",
             "user_prompt": "I had two scrambled eggs, two slices of toast, and a medium banana for breakfast. Review the portions before logging it.",
             "file_attachment_urls": null,
             "tools_triggered": "prepare_meal_review",
-            "expected_output": "Returns a reviewable breakfast draft with item quantities, nutrition estimates, sources, assumptions, and any question needed before confirmation.",
+            "expected_output": "Returns a reviewable breakfast draft for the provisioned reviewer account with item quantities, nutrition estimates, sources, assumptions, and any question needed before confirmation.",
             "expected_output_url": null
         },
         {
-            "description": "Permanently confirm a previously reviewed meal draft.",
+            "description": "Using the provisioned reviewer account and the pending draft from the first case, permanently confirm a previously reviewed meal draft.",
             "user_prompt": "Everything in that breakfast review is correct. Confirm and log it.",
             "file_attachment_urls": null,
             "tools_triggered": "confirm_meal_draft",
-            "expected_output": "Logs the confirmed meal once and returns the persisted meal summary without duplicating an already confirmed draft.",
+            "expected_output": "Logs the confirmed seeded draft once and returns the persisted meal summary without duplicating an already confirmed draft.",
             "expected_output_url": null
         },
         {
-            "description": "Retrieve the authenticated user's nutrition summary for a bounded date range.",
+            "description": "Using the provisioned reviewer account and its seeded meal history, retrieve the authenticated user's nutrition summary for a bounded date range.",
             "user_prompt": "Show my calorie and macro totals for the last seven days.",
             "file_attachment_urls": null,
             "tools_triggered": "get_nutrition_summary",
-            "expected_output": "Returns the user's seven-day totals and daily breakdown with enough context to identify missing or estimated data.",
+            "expected_output": "Returns the provisioned reviewer account's seven-day totals and daily breakdown with enough context to identify missing or estimated data.",
             "expected_output_url": null
         },
         {
-            "description": "Look up a packaged food by barcode using configured food-data providers.",
+            "description": "Using the provisioned reviewer account, look up a packaged food by barcode using configured food-data providers.",
             "user_prompt": "Look up the nutrition for barcode 737628064502 and tell me the serving information you found.",
             "file_attachment_urls": null,
             "tools_triggered": "lookup_food_barcode",
-            "expected_output": "Returns the matching packaged-food record, serving basis, nutrients, provider attribution, and a clear not-found result when unavailable.",
+            "expected_output": "Returns the matching packaged-food record, serving basis, nutrients, provider attribution, and a clear not-found result when unavailable; no account fixture is required beyond reviewer sign-in.",
             "expected_output_url": null
         },
         {
-            "description": "Save a recipe, schedule it, and add requested ingredients to a grocery list atomically.",
+            "description": "Using the provisioned Premium reviewer account and its seeded household, save a recipe, schedule it, and add requested ingredients to a grocery list atomically.",
             "user_prompt": "Save my four-serving turkey chili recipe, plan it for dinner next Monday, and add two cans of beans and one onion to my grocery list.",
             "file_attachment_urls": null,
             "tools_triggered": "save_recipe_and_plan",
-            "expected_output": "Returns the saved recipe revision, scheduled meal, and grocery changes while keeping personal or household ownership explicit.",
+            "expected_output": "Returns the saved recipe revision, scheduled meal, and grocery changes while keeping personal or seeded-household ownership explicit.",
             "expected_output_url": null
         }
     ],

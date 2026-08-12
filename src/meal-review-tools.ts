@@ -244,7 +244,12 @@ export function registerMealReviewTools(
                 description: z.string().min(1).max(2_000),
                 logged_at: z.string().optional(),
                 notes: z.string().max(4_000).optional(),
-                request_id: z.string().min(1).max(200).optional(),
+                request_id: z
+                    .string()
+                    .min(1)
+                    .max(200)
+                    .optional()
+                    .describe("Optional stable key for idempotent retries of the same review preparation."),
                 draft_id: z.string().uuid().optional(),
                 expected_version: z.coerce.number().int().positive().optional(),
                 items: z.array(reviewItemInput).min(1).max(100),

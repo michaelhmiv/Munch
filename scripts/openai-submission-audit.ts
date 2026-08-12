@@ -32,6 +32,14 @@ for (const tool of inventory) {
         errors.push(`${tool.name}: missing destructiveHint`);
     if (tool.idempotentHint === null)
         errors.push(`${tool.name}: missing idempotentHint`);
+    if (
+        tool.destructiveHint === true &&
+        !/\b(confirm|confirmation)\b/i.test(tool.inputExcerpt)
+    ) {
+        errors.push(
+            `${tool.name}: destructive tools must require schema-enforced confirmation`,
+        );
+    }
 
     const input = tool.inputExcerpt.toLowerCase();
     if (/\buser_id\b/.test(input)) {

@@ -69,6 +69,32 @@ function calculateDateRangeDays(
     );
 }
 
+function addTextStructuredContent<T>(result: T): T {
+    if (!result || typeof result !== "object" || Array.isArray(result)) {
+        return result;
+    }
+
+    const record = result as Record<string, unknown>;
+    if (record.structuredContent !== undefined || !Array.isArray(record.content)) {
+        return result;
+    }
+
+    const text = record.content
+        .filter(
+            (item): item is Record<string, unknown> =>
+                !!item &&
+                typeof item === "object" &&
+                (item as Record<string, unknown>).type === "text",
+        )
+        .map((item) => String(item.text ?? ""))
+        .filter(Boolean)
+        .join("\n");
+
+    return text
+        ? ({ ...record, structuredContent: { text } } as T)
+        : result;
+}
+
 function persistAnalytics(record: AnalyticsRecord): void {
     void insertToolAnalytics(record).catch((error) => {
         console.warn(
@@ -137,7 +163,7 @@ export async function withAnalytics<T>(
             });
         }
 
-        return result;
+        return addTextStructuredContent(result);
     } catch (error) {
         const durationMs = Math.round(performance.now() - start);
         const errorCategory = categorizeError(error);
@@ -157,7 +183,7 @@ export async function withAnalytics<T>(
             invoked_at: invokedAt,
         });
 
-        return {
+        return addTextStructuredContent({
             content: [
                 {
                     type: "text",
@@ -165,6 +191,6 @@ export async function withAnalytics<T>(
                 },
             ],
             isError: true,
-        } as T;
+        } as T);
     }
 }
