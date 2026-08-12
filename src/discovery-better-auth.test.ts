@@ -33,3 +33,26 @@ test("serves OAuth and OpenID-compatible metadata at paths derived from the Bett
         );
     }
 });
+
+test("serves the configured OpenAI domain challenge as raw text", async () => {
+    const previous = process.env.OPENAI_APPS_CHALLENGE;
+    process.env.OPENAI_APPS_CHALLENGE = "challenge-test-token";
+
+    try {
+        const app = new Hono();
+        registerDiscoveryRoutes(app);
+        const response = await fetchDiscovery(
+            app,
+            "/.well-known/openai-apps-challenge",
+        );
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toContain("text/plain");
+        expect(await response.text()).toBe("challenge-test-token");
+    } finally {
+        if (previous === undefined) {
+            delete process.env.OPENAI_APPS_CHALLENGE;
+        } else {
+            process.env.OPENAI_APPS_CHALLENGE = previous;
+        }
+    }
+});
