@@ -150,7 +150,9 @@
 
                 const foodItems = card.querySelector(".food-items");
                 if (!foodItems) return;
-                const rows = [...foodItems.querySelectorAll(":scope > .food-row")];
+                const rows = [
+                    ...foodItems.querySelectorAll(":scope > .food-row"),
+                ];
                 const isLegacy =
                     rows.length === 0 ||
                     rows.some((row) =>

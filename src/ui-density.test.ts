@@ -11,7 +11,7 @@ test("web diary uses progressive disclosure for structured meal audit data", asy
     ]);
 
     expect(html).toContain('card.classList.add("is-structured")');
-    expect(html).toContain('heading.textContent = `${rows.length} food');
+    expect(html).toContain("heading.textContent = `${rows.length} food");
     expect(html).toContain('auditSummary.textContent = "Log details"');
     expect(html).toContain('summary.textContent = "Source & estimate"');
     expect(html).toContain('label.textContent = "Original description"');

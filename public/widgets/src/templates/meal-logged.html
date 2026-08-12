@@ -263,7 +263,9 @@
                     ? `${items.length} food${items.length === 1 ? "" : "s"}`
                     : originalTitle;
                 const macroLine = [
-                    meal.protein_g != null ? `P ${fmt(meal.protein_g, 1)}g` : null,
+                    meal.protein_g != null
+                        ? `P ${fmt(meal.protein_g, 1)}g`
+                        : null,
                     meal.carbs_g != null ? `C ${fmt(meal.carbs_g, 1)}g` : null,
                     meal.fat_g != null ? `F ${fmt(meal.fat_g, 1)}g` : null,
                 ]
