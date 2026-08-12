@@ -109,10 +109,14 @@ for (const entryPoint of browserEntryPoints) {
     }
 }
 if (!appRouterSource.includes('app.get("/account-settings.css"')) {
-    throw new Error("App router does not serve the account settings stylesheet");
+    throw new Error(
+        "App router does not serve the account settings stylesheet",
+    );
 }
 if (!appRouterSource.includes('"/api/app/household/manage"')) {
-    throw new Error("App router is missing the household management read model");
+    throw new Error(
+        "App router is missing the household management read model",
+    );
 }
 
 const appHtml = await Bun.file("public/app.html").text();
@@ -135,7 +139,9 @@ if (
     !appHtml.includes('href="/account-settings.css"') ||
     !appHtml.includes('data-route="more" href="/app/more"')
 ) {
-    throw new Error("App shell is missing the unified settings styles or mobile More route");
+    throw new Error(
+        "App shell is missing the unified settings styles or mobile More route",
+    );
 }
 
 const accountModule = await Bun.file("public/app-account.js").text();
@@ -168,11 +174,15 @@ for (const behavior of [
     "Pending invitations",
 ]) {
     if (!accountModule.includes(behavior)) {
-        throw new Error(`Unified account UI is missing behavior/copy: ${behavior}`);
+        throw new Error(
+            `Unified account UI is missing behavior/copy: ${behavior}`,
+        );
     }
 }
 if (accountModule.includes("Advanced account controls")) {
-    throw new Error("Unified settings still exposes the legacy advanced account UX");
+    throw new Error(
+        "Unified settings still exposes the legacy advanced account UX",
+    );
 }
 
 const accountCss = await Bun.file("public/account-settings.css").text();
@@ -201,7 +211,9 @@ for (const component of [
     ".settings-danger",
 ]) {
     if (!accountCss.includes(component)) {
-        throw new Error(`Account settings CSS is missing component: ${component}`);
+        throw new Error(
+            `Account settings CSS is missing component: ${component}`,
+        );
     }
 }
 
@@ -216,7 +228,9 @@ if (
 
 const householdRoutes = await Bun.file("src/households/routes.ts").text();
 if (!householdRoutes.includes('c.redirect("/app/household", 303)')) {
-    throw new Error("Household invitation acceptance does not return to the new workspace");
+    throw new Error(
+        "Household invitation acceptance does not return to the new workspace",
+    );
 }
 
 console.log("UI surface and unified account responsive smoke checks passed.");

@@ -158,7 +158,9 @@ if (
     legacyPortal.headers.get("location") !== "/app/settings" ||
     legacyPortal.headers.get("cache-control") !== "private, no-store"
 ) {
-    throw new Error("Legacy account portal did not redirect into unified settings");
+    throw new Error(
+        "Legacy account portal did not redirect into unified settings",
+    );
 }
 
 for (const path of [
@@ -175,13 +177,18 @@ for (const path of [
     const response = await app.request(`https://munch.example${path}`, {
         headers: { cookie: ownerCookie },
     });
-    if (response.status !== 200 || !(await response.text()).includes("app-content")) {
+    if (
+        response.status !== 200 ||
+        !(await response.text()).includes("app-content")
+    ) {
         throw new Error(`App shell route failed: ${path}`);
     }
 }
 
 const accountModule = await app.request("https://munch.example/app-account.js");
-const accountCss = await app.request("https://munch.example/account-settings.css");
+const accountCss = await app.request(
+    "https://munch.example/account-settings.css",
+);
 if (
     accountModule.status !== 200 ||
     !accountModule.headers.get("content-type")?.includes("text/javascript") ||
@@ -190,7 +197,9 @@ if (
     !accountCss.headers.get("content-type")?.includes("text/css") ||
     !(await accountCss.text()).includes("@media (max-width: 620px)")
 ) {
-    throw new Error("Unified account module or responsive stylesheet is unavailable");
+    throw new Error(
+        "Unified account module or responsive stylesheet is unavailable",
+    );
 }
 
 const settingsResponse = await app.request(
@@ -209,7 +218,9 @@ if (
     settings.connections?.length !== 1 ||
     settings.connections[0]?.clientName !== "Settings smoke client"
 ) {
-    throw new Error("Settings API omitted identity, entitlement, profile, or connection data");
+    throw new Error(
+        "Settings API omitted identity, entitlement, profile, or connection data",
+    );
 }
 
 const householdResponse = await app.request(
@@ -217,7 +228,9 @@ const householdResponse = await app.request(
     { headers: { cookie: ownerCookie } },
 );
 if (householdResponse.status !== 200) {
-    throw new Error(`Household management API returned ${householdResponse.status}`);
+    throw new Error(
+        `Household management API returned ${householdResponse.status}`,
+    );
 }
 const householdView = (await householdResponse.json()) as any;
 if (
@@ -231,7 +244,9 @@ if (
     householdView.pendingInvitations?.length !== 1 ||
     householdView.pendingInvitations[0]?.email !== pendingEmail
 ) {
-    throw new Error("Household management API did not reconcile roster, billing, or pending invitations");
+    throw new Error(
+        "Household management API did not reconcile roster, billing, or pending invitations",
+    );
 }
 
 const memberHouseholdResponse = await app.request(
@@ -246,7 +261,9 @@ if (
     memberHousehold.pendingInvitations?.length !== 0 ||
     memberHousehold.household?.role !== "member"
 ) {
-    throw new Error("Household member view exposed owner-only data or lost inherited Premium");
+    throw new Error(
+        "Household member view exposed owner-only data or lost inherited Premium",
+    );
 }
 
 const preferences = await app.request(
@@ -317,8 +334,13 @@ const revokeResponse = await app.request(
         headers: mutationHeaders,
     },
 );
-if (revokeResponse.status !== 200 || (await listOAuthConnections(userId)).length !== 0) {
-    throw new Error("Unified Connections screen backend could not revoke access");
+if (
+    revokeResponse.status !== 200 ||
+    (await listOAuthConnections(userId)).length !== 0
+) {
+    throw new Error(
+        "Unified Connections screen backend could not revoke access",
+    );
 }
 
 const exportResponse = await app.request(
@@ -353,7 +375,9 @@ const boundaryResponse = await app.request(
     { headers: { cookie: ownerCookie } },
 );
 if (boundaryResponse.status !== 200) {
-    throw new Error(`Compatibility meal history returned ${boundaryResponse.status}`);
+    throw new Error(
+        `Compatibility meal history returned ${boundaryResponse.status}`,
+    );
 }
 const boundary = (await boundaryResponse.json()) as {
     date: string;
@@ -373,10 +397,14 @@ if (
     zeroMeal?.calories !== 0 ||
     zeroMeal.logged_at !== "2026-08-05T03:30:00.000Z"
 ) {
-    throw new Error("Compatibility meal history changed timezone or zero-calorie semantics");
+    throw new Error(
+        "Compatibility meal history changed timezone or zero-calorie semantics",
+    );
 }
 
-const unauthorizedPortal = await app.request("https://munch.example/account/portal");
+const unauthorizedPortal = await app.request(
+    "https://munch.example/account/portal",
+);
 const unauthorizedSettings = await app.request(
     "https://munch.example/api/app/settings",
 );
