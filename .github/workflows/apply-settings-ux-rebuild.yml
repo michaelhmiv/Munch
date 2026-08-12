@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   apply:
-    if: ${{ !startsWith(github.event.head_commit.message, 'chore: apply unified settings UX') }}
+    if: "${{ !startsWith(github.event.head_commit.message, 'chore: apply unified settings UX') }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
