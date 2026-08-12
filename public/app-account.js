@@ -1,0 +1,439 @@
+const SETTINGS_ROUTES = new Set([
+    "settings",
+    "settings-profile",
+    "settings-goals",
+    "settings-billing",
+    "settings-connections",
+    "settings-data",
+    "settings-account",
+]);
+
+export const accountRoutes = {
+    "/app/more": "more",
+    "/app/household": "household",
+    "/app/settings": "settings",
+    "/app/settings/profile": "settings-profile",
+    "/app/settings/goals": "settings-goals",
+    "/app/settings/billing": "settings-billing",
+    "/app/settings/connections": "settings-connections",
+    "/app/settings/data": "settings-data",
+    "/app/settings/import-export": "settings-data",
+    "/app/settings/privacy": "settings-data",
+    "/app/settings/account": "settings-account",
+};
+
+export const accountTitles = {
+    more: ["Munch workspace", "More"],
+    household: ["Shared workspace", "Household"],
+    settings: ["Account and preferences", "Settings"],
+    "settings-profile": ["Settings", "Profile & preferences"],
+    "settings-goals": ["Settings", "Nutrition targets"],
+    "settings-billing": ["Settings", "Plan & billing"],
+    "settings-connections": ["Settings", "Connections"],
+    "settings-data": ["Settings", "Data & privacy"],
+    "settings-account": ["Settings", "Account"],
+};
+
+export function isAccountRoute(route) {
+    return route === "more" || route === "household" || SETTINGS_ROUTES.has(route);
+}
+
+function esc(value) {
+    return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+}
+
+function dollars(cents) {
+    return `$${(Number(cents || 0) / 100).toFixed(2)}`;
+}
+
+function formatDateTime(value) {
+    if (!value) return "Not available";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return new Intl.DateTimeFormat("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+    }).format(date);
+}
+
+function planLabel(data) {
+    if (data.capabilities?.entitlementSource === "household_subscription") {
+        return "Premium through household";
+    }
+    return data.capabilities?.tier === "premium" ? "Munch Premium" : "Munch Free";
+}
+
+function settingsNav(active) {
+    const items = [
+        ["settings-profile", "/app/settings/profile", "Profile", "Identity, units and display"],
+        ["settings-goals", "/app/settings/goals", "Nutrition", "Targets you choose"],
+        ["settings-billing", "/app/settings/billing", "Plan & billing", "Subscription and charges"],
+        ["settings-connections", "/app/settings/connections", "Connections", "ChatGPT and MCP access"],
+        ["settings-data", "/app/settings/data", "Data & privacy", "Import, export and policies"],
+        ["settings-account", "/app/settings/account", "Account", "Sign out or delete account"],
+    ];
+    return `<nav class="settings-local-nav" aria-label="Settings sections">${items
+        .map(
+            ([route, href, label, description]) =>
+                `<a href="${href}" class="settings-local-link ${active === route ? "is-active" : ""}" ${active === route ? 'aria-current="page"' : ""}><span>${esc(label)}</span><small>${esc(description)}</small></a>`,
+        )
+        .join("")}</nav>`;
+}
+
+function settingsShell(active, body) {
+    const back = active === "settings" ? "" : `<a class="settings-mobile-back" href="/app/settings">← Settings</a>`;
+    return `<div class="settings-layout">${settingsNav(active)}<section class="settings-main">${back}${body}</section></div>`;
+}
+
+function sectionHeading(kicker, title, description, aside = "") {
+    return `<header class="settings-page-head"><div><p class="settings-eyebrow">${esc(kicker)}</p><h2>${esc(title)}</h2><p>${esc(description)}</p></div>${aside}</header>`;
+}
+
+function settingsIndex(data) {
+    const cards = [
+        ["/app/settings/profile", "Profile & preferences", "Timezone, units, ChatGPT display and tracking preferences", "Profile"],
+        ["/app/settings/goals", "Nutrition targets", "Calories, macros, water and optional targets", "Targets"],
+        ["/app/settings/billing", "Plan & billing", `${planLabel(data)} · manage website billing`, "Billing"],
+        ["/app/settings/connections", "Connections", `${data.connections?.length || 0} authorized connection${data.connections?.length === 1 ? "" : "s"}`, "Access"],
+        ["/app/settings/data", "Data & privacy", "Import, export, privacy policy and security", "Data"],
+        ["/app/settings/account", "Account", "Signed in as " + (data.user?.email || "your Munch account"), "Account"],
+    ];
+    return settingsShell(
+        "settings",
+        `${sectionHeading("Settings", "Your Munch settings", "Everything related to your account has one clear home. Household management lives in the Household workspace.")}<div class="settings-index-grid">${cards
+            .map(
+                ([href, title, description, label]) =>
+                    `<a class="settings-index-card" href="${href}"><span class="settings-card-label">${esc(label)}</span><div><h3>${esc(title)}</h3><p>${esc(description)}</p></div><span class="settings-chevron" aria-hidden="true">›</span></a>`,
+            )
+            .join("")}</div>`,
+    );
+}
+
+function timezoneField(profile) {
+    return `<label class="settings-field"><span>Timezone</span><small>Controls which local day meals, water and weight belong to.</small><select name="timezone" id="settings-timezone" data-current-timezone="${esc(profile.timezone || "UTC")}" required><option value="${esc(profile.timezone || "UTC")}">${esc(profile.timezone || "UTC")}</option></select></label>`;
+}
+
+function profilePage(data) {
+    const profile = data.profile || {};
+    const alcoholEnabled = profile.alcohol_tracking_enabled === true;
+    return settingsShell(
+        "settings-profile",
+        `${sectionHeading("Profile", "Profile & preferences", "Set how Munch groups and displays your records without mixing these choices into billing or household controls.")}<div class="account-identity-card"><div class="account-avatar" aria-hidden="true">${esc((data.user?.email || "M").slice(0, 1).toUpperCase())}</div><div><strong>${esc(data.user?.email || "Munch account")}</strong><span>${esc(planLabel(data))}</span></div><a href="/app/settings/billing">View plan</a></div><form id="settings-profile-form" class="settings-stack">${settingGroup("Display & units", "These choices affect presentation only.", `${timezoneField(profile)}<fieldset class="settings-field"><legend>Weight unit</legend><small>Used when Munch displays saved weights.</small><div class="segmented-control"><label><input type="radio" name="preferred_weight_unit" value="" ${!profile.preferred_weight_unit ? "checked" : ""}><span>Ask each time</span></label><label><input type="radio" name="preferred_weight_unit" value="lb" ${profile.preferred_weight_unit === "lb" ? "checked" : ""}><span>lb</span></label><label><input type="radio" name="preferred_weight_unit" value="kg" ${profile.preferred_weight_unit === "kg" ? "checked" : ""}><span>kg</span></label></div></fieldset>${toggleRow("widgets_enabled", "ChatGPT visual cards", "Show Munch visual widgets in supported ChatGPT clients.", profile.widgets_enabled !== false)}`)}${settingGroup("Optional tracking", "Keep optional tracking controls separate from your core profile.", `${toggleRow("alcohol_tracking_enabled", "Alcohol tracking", "Enable alcohol-specific fields and summaries when you choose to log drinks.", alcoholEnabled)}<label class="settings-field"><span>Drink units</span><small>Used for alcohol-related displays when tracking is enabled.</small><select name="preferred_drink_unit" ${alcoholEnabled ? "" : 'aria-describedby="drink-unit-note"'}><option value="" ${!profile.preferred_drink_unit ? "selected" : ""}>Default</option><option value="us" ${profile.preferred_drink_unit === "us" ? "selected" : ""}>US standard drinks</option><option value="uk" ${profile.preferred_drink_unit === "uk" ? "selected" : ""}>UK units</option></select><small id="drink-unit-note">This preference does not change the underlying nutrition record.</small></label>`)}<div class="settings-savebar"><span class="settings-save-status" role="status" aria-live="polite"></span><button class="button button-primary" type="submit">Save preferences</button></div></form>`,
+    );
+}
+
+function settingGroup(title, description, body, className = "") {
+    return `<section class="settings-group ${className}"><header><h3>${esc(title)}</h3><p>${esc(description)}</p></header><div class="settings-group-body">${body}</div></section>`;
+}
+
+function toggleRow(name, title, description, checked) {
+    return `<label class="settings-toggle-row"><span><strong>${esc(title)}</strong><small>${esc(description)}</small></span><span class="switch"><input type="checkbox" name="${esc(name)}" ${checked ? "checked" : ""}><span aria-hidden="true"></span></span></label>`;
+}
+
+function nutrientInput(name, label, value, unit, options = {}) {
+    const step = options.step || "0.1";
+    return `<label class="settings-field compact"><span>${esc(label)}</span><div class="input-with-unit"><input name="${esc(name)}" type="number" min="0" step="${esc(step)}" value="${value == null ? "" : esc(value)}" inputmode="decimal"><span>${esc(unit)}</span></div></label>`;
+}
+
+function goalsPage(data) {
+    const goals = data.goals || {};
+    const unit = data.profile?.preferred_weight_unit || "lb";
+    const targetWeight = goals.target_weight_g == null ? "" : unit === "kg" ? (Number(goals.target_weight_g) / 1000).toFixed(1).replace(/\.0$/, "") : (Number(goals.target_weight_g) / 453.59237).toFixed(1).replace(/\.0$/, "");
+    return settingsShell(
+        "settings-goals",
+        `${sectionHeading("Nutrition", "Nutrition targets", "These are targets you choose. Munch stores and compares against them; it does not prescribe medical or dietary goals.")}<form id="settings-goals-form" class="settings-stack">${settingGroup("Daily energy & macros", "Leave any field blank if you do not want a target for it.", `<div class="settings-form-grid">${nutrientInput("daily_calories", "Calories", goals.daily_calories, "kcal", { step: "1" })}${nutrientInput("daily_protein_g", "Protein", goals.daily_protein_g, "g")}${nutrientInput("daily_carbs_g", "Carbohydrates", goals.daily_carbs_g, "g")}${nutrientInput("daily_fat_g", "Fat", goals.daily_fat_g, "g")}</div>`)}${settingGroup("Additional targets", "Optional targets remain separate from the primary macro summary.", `<div class="settings-form-grid">${nutrientInput("daily_fiber_g", "Fiber", goals.daily_fiber_g, "g")}${nutrientInput("daily_sugar_g", "Sugar", goals.daily_sugar_g, "g")}${nutrientInput("daily_water_ml", "Water", goals.daily_water_ml, "mL", { step: "1" })}${nutrientInput("daily_alcohol_g", "Alcohol", goals.daily_alcohol_g, "g")}</div><div class="settings-form-grid settings-form-grid-single spacer-top"><label class="settings-field compact"><span>Target weight</span><small>Optional. Uses your current display unit.</small><div class="input-with-unit"><input name="target_weight" type="number" min="1" step="0.1" value="${esc(targetWeight)}" inputmode="decimal"><span>${esc(unit)}</span></div><input type="hidden" name="unit" value="${esc(unit)}"></label></div>`)}<div class="settings-savebar"><span class="settings-save-status" role="status" aria-live="polite"></span><button class="button button-primary" type="submit">Save targets</button></div></form>`,
+    );
+}
+
+function statusPill(text, tone = "neutral") {
+    return `<span class="account-status account-status-${tone}">${esc(text)}</span>`;
+}
+
+async function billingPage(data, ctx) {
+    let household = null;
+    try {
+        household = await ctx.api("/api/app/household/manage");
+    } catch {
+        household = null;
+    }
+    const householdProvided = data.capabilities?.entitlementSource === "household_subscription";
+    const directPremium = data.capabilities?.tier === "premium" && !householdProvided;
+    const status = data.subscription?.status || null;
+    let billingSummary = "Free";
+    let detail = "Munch Free remains available without a subscription.";
+    if (householdProvided) {
+        billingSummary = "Premium through household";
+        detail = "Your household owner pays for your $2.00/month seat. You are not billed separately for this entitlement.";
+    } else if (directPremium) {
+        billingSummary = "Munch Premium · $4.99/month";
+        detail = status ? `Stripe subscription status: ${status}.` : "Your account currently has Premium capabilities.";
+    }
+    const ownerHousehold = household?.household?.role === "owner" ? household : null;
+    const total = ownerHousehold ? 499 + 200 * Number(ownerHousehold.activeNonOwnerCount || 0) : 499;
+    const chargeCard = directPremium
+        ? `<div class="billing-price"><span>Current Munch subscription</span><strong>${ownerHousehold ? dollars(total) : "$4.99"}<small>/month</small></strong>${ownerHousehold ? `<p>$4.99 Premium + ${ownerHousehold.activeNonOwnerCount} household seat${ownerHousehold.activeNonOwnerCount === 1 ? "" : "s"} × $2.00.</p>` : `<p>Household members are $2.00/month each when added.</p>`}</div>`
+        : "";
+    const action = householdProvided
+        ? `<a class="button button-secondary" href="/app/household">View household</a>`
+        : directPremium
+          ? `<button class="button button-primary" data-action="billing-portal">Manage billing in Stripe</button>`
+          : `<button class="button button-primary" data-action="billing-checkout">Get Premium — $4.99/month</button>`;
+    return settingsShell(
+        "settings-billing",
+        `${sectionHeading("Billing", "Plan & billing", "See exactly how your Munch access is funded. Payment methods, invoices and cancellation remain hosted by Stripe.")}<div class="settings-stack">${settingGroup("Current plan", detail, `<div class="plan-summary"><div><span>Plan</span><strong>${esc(billingSummary)}</strong></div>${statusPill(householdProvided ? "Household seat" : directPremium ? status || "Premium" : "Free", directPremium || householdProvided ? "success" : "neutral")}</div>${chargeCard}<div class="settings-actions">${action}</div>`)}${settingGroup("Household pricing", "Discounted seats are part of a collaborative household, not standalone $2 Premium accounts.", `<div class="pricing-rule"><strong>$4.99</strong><span>Premium owner</span></div><div class="pricing-rule"><strong>+$2.00</strong><span>per additional active household member</span></div><p class="settings-note">Household recipes, meal plans and grocery lists are shared automatically while a discounted seat is active. Personal meals, water, weight and goals remain private.</p><a class="text-link" href="/app/household">Manage household →</a>`)}</div>`,
+    );
+}
+
+function connectionsPage(data) {
+    const connections = data.connections || [];
+    return settingsShell(
+        "settings-connections",
+        `${sectionHeading("Access", "Connections", "Review the ChatGPT and MCP clients that can call Munch on your behalf.", statusPill(`${connections.length} active`, connections.length ? "success" : "neutral"))}${connections.length ? `<div class="connection-list">${connections
+            .map(
+                (connection) =>
+                    `<article class="connection-card"><div class="connection-icon" aria-hidden="true">↗</div><div><h3>${esc(connection.clientName || "ChatGPT / MCP client")}</h3><p>${esc(connection.clientId)}</p><small>${Number(connection.activeAccessTokens || 0)} active access token${Number(connection.activeAccessTokens || 0) === 1 ? "" : "s"} · expires ${esc(formatDateTime(connection.expiresAt))}</small></div><button class="button button-secondary button-small" data-action="connection-revoke" data-token-family-id="${esc(connection.tokenFamilyId)}" data-client-name="${esc(connection.clientName || "this connection")}">Revoke</button></article>`,
+            )
+            .join("")}</div>` : `<div class="settings-empty"><span aria-hidden="true">✓</span><h3>No active connections</h3><p>Connect Munch from ChatGPT and authorized clients will appear here.</p></div>`}`,
+    );
+}
+
+function dataPage() {
+    return settingsShell(
+        "settings-data",
+        `${sectionHeading("Data", "Data & privacy", "Import or export your records and review the policies that define how Munch handles them.")}<div class="settings-stack">${settingGroup("Import & export", "Your export is generated as a private, short-lived download.", `<div class="settings-action-list"><button class="settings-action-row" data-action="open-chatgpt-import"><span><strong>Import meal history</strong><small>Start a supported import through ChatGPT.</small></span><span aria-hidden="true">›</span></button><button class="settings-action-row" data-action="export-account"><span><strong>Export complete account data</strong><small>Download your personal data and household records you are authorized to view.</small></span><span aria-hidden="true">↓</span></button></div>`)}${settingGroup("Privacy & security", "Policies open in a new website page without changing your Munch records.", `<div class="settings-action-list"><a class="settings-action-row" href="/privacy"><span><strong>Privacy policy</strong><small>Data handling, household boundaries and retention.</small></span><span aria-hidden="true">›</span></a><a class="settings-action-row" href="/security"><span><strong>Security</strong><small>Security practices and vulnerability reporting.</small></span><span aria-hidden="true">›</span></a></div>`)}</div>`,
+    );
+}
+
+function accountPage(data) {
+    return settingsShell(
+        "settings-account",
+        `${sectionHeading("Account", "Account", "Identity, session controls and permanent account deletion are kept together and clearly separated from everyday preferences.")}<div class="settings-stack">${settingGroup("Signed-in account", "Your email is the identity used for magic-link sign in.", `<div class="account-detail-row"><span>Email</span><strong>${esc(data.user?.email || "Unavailable")}</strong></div><div class="settings-actions"><button class="button button-secondary" data-action="logout">Sign out</button></div>`)}${settingGroup("Danger zone", "Permanent deletion cannot be undone. Paid household owners must dissolve their household first.", `<label class="settings-field"><span>Type DELETE MY MUNCH ACCOUNT to confirm</span><input id="delete-account-confirmation" autocomplete="off" placeholder="DELETE MY MUNCH ACCOUNT"></label><div class="settings-actions"><button class="button button-danger" data-action="account-delete">Permanently delete account</button></div>`, "settings-danger")}</div>`,
+    );
+}
+
+function morePage() {
+    const items = [
+        ["/app/insights", "Insights", "Patterns and progress", "↗"],
+        ["/app/foods", "Foods", "Saved foods and reusable nutrition", "⌕"],
+        ["/app/recipes", "Recipes", "Your structured recipe library", "◇"],
+        ["/app/household", "Household", "Members, shared features and $2 seats", "⌂"],
+        ["/app/settings", "Settings", "Profile, billing, connections and data", "⚙"],
+        ["/help", "Help", "Connection and product help", "?"],
+    ];
+    return `${sectionHeading("Munch", "More", "Everything that does not need a permanent spot in the mobile navigation.")}<div class="more-grid">${items.map(([href, title, description, icon]) => `<a class="more-card" href="${href}"><span class="more-icon" aria-hidden="true">${icon}</span><div><h3>${esc(title)}</h3><p>${esc(description)}</p></div><span class="settings-chevron" aria-hidden="true">›</span></a>`).join("")}</div>`;
+}
+
+function householdMemberCard(member, owner) {
+    const isOwner = member.role === "owner";
+    const controls = owner && !isOwner
+        ? `<div class="member-controls"><select aria-label="Role for ${esc(member.displayName)}" data-household-role="${esc(member.membershipId)}"><option value="member" ${member.role === "member" ? "selected" : ""}>Member · can edit shared data</option><option value="viewer" ${member.role === "viewer" ? "selected" : ""}>Viewer · read only</option></select><button class="button button-secondary button-small" data-action="household-role-save" data-membership-id="${esc(member.membershipId)}">Save role</button><button class="button button-quiet button-small" data-action="household-member-remove" data-membership-id="${esc(member.membershipId)}" data-member-name="${esc(member.displayName)}">Remove</button></div>`
+        : "";
+    return `<article class="household-member"><div class="member-avatar" aria-hidden="true">${esc(member.displayName.slice(0, 1).toUpperCase())}</div><div class="member-copy"><div><strong>${esc(member.displayName)}</strong>${isOwner ? statusPill("Owner", "success") : statusPill(member.role, "neutral")}</div><small>${isOwner ? "Included with Premium" : "+$2.00/month household seat"} · joined ${esc(formatDateTime(member.joinedAt))}</small></div>${controls}</article>`;
+}
+
+async function householdPage(ctx) {
+    const data = await ctx.api("/api/app/household/manage");
+    if (!data.household) {
+        if (data.tier === "premium" && data.entitlementSource !== "household_subscription") {
+            return `${sectionHeading("Shared workspace", "Create a household", "Share recipes, meal plans and grocery lists while keeping personal nutrition records private.")}<div class="household-hero-grid"><section class="settings-group"><header><h3>Start your household</h3><p>Your Premium account is included. Each additional active member is $2.00/month after they accept.</p></header><form id="household-create-form" class="settings-group-body"><label class="settings-field"><span>Household name</span><input name="name" maxlength="120" placeholder="The Smith household" required></label><label class="settings-field"><span>Your display name</span><input name="display_name" maxlength="80" placeholder="Michael" required></label><button class="button button-primary" type="submit">Create household</button></form></section><aside class="household-privacy-card"><span class="settings-card-label">Privacy boundary</span><h3>Shared by default</h3><p>Recipes, meal plans and grocery lists are collaborative for household members.</p><h3>Still personal</h3><p>Meals, macros, water, weight, goals and personal nutrition history remain private.</p></aside></div>`;
+        }
+        return `<div class="settings-empty household-empty"><span class="more-icon" aria-hidden="true">⌂</span><h2>No household is connected</h2><p>Premium owners can create a household and add additional members for $2.00/month each.</p><a class="button button-primary" href="/app/settings/billing">View plan & billing</a></div>`;
+    }
+    const household = data.household;
+    const owner = household.role === "owner";
+    const total = 499 + 200 * Number(data.activeNonOwnerCount || 0);
+    const pending = data.pendingInvitations || [];
+    const billing = owner
+        ? `<section class="household-billing-card"><div><span>Current household total</span><strong>${dollars(total)}<small>/month</small></strong><p>$4.99 Premium + ${Number(data.activeNonOwnerCount || 0)} active member seat${Number(data.activeNonOwnerCount || 0) === 1 ? "" : "s"} × $2.00.</p></div>${data.seatCoverage ? statusPill("Billing in sync", "success") : statusPill("Billing reconciling", "warning")}</section>`
+        : data.entitlementSource === "household_subscription"
+          ? `<section class="household-billing-card"><div><span>Your plan</span><strong>Premium<small> through household</small></strong><p>The household owner pays $2.00/month for your seat. Leaving ends this household-provided Premium entitlement.</p></div>${statusPill("Seat active", "success")}</section>`
+          : "";
+    const invite = owner && data.canInvite
+        ? `<section class="settings-group"><header><h3>Invite a household member</h3><p>Invitations are free. Billing changes only when the invited person accepts.</p></header><form id="household-invite-form" class="settings-group-body"><div class="settings-form-grid"><label class="settings-field"><span>Email</span><input name="email" type="email" maxlength="320" required></label><label class="settings-field"><span>Role</span><select name="role"><option value="member">Member · can edit shared data</option><option value="viewer">Viewer · read only</option></select></label></div><div class="settings-savebar"><span class="settings-note">Accepted members receive full Premium and automatically share household recipes, meal plans and grocery lists.</span><button class="button button-primary" type="submit">Send invitation</button></div></form>${pending.length ? `<div class="pending-invites"><h4>Pending invitations</h4>${pending.map((invite) => `<div class="pending-invite"><div><strong>${esc(invite.email)}</strong><small>${esc(invite.role)} · expires ${esc(formatDateTime(invite.expiresAt))}</small></div>${statusPill("Pending", "neutral")}</div>`).join("")}</div>` : ""}</section>`
+        : owner
+          ? `<section class="settings-group"><header><h3>Invitations unavailable</h3><p>A directly paid Premium subscription is required before another discounted seat can be added.</p></header></section>`
+          : "";
+    const danger = owner
+        ? settingGroup("Dissolve household", "This removes all paid member seats and permanently deletes shared household records. Personal member records remain with each account.", `<label class="settings-field"><span>Type DISSOLVE HOUSEHOLD to confirm</span><input id="dissolve-household-confirmation" autocomplete="off" placeholder="DISSOLVE HOUSEHOLD"></label><div class="settings-actions"><button class="button button-danger" data-action="household-dissolve">Dissolve household</button></div>`, "settings-danger")
+        : settingGroup("Leave household", "Your personal Munch account and private nutrition history stay intact. Household-provided Premium ends when you leave unless you also have your own active Premium subscription.", `<div class="settings-actions"><button class="button button-danger" data-action="household-leave">Leave household</button></div>`, "settings-danger");
+    return `${sectionHeading("Shared workspace", household.householdName, `You appear as ${household.displayName}. Household collaboration is ${data.canWrite ? "active" : "read only"} for your role.`)}${billing}<div class="household-layout"><div class="household-primary"><section class="settings-group"><header><div class="household-section-title"><div><h3>Members</h3><p>${data.members.length} of 6 household accounts</p></div>${statusPill(`${Math.max(0, 5 - Number(data.activeNonOwnerCount || 0))} seats available`, "neutral")}</div></header><div class="household-member-list">${data.members.map((member) => householdMemberCard(member, owner)).join("")}</div></section>${invite}${danger}</div><aside class="household-sidebar"><section class="household-privacy-card"><span class="settings-card-label">Always shared</span><h3>Collaborative household</h3><ul><li>Household recipes</li><li>Meal plans and calendar</li><li>Grocery lists</li></ul><span class="settings-card-label spacer-top">Always private</span><ul><li>Personal meal history</li><li>Macros and goals</li><li>Water and weight</li><li>Personal saved foods</li></ul><a class="text-link" href="/privacy#households">Review household privacy →</a></section><a class="button button-secondary household-billing-link" href="/app/settings/billing">Plan & billing</a></aside></div>`;
+}
+
+function hydrateTimezoneSelect() {
+    const select = document.getElementById("settings-timezone");
+    if (!(select instanceof HTMLSelectElement)) return;
+    const current = select.dataset.currentTimezone || "UTC";
+    let zones = [];
+    try {
+        zones = Intl.supportedValuesOf("timeZone");
+    } catch {
+        zones = ["UTC", "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles", "Europe/London", "Europe/Paris", "Asia/Tokyo", "Australia/Sydney"];
+    }
+    if (!zones.includes(current)) zones.unshift(current);
+    select.innerHTML = zones.map((zone) => `<option value="${esc(zone)}" ${zone === current ? "selected" : ""}>${esc(zone.replaceAll("_", " "))}</option>`).join("");
+}
+
+export async function renderAccountRoute(route, ctx) {
+    if (route === "more") {
+        ctx.content.innerHTML = morePage();
+        return;
+    }
+    if (route === "household") {
+        ctx.setLoading("Loading household…");
+        ctx.content.innerHTML = await householdPage(ctx);
+        return;
+    }
+    ctx.setLoading("Loading settings…");
+    const data = await ctx.api("/api/app/settings");
+    if (route === "settings") ctx.content.innerHTML = settingsIndex(data);
+    if (route === "settings-profile") ctx.content.innerHTML = profilePage(data);
+    if (route === "settings-goals") ctx.content.innerHTML = goalsPage(data);
+    if (route === "settings-billing") ctx.content.innerHTML = await billingPage(data, ctx);
+    if (route === "settings-connections") ctx.content.innerHTML = connectionsPage(data);
+    if (route === "settings-data") ctx.content.innerHTML = dataPage(data);
+    if (route === "settings-account") ctx.content.innerHTML = accountPage(data);
+    hydrateTimezoneSelect();
+}
+
+function saveStatus(form, message) {
+    const status = form.querySelector(".settings-save-status");
+    if (status) status.textContent = message;
+}
+
+export async function handleAccountSubmit(form, ctx) {
+    if (form.id === "settings-profile-form") {
+        const values = Object.fromEntries(new FormData(form));
+        const body = {
+            timezone: values.timezone,
+            preferred_weight_unit: values.preferred_weight_unit || null,
+            widgets_enabled: form.elements.widgets_enabled?.checked === true,
+            alcohol_tracking_enabled: form.elements.alcohol_tracking_enabled?.checked === true,
+            preferred_drink_unit: values.preferred_drink_unit || null,
+        };
+        const submit = form.querySelector("button[type='submit']");
+        if (submit) submit.disabled = true;
+        try {
+            await ctx.api("/api/app/preferences", { method: "PUT", body: JSON.stringify(body), keepPrevious: true });
+            ctx.state.bootstrap = null;
+            saveStatus(form, "Saved");
+            ctx.toast("Preferences saved.");
+        } finally {
+            if (submit) submit.disabled = false;
+        }
+        return true;
+    }
+    if (form.id === "settings-goals-form") {
+        const values = Object.fromEntries(new FormData(form));
+        const submit = form.querySelector("button[type='submit']");
+        if (submit) submit.disabled = true;
+        try {
+            await ctx.api("/api/app/goals", { method: "PUT", body: JSON.stringify(values), keepPrevious: true });
+            saveStatus(form, "Saved");
+            ctx.toast("Nutrition targets saved.");
+        } finally {
+            if (submit) submit.disabled = false;
+        }
+        return true;
+    }
+    if (form.id === "household-create-form") {
+        const values = Object.fromEntries(new FormData(form));
+        const submit = form.querySelector("button[type='submit']");
+        if (submit) submit.disabled = true;
+        try {
+            await ctx.api("/account/household/create", { method: "POST", body: JSON.stringify({ name: values.name, display_name: values.display_name }), keepPrevious: true });
+            ctx.toast("Household created.");
+            await ctx.renderRoute();
+        } finally {
+            if (submit) submit.disabled = false;
+        }
+        return true;
+    }
+    if (form.id === "household-invite-form") {
+        const values = Object.fromEntries(new FormData(form));
+        const submit = form.querySelector("button[type='submit']");
+        if (submit) submit.disabled = true;
+        try {
+            await ctx.api("/account/household/invite", { method: "POST", body: JSON.stringify({ email: values.email, role: values.role }), keepPrevious: true });
+            ctx.toast("Invitation sent. Billing changes only if it is accepted.");
+            form.reset();
+            await ctx.renderRoute();
+        } finally {
+            if (submit) submit.disabled = false;
+        }
+        return true;
+    }
+    return false;
+}
+
+export async function handleAccountAction(button, ctx) {
+    const action = button.dataset.action;
+    if (action === "connection-revoke") {
+        const name = button.dataset.clientName || "this connection";
+        if (!confirm(`Revoke ${name}?`)) return true;
+        await ctx.api(`/api/app/connections/${encodeURIComponent(button.dataset.tokenFamilyId || "")}`, { method: "DELETE", keepPrevious: true });
+        ctx.toast("Connection revoked.");
+        await ctx.renderRoute();
+        return true;
+    }
+    if (action === "export-account") {
+        const data = await ctx.api("/account/portal/export", { method: "POST", body: "{}", keepPrevious: true });
+        if (!data.url) throw new Error("No export was available");
+        location.href = data.url;
+        return true;
+    }
+    if (action === "account-delete") {
+        const confirmation = document.getElementById("delete-account-confirmation")?.value || "";
+        if (confirmation !== "DELETE MY MUNCH ACCOUNT") {
+            ctx.toast("Type the confirmation phrase exactly before deleting your account.", "error");
+            return true;
+        }
+        if (!confirm("Permanently delete your Munch account and personal data? This cannot be undone.")) return true;
+        await ctx.api("/account/portal/delete", { method: "POST", body: JSON.stringify({ confirmation }), keepPrevious: true });
+        location.href = "/?deleted=1";
+        return true;
+    }
+    if (action === "household-role-save") {
+        const id = button.dataset.membershipId || "";
+        const select = document.querySelector(`[data-household-role="${CSS.escape(id)}"]`);
+        await ctx.api("/account/household/member/role", { method: "POST", body: JSON.stringify({ membership_id: id, role: select?.value }), keepPrevious: true });
+        ctx.toast("Member role updated.");
+        await ctx.renderRoute();
+        return true;
+    }
+    if (action === "household-member-remove") {
+        const name = button.dataset.memberName || "this member";
+        if (!confirm(`Remove ${name}? Their household-provided Premium ends and your billed seat quantity will decrease.`)) return true;
+        await ctx.api("/account/household/member/remove", { method: "POST", body: JSON.stringify({ membership_id: button.dataset.membershipId }), keepPrevious: true });
+        ctx.toast("Member removed and household billing updated.");
+        await ctx.renderRoute();
+        return true;
+    }
+    if (action === "household-leave") {
+        if (!confirm("Leave this household? Household-provided Premium ends immediately unless you also have your own Premium subscription.")) return true;
+        await ctx.api("/account/household/leave", { method: "POST", body: JSON.stringify({ confirm: true }), keepPrevious: true });
+        ctx.toast("You left the household.");
+        ctx.state.bootstrap = null;
+        await ctx.renderRoute();
+        return true;
+    }
+    if (action === "household-dissolve") {
+        const confirmation = document.getElementById("dissolve-household-confirmation")?.value || "";
+        if (confirmation !== "DISSOLVE HOUSEHOLD") {
+            ctx.toast("Type DISSOLVE HOUSEHOLD exactly before dissolving the household.", "error");
+            return true;
+        }
+        if (!confirm("Dissolve this household, remove all paid member seats and permanently delete shared household records?")) return true;
+        await ctx.api("/account/household/dissolve", { method: "POST", body: JSON.stringify({ confirmation }), keepPrevious: true });
+        ctx.toast("Household dissolved and paid member seats removed.");
+        ctx.state.bootstrap = null;
+        await ctx.renderRoute();
+        return true;
+    }
+    return false;
+}
