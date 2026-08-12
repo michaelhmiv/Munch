@@ -22,6 +22,8 @@ Personal meal, hydration, weight, goals, and other personal nutrition history re
 
 Stripe subscription-item quantities are persisted and reconciled from webhooks. Household-provided Premium fails closed if the active household roster exceeds the billed seat quantity or the owner's qualifying Premium subscription is no longer active. Shared records are retained rather than silently deleted when billing access ends.
 
+Paid household ownership is tied to the owner's Stripe subscription and is not transferred implicitly between billing customers. An owner who wants another person to become the billing owner must dissolve the household and the new owner can create a new household from their own directly paid Premium account.
+
 ## Model boundary
 
 Munch stores ingredients, servings, nutrients, provenance, dates, revisions, grocery items, and observed usage. It does not store generated tags such as favorite, healthy, high-protein, easy, or recommended. The client model derives those conclusions from factual data and user-supplied constraints.
