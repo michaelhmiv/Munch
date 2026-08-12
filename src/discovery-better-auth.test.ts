@@ -34,7 +34,6 @@ test("serves OAuth and OpenID-compatible metadata at paths derived from the Bett
     }
 });
 
-
 test("serves the configured OpenAI domain challenge as raw text", async () => {
     const previous = process.env.OPENAI_APPS_CHALLENGE;
     process.env.OPENAI_APPS_CHALLENGE = "challenge-test-token";
@@ -57,4 +56,3 @@ test("serves the configured OpenAI domain challenge as raw text", async () => {
         }
     }
 });
-
