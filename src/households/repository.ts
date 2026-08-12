@@ -30,6 +30,14 @@ export interface HouseholdInvitationResult {
     expiresAt: string;
 }
 
+export interface PendingHouseholdInvitation {
+    invitationId: string;
+    email: string;
+    role: Exclude<HouseholdRole, "owner">;
+    createdAt: string;
+    expiresAt: string;
+}
+
 export interface HouseholdSeatReservation {
     invitationId: string;
     householdId: string;
@@ -239,6 +247,54 @@ export async function listHouseholdMembers(
             displayName: row.display_name,
             role: row.role,
             joinedAt: new Date(row.joined_at).toISOString(),
+        }));
+    });
+}
+
+export async function listPendingHouseholdInvitations(
+    userId: string,
+    householdId: string,
+): Promise<PendingHouseholdInvitation[]> {
+    return withUserDatabase(userId, async (tx) => {
+        const ownerRows = await tx<Array<{ id: string }>>`
+            select id
+            from munch.household_memberships
+            where household_id = ${householdId}
+              and user_id = ${userId}
+              and status = 'active'
+              and role = 'owner'
+            limit 1
+        `;
+        if (!ownerRows[0]) throw new Error("Household owner required");
+
+        const rows = await tx<
+            Array<{
+                invitation_id: string;
+                email: string;
+                role: Exclude<HouseholdRole, "owner">;
+                created_at: Date;
+                expires_at: Date;
+            }>
+        >`
+            select
+                id as invitation_id,
+                email,
+                role,
+                created_at,
+                expires_at
+            from munch.household_invitations
+            where household_id = ${householdId}
+              and accepted_at is null
+              and revoked_at is null
+              and expires_at > now()
+            order by created_at desc
+        `;
+        return rows.map((row) => ({
+            invitationId: row.invitation_id,
+            email: row.email,
+            role: row.role,
+            createdAt: new Date(row.created_at).toISOString(),
+            expiresAt: new Date(row.expires_at).toISOString(),
         }));
     });
 }
