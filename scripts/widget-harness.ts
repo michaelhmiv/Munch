@@ -66,22 +66,59 @@ const meals = [
 const RESULTS: Record<string, unknown> = {
     "meal-logged": {
         action: "logged",
-        date: "2026-08-05",
+        date: "2026-08-18",
         logged_meal: {
-            description: "Grilled chicken salad",
-            meal_type: "lunch",
-            calories: 520,
-            protein_g: 42,
-            carbs_g: 28,
-            fat_g: 22,
+            description: "Starbucks Medicine Ball Tea, Venti",
+            meal_type: "snack",
+            calories: 130,
+            protein_g: 0,
+            carbs_g: 33,
+            fat_g: 0,
         },
+        meal_items: [
+            {
+                id: "sample-starbucks-1",
+                position: 0,
+                name: "Starbucks Medicine Ball Tea",
+                quantity: 1,
+                portion_label: "Venti (20 fl oz)",
+                gram_weight: null,
+                nutrients: {
+                    calories: 130,
+                    protein_g: 0,
+                    carbs_g: 33,
+                    fat_g: 0,
+                    fiber_g: 0,
+                    sugar_g: 30,
+                    alcohol_g: null,
+                    sodium_mg: null,
+                    saturated_fat_g: null,
+                    cholesterol_mg: null,
+                    potassium_mg: null,
+                },
+                source_type: "published_restaurant",
+                provider: "starbucks",
+                provider_food_id: "medicine-ball-venti",
+                provider_revision: null,
+                source_url: null,
+                source_updated_at: null,
+                confidence: 0.98,
+                assumptions: [],
+                source_snapshot: {
+                    resolution_layer: "published_restaurant",
+                },
+            },
+        ],
         has_goals: true,
         goals,
         totals: {
-            calories: 1480,
-            protein_g: 118,
-            carbs_g: 165,
-            fat_g: 52,
+            calories: 1090,
+            protein_g: 84,
+            carbs_g: 126,
+            fat_g: 33,
+            fiber_g: 18,
+            sugar_g: 42,
+            alcohol_g: null,
             water_ml: 1600,
         },
     },
@@ -211,7 +248,7 @@ body{margin:0;background:#f3f3f3;font:13px/1.4 system-ui;color:#222}.bar{positio
 const RESULT=${JSON.stringify(result)};const frame=document.getElementById("frame");const stage=document.getElementById("stage");const logEl=document.getElementById("log");let theme="light";let mode="inline";const log=(text)=>{logEl.textContent+="\\n"+text;logEl.scrollTop=logEl.scrollHeight};const send=(message)=>frame.contentWindow.postMessage(message,"*");
 document.getElementById("theme").onclick=()=>{theme=theme==="light"?"dark":"light";send({jsonrpc:"2.0",method:"ui/notifications/host-context-changed",params:{hostContext:{theme,displayMode:mode,availableDisplayModes:["inline","fullscreen"]}}})};
 window.addEventListener("message",async(event)=>{if(event.source!==frame.contentWindow)return;const data=event.data;if(!data||typeof data!=="object")return;
-if(data.method==="ui/initialize"){log("initialize "+JSON.stringify(data.params.appCapabilities));send({jsonrpc:"2.0",id:data.id,result:{protocolVersion:"2026-01-26",hostInfo:{name:"munch-harness",version:"2.0.0"},hostCapabilities:{serverTools:{}},hostContext:{theme,displayMode:mode,availableDisplayModes:["inline","fullscreen"]}}});return}
+if(data.method==="ui/initialize"){log("initialize "+JSON.stringify({appInfo:data.params?.appInfo,appCapabilities:data.params?.appCapabilities}));send({jsonrpc:"2.0",id:data.id,result:{protocolVersion:"2026-01-26",hostInfo:{name:"munch-harness",version:"2.0.0"},hostCapabilities:{serverTools:{}},hostContext:{theme,displayMode:mode,availableDisplayModes:["inline","fullscreen"]}}});return}
 if(data.method==="ui/notifications/initialized"){log("initialized; delivering result");send({jsonrpc:"2.0",method:"ui/notifications/tool-result",params:{structuredContent:RESULT}});return}
 if(data.method==="ui/notifications/size-changed"){if(mode==="inline")frame.style.height=Math.max(80,data.params?.height||150)+"px";return}
 if(data.method==="ui/request-display-mode"){mode=data.params?.mode==="fullscreen"?"fullscreen":"inline";stage.classList.toggle("fullscreen",mode==="fullscreen");log("display mode -> "+mode);send({jsonrpc:"2.0",id:data.id,result:{displayMode:mode}});send({jsonrpc:"2.0",method:"ui/notifications/host-context-changed",params:{hostContext:{theme,displayMode:mode,availableDisplayModes:["inline","fullscreen"]}}});return}
