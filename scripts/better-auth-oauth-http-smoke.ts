@@ -2,6 +2,7 @@
 
 import { Pool } from "pg";
 import { getMunchBetterAuth } from "../src/auth/auth.js";
+import { recoverMissingChatGptOAuthClient } from "../src/auth/chatgpt-client-recovery.js";
 
 const databaseUrl = process.env.DATABASE_URL?.trim();
 if (!databaseUrl) {
@@ -32,6 +33,8 @@ const grantTypes = ["authorization_code", "refresh_token"];
 const responseTypes = ["code"];
 const auth = getMunchBetterAuth();
 const database = new Pool({ connectionString: databaseUrl, max: 1 });
+const recoveredClientId = `ChatGptRecoverySmoke${crypto.randomUUID().replaceAll("-", "")}`;
+let registeredClientId: string | undefined;
 let succeeded = false;
 
 try {
@@ -67,7 +70,8 @@ try {
         redirect_uris?: string[];
         token_endpoint_auth_method?: string;
     };
-    if (!registration.client_id) {
+    registeredClientId = registration.client_id;
+    if (!registeredClientId) {
         throw new Error("Dynamic registration returned no client_id");
     }
     if (registration.client_secret) {
@@ -97,7 +101,7 @@ try {
                 "responseTypes" as "responseTypes"
          from munch."oauthClient"
          where "clientId" = $1`,
-        [registration.client_id],
+        [registeredClientId],
     );
     const client = stored.rows[0];
     if (!client) throw new Error("Registered OAuth client was not persisted");
@@ -119,13 +123,92 @@ try {
         "oauthClient.responseTypes",
     );
 
-    await database.query(
-        `delete from munch."oauthClient" where "clientId" = $1`,
-        [registration.client_id],
+    const chatGptRedirect =
+        "https://chatgpt.com/connector/oauth/munch-recovery-smoke";
+    const authorizeUrl = new URL(
+        "https://munch.example/api/auth/oauth2/authorize",
     );
-    console.log("Better Auth dynamic client registration passed.");
+    authorizeUrl.searchParams.set("client_id", recoveredClientId);
+    authorizeUrl.searchParams.set("redirect_uri", chatGptRedirect);
+    authorizeUrl.searchParams.set("response_type", "code");
+    authorizeUrl.searchParams.set(
+        "scope",
+        "nutrition.read nutrition.write offline_access",
+    );
+    authorizeUrl.searchParams.set(
+        "code_challenge",
+        "abcdefghijklmnopqrstuvwxyzABCDEFGH0123456789-._~",
+    );
+    authorizeUrl.searchParams.set("code_challenge_method", "S256");
+    authorizeUrl.searchParams.set("state", "recovery-smoke-state");
+
+    const recoveryRequest = new Request(authorizeUrl);
+    if (!(await recoverMissingChatGptOAuthClient(recoveryRequest))) {
+        throw new Error("Missing ChatGPT OAuth client was not recovered");
+    }
+
+    const recovered = await database.query<{
+        clientSecret: string | null;
+        redirectUris: string;
+        tokenEndpointAuthMethod: string | null;
+        requirePKCE: boolean;
+        public: boolean;
+    }>(
+        `select "clientSecret" as "clientSecret",
+                "redirectUris" as "redirectUris",
+                "tokenEndpointAuthMethod" as "tokenEndpointAuthMethod",
+                "requirePKCE" as "requirePKCE",
+                public
+         from munch."oauthClient"
+         where "clientId" = $1`,
+        [recoveredClientId],
+    );
+    const recoveredClient = recovered.rows[0];
+    if (!recoveredClient) {
+        throw new Error("Recovered ChatGPT client was not persisted");
+    }
+    if (
+        recoveredClient.clientSecret !== null ||
+        recoveredClient.tokenEndpointAuthMethod !== "none" ||
+        !recoveredClient.requirePKCE ||
+        !recoveredClient.public
+    ) {
+        throw new Error("Recovered ChatGPT client is not a public PKCE client");
+    }
+    expectJsonArray(
+        recoveredClient.redirectUris,
+        [chatGptRedirect],
+        "recovered oauthClient.redirectUris",
+    );
+
+    const authorizeResponse = await auth.handler(new Request(authorizeUrl));
+    const authorizeLocation = authorizeResponse.headers.get("location") ?? "";
+    if (authorizeLocation.includes("/api/auth/error")) {
+        throw new Error(
+            `Recovered client still failed authorization: ${authorizeLocation}`,
+        );
+    }
+    if (authorizeResponse.status < 300 || authorizeResponse.status >= 400) {
+        throw new Error(
+            `Recovered client did not enter the OAuth browser flow: ${authorizeResponse.status}`,
+        );
+    }
+
+    console.log(
+        "Better Auth dynamic registration and ChatGPT client recovery passed.",
+    );
     succeeded = true;
 } finally {
+    if (registeredClientId) {
+        await database.query(
+            `delete from munch."oauthClient" where "clientId" = $1`,
+            [registeredClientId],
+        );
+    }
+    await database.query(
+        `delete from munch."oauthClient" where "clientId" = $1`,
+        [recoveredClientId],
+    );
     await database.end();
     process.exit(succeeded ? 0 : 1);
 }

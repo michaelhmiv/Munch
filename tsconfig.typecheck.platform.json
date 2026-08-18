@@ -11,6 +11,7 @@
         "src/accounts/routes.ts",
         "src/accounts/session.ts",
         "src/auth/auth.ts",
+        "src/auth/chatgpt-client-recovery.ts",
         "src/auth/config.ts",
         "src/auth/connect-routes.ts",
         "src/auth/connections.ts",
