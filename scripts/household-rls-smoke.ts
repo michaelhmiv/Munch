@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
-const { consumeLoginChallenge, createLoginChallenge } =
-    await import("../src/accounts/repository.js");
+import { createSmokeIdentity } from "./support/smoke-user.js";
+
 const {
     acceptHouseholdInvitation,
     createHousehold,
@@ -17,15 +17,6 @@ const { closePlatformDatabase, withAuthDatabase } =
 
 if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL is required for household smoke tests");
-}
-
-async function createUser(prefix: string) {
-    const email = `${prefix}-${crypto.randomUUID()}@example.test`;
-    const challenge = await createLoginChallenge(email);
-    if (!(await consumeLoginChallenge(challenge.token))) {
-        throw new Error("Unable to activate household smoke user");
-    }
-    return { userId: challenge.userId, email };
 }
 
 async function inviteAndAccept(input: {
@@ -48,10 +39,10 @@ async function inviteAndAccept(input: {
     });
 }
 
-const owner = await createUser("household-owner");
-const member = await createUser("household-member");
-const departing = await createUser("household-departing");
-const outsider = await createUser("household-outsider");
+const owner = await createSmokeIdentity("household-owner");
+const member = await createSmokeIdentity("household-member");
+const departing = await createSmokeIdentity("household-departing");
+const outsider = await createSmokeIdentity("household-outsider");
 const household = await createHousehold({
     userId: owner.userId,
     name: "Smoke Household",
