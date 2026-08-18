@@ -49,7 +49,10 @@ describe("OpenAI submission support", () => {
         );
         expect(WIDGET_RESOURCE_METADATA.ui.csp.connectDomains).toEqual([]);
         expect(WIDGET_RESOURCE_METADATA.ui.csp.resourceDomains).toEqual([]);
-        expect(WIDGET_RESOURCE_METADATA.ui.prefersBorder).toBe(true);
+        expect(WIDGET_RESOURCE_METADATA.ui.prefersBorder).toBe(false);
+        expect(WIDGET_RESOURCE_METADATA["openai/widgetPrefersBorder"]).toBe(
+            false,
+        );
         expect(widgetToolMeta("ui://widget/example.html")).toEqual({
             _meta: { ui: { resourceUri: "ui://widget/example.html" } },
         });
