@@ -1,7 +1,9 @@
 # ADR-0006: Railway-native nutrition core
 
-- Status: Accepted
+- Status: Accepted; staged-cutover details superseded by [ADR-0009](0009-canonical-better-auth-postgresql-baseline.md)
 - Date: 2026-08-03
+
+> Historical note: the Railway nutrition ownership and RLS decisions remain current. The staged selector/Supabase cutover section below records the transition and is not current runtime guidance.
 
 ## Context
 

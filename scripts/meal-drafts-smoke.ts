@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
-const { consumeLoginChallenge, createLoginChallenge } =
-    await import("../src/accounts/repository.js");
+import { createSmokeUser } from "./support/smoke-user.js";
+
 const {
     addMealDraftQuestion,
     answerMealDraftQuestion,
@@ -21,18 +21,8 @@ if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL is required for meal-draft smoke tests");
 }
 
-async function createUser(prefix: string) {
-    const challenge = await createLoginChallenge(
-        `${prefix}-${crypto.randomUUID()}@example.test`,
-    );
-    if (!(await consumeLoginChallenge(challenge.token))) {
-        throw new Error("Unable to activate draft smoke user");
-    }
-    return challenge.userId;
-}
-
-const userA = await createUser("draft-a");
-const userB = await createUser("draft-b");
+const userA = await createSmokeUser("draft-a");
+const userB = await createSmokeUser("draft-b");
 let draft = await createMealDraft({
     userId: userA,
     sourceMode: "photo",

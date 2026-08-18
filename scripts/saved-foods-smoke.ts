@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
-const { consumeLoginChallenge, createLoginChallenge } =
-    await import("../src/accounts/repository.js");
+import { createSmokeUser } from "./support/smoke-user.js";
+
 const {
     deleteSavedFood,
     listSavedFoods,
@@ -18,18 +18,8 @@ if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL is required for saved-food smoke tests");
 }
 
-async function createUser(prefix: string) {
-    const challenge = await createLoginChallenge(
-        `${prefix}-${crypto.randomUUID()}@example.test`,
-    );
-    if (!(await consumeLoginChallenge(challenge.token))) {
-        throw new Error("Unable to activate saved-food smoke user");
-    }
-    return challenge.userId;
-}
-
-const userA = await createUser("saved-a");
-const userB = await createUser("saved-b");
+const userA = await createSmokeUser("saved-a");
+const userB = await createSmokeUser("saved-b");
 const food = {
     provider: "usda" as const,
     providerFoodId: "171688",

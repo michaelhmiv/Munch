@@ -1,29 +1,36 @@
 # Better Auth boundary
 
-Munch uses Better Auth for browser identity, magic-link authentication, and the OAuth authorization-server lifecycle used by ChatGPT and other MCP clients.
+Munch uses Better Auth for browser identity, magic-link authentication, and the OAuth authorization-server lifecycle used by ChatGPT and other MCP clients. There is no fallback authentication or OAuth implementation.
 
-The stable business identity remains `munch.users.id`. Nutrition rows, Stripe customers and subscriptions, preferences, exports, deletion, and audit ownership continue to reference that UUID. Better Auth is an authentication implementation, not the owner of Munch business data.
+The stable business identity remains `munch.users.id`. Nutrition rows, Stripe customers and subscriptions, preferences, exports, deletion, households, and audit ownership reference that UUID. Better Auth is the authentication implementation, not the owner of Munch business data.
 
-## Launch authentication
+## Public authentication
 
-- Magic links only
-- Automatic signup for a previously unseen normalized email
-- No email/password provider
-- No password-reset endpoints
-- No social providers at launch
-- Hashed, atomically consumed verification tokens
-- Scanner-safe confirmation before a link is redeemed
-- Direct transactional delivery through the Resend Emails API
+- Magic links are the public sign-in mechanism.
+- A previously unseen normalized email may create its Munch account through the Better Auth flow.
+- Public password signup is disabled.
+- Social providers are not enabled at launch.
+- Verification records are short-lived and single use.
+- Magic-link redemption remains scanner-safe.
+- Transactional delivery uses Resend directly.
+- Marketplace reviewer credentials are separately provisioned and are not a public signup path.
 
-## Production rollout
+## OAuth and MCP
 
-`main` is the production release branch. GitHub CI validates every pull request and push to `main`; Railway watches `main` and deploys merged commits automatically.
+Better Auth OAuth Provider owns dynamic client registration, authorization, consent, token issuance/refresh, and OAuth client metadata. MCP bearer authentication accepts only Better Auth resource tokens. Connection management reads Better Auth consent/client/token state and revokes Better Auth grants; it does not consult legacy token-family tables.
 
-Better Auth requires `RESEND_API_KEY`, a verified `MUNCH_EMAIL_FROM` sender, Stripe API and webhook credentials, USDA credentials, PostgreSQL, and the existing Better Auth secret. The Resend API key is server-only and must never be returned to the browser or written to application logs. Keep `MUNCH_AUTH_BACKEND=custom` until those production values are complete. The custom backend remains the rollback value without remapping nutrition or billing records.
+## Production configuration
+
+`main` is the production release branch. GitHub CI validates pull requests and pushes to `main`; Railway watches `main` and deploys merged commits automatically.
+
+Production startup validation is unconditional and requires the canonical application origin, Better Auth secret, Resend sender configuration, Railway PostgreSQL, Stripe configuration, Open Food Facts user agent, and USDA API key. No auth-backend selector, Railway-auth selector, custom session secret, or custom login-delivery adapter exists.
+
+Secrets are server-only and must not be returned to browsers or written to application logs.
 
 ## Database rules
 
-- Existing numbered migrations are immutable.
-- Better Auth schema changes use additive Munch migrations.
-- Runtime Better Auth connections assume the restricted `munch_auth` role.
-- Password values are prohibited by a database constraint.
+- Fresh databases are constructed from the canonical files in `db/schema/`.
+- The one-time `db/legacy-bridge/` path exists only to retire a pre-baseline database while preserving business rows.
+- Better Auth runtime database access uses the restricted `munch_auth` role.
+- Better Auth schema compatibility is checked in CI against the pinned dependency version.
+- Public password signup remains disabled even though provisioned reviewer credentials may use Better Auth's credential account support.

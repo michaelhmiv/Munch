@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 export interface IssuedOpaqueToken {
     token: string;
@@ -24,15 +24,4 @@ export function issueOpaqueToken(byteLength = 32): IssuedOpaqueToken {
         token,
         hash: hashOpaqueToken(token),
     };
-}
-
-export function tokenHashMatches(
-    token: string,
-    expectedHash: Uint8Array,
-): boolean {
-    const actual = hashOpaqueToken(token);
-    const expected = Buffer.from(expectedHash);
-    return (
-        actual.length === expected.length && timingSafeEqual(actual, expected)
-    );
 }

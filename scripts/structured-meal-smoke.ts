@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
-const { consumeLoginChallenge, createLoginChallenge } =
-    await import("../src/accounts/repository.js");
+import { createSmokeUser } from "./support/smoke-user.js";
+
 const {
     addStructuredMealItem,
     copyMeal,
@@ -16,17 +16,8 @@ if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL is required for structured meal smoke tests");
 }
 
-async function createUser(prefix: string) {
-    const challenge = await createLoginChallenge(
-        `${prefix}-${crypto.randomUUID()}@example.test`,
-    );
-    const session = await consumeLoginChallenge(challenge.token);
-    if (!session) throw new Error("Unable to activate smoke-test user");
-    return challenge.userId;
-}
-
-const userA = await createUser("structured-a");
-const userB = await createUser("structured-b");
+const userA = await createSmokeUser("structured-a");
+const userB = await createSmokeUser("structured-b");
 const idempotencyKey = `structured-smoke:${crypto.randomUUID()}`;
 
 const first = await insertStructuredMeal(userA, {

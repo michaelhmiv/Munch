@@ -1,7 +1,9 @@
 # ADR-0002: Munch identity, MCP OAuth, and Stripe entitlements
 
-- Status: Accepted
+- Status: Superseded by [ADR-0009](0009-canonical-better-auth-postgresql-baseline.md)
 - Date: 2026-08-03
+
+> Historical record: the custom passwordless/OAuth implementation described below is retired. Better Auth is the only authentication and OAuth stack.
 
 ## Context
 

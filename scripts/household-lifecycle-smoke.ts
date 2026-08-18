@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
-const { consumeLoginChallenge, createLoginChallenge } =
-    await import("../src/accounts/repository.js");
+import { createSmokeIdentity } from "./support/smoke-user.js";
+
 const {
     acceptHouseholdInvitation,
     createHousehold,
@@ -19,17 +19,8 @@ if (!process.env.DATABASE_URL) {
     );
 }
 
-async function createUser(prefix: string) {
-    const email = `${prefix}-${crypto.randomUUID()}@example.test`;
-    const challenge = await createLoginChallenge(email);
-    if (!(await consumeLoginChallenge(challenge.token))) {
-        throw new Error("Unable to activate household lifecycle smoke user");
-    }
-    return { userId: challenge.userId, email };
-}
-
-const originalOwner = await createUser("lifecycle-owner");
-const successor = await createUser("lifecycle-successor");
+const originalOwner = await createSmokeIdentity("lifecycle-owner");
+const successor = await createSmokeIdentity("lifecycle-successor");
 const household = await createHousehold({
     userId: originalOwner.userId,
     name: "Lifecycle Household",

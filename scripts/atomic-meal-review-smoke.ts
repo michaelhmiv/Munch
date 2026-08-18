@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
 
-const { consumeLoginChallenge, createLoginChallenge } =
-    await import("../src/accounts/repository.js");
+import { createSmokeUser } from "./support/smoke-user.js";
+
 const { prepareMealReview, resolveMealReview } =
     await import("../src/meal-drafts/atomic.js");
-const { confirmMealDraft, getMealDraft, cancelMealDraft } =
+const { cancelMealDraft, confirmMealDraft, getMealDraft } =
     await import("../src/meal-drafts/repository.js");
 const { getStructuredMeal } =
     await import("../src/structured-meals/repository.js");
@@ -14,16 +14,6 @@ if (!process.env.DATABASE_URL) {
     throw new Error(
         "DATABASE_URL is required for atomic meal review smoke tests",
     );
-}
-
-async function createUser(prefix: string) {
-    const challenge = await createLoginChallenge(
-        `${prefix}-${crypto.randomUUID()}@example.test`,
-    );
-    if (!(await consumeLoginChallenge(challenge.token))) {
-        throw new Error("Unable to activate atomic review smoke user");
-    }
-    return challenge.userId;
 }
 
 const items = [
@@ -56,8 +46,8 @@ const items = [
     },
 ];
 
-const userA = await createUser("atomic-review-a");
-const userB = await createUser("atomic-review-b");
+const userA = await createSmokeUser("atomic-review-a");
+const userB = await createSmokeUser("atomic-review-b");
 const requestId = `smoke-${crypto.randomUUID()}`;
 let draft = await prepareMealReview({
     userId: userA,

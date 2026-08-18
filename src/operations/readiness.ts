@@ -2,6 +2,8 @@ import path from "node:path";
 import { getPlatformDatabase } from "../platform/database.js";
 import { configurationIssues } from "./config.js";
 
+const BASELINE_GENERATION = "2026-08-18";
+
 export interface ReadinessComponent {
     name: string;
     ok: boolean;
@@ -10,16 +12,16 @@ export interface ReadinessComponent {
 
 export interface ReadinessReport {
     ready: boolean;
-    backend: "railway" | "inherited";
+    backend: "railway";
     checkedAt: string;
     components: ReadinessComponent[];
 }
 
-async function repositoryMigrationVersions(): Promise<string[]> {
-    const directory = path.resolve("db/migrations");
+async function repositoryUpdateVersions(): Promise<string[]> {
+    const directory = path.resolve("db/updates");
     const files = await Array.fromAsync(
         new Bun.Glob("*.sql").scan({ cwd: directory, absolute: false }),
-    );
+    ).catch(() => [] as string[]);
     return files
         .map((file) => file.match(/^(\d{4,})_/)?.[1])
         .filter((version): version is string => Boolean(version))
@@ -27,9 +29,6 @@ async function repositoryMigrationVersions(): Promise<string[]> {
 }
 
 export async function buildReadinessReport(): Promise<ReadinessReport> {
-    const railway =
-        process.env.MUNCH_RAILWAY_AUTH_ENABLED === "true" &&
-        process.env.MUNCH_RAILWAY_DATA_ENABLED === "true";
     const components: ReadinessComponent[] = [];
     const issues = configurationIssues();
     components.push({
@@ -40,36 +39,35 @@ export async function buildReadinessReport(): Promise<ReadinessReport> {
             : {}),
     });
 
-    if (!railway) {
-        return {
-            ready: components.every((component) => component.ok),
-            backend: "inherited",
-            checkedAt: new Date().toISOString(),
-            components,
-        };
-    }
-
     try {
         const database = getPlatformDatabase();
         await database`select 1 as ok`;
         components.push({ name: "database", ok: true });
 
-        const expectedVersions = await repositoryMigrationVersions();
-        const migrationRows = await database<Array<{ version: string }>>`
-            select version from munch.schema_migrations order by version
+        const stateRows = await database<Array<{ generation: string }>>`
+            select generation
+            from munch.schema_state
+            where singleton = true
         `;
-        const applied = new Set(migrationRows.map((row) => row.version));
+        const generation = stateRows[0]?.generation;
+        const expectedVersions = await repositoryUpdateVersions();
+        const updateRows = await database<Array<{ version: string }>>`
+            select version from munch.schema_updates order by version
+        `;
+        const applied = new Set(updateRows.map((row) => row.version));
         const missing = expectedVersions.filter(
             (version) => !applied.has(version),
         );
+        const schemaCurrent =
+            generation === BASELINE_GENERATION && missing.length === 0;
         components.push({
             name: "migrations",
-            ok: missing.length === 0,
-            ...(missing.length > 0
-                ? { detail: `${missing.length} migration(s) missing` }
-                : {
-                      detail: `${expectedVersions.length} migration(s) applied`,
-                  }),
+            ok: schemaCurrent,
+            detail: schemaCurrent
+                ? `canonical schema ${BASELINE_GENERATION}; ${expectedVersions.length} update(s) applied`
+                : generation !== BASELINE_GENERATION
+                  ? `schema generation ${generation ?? "missing"}; expected ${BASELINE_GENERATION}`
+                  : `${missing.length} schema update(s) missing`,
         });
 
         const requiredRoles = [

@@ -4,8 +4,6 @@ import { cors } from "hono/cors";
 import { createAccountRouter } from "./accounts/routes.js";
 import { createProvenanceRouter } from "./app/provenance-routes.js";
 import { createAppRouter } from "./app/routes.js";
-import { betterAuthIsEnabled } from "./auth/config.js";
-import { resolveMcpAuthMode } from "./auth/mcp-auth-mode.js";
 import { registerBetterAuthRoutes } from "./auth/routes.js";
 import { createBillingRouter } from "./billing/routes.js";
 import { registerDiscoveryRoutes } from "./discovery.js";
@@ -17,8 +15,6 @@ import {
     rateLimit,
 } from "./middleware.js";
 import { maskIp } from "./net.js";
-import { authenticatePlatformBearer } from "./oauth-platform/middleware.js";
-import { createPlatformOAuthRouter } from "./oauth-platform/routes.js";
 import { validateStartupConfiguration } from "./operations/config.js";
 import { createOperationsRouter } from "./operations/routes.js";
 import { getLandingStats, type LandingStats } from "./storage.js";
@@ -27,18 +23,12 @@ import { warmWidgets } from "./widgets.js";
 validateStartupConfiguration();
 
 const app = new Hono();
-const railwayAuthEnabled = process.env.MUNCH_RAILWAY_AUTH_ENABLED === "true";
-const betterAuthEnabled = betterAuthIsEnabled();
-const mcpAuthMode = resolveMcpAuthMode(betterAuthEnabled, railwayAuthEnabled);
-const mcpAuthenticator =
-    mcpAuthMode === "railway" ? authenticatePlatformBearer : authenticateBearer;
 
 app.use("*", async (c, next) => {
     const path = new URL(c.req.url).pathname;
     const start = performance.now();
     await next();
     if (c.get("suppressAccessLog")) return;
-
     console.log(
         `[req] ${c.req.method} ${path} ${c.res.status} ${Math.round(performance.now() - start)}ms ip=${maskIp(c.req.header("x-forwarded-for"))}`,
     );
@@ -73,9 +63,8 @@ app.use(
             if (
                 origin.match(/^https?:\/\/localhost(:\d+)?$/) ||
                 origin.match(/^https?:\/\/127\.0\.0\.1(:\d+)?$/)
-            ) {
+            )
                 return origin;
-            }
             const allowed =
                 process.env.ALLOWED_ORIGINS?.split(",").map((value) =>
                     value.trim(),
@@ -109,21 +98,16 @@ app.route("/", createAccountRouter());
 app.route("/", createBillingRouter());
 app.route("/", createAppRouter());
 app.route("/", createProvenanceRouter());
-
-if (!betterAuthEnabled && railwayAuthEnabled) {
-    app.use("/token", async (c, next) => {
-        await next();
-        c.header("Cache-Control", "no-store");
-        c.header("Pragma", "no-cache");
-    });
-    app.route("/", createPlatformOAuthRouter());
-}
-
-app.all("/mcp", banRepeatAuthFailures, mcpAuthenticator, rateLimit, handleMcp);
+app.all(
+    "/mcp",
+    banRepeatAuthFailures,
+    authenticateBearer,
+    rateLimit,
+    handleMcp,
+);
 
 const STATS_TTL_MS = 5 * 60 * 1000;
 let statsCache: { data: LandingStats; expiresAt: number } | null = null;
-
 app.get("/api/stats", async (c) => {
     try {
         if (!statsCache || statsCache.expiresAt < Date.now()) {
@@ -303,8 +287,9 @@ app.onError((_error, c) => {
 });
 
 const port = parseInt(process.env.PORT || "8080");
-console.log(`Munch server listening on 0.0.0.0:${port} auth=${mcpAuthMode}`);
-
+console.log(
+    `Munch server listening on 0.0.0.0:${port} auth=better_auth database=railway_postgresql`,
+);
 await warmWidgets();
 startExportCleanup();
 

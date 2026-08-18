@@ -24,6 +24,17 @@ for (const path of requiredFiles) {
     }
 }
 
+for (const retiredPath of [
+    "public/login.html",
+    "public/oauth-login.html",
+    "public/portal-controls.css",
+    "src/portal/routes.ts",
+]) {
+    if (await Bun.file(retiredPath).exists()) {
+        throw new Error(`Retired UI surface still exists: ${retiredPath}`);
+    }
+}
+
 const homepage = await Bun.file("public/index.html").text();
 const normalizedHomepage = homepage.replace(/\s+/g, " ");
 for (const stale of [
@@ -78,8 +89,6 @@ if (!robots.includes("Sitemap: https://munch.business/sitemap.xml")) {
 }
 
 const authSurfaces = [
-    "public/login.html",
-    "public/oauth-login.html",
     "public/help-connect.html",
     "src/auth/connect-routes.ts",
     "src/auth/email.ts",
@@ -101,6 +110,40 @@ for (const path of authSurfaces) {
                 `${path} contains protected commerce term: ${term}`,
             );
         }
+    }
+}
+
+const accountRoutes = await Bun.file("src/accounts/routes.ts").text();
+if (
+    !accountRoutes.includes('account.get("/account/login"') ||
+    !accountRoutes.includes("/connect/sign-in?return_to=")
+) {
+    throw new Error(
+        "Account login compatibility route does not redirect into Better Auth sign-in",
+    );
+}
+
+const connectRoutes = await Bun.file("src/auth/connect-routes.ts").text();
+for (const route of [
+    'connect.get("/connect/sign-in"',
+    'connect.post("/connect/request"',
+    'connect.get("/connect/confirm"',
+    'connect.post("/connect/confirm"',
+    'connect.get("/connect/consent"',
+    'connect.get("/connect/error"',
+]) {
+    if (!connectRoutes.includes(route)) {
+        throw new Error(`Better Auth connection UI is missing route: ${route}`);
+    }
+}
+for (const copy of [
+    "Connect Munch to ChatGPT",
+    "Connected Munch account",
+    "Approve connection",
+    "You can revoke this connection later from your Munch account.",
+]) {
+    if (!connectRoutes.includes(copy)) {
+        throw new Error(`Better Auth connection UI is missing copy: ${copy}`);
     }
 }
 
@@ -258,15 +301,6 @@ if (
     throw new Error(
         "Global app shell is missing mobile safe-area navigation protection",
     );
-}
-
-const portalSource = await Bun.file("src/portal/routes.ts").text();
-if (
-    !portalSource.includes('c.redirect("/app/settings", 303)') ||
-    portalSource.includes("Account control center") ||
-    portalSource.includes("Advanced account controls")
-) {
-    throw new Error("Legacy account portal was not cleanly retired");
 }
 
 const householdRoutes = await Bun.file("src/households/routes.ts").text();

@@ -1,195 +1,83 @@
 #!/usr/bin/env bun
 
-process.env.MUNCH_RAILWAY_DATA_ENABLED = "true";
-process.env.MUNCH_RAILWAY_AUTH_ENABLED = "true";
-process.env.MUNCH_APP_BASE_URL = "https://munch.example";
+import { SQL } from "bun";
+import { deleteAllUserData } from "../src/nutrition-platform/account.js";
 
-// This script intentionally exercises the destructive MCP handler only against
-// the ephemeral PostgreSQL service created for CI acceptance testing.
-const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
-const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
-const { InMemoryTransport } =
-    await import("@modelcontextprotocol/sdk/inMemory.js");
-const { createLoginChallenge, consumeLoginChallenge } =
-    await import("../src/accounts/repository.js");
-const { registerTools } = await import("../src/mcp.js");
-const { closePlatformDatabase, getPlatformDatabase } =
-    await import("../src/platform/database.js");
-const storage = await import("../src/storage.js");
+const databaseUrl = process.env.DATABASE_URL?.trim();
+if (!databaseUrl) throw new Error("DATABASE_URL is required");
+const sql = new SQL({ url: databaseUrl, max: 1 });
+const userId = crypto.randomUUID();
+const mealId = crypto.randomUUID();
+const sessionId = crypto.randomUUID();
+const clientId = `delete-smoke-${crypto.randomUUID()}`;
+const consentId = crypto.randomUUID();
 
-if (!process.env.DATABASE_URL) {
-    throw new Error(
-        "DATABASE_URL is required for account deletion smoke tests",
-    );
-}
-if (
-    process.env.CI !== "true" &&
-    process.env.MUNCH_ALLOW_ACCOUNT_DELETION_SMOKE !== "true"
-) {
-    throw new Error(
-        "Account deletion smoke tests may run only in CI or with an explicit disposable-database override",
-    );
-}
+try {
+    await sql`
+        insert into munch.users (id, email, name, email_verified, status)
+        values (${userId}, ${`delete-${userId}@example.test`}, 'Delete smoke', true, 'active')
+    `;
+    await sql`
+        insert into munch.account_preferences (user_id, timezone)
+        values (${userId}, 'America/New_York')
+    `;
+    await sql`
+        insert into munch.meals (id, user_id, description, calories)
+        values (${mealId}, ${userId}, 'Disposable deletion smoke meal', 100)
+    `;
+    await sql`
+        insert into munch.auth_sessions (id, user_id, token, expires_at)
+        values (${sessionId}, ${userId}, ${`delete-session-${sessionId}`}, now() + interval '1 hour')
+    `;
+    await sql`
+        insert into munch."oauthClient" ("clientId", name, "redirectUris", "grantTypes", "responseTypes", "tokenEndpointAuthMethod")
+        values (
+            ${clientId}, 'Deletion smoke client', ${JSON.stringify(["https://chatgpt.com/connector_platform_oauth_redirect"])},
+            ${JSON.stringify(["authorization_code"])}, ${JSON.stringify(["code"])}, 'none'
+        )
+    `;
+    await sql`
+        insert into munch."oauthConsent" (id, "userId", "clientId", scopes)
+        values (${consentId}, ${userId}, ${clientId}, ${JSON.stringify(["nutrition.read"])})
+    `;
 
-interface Counts {
-    users: number;
-    meals: number;
-    sessions: number;
-    loginTokens: number;
-}
+    await deleteAllUserData(userId);
 
-function toolText(result: unknown): string {
-    const content = (result as { content?: Array<{ text?: unknown }> }).content;
-    return Array.isArray(content)
-        ? content
-              .map((item) => (typeof item.text === "string" ? item.text : ""))
-              .join("\n")
-        : "";
-}
-
-const analyticsWarnings: string[] = [];
-const originalWarn = console.warn;
-console.warn = (...args: unknown[]) => {
-    analyticsWarnings.push(args.map(String).join(" "));
-    originalWarn(...args);
-};
-
-const email = `account-deletion-${crypto.randomUUID()}@example.test`;
-const challenge = await createLoginChallenge(email);
-const session = await consumeLoginChallenge(challenge.token);
-if (!session) {
-    throw new Error("Unable to activate disposable account deletion user");
-}
-const userId = session.userId;
-
-await storage.insertMeal(userId, {
-    description: "Disposable account deletion smoke meal",
-    meal_type: "snack",
-    calories: 0,
-    protein_g: 0,
-    carbs_g: 0,
-    fat_g: 0,
-    fiber_g: 0,
-    sugar_g: 0,
-    logged_at: "2026-08-05T12:00:00.000Z",
-    notes: "Created only in the isolated CI database.",
-});
-
-const database = getPlatformDatabase();
-async function counts(): Promise<Counts> {
-    const rows = await database<
+    const remaining = await sql<
         Array<{
             users: number;
             meals: number;
+            preferences: number;
             sessions: number;
-            login_tokens: number;
+            consents: number;
         }>
     >`
         select
-            (select count(*)::int from munch.users where id = ${userId}) as users,
-            (select count(*)::int from munch.meals where user_id = ${userId}) as meals,
-            (select count(*)::int from munch.web_sessions where user_id = ${userId}) as sessions,
-            (select count(*)::int from munch.login_tokens where user_id = ${userId}) as login_tokens
+            (select count(*)::integer from munch.users where id = ${userId}) as users,
+            (select count(*)::integer from munch.meals where user_id = ${userId}) as meals,
+            (select count(*)::integer from munch.account_preferences where user_id = ${userId}) as preferences,
+            (select count(*)::integer from munch.auth_sessions where user_id = ${userId}) as sessions,
+            (select count(*)::integer from munch."oauthConsent" where "userId" = ${userId}) as consents
     `;
-    const row = rows[0];
-    if (!row) throw new Error("Unable to inspect disposable account state");
-    return {
-        users: Number(row.users),
-        meals: Number(row.meals),
-        sessions: Number(row.sessions),
-        loginTokens: Number(row.login_tokens),
-    };
-}
-
-const server = new McpServer(
-    { name: "munch-account-deletion-smoke", version: "0.0.0" },
-    { capabilities: { tools: {}, resources: {} } },
-);
-registerTools(server, userId, true, null);
-const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-const client = new Client({
-    name: "munch-account-deletion-smoke-client",
-    version: "0.0.0",
-});
-
-try {
-    await Promise.all([
-        server.connect(serverTransport),
-        client.connect(clientTransport),
-    ]);
-
-    const initial = await counts();
-    if (
-        initial.users !== 1 ||
-        initial.meals !== 1 ||
-        initial.sessions !== 1 ||
-        initial.loginTokens < 1
-    ) {
+    const row = remaining[0];
+    if (!row || Object.values(row).some((value) => Number(value) !== 0)) {
         throw new Error(
-            `Disposable account fixture is incomplete: ${JSON.stringify(initial)}`,
+            `Account deletion left user-owned rows: ${JSON.stringify(row)}`,
         );
     }
 
-    // Destructive tools now enforce confirmation in the input schema itself.
-    // A false value must therefore be rejected before the handler runs, and the
-    // rejection must leave every persisted row untouched.
-    const rejected = await client.callTool({
-        name: "delete_account",
-        arguments: { confirm: false },
-    });
-    if ((rejected as { isError?: boolean }).isError !== true) {
+    const client = await sql<Array<{ count: number }>>`
+        select count(*)::integer as count from munch."oauthClient" where "clientId" = ${clientId}
+    `;
+    if (Number(client[0]?.count) !== 1) {
         throw new Error(
-            `delete_account accepted confirm=false instead of rejecting it: ${toolText(rejected)}`,
-        );
-    }
-    const afterRejection = await counts();
-    if (JSON.stringify(afterRejection) !== JSON.stringify(initial)) {
-        throw new Error("Rejected account deletion changed persisted data");
-    }
-
-    const deleted = await client.callTool({
-        name: "delete_account",
-        arguments: { confirm: true },
-    });
-    if (!toolText(deleted).includes("permanently deleted")) {
-        throw new Error(
-            `delete_account did not report success: ${toolText(deleted)}`,
+            "Deleting one user must not delete a globally registered OAuth client",
         );
     }
 
-    const afterDeletion = await counts();
-    if (
-        afterDeletion.users !== 0 ||
-        afterDeletion.meals !== 0 ||
-        afterDeletion.sessions !== 0 ||
-        afterDeletion.loginTokens !== 0
-    ) {
-        throw new Error(
-            `Account deletion left persisted data behind: ${JSON.stringify(afterDeletion)}`,
-        );
-    }
-
-    await Bun.sleep(50);
-    if (
-        analyticsWarnings.some((warning) =>
-            warning.includes("Failed to persist analytics for delete_account"),
-        )
-    ) {
-        throw new Error(
-            "Account deletion attempted to persist analytics after removing the user",
-        );
-    }
-
-    console.log(
-        "Munch delete_account MCP schema confirmation and disposable-account cascade smoke test passed.",
-    );
+    console.log("Better Auth account deletion smoke checks passed.");
 } finally {
-    console.warn = originalWarn;
-    await client.close().catch(() => undefined);
-    await server.close().catch(() => undefined);
-    await database`
-        delete from munch.users
-        where id = ${userId}
-    `.catch(() => undefined);
-    await closePlatformDatabase();
+    await sql`delete from munch.users where id = ${userId}`;
+    await sql`delete from munch."oauthClient" where "clientId" = ${clientId}`;
+    await sql.close();
 }

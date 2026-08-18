@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
-const { consumeLoginChallenge, createLoginChallenge } =
-    await import("../src/accounts/repository.js");
+import { createSmokeIdentity } from "./support/smoke-user.js";
+
 const { exportAccountData } = await import("../src/account-export.js");
 const {
     acceptHouseholdInvitation,
@@ -19,17 +19,8 @@ if (!process.env.DATABASE_URL || !process.env.MUNCH_APP_BASE_URL) {
     );
 }
 
-async function createUser(prefix: string) {
-    const email = `${prefix}-${crypto.randomUUID()}@example.test`;
-    const challenge = await createLoginChallenge(email);
-    if (!(await consumeLoginChallenge(challenge.token))) {
-        throw new Error("Unable to activate account export smoke user");
-    }
-    return { userId: challenge.userId, email };
-}
-
-const owner = await createUser("export-owner");
-const member = await createUser("export-member");
+const owner = await createSmokeIdentity("export-owner");
+const member = await createSmokeIdentity("export-member");
 const household = await createHousehold({
     userId: owner.userId,
     name: "Export Household",

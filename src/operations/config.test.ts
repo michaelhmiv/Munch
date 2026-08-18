@@ -9,16 +9,13 @@ afterEach(() => {
     Object.assign(process.env, original);
 });
 
-function validRailwayEnvironment() {
+function validEnvironment() {
     Object.assign(process.env, {
         NODE_ENV: "production",
-        MUNCH_RAILWAY_AUTH_ENABLED: "true",
-        MUNCH_AUTH_BACKEND: "custom",
         MUNCH_APP_BASE_URL: "https://munch.example",
-        MUNCH_SESSION_SECRET: "x".repeat(64),
-        MUNCH_DEV_EXPOSE_LOGIN_LINK: "false",
-        MUNCH_LOGIN_DELIVERY_ENDPOINT: "https://mail.example/deliver",
-        MUNCH_LOGIN_DELIVERY_SECRET: "delivery-secret",
+        BETTER_AUTH_SECRET: "b".repeat(64),
+        RESEND_API_KEY: "re_test_key",
+        MUNCH_EMAIL_FROM: "Munch <support@munch.example>",
         STRIPE_SECRET_KEY: "sk_test_example",
         STRIPE_WEBHOOK_SECRET: "whsec_example",
         STRIPE_PRICE_ID: "price_example",
@@ -30,51 +27,41 @@ function validRailwayEnvironment() {
     });
 }
 
-function validBetterAuthEnvironment() {
-    validRailwayEnvironment();
-    Object.assign(process.env, {
-        MUNCH_AUTH_BACKEND: "better_auth",
-        BETTER_AUTH_SECRET: "b".repeat(64),
-        RESEND_API_KEY: "re_test_key",
-        MUNCH_EMAIL_FROM: "Munch <support@munch.example>",
-    });
-}
-
 describe("Munch startup configuration", () => {
-    test("accepts Railway PostgreSQL with custom auth", () => {
-        validRailwayEnvironment();
+    test("accepts canonical Better Auth + Railway PostgreSQL configuration", () => {
+        validEnvironment();
         expect(configurationIssues()).toEqual([]);
     });
-    test("accepts Railway PostgreSQL with Better Auth", () => {
-        validBetterAuthEnvironment();
-        expect(configurationIssues()).toEqual([]);
-    });
-    test("requires Railway OAuth for custom auth", () => {
-        validRailwayEnvironment();
-        process.env.MUNCH_RAILWAY_AUTH_ENABLED = "false";
-        expect(configurationIssues()).toContainEqual(
-            expect.objectContaining({ key: "MUNCH_RAILWAY_AUTH_ENABLED" }),
-        );
-    });
+
     test("always requires Railway PostgreSQL", () => {
-        validBetterAuthEnvironment();
+        validEnvironment();
         delete process.env.DATABASE_URL;
         expect(configurationIssues()).toContainEqual(
             expect.objectContaining({ key: "DATABASE_URL" }),
         );
     });
-    test("rejects insecure production settings", () => {
-        validRailwayEnvironment();
+
+    test("rejects an insecure or pathful production origin", () => {
+        validEnvironment();
         process.env.MUNCH_APP_BASE_URL = "http://munch.example/path";
-        process.env.MUNCH_LOGIN_DELIVERY_ENDPOINT = "http://mail.example";
-        process.env.MUNCH_DEV_EXPOSE_LOGIN_LINK = "true";
-        const keys = configurationIssues().map((issue) => issue.key);
-        expect(keys).toContain("MUNCH_APP_BASE_URL");
-        expect(keys).toContain("MUNCH_LOGIN_DELIVERY_ENDPOINT");
-        expect(keys).toContain("MUNCH_DEV_EXPOSE_LOGIN_LINK");
+        expect(configurationIssues()).toContainEqual(
+            expect.objectContaining({ key: "MUNCH_APP_BASE_URL" }),
+        );
     });
+
+    test("requires Better Auth and Resend configuration", () => {
+        validEnvironment();
+        delete process.env.BETTER_AUTH_SECRET;
+        delete process.env.RESEND_API_KEY;
+        delete process.env.MUNCH_EMAIL_FROM;
+        const keys = configurationIssues().map((issue) => issue.key);
+        expect(keys).toContain("BETTER_AUTH_SECRET");
+        expect(keys).toContain("RESEND_API_KEY");
+        expect(keys).toContain("MUNCH_EMAIL_FROM");
+    });
+
     test("requires provider and billing configuration", () => {
-        validRailwayEnvironment();
+        validEnvironment();
         delete process.env.USDA_FDC_API_KEY;
         delete process.env.STRIPE_WEBHOOK_SECRET;
         delete process.env.STRIPE_HOUSEHOLD_MEMBER_PRICE_ID;
@@ -82,13 +69,5 @@ describe("Munch startup configuration", () => {
         expect(keys).toContain("USDA_FDC_API_KEY");
         expect(keys).toContain("STRIPE_WEBHOOK_SECRET");
         expect(keys).toContain("STRIPE_HOUSEHOLD_MEMBER_PRICE_ID");
-    });
-    test("requires Resend and a Better Auth sender", () => {
-        validBetterAuthEnvironment();
-        delete process.env.RESEND_API_KEY;
-        delete process.env.MUNCH_EMAIL_FROM;
-        const keys = configurationIssues().map((issue) => issue.key);
-        expect(keys).toContain("RESEND_API_KEY");
-        expect(keys).toContain("MUNCH_EMAIL_FROM");
     });
 });

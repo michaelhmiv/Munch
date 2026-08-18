@@ -1,10 +1,7 @@
 import { oauthProviderResourceClient } from "@better-auth/oauth-provider/resource-client";
 import type { Context, Next } from "hono";
 import { getMunchBetterAuth } from "./auth/auth.js";
-import {
-    betterAuthIsEnabled,
-    getBetterAuthRuntimeConfig,
-} from "./auth/config.js";
+import { getBetterAuthRuntimeConfig } from "./auth/config.js";
 import { munchMcpResourceUrl } from "./auth/oauth-scopes.js";
 import { oauthIssuerUrl, resourceMetadataUrl } from "./discovery.js";
 import { maskIp } from "./net.js";
@@ -15,11 +12,7 @@ import {
     getBanState,
     noteAuthFailure,
 } from "./rate-limit.js";
-import { getUserIdByToken } from "./storage.js";
 
-// Declare the context variables this middleware sets. Without it, c.get/c.set on
-// an untyped `new Hono()` app types its keys as `never`, so index.ts cannot read
-// suppressAccessLog.
 declare module "hono" {
     interface ContextVariableMap {
         userId: string;
@@ -60,10 +53,6 @@ async function verifyBetterAuthMcpToken(token: string): Promise<string> {
     return payload.sub;
 }
 
-// Best-effort client IP for rate limiting. Behind Railway's proxy the real IP
-// is the first entry of x-forwarded-for; fall back to x-real-ip. "unknown" only
-// applies when no proxy header is present (for example direct local requests),
-// in which case those callers share a single bucket.
 function getClientIp(c: Context): string {
     const forwardedFor = c.req.header("x-forwarded-for");
     if (forwardedFor) {
@@ -80,8 +69,6 @@ function getBaseUrl(c: Context): string {
     return new URL(c.req.url).origin;
 }
 
-// Shared 401 path. Every rejection also counts a strike against the client IP so
-// a client that never recovers eventually gets shed by banRepeatAuthFailures.
 function rejectUnauthenticated(
     c: Context,
     error: "unauthorized" | "invalid_token",
@@ -89,9 +76,6 @@ function rejectUnauthenticated(
 ) {
     const ip = getClientIp(c);
     const ban = noteAuthFailure(ip);
-    // Reaching here means the ban guard let the request through, so a banned
-    // result is necessarily a newly tripped ban. Log the transition once rather
-    // than on every suppressed request that follows.
     if (ban.banned) {
         console.log(
             `[ban] ${maskIp(c.req.header("x-forwarded-for"))} repeated auth failures on ${c.req.path} — shedding for ${ban.retryAfterSeconds}s`,
@@ -107,7 +91,6 @@ function rejectUnauthenticated(
 
 export const authenticateBearer = async (c: Context, next: Next) => {
     const authHeader = c.req.header("Authorization");
-
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
         return rejectUnauthenticated(
             c,
@@ -118,66 +101,25 @@ export const authenticateBearer = async (c: Context, next: Next) => {
 
     const token = authHeader.substring(7);
     let userId: string;
-
-    if (betterAuthIsEnabled()) {
-        try {
-            userId = await verifyBetterAuthMcpToken(token);
-        } catch (error) {
-            console.warn("Better Auth MCP bearer verification failed", {
-                errorName: error instanceof Error ? error.name : "unknown",
-            });
-            return rejectUnauthenticated(
-                c,
-                "invalid_token",
-                "Token is invalid, expired, missing required scope, or not issued for this MCP resource",
-            );
-        }
-    } else {
-        const lookup = await getUserIdByToken(token);
-
-        if (lookup.status === "unavailable") {
-            // We could not verify the token, so this is not the client's fault:
-            // answer 401 as before, but record no strike. Otherwise a Railway PostgreSQL
-            // outage would ban every active user and outlast the outage itself.
-            c.header(
-                "WWW-Authenticate",
-                `Bearer resource_metadata="${resourceMetadataUrl(getBaseUrl(c))}"`,
-            );
-            return c.json(
-                {
-                    error: "invalid_token",
-                    error_description: "Unable to verify token, try again",
-                },
-                401,
-            );
-        }
-
-        if (lookup.status === "invalid") {
-            return rejectUnauthenticated(
-                c,
-                "invalid_token",
-                "Token is invalid or expired",
-            );
-        }
-        userId = lookup.userId;
+    try {
+        userId = await verifyBetterAuthMcpToken(token);
+    } catch (error) {
+        console.warn("Better Auth MCP bearer verification failed", {
+            errorName: error instanceof Error ? error.name : "unknown",
+        });
+        return rejectUnauthenticated(
+            c,
+            "invalid_token",
+            "Token is invalid, expired, missing required scope, or not issued for this MCP resource",
+        );
     }
 
-    // A success clears the IP's strike count. This is what keeps a shared egress
-    // IP — one broken client alongside working ones — from ever accumulating the
-    // consecutive failures a ban requires.
     clearAuthFailures(getClientIp(c));
-
     c.set("accessToken", token);
     c.set("userId", userId);
     await next();
 };
 
-// Sheds clients that have failed authentication many times in a row — in
-// practice an abandoned MCP client retrying a dead token indefinitely. Runs
-// ahead of authenticateBearer so a banned IP costs one Map lookup instead of a
-// token verification, and marks the request so the access log skips it: a single
-// stuck client can otherwise outnumber real traffic in the logs by an order of
-// magnitude and hide everything worth seeing.
 export const banRepeatAuthFailures = async (c: Context, next: Next) => {
     const ban = getBanState(getClientIp(c));
     if (ban.banned) {
@@ -194,8 +136,6 @@ export const banRepeatAuthFailures = async (c: Context, next: Next) => {
     await next();
 };
 
-// Per-IP rate limiter for the unauthenticated OAuth endpoints, where there is
-// no user id yet. Guards against bulk signups and credential stuffing.
 export const rateLimitAuth = async (c: Context, next: Next) => {
     const result = checkAuthRateLimit(getClientIp(c));
     c.header("X-RateLimit-Limit", String(result.limit));

@@ -1,7 +1,4 @@
-export type MunchAuthBackend = "custom" | "better_auth";
-
 export interface BetterAuthRuntimeConfig {
-    backend: MunchAuthBackend;
     baseUrl: string;
     databaseUrl: string;
     secret: string;
@@ -16,22 +13,7 @@ function required(name: string): string {
     return value;
 }
 
-export function getMunchAuthBackend(): MunchAuthBackend {
-    const value = process.env.MUNCH_AUTH_BACKEND?.trim() || "custom";
-    if (value !== "custom" && value !== "better_auth") {
-        throw new Error(
-            "MUNCH_AUTH_BACKEND must be either custom or better_auth",
-        );
-    }
-    return value;
-}
-
-export function betterAuthIsEnabled(): boolean {
-    return getMunchAuthBackend() === "better_auth";
-}
-
 export function getBetterAuthRuntimeConfig(): BetterAuthRuntimeConfig {
-    const backend = getMunchAuthBackend();
     const baseUrl = required("MUNCH_APP_BASE_URL");
     const parsedBaseUrl = new URL(baseUrl);
     if (
@@ -39,6 +21,15 @@ export function getBetterAuthRuntimeConfig(): BetterAuthRuntimeConfig {
         parsedBaseUrl.protocol !== "https:"
     ) {
         throw new Error("MUNCH_APP_BASE_URL must use HTTPS in production");
+    }
+    if (
+        parsedBaseUrl.pathname !== "/" ||
+        parsedBaseUrl.search ||
+        parsedBaseUrl.hash
+    ) {
+        throw new Error(
+            "MUNCH_APP_BASE_URL must be an origin without path, query, or fragment",
+        );
     }
 
     const secret = required("BETTER_AUTH_SECRET");
@@ -73,7 +64,6 @@ export function getBetterAuthRuntimeConfig(): BetterAuthRuntimeConfig {
     }
 
     return {
-        backend,
         baseUrl: parsedBaseUrl.origin,
         databaseUrl: required("DATABASE_URL"),
         secret,

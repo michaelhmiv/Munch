@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { withServiceDatabase } from "../platform/database.js";
-import { hashOpaqueToken, issueOpaqueToken } from "../platform/tokens.js";
+import {
+    hashOpaqueToken,
+    issueOpaqueToken,
+} from "../security/opaque-tokens.js";
 
 export interface CountryStat {
     country: string;
