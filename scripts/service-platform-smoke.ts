@@ -1,12 +1,10 @@
 #!/usr/bin/env bun
 
-const { consumeLoginChallenge, createLoginChallenge } =
-    await import("../src/accounts/repository.js");
 const { exportMeals, getRailwayExportFile } = await import("../src/export.js");
 const { cleanupExpiredExports, createExportFile } =
     await import("../src/service-platform/repository.js");
 const storage = await import("../src/storage.js");
-const { closePlatformDatabase, withServiceDatabase } =
+const { closePlatformDatabase, withAuthDatabase, withServiceDatabase } =
     await import("../src/platform/database.js");
 
 if (!process.env.DATABASE_URL) {
@@ -15,15 +13,21 @@ if (!process.env.DATABASE_URL) {
     );
 }
 
-const challenge = await createLoginChallenge(
-    `service-${crypto.randomUUID()}@example.test`,
-);
-const session = await consumeLoginChallenge(challenge.token);
-if (!session) {
-    throw new Error("Unable to activate service-platform smoke user");
-}
+const userId = crypto.randomUUID();
+await withAuthDatabase(async (tx) => {
+    await tx`
+        insert into munch.users (id, email, name, email_verified, status)
+        values (
+            ${userId},
+            ${`service-${userId}@example.test`},
+            'Service platform smoke',
+            true,
+            'active'
+        )
+    `;
+});
 
-const meal = await storage.insertMeal(challenge.userId, {
+const meal = await storage.insertMeal(userId, {
     description: "Service facilities smoke meal",
     meal_type: "lunch",
     calories: 640,
@@ -32,7 +36,7 @@ const meal = await storage.insertMeal(challenge.userId, {
     fat_g: 20,
     logged_at: "2026-08-03T16:00:00.000Z",
 });
-if (meal.meal.user_id !== challenge.userId) {
+if (meal.meal.user_id !== userId) {
     throw new Error("Storage facade did not use Railway nutrition repository");
 }
 
@@ -51,7 +55,7 @@ if (cached?.product_name !== cachePayload.product_name) {
 }
 
 await storage.insertToolAnalytics({
-    user_id: challenge.userId,
+    user_id: userId,
     tool_name: "service_platform_smoke",
     success: true,
     duration_ms: 12.7,
@@ -69,7 +73,7 @@ const analyticsRows = await withServiceDatabase(
         >`
         select session_hash, duration_ms
         from munch.tool_events
-        where user_id = ${challenge.userId}
+        where user_id = ${userId}
           and tool_name = 'service_platform_smoke'
         order by invoked_at desc
         limit 1
@@ -91,7 +95,7 @@ if (stats.countries.length !== 0) {
     throw new Error("Railway landing statistics exposed geographic breakdowns");
 }
 
-const exported = await exportMeals(challenge.userId);
+const exported = await exportMeals(userId);
 if (!exported.url) {
     throw new Error("Railway export did not return a download URL");
 }
@@ -116,7 +120,7 @@ if (await getRailwayExportFile(`${token}x`)) {
 }
 
 await createExportFile({
-    userId: challenge.userId,
+    userId,
     fileName: "expired.csv",
     content: "id\r\nexpired\r\n",
     expiresAt: new Date(Date.now() - 1_000),
