@@ -20,6 +20,8 @@ import {
     widgetsEnabledFromProfile,
 } from "./storage.js";
 import { withCanonicalStructuredLogMeal } from "./structured-log-meal.js";
+import { MUNCH_APP_VERSION } from "./widget-release.js";
+import { withVersionedWidgetResources } from "./widget-resource-versioning.js";
 
 const MUNCH_SERVER_INSTRUCTIONS = `Munch stores and retrieves factual food, serving, macro, meal, hydration, weight, recipe, planning, and grocery data. Nutrition values are estimates and Munch does not provide medical or dietary advice. Do not ask Munch to determine what a user should eat, set a calorie target, diagnose a condition, or judge whether a food is healthy. ChatGPT may reason from the factual data under its own policies.
 
@@ -50,7 +52,7 @@ async function buildMunchMcpServer(
     const server = new McpServer(
         {
             name: "Munch",
-            version: "0.8.2",
+            version: MUNCH_APP_VERSION,
             icons: [
                 {
                     src: `${baseUrl}/favicon.ico`,
@@ -63,6 +65,10 @@ async function buildMunchMcpServer(
             instructions: MUNCH_SERVER_INSTRUCTIONS,
         },
     );
+    // Every registrar uses the same proxy so UI resource links and resource
+    // registrations are versioned atomically. This prevents clients from
+    // holding old widget HTML behind an unchanged ui:// cache key.
+    const appServer = withVersionedWidgetResources(server);
 
     const [profile, capabilityResolution, accountIdentity] = await Promise.all([
         getProfile(userId).catch((error) => {
@@ -86,7 +92,8 @@ async function buildMunchMcpServer(
     ]);
     const capabilities = capabilityResolution.capabilities;
     const drinkUnit = preferredDrinkUnitFromProfile(profile);
-    const guardedLegacyServer = withFreshStructuredLogGuard(server);
+    const widgetsEnabled = widgetsEnabledFromProfile(profile);
+    const guardedLegacyServer = withFreshStructuredLogGuard(appServer);
     const structuredLegacyServer = withCanonicalStructuredLogMeal(
         guardedLegacyServer,
         userId,
@@ -94,17 +101,17 @@ async function buildMunchMcpServer(
     registerTools(
         structuredLegacyServer,
         userId,
-        widgetsEnabledFromProfile(profile),
+        widgetsEnabled,
         alcoholTrackingEnabledFromProfile(profile) ? (drinkUnit ?? "us") : null,
         capabilities,
     );
-    registerFoodTools(withCanonicalFoodSearch(server), userId);
-    registerSavedFoodTools(server, userId, capabilities);
-    registerMealDetailTools(server, userId);
-    registerMealReviewTools(server, userId);
-    registerMealDraftTools(server, userId);
-    registerRecipePlanningTools(server, userId, capabilities);
-    registerConnectionStatusTools(server, userId, {
+    registerFoodTools(withCanonicalFoodSearch(appServer), userId);
+    registerSavedFoodTools(appServer, userId, capabilities);
+    registerMealDetailTools(appServer, userId);
+    registerMealReviewTools(appServer, userId, widgetsEnabled);
+    registerMealDraftTools(appServer, userId);
+    registerRecipePlanningTools(appServer, userId, capabilities);
+    registerConnectionStatusTools(appServer, userId, {
         accountEmail: accountIdentity?.email,
         capabilities,
         capabilityResolution: capabilityResolution.status,
