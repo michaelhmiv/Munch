@@ -19,7 +19,7 @@ Munch is a consumer wellness product. It provides factual nutrition records and 
 - Prepare meal reviews from ChatGPT-supplied food candidates and require explicit confirmation before permanent logging.
 - Store structured meals, food items, nutrients, assumptions, provenance, water, weight, and goals.
 - Save and reuse confirmed foods.
-- Create personal and household recipes, meal plans, and grocery lists.
+- Create, search, revise, archive, log, and plan personal and household recipes, plus grocery lists.
 - Export account data, revoke MCP connections, and delete an account through authenticated controls.
 - Render self-contained ChatGPT widgets for summaries, trends, confirmation, and import workflows.
 

@@ -1,5 +1,10 @@
 import type { DatabaseTransaction } from "../platform/database.js";
 import { withUserDatabase } from "../platform/database.js";
+import { insertStructuredMeal } from "../structured-meals/repository.js";
+import type {
+    StructuredMealInsertResult,
+    StructuredMealItemInput,
+} from "../structured-meals/types.js";
 
 export type PlanningScope =
     { type: "personal" } | { type: "household"; householdId: string };
@@ -73,6 +78,22 @@ export interface SavedRecipeResult {
     deduplicated: boolean;
 }
 
+export interface ArchivedRecipeResult {
+    recipeId: string;
+    version: number;
+    archivedAt: string;
+    alreadyArchived: boolean;
+}
+
+export interface LoggedRecipeResult {
+    meal: StructuredMealInsertResult["meal"];
+    deduplicated: boolean;
+    recipeId: string;
+    recipeRevisionId: string;
+    recipeRevisionNumber: number;
+    servingsConsumed: number;
+}
+
 function normalizeName(value: string): string {
     return value
         .normalize("NFKD")
@@ -100,7 +121,7 @@ function ownerValues(scope: PlanningScope, userId: string) {
     };
 }
 
-function validateRecipe(recipe: RecipeInput): void {
+export function validateRecipe(recipe: RecipeInput): void {
     if (!recipe.name.trim() || recipe.name.trim().length > 200) {
         throw new Error("Recipe name must be 1 to 200 characters");
     }
@@ -124,8 +145,33 @@ function validateRecipe(recipe: RecipeInput): void {
         if (!ingredient.name.trim() || ingredient.name.length > 300) {
             throw new Error("Recipe ingredient name is invalid");
         }
-        if (ingredient.quantity !== undefined && ingredient.quantity <= 0) {
+        if (
+            ingredient.quantity !== undefined &&
+            (!Number.isFinite(ingredient.quantity) || ingredient.quantity <= 0)
+        ) {
             throw new Error("Recipe ingredient quantity must be positive");
+        }
+        if (
+            ingredient.gramWeight !== undefined &&
+            (!Number.isFinite(ingredient.gramWeight) ||
+                ingredient.gramWeight <= 0)
+        ) {
+            throw new Error("Recipe ingredient gram weight must be positive");
+        }
+        if (
+            ingredient.confidence !== undefined &&
+            (!Number.isFinite(ingredient.confidence) ||
+                ingredient.confidence < 0 ||
+                ingredient.confidence > 1)
+        ) {
+            throw new Error(
+                "Recipe ingredient confidence must be between 0 and 1",
+            );
+        }
+        if (ingredient.sourceSnapshot !== undefined) {
+            if (JSON.stringify(ingredient.sourceSnapshot).length > 50_000) {
+                throw new Error("Recipe source snapshot is too large");
+            }
         }
     }
 }
@@ -140,7 +186,7 @@ const nutrientKeys = [
     "sodium_mg",
 ] as const;
 
-function calculateNutrition(recipe: RecipeInput) {
+export function calculateNutrition(recipe: RecipeInput) {
     const totals: NutrientFacts = {};
     let ingredientsWithFacts = 0;
     let completeCore = true;
@@ -186,6 +232,26 @@ function calculateNutrition(recipe: RecipeInput) {
         }
     }
     return { totals, perServing, nutritionStatus } as const;
+}
+
+export function scaleNutrients(
+    nutrients: NutrientFacts | undefined,
+    factor: number,
+): NutrientFacts {
+    const scaled: NutrientFacts = {};
+    for (const key of nutrientKeys) {
+        const value = nutrients?.[key];
+        if (value !== undefined) {
+            scaled[key] = Number((value * factor).toFixed(2));
+        }
+    }
+    return scaled;
+}
+
+function formatQuantity(value: number): string {
+    return Number.isInteger(value)
+        ? String(value)
+        : String(Number(value.toFixed(3)));
 }
 
 async function existingRecipeByIdempotency(
@@ -257,51 +323,22 @@ function rowToSavedRecipe(
     };
 }
 
-async function saveRecipeInTransaction(
+async function insertRecipeRevision(
     tx: DatabaseTransaction,
     input: {
         userId: string;
-        scope: PlanningScope;
+        recipeId: string;
+        revisionNumber: number;
         recipe: RecipeInput;
         idempotencyKey?: string;
     },
-): Promise<SavedRecipeResult> {
-    validateRecipe(input.recipe);
-    const existing = await existingRecipeByIdempotency(
-        tx,
-        input.userId,
-        input.scope,
-        input.idempotencyKey,
-    );
-    if (existing) return existing;
-
-    const owner = ownerValues(input.scope, input.userId);
+): Promise<Record<string, unknown>> {
     const calculation = calculateNutrition(input.recipe);
-    const recipes = await tx<Array<{ id: string }>>`
-        insert into munch.recipes (
-            personal_owner_user_id,
-            household_id,
-            name,
-            idempotency_key,
-            created_by_user_id,
-            updated_by_user_id
-        ) values (
-            ${owner.personalOwnerUserId},
-            ${owner.householdId},
-            ${input.recipe.name.trim()},
-            ${input.idempotencyKey ?? null},
-            ${input.userId},
-            ${input.userId}
-        )
-        returning id
-    `;
-    const recipeId = recipes[0]?.id;
-    if (!recipeId) throw new Error("Recipe creation returned no row");
-
     const revisions = await tx<Array<Record<string, unknown>>>`
         insert into munch.recipe_revisions (
             recipe_id,
             revision_number,
+            idempotency_key,
             servings,
             description,
             instructions,
@@ -328,7 +365,8 @@ async function saveRecipeInTransaction(
             calculated_at,
             created_by_user_id
         ) values (
-            ${recipeId}, 1, ${input.recipe.servings},
+            ${input.recipeId}, ${input.revisionNumber},
+            ${input.idempotencyKey ?? null}, ${input.recipe.servings},
             ${input.recipe.description?.trim() || null},
             ${input.recipe.instructions}::jsonb,
             ${input.recipe.preparationMinutes ?? null},
@@ -391,6 +429,69 @@ async function saveRecipeInTransaction(
         `;
     }
 
+    return revision;
+}
+
+async function saveRecipeInTransaction(
+    tx: DatabaseTransaction,
+    input: {
+        userId: string;
+        scope: PlanningScope;
+        recipe: RecipeInput;
+        idempotencyKey?: string;
+    },
+): Promise<SavedRecipeResult> {
+    validateRecipe(input.recipe);
+    const existing = await existingRecipeByIdempotency(
+        tx,
+        input.userId,
+        input.scope,
+        input.idempotencyKey,
+    );
+    if (existing) return existing;
+
+    const owner = ownerValues(input.scope, input.userId);
+    if (input.idempotencyKey) {
+        await tx`
+            select pg_advisory_xact_lock(
+                hashtext(${`recipe-save:${input.userId}:${input.idempotencyKey}`})
+            )
+        `;
+    }
+    const concurrent = await existingRecipeByIdempotency(
+        tx,
+        input.userId,
+        input.scope,
+        input.idempotencyKey,
+    );
+    if (concurrent) return concurrent;
+    const recipes = await tx<Array<{ id: string }>>`
+        insert into munch.recipes (
+            personal_owner_user_id,
+            household_id,
+            name,
+            idempotency_key,
+            created_by_user_id,
+            updated_by_user_id
+        ) values (
+            ${owner.personalOwnerUserId},
+            ${owner.householdId},
+            ${input.recipe.name.trim()},
+            ${input.idempotencyKey ?? null},
+            ${input.userId},
+            ${input.userId}
+        )
+        returning id
+    `;
+    const recipeId = recipes[0]?.id;
+    if (!recipeId) throw new Error("Recipe creation returned no row");
+    const revision = await insertRecipeRevision(tx, {
+        userId: input.userId,
+        recipeId,
+        revisionNumber: 1,
+        recipe: input.recipe,
+    });
+
     return rowToSavedRecipe({ ...revision, recipe_id: recipeId }, false);
 }
 
@@ -405,14 +506,28 @@ export async function saveRecipe(input: {
     );
 }
 
-export async function getRecipe(userId: string, recipeId: string) {
+function isUuid(value: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        value,
+    );
+}
+
+export async function getRecipe(
+    userId: string,
+    recipeId: string,
+    revisionId?: string,
+) {
+    if (revisionId !== undefined && !isUuid(revisionId)) {
+        throw new Error("Invalid recipe revision ID");
+    }
     return withUserDatabase(userId, async (tx) => {
         const rows = await tx<Array<Record<string, unknown>>>`
             select
                 recipe.id, recipe.name, recipe.personal_owner_user_id,
                 recipe.household_id, recipe.current_revision_number,
-                recipe.created_at, recipe.updated_at,
-                revision.id as revision_id, revision.servings,
+                recipe.version, recipe.created_at, recipe.updated_at,
+                revision.id as revision_id, revision.revision_number,
+                revision.servings,
                 revision.description, revision.instructions,
                 revision.preparation_minutes, revision.cooking_minutes,
                 revision.source_type, revision.source_title, revision.source_url,
@@ -431,7 +546,11 @@ export async function getRecipe(userId: string, recipeId: string) {
             from munch.recipes recipe
             join munch.recipe_revisions revision
               on revision.recipe_id = recipe.id
-             and revision.revision_number = recipe.current_revision_number
+             and (
+                 (${revisionId ?? null}::uuid is null
+                  and revision.revision_number = recipe.current_revision_number)
+                 or revision.id = ${revisionId ?? null}::uuid
+             )
             where recipe.id = ${recipeId} and recipe.archived_at is null
             limit 1
         `;
@@ -445,6 +564,7 @@ export async function getRecipe(userId: string, recipeId: string) {
         return {
             id: String(recipe.id),
             name: String(recipe.name),
+            version: Number(recipe.version),
             ownership:
                 recipe.household_id == null
                     ? { type: "personal" as const }
@@ -453,7 +573,7 @@ export async function getRecipe(userId: string, recipeId: string) {
                           household_id: String(recipe.household_id),
                       },
             revision_id: String(recipe.revision_id),
-            revision_number: Number(recipe.current_revision_number),
+            revision_number: Number(recipe.revision_number),
             servings: Number(recipe.servings),
             description:
                 recipe.description == null ? null : String(recipe.description),
@@ -516,6 +636,14 @@ export async function getRecipe(userId: string, recipeId: string) {
                     ingredient.confidence == null
                         ? null
                         : Number(ingredient.confidence),
+                source_snapshot:
+                    ingredient.source_snapshot &&
+                    typeof ingredient.source_snapshot === "object"
+                        ? (ingredient.source_snapshot as Record<
+                              string,
+                              unknown
+                          >)
+                        : {},
             })),
             created_at: new Date(String(recipe.created_at)).toISOString(),
             updated_at: new Date(String(recipe.updated_at)).toISOString(),
@@ -538,7 +666,7 @@ export async function searchRecipes(input: {
         const rows = await tx<Array<Record<string, unknown>>>`
             select
                 recipe.id, recipe.name, recipe.personal_owner_user_id,
-                recipe.household_id, recipe.updated_at,
+                recipe.household_id, recipe.updated_at, recipe.version,
                 revision.id as revision_id, revision.servings,
                 revision.nutrition_status,
                 revision.calories_per_serving,
@@ -574,6 +702,7 @@ export async function searchRecipes(input: {
             recipe_id: String(row.id),
             revision_id: String(row.revision_id),
             name: String(row.name),
+            version: Number(row.version),
             ownership: row.household_id == null ? "personal" : "household",
             servings: Number(row.servings),
             nutrition_status: String(row.nutrition_status),
@@ -601,6 +730,314 @@ export async function searchRecipes(input: {
     });
 }
 
+async function existingRevisionByIdempotency(
+    tx: DatabaseTransaction,
+    input: {
+        userId: string;
+        scope: PlanningScope;
+        recipeId: string;
+        idempotencyKey?: string;
+    },
+): Promise<SavedRecipeResult | null> {
+    if (!input.idempotencyKey) return null;
+    const owner = ownerValues(input.scope, input.userId);
+    const rows = await tx<Array<Record<string, unknown>>>`
+        select
+            revision.id as revision_id,
+            revision.recipe_id,
+            revision.revision_number,
+            revision.nutrition_status,
+            revision.calories_total,
+            revision.protein_g_total,
+            revision.carbs_g_total,
+            revision.fat_g_total,
+            revision.fiber_g_total,
+            revision.sugar_g_total,
+            revision.sodium_mg_total,
+            revision.calories_per_serving,
+            revision.protein_g_per_serving,
+            revision.carbs_g_per_serving,
+            revision.fat_g_per_serving,
+            revision.fiber_g_per_serving,
+            revision.sugar_g_per_serving,
+            revision.sodium_mg_per_serving
+        from munch.recipe_revisions revision
+        join munch.recipes recipe on recipe.id = revision.recipe_id
+        where revision.recipe_id = ${input.recipeId}
+          and revision.idempotency_key = ${input.idempotencyKey}
+          and recipe.personal_owner_user_id is not distinct from ${owner.personalOwnerUserId}
+          and recipe.household_id is not distinct from ${owner.householdId}
+        limit 1
+    `;
+    return rows[0] ? rowToSavedRecipe(rows[0], true) : null;
+}
+
+export interface UpdatedRecipeResult extends SavedRecipeResult {
+    version: number;
+}
+
+export async function updateRecipe(input: {
+    userId: string;
+    scope: PlanningScope;
+    recipeId: string;
+    recipe: RecipeInput;
+    expectedVersion: number;
+    idempotencyKey: string;
+}): Promise<UpdatedRecipeResult> {
+    validateRecipe(input.recipe);
+    if (!Number.isInteger(input.expectedVersion) || input.expectedVersion < 1) {
+        throw new Error("Recipe expected version must be a positive integer");
+    }
+    if (!input.idempotencyKey.trim()) {
+        throw new Error("Recipe update idempotency key is required");
+    }
+
+    return withUserDatabase(input.userId, async (tx) => {
+        const owner = ownerValues(input.scope, input.userId);
+        await tx`
+            select pg_advisory_xact_lock(
+                hashtext(${`recipe-update:${input.recipeId}:${input.idempotencyKey}`})
+            )
+        `;
+        const existing = await existingRevisionByIdempotency(tx, input);
+        if (existing) {
+            const versions = await tx<Array<{ version: number }>>`
+                select version from munch.recipes where id = ${input.recipeId}
+            `;
+            return {
+                ...existing,
+                version: Number(versions[0]?.version ?? input.expectedVersion),
+            };
+        }
+
+        const currentRows = await tx<Array<Record<string, unknown>>>`
+            select id, current_revision_number, version, archived_at
+            from munch.recipes
+            where id = ${input.recipeId}
+              and personal_owner_user_id is not distinct from ${owner.personalOwnerUserId}
+              and household_id is not distinct from ${owner.householdId}
+            for update
+        `;
+        const current = currentRows[0];
+        if (!current) throw new Error("Recipe was not found or is unavailable");
+        if (current.archived_at != null) {
+            throw new Error("Archived recipes cannot be edited");
+        }
+        if (Number(current.version) !== input.expectedVersion) {
+            throw new Error(
+                `Recipe changed: expected version ${input.expectedVersion}, current version ${Number(current.version)}`,
+            );
+        }
+
+        const nextRevisionNumber = Number(current.current_revision_number) + 1;
+        const revision = await insertRecipeRevision(tx, {
+            userId: input.userId,
+            recipeId: input.recipeId,
+            revisionNumber: nextRevisionNumber,
+            recipe: input.recipe,
+            idempotencyKey: input.idempotencyKey,
+        });
+        const updated = await tx<Array<{ version: number }>>`
+            update munch.recipes
+            set name = ${input.recipe.name.trim()},
+                current_revision_number = ${nextRevisionNumber},
+                updated_by_user_id = ${input.userId},
+                updated_at = now(),
+                version = version + 1
+            where id = ${input.recipeId}
+              and version = ${input.expectedVersion}
+            returning version
+        `;
+        if (!updated[0]) throw new Error("Recipe update was not applied");
+        return {
+            ...rowToSavedRecipe(
+                { ...revision, recipe_id: input.recipeId },
+                false,
+            ),
+            version: Number(updated[0].version),
+        };
+    });
+}
+
+export async function archiveRecipe(input: {
+    userId: string;
+    scope: PlanningScope;
+    recipeId: string;
+    expectedVersion?: number;
+}): Promise<ArchivedRecipeResult> {
+    return withUserDatabase(input.userId, async (tx) => {
+        const owner = ownerValues(input.scope, input.userId);
+        const rows = await tx<Array<Record<string, unknown>>>`
+            update munch.recipes
+            set archived_at = coalesce(archived_at, now()),
+                updated_by_user_id = ${input.userId},
+                updated_at = now(),
+                version = case when archived_at is null then version + 1 else version end
+            where id = ${input.recipeId}
+              and personal_owner_user_id is not distinct from ${owner.personalOwnerUserId}
+              and household_id is not distinct from ${owner.householdId}
+              and archived_at is null
+              and (${input.expectedVersion ?? null}::integer is null
+                   or version = ${input.expectedVersion ?? null})
+            returning id, version, archived_at
+        `;
+        if (rows[0]) {
+            return {
+                recipeId: String(rows[0].id),
+                version: Number(rows[0].version),
+                archivedAt: new Date(String(rows[0].archived_at)).toISOString(),
+                alreadyArchived: false,
+            };
+        }
+
+        const current = await tx<Array<Record<string, unknown>>>`
+            select id, version, archived_at
+            from munch.recipes
+            where id = ${input.recipeId}
+              and personal_owner_user_id is not distinct from ${owner.personalOwnerUserId}
+              and household_id is not distinct from ${owner.householdId}
+            limit 1
+        `;
+        if (!current[0])
+            throw new Error("Recipe was not found or is unavailable");
+        if (current[0].archived_at != null) {
+            return {
+                recipeId: String(current[0].id),
+                version: Number(current[0].version),
+                archivedAt: new Date(
+                    String(current[0].archived_at),
+                ).toISOString(),
+                alreadyArchived: true,
+            };
+        }
+        throw new Error("Recipe changed or is unavailable");
+    });
+}
+
+function recipeItemSourceSnapshot(
+    recipe: NonNullable<Awaited<ReturnType<typeof getRecipe>>>,
+    ingredient: NonNullable<
+        Awaited<ReturnType<typeof getRecipe>>
+    >["ingredients"][number],
+) {
+    return {
+        recipe_id: recipe.id,
+        recipe_revision_id: recipe.revision_id,
+        recipe_revision_number: recipe.revision_number,
+        recipe_ingredient_id: ingredient.id,
+        recipe_ingredient_snapshot: ingredient.source_snapshot,
+        recipe_nutrition_total: recipe.nutrition_total,
+        recipe_nutrition_per_serving: recipe.nutrition_per_serving,
+    } satisfies Record<string, unknown>;
+}
+
+function recipeMealItems(
+    recipe: NonNullable<Awaited<ReturnType<typeof getRecipe>>>,
+    servingsConsumed: number,
+): StructuredMealItemInput[] {
+    const factor = servingsConsumed / recipe.servings;
+    return recipe.ingredients.map((ingredient) => {
+        const quantity =
+            ingredient.quantity == null
+                ? undefined
+                : Number((ingredient.quantity * factor).toFixed(3));
+        const unit = ingredient.unit ?? undefined;
+        const portionLabel = [
+            quantity === undefined ? undefined : formatQuantity(quantity),
+            unit,
+            ingredient.preparation ?? undefined,
+        ]
+            .filter(Boolean)
+            .join(" ");
+        return {
+            name: ingredient.name,
+            quantity,
+            portionLabel: portionLabel || undefined,
+            gramWeight:
+                ingredient.gram_weight == null
+                    ? undefined
+                    : Number((ingredient.gram_weight * factor).toFixed(3)),
+            nutrients: scaleNutrients(ingredient.nutrients, factor),
+            sourceType:
+                ingredient.source_type as StructuredMealItemInput["sourceType"],
+            provider: ingredient.provider ?? undefined,
+            providerFoodId: ingredient.provider_food_id ?? undefined,
+            sourceUrl: ingredient.source_url ?? undefined,
+            confidence: ingredient.confidence ?? undefined,
+            sourceSnapshot: recipeItemSourceSnapshot(recipe, ingredient),
+        };
+    });
+}
+
+export async function logRecipe(input: {
+    userId: string;
+    recipeId: string;
+    recipeRevisionId?: string;
+    servingsConsumed: number;
+    mealType: "breakfast" | "lunch" | "dinner" | "snack";
+    loggedAt?: string;
+    notes?: string;
+    plannedMealId?: string;
+    idempotencyKey: string;
+}): Promise<LoggedRecipeResult> {
+    if (
+        !Number.isFinite(input.servingsConsumed) ||
+        input.servingsConsumed <= 0
+    ) {
+        throw new Error("Recipe servings consumed must be positive");
+    }
+    if (!input.idempotencyKey.trim()) {
+        throw new Error("Recipe log idempotency key is required");
+    }
+    const recipe = await getRecipe(
+        input.userId,
+        input.recipeId,
+        input.recipeRevisionId,
+    );
+    if (!recipe) throw new Error("Recipe was not found or is unavailable");
+
+    if (input.plannedMealId) {
+        const planned = await withUserDatabase(
+            input.userId,
+            async (tx) =>
+                tx<Array<{ id: string }>>`
+                select id
+                from munch.planned_meals
+                where id = ${input.plannedMealId}
+                  and recipe_id = ${recipe.id}
+                  and recipe_revision_id = ${recipe.revision_id}
+                  and deleted_at is null
+                limit 1
+            `,
+        );
+        if (!planned[0]) {
+            throw new Error(
+                "Planned meal is not linked to this recipe revision",
+            );
+        }
+    }
+
+    const inserted = await insertStructuredMeal(input.userId, {
+        description: `${recipe.name} (${formatQuantity(input.servingsConsumed)} serving${input.servingsConsumed === 1 ? "" : "s"})`,
+        mealType: input.mealType,
+        loggedAt: input.loggedAt,
+        notes: input.notes,
+        idempotencyKey: input.idempotencyKey,
+        sourceRecipeId: recipe.id,
+        sourceRecipeRevisionId: recipe.revision_id,
+        sourcePlannedMealId: input.plannedMealId,
+        items: recipeMealItems(recipe, input.servingsConsumed),
+    });
+    return {
+        meal: inserted.meal,
+        deduplicated: inserted.deduplicated,
+        recipeId: recipe.id,
+        recipeRevisionId: recipe.revision_id,
+        recipeRevisionNumber: recipe.revision_number,
+        servingsConsumed: input.servingsConsumed,
+    };
+}
+
 async function scheduleRecipeInTransaction(
     tx: DatabaseTransaction,
     input: {
@@ -616,6 +1053,23 @@ async function scheduleRecipeInTransaction(
     },
 ) {
     const owner = ownerValues(input.scope, input.userId);
+    const recipeRows = await tx<Array<{ id: string }>>`
+        select recipe.id
+        from munch.recipes recipe
+        join munch.recipe_revisions revision
+          on revision.recipe_id = recipe.id
+         and revision.id = ${input.recipeRevisionId}
+        where recipe.id = ${input.recipeId}
+          and recipe.archived_at is null
+          and recipe.personal_owner_user_id is not distinct from ${owner.personalOwnerUserId}
+          and recipe.household_id is not distinct from ${owner.householdId}
+        limit 1
+    `;
+    if (!recipeRows[0]) {
+        throw new Error(
+            "Recipe revision is unavailable for this planning scope",
+        );
+    }
     const rows = await tx<Array<Record<string, unknown>>>`
         insert into munch.planned_meals (
             personal_owner_user_id, household_id, planned_date, meal_slot,
@@ -683,6 +1137,7 @@ export async function getMealPlan(input: {
               on membership.household_id = planned.household_id
              and membership.user_id = planned.created_by_user_id
             where planned.deleted_at is null
+              and recipe.archived_at is null
               and planned.planned_date between ${input.startDate}::date and ${input.endDate}::date
               and (${input.scope ?? "all"} = 'all'
                    or (${input.scope ?? "all"} = 'personal' and planned.personal_owner_user_id is not null)

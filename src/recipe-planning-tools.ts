@@ -4,14 +4,17 @@ import { withAnalytics } from "./analytics.js";
 import type { MunchCapabilities } from "./billing/capabilities.js";
 import {
     addGroceryItems,
+    archiveRecipe,
     getGroceryList,
     getMealPlan,
     getRecipe,
+    logRecipe,
     markGroceryItemPurchased,
     saveRecipe,
     saveRecipeAndPlan,
     scheduleRecipe,
     searchRecipes,
+    updateRecipe,
     type PlanningScope,
     type RecipeInput,
 } from "./planning/repository.js";
@@ -90,6 +93,7 @@ const recipeSummaryOutputSchema = z.object({
     recipe_id: z.string().uuid(),
     revision_id: z.string().uuid(),
     name: z.string(),
+    version: z.number().int().positive(),
     ownership: z.enum(["personal", "household"]),
     servings: z.number().positive(),
     nutrition_status: nutritionStatusOutputSchema,
@@ -117,10 +121,12 @@ const recipeIngredientOutputSchema = z.object({
     source_type: z.string(),
     source_url: z.string().nullable(),
     confidence: z.number().nullable(),
+    source_snapshot: z.record(z.string(), z.unknown()),
 });
 const recipeDetailOutputSchema = z.object({
     id: z.string().uuid(),
     name: z.string(),
+    version: z.number().int().positive(),
     ownership: z.union([
         z.object({ type: z.literal("personal") }),
         z.object({
@@ -146,6 +152,55 @@ const recipeDetailOutputSchema = z.object({
     ingredients: z.array(recipeIngredientOutputSchema),
     created_at: z.string(),
     updated_at: z.string(),
+});
+const updatedRecipeOutputSchema = savedRecipeResultOutputSchema.extend({
+    version: z.number().int().positive(),
+});
+const archivedRecipeOutputSchema = z.object({
+    recipe_id: z.string().uuid(),
+    version: z.number().int().positive(),
+    archived_at: z.string(),
+    already_archived: z.boolean(),
+});
+const recipeLogItemOutputSchema = z.object({
+    id: z.string().uuid(),
+    position: z.number().int().nonnegative(),
+    name: z.string(),
+    quantity: z.number().nullable(),
+    portion_label: z.string().nullable(),
+    gram_weight: z.number().nullable(),
+    nutrients: z.record(z.string(), z.number()),
+    source_type: z.string(),
+    provider: z.string().nullable(),
+    provider_food_id: z.string().nullable(),
+    source_url: z.string().nullable(),
+    confidence: z.number().nullable(),
+    assumptions: z.array(z.string()),
+    source_snapshot: z.record(z.string(), z.unknown()),
+});
+const recipeLogMealOutputSchema = z.object({
+    id: z.string().uuid(),
+    logged_at: z.string(),
+    meal_type: z.string().nullable(),
+    description: z.string(),
+    calories: z.number().nullable(),
+    protein_g: z.number().nullable(),
+    carbs_g: z.number().nullable(),
+    fat_g: z.number().nullable(),
+    fiber_g: z.number().nullable(),
+    sugar_g: z.number().nullable(),
+    source_recipe_id: z.string().uuid().nullable(),
+    source_recipe_revision_id: z.string().uuid().nullable(),
+    source_planned_meal_id: z.string().uuid().nullable(),
+    items: z.array(recipeLogItemOutputSchema),
+});
+const recipeLogOutputSchema = z.object({
+    logged_meal: recipeLogMealOutputSchema,
+    recipe_id: z.string().uuid(),
+    recipe_revision_id: z.string().uuid(),
+    recipe_revision_number: z.number().int().positive(),
+    servings_consumed: z.number().positive(),
+    deduplicated: z.boolean(),
 });
 const plannedMealOutputSchema = z.object({
     planned_meal_id: z.string().uuid(),
@@ -200,6 +255,9 @@ const planningOutputSchemas = {
     search_recipes: { recipes: z.array(recipeSummaryOutputSchema) },
     get_recipe: { recipe: recipeDetailOutputSchema.nullable() },
     save_recipe: { recipe: savedRecipeResultOutputSchema },
+    update_recipe: { recipe: updatedRecipeOutputSchema },
+    delete_recipe: { recipe: archivedRecipeOutputSchema },
+    log_recipe: recipeLogOutputSchema,
     get_meal_plan: { planned_meals: z.array(plannedMealOutputSchema) },
     get_grocery_list: { grocery: groceryListOutputSchema },
     schedule_recipe: { planned_meal: plannedMealOutputSchema },
@@ -288,6 +346,47 @@ function serializeScheduledMeal(planned: Record<string, unknown>) {
     };
 }
 
+function serializeLoggedRecipe(result: Awaited<ReturnType<typeof logRecipe>>) {
+    return {
+        logged_meal: {
+            id: result.meal.id,
+            logged_at: result.meal.loggedAt,
+            meal_type: result.meal.mealType,
+            description: result.meal.description,
+            calories: result.meal.calories,
+            protein_g: result.meal.proteinG,
+            carbs_g: result.meal.carbsG,
+            fat_g: result.meal.fatG,
+            fiber_g: result.meal.fiberG,
+            sugar_g: result.meal.sugarG,
+            source_recipe_id: result.meal.sourceRecipeId,
+            source_recipe_revision_id: result.meal.sourceRecipeRevisionId,
+            source_planned_meal_id: result.meal.sourcePlannedMealId,
+            items: result.meal.items.map((item) => ({
+                id: item.id,
+                position: item.position,
+                name: item.name,
+                quantity: item.quantity,
+                portion_label: item.portionLabel,
+                gram_weight: item.gramWeight,
+                nutrients: item.nutrients,
+                source_type: item.sourceType,
+                provider: item.provider,
+                provider_food_id: item.providerFoodId,
+                source_url: item.sourceUrl,
+                confidence: item.confidence,
+                assumptions: item.assumptions,
+                source_snapshot: item.sourceSnapshot,
+            })),
+        },
+        recipe_id: result.recipeId,
+        recipe_revision_id: result.recipeRevisionId,
+        recipe_revision_number: result.recipeRevisionNumber,
+        servings_consumed: result.servingsConsumed,
+        deduplicated: result.deduplicated,
+    };
+}
+
 export function registerRecipePlanningTools(
     server: McpServer,
     userId: string,
@@ -362,14 +461,21 @@ export function registerRecipePlanningTools(
                 idempotentHint: true,
                 openWorldHint: false,
             },
-            inputSchema: { recipe_id: z.string().uuid() },
+            inputSchema: {
+                recipe_id: z.string().uuid(),
+                recipe_revision_id: z.string().uuid().optional(),
+            },
             outputSchema: planningOutputSchemas.get_recipe,
         },
-        async ({ recipe_id }) =>
+        async ({ recipe_id, recipe_revision_id }) =>
             withAnalytics(
                 "get_recipe",
                 async () => {
-                    const recipe = await getRecipe(userId, recipe_id);
+                    const recipe = await getRecipe(
+                        userId,
+                        recipe_id,
+                        recipe_revision_id,
+                    );
                     return {
                         content: [
                             {
@@ -433,7 +539,173 @@ export function registerRecipePlanningTools(
                     { userId },
                 ),
         );
+
+        toolServer.registerTool(
+            "update_recipe",
+            {
+                title: "Update Recipe",
+                description:
+                    "Replace the current recipe definition with a new immutable revision. Read the current recipe first, preserve its source facts, and send the complete replacement recipe with the current expected_version. Historical meal logs remain pinned to the revision used when they were logged.",
+                annotations: {
+                    readOnlyHint: false,
+                    destructiveHint: false,
+                    idempotentHint: true,
+                    openWorldHint: false,
+                },
+                inputSchema: {
+                    scope: z.enum(["personal", "household"]),
+                    recipe_id: z.string().uuid(),
+                    expected_version: z.number().int().positive(),
+                    recipe: recipeSchema,
+                    idempotency_key: z.string().min(1).max(255),
+                },
+                outputSchema: planningOutputSchemas.update_recipe,
+            },
+            async (args) =>
+                withAnalytics(
+                    "update_recipe",
+                    async () => {
+                        const result = await updateRecipe({
+                            userId,
+                            scope: requestedScope(
+                                args.scope,
+                                capabilities,
+                                true,
+                            ),
+                            recipeId: args.recipe_id,
+                            recipe: toRecipeInput(args.recipe),
+                            expectedVersion: args.expected_version,
+                            idempotencyKey: args.idempotency_key,
+                        });
+                        return {
+                            content: [
+                                {
+                                    type: "text",
+                                    text: result.deduplicated
+                                        ? "Recipe update was already applied; returned the existing revision."
+                                        : `Recipe updated to revision ${result.revisionNumber}.`,
+                                },
+                            ],
+                            structuredContent: { recipe: result },
+                        };
+                    },
+                    { userId },
+                ),
+        );
+
+        toolServer.registerTool(
+            "delete_recipe",
+            {
+                title: "Delete Recipe",
+                description:
+                    "Archive a saved recipe after explicit user confirmation. This removes it from active recipe search and planning while preserving immutable revisions and historical meal logs.",
+                annotations: {
+                    readOnlyHint: false,
+                    destructiveHint: true,
+                    idempotentHint: true,
+                    openWorldHint: false,
+                },
+                inputSchema: {
+                    scope: z.enum(["personal", "household"]),
+                    recipe_id: z.string().uuid(),
+                    expected_version: z.number().int().positive().optional(),
+                    confirm: z.literal(true),
+                },
+                outputSchema: planningOutputSchemas.delete_recipe,
+            },
+            async (args) =>
+                withAnalytics(
+                    "delete_recipe",
+                    async () => {
+                        const result = await archiveRecipe({
+                            userId,
+                            scope: requestedScope(
+                                args.scope,
+                                capabilities,
+                                true,
+                            ),
+                            recipeId: args.recipe_id,
+                            expectedVersion: args.expected_version,
+                        });
+                        return {
+                            content: [
+                                {
+                                    type: "text",
+                                    text: result.alreadyArchived
+                                        ? "Recipe was already archived."
+                                        : "Recipe archived; historical logs were preserved.",
+                                },
+                            ],
+                            structuredContent: {
+                                recipe: {
+                                    recipe_id: result.recipeId,
+                                    version: result.version,
+                                    archived_at: result.archivedAt,
+                                    already_archived: result.alreadyArchived,
+                                },
+                            },
+                        };
+                    },
+                    { userId },
+                ),
+        );
     }
+
+    toolServer.registerTool(
+        "log_recipe",
+        {
+            title: "Log Recipe",
+            description:
+                "Log an explicit serving amount of a saved recipe without re-estimating its ingredients. Ask for the serving amount and meal type first when either is missing. Munch scales the saved ingredient quantities and nutrition, records the exact recipe revision, and stores source snapshots on every historical meal item. Use recipe_revision_id to intentionally log an older revision.",
+            annotations: {
+                readOnlyHint: false,
+                destructiveHint: false,
+                idempotentHint: true,
+                openWorldHint: false,
+            },
+            inputSchema: {
+                recipe_id: z.string().uuid(),
+                recipe_revision_id: z.string().uuid().optional(),
+                servings_consumed: z.number().positive(),
+                meal_type: z.enum(["breakfast", "lunch", "dinner", "snack"]),
+                logged_at: z.string().optional(),
+                notes: z.string().max(4_000).optional(),
+                planned_meal_id: z.string().uuid().optional(),
+                idempotency_key: z.string().min(1).max(255),
+            },
+            outputSchema: planningOutputSchemas.log_recipe,
+        },
+        async (args) =>
+            withAnalytics(
+                "log_recipe",
+                async () => {
+                    const result = await logRecipe({
+                        userId,
+                        recipeId: args.recipe_id,
+                        recipeRevisionId: args.recipe_revision_id,
+                        servingsConsumed: args.servings_consumed,
+                        mealType: args.meal_type,
+                        loggedAt: args.logged_at,
+                        notes: args.notes,
+                        plannedMealId: args.planned_meal_id,
+                        idempotencyKey: args.idempotency_key,
+                    });
+                    const serialized = serializeLoggedRecipe(result);
+                    return {
+                        content: [
+                            {
+                                type: "text",
+                                text: result.deduplicated
+                                    ? "Recipe meal log was already recorded; returned the existing meal."
+                                    : `Logged ${args.servings_consumed} serving${args.servings_consumed === 1 ? "" : "s"} of the saved recipe without re-estimating its ingredients.`,
+                            },
+                        ],
+                        structuredContent: serialized,
+                    };
+                },
+                { userId },
+            ),
+    );
 
     const canReadPlanning =
         capabilities.personalPlanningRead || capabilities.householdRead;

@@ -86,6 +86,9 @@ const mealDetailsOutputSchema = {
             sugar_g: z.number().nullable(),
             alcohol_g: z.number().nullable(),
             notes: z.string().nullable(),
+            source_recipe_id: z.string().uuid().nullable(),
+            source_recipe_revision_id: z.string().uuid().nullable(),
+            source_planned_meal_id: z.string().uuid().nullable(),
             item_count: z.number(),
             items: z.array(
                 z
@@ -219,6 +222,9 @@ export function registerMealDetailTools(
                     sugar_g: meal.sugarG,
                     alcohol_g: meal.alcoholG,
                     notes: meal.notes,
+                    source_recipe_id: meal.sourceRecipeId,
+                    source_recipe_revision_id: meal.sourceRecipeRevisionId,
+                    source_planned_meal_id: meal.sourcePlannedMealId,
                     item_count: items.length,
                     items,
                     legacy_aggregate: items.length === 0,

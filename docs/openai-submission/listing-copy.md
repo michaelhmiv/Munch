@@ -22,7 +22,7 @@ Munch requires authentication and derives identity from the authorized account. 
 - Log the lunch in this photo after I review the portions.
 - Show my calorie and macro totals for the last seven days.
 - Look up the nutrition for this barcode.
-- Save this recipe and plan it for Monday dinner.
+- Save this as My Peanut Butter Sandwich Lunch, then log half of it and plan it for Thursday lunch.
 - Show what is still on my grocery list.
 - Find the breakfast food I log most often.
 

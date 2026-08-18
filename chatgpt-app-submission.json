@@ -104,6 +104,18 @@
                 "destructive_justification": "Can permanently delete, revoke, or cancel selected private Munch data after the tool's confirmation safeguard is satisfied."
             }
         },
+        "delete_recipe": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": true
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Can permanently delete, revoke, or cancel selected private Munch data after the tool's confirmation safeguard is satisfied."
+            }
+        },
         "delete_saved_food": {
             "annotations": {
                 "readOnlyHint": false,
@@ -476,6 +488,18 @@
                 "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
             }
         },
+        "log_recipe": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
         "log_water": {
             "annotations": {
                 "readOnlyHint": false,
@@ -788,6 +812,18 @@
                 "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
             }
         },
+        "update_recipe": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
         "update_weight": {
             "annotations": {
                 "readOnlyHint": false,
@@ -847,11 +883,11 @@
             "expected_output_url": null
         },
         {
-            "description": "Using the provisioned Premium reviewer account and its seeded household, save a recipe, schedule it, and add requested ingredients to a grocery list atomically.",
-            "user_prompt": "Save my four-serving turkey chili recipe, plan it for dinner next Monday, and add two cans of beans and one onion to my grocery list.",
+            "description": "Using the provisioned Premium reviewer account, save a reusable lunch, log a fractional serving without re-estimation, and put the saved revision on the meal plan.",
+            "user_prompt": "Save this as My Peanut Butter Sandwich Lunch: 2 slices of Simply Nature Graintastic Organic Bread, 4 tbsp Simply Nature Organic Creamy Peanut Butter, and 2 tbsp chia seeds. It is one serving at approximately 738 kcal, 30.7 g protein, 67.9 g carbs, and 43.7 g fat. Log half of it, then add it to Thursday's lunch plan.",
             "file_attachment_urls": null,
-            "tools_triggered": "save_recipe_and_plan",
-            "expected_output": "Returns the saved recipe revision, scheduled meal, and grocery changes while keeping personal or seeded-household ownership explicit.",
+            "tools_triggered": "save_recipe_and_plan, get_recipe, log_recipe",
+            "expected_output": "Persists the individual ingredients, quantities, nutrition facts, and source snapshots; logs exactly 0.5 serving against the saved recipe revision with scaled quantities and immutable provenance instead of estimating the lunch again; and schedules the same immutable revision for Thursday lunch.",
             "expected_output_url": null
         }
     ],

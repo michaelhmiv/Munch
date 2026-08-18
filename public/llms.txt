@@ -1,8 +1,8 @@
 # Munch
 
-> Munch is a privacy-conscious, ChatGPT-first nutrition service. ChatGPT provides the conversation and reasoning; Munch provides persistent nutrition records, verified food search, saved foods, goals, water and weight history, trends, exports, deletion, billing entitlements, and OAuth-protected MCP tools.
+> Munch is a privacy-conscious, ChatGPT-first nutrition service. ChatGPT provides the conversation and reasoning; Munch provides persistent nutrition records, verified food search, saved foods, immutable reusable recipes, goals, water and weight history, trends, exports, deletion, billing entitlements, and OAuth-protected MCP tools.
 
-Munch is designed for use through ChatGPT and compatible MCP clients rather than as a standalone nutrition application. Users can describe meals naturally, search USDA FoodData Central and Open Food Facts, look up barcodes, save usual foods, review daily progress and longer-term trends, and manage their account through conversation.
+Munch is designed for use through ChatGPT and compatible MCP clients rather than as a standalone nutrition application. Users can describe meals naturally, search USDA FoodData Central and Open Food Facts, look up barcodes, save single foods or multi-ingredient recipes, log exact recipe servings with historical source snapshots, review daily progress and longer-term trends, and manage their account through conversation.
 
 Munch does not train a Munch model on nutrition records, sell nutrition data, or use Google Analytics or advertising trackers. OpenAI separately controls ChatGPT conversation processing, retention, and training choices according to the user's ChatGPT plan, settings, and OpenAI policies.
 

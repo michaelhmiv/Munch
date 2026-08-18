@@ -8,12 +8,18 @@ const {
     createHouseholdInvitation,
 } = await import("../src/households/repository.js");
 const {
+    archiveRecipe,
     getGroceryList,
     getMealPlan,
     getRecipe,
+    logRecipe,
+    saveRecipe,
     saveRecipeAndPlan,
     searchRecipes,
+    updateRecipe,
 } = await import("../src/planning/repository.js");
+const { getStructuredMeal } =
+    await import("../src/structured-meals/repository.js");
 const { closePlatformDatabase } = await import("../src/platform/database.js");
 
 if (!process.env.DATABASE_URL) {
@@ -38,6 +44,134 @@ const household = await createHousehold({
     name: "Planning Household",
     displayName: "Mom",
 });
+
+const lunchRecipe = {
+    name: "My Peanut Butter Sandwich Lunch",
+    servings: 1,
+    instructions: [],
+    sourceType: "user_entered" as const,
+    ingredients: [
+        {
+            name: "Simply Nature Graintastic Organic Bread",
+            quantity: 2,
+            unit: "slices",
+            nutrients: { calories: 140, protein_g: 6, carbs_g: 26, fat_g: 2 },
+            sourceType: "saved_food" as const,
+            sourceSnapshot: { saved_food_id: "bread" },
+        },
+        {
+            name: "Simply Nature Organic Creamy Peanut Butter",
+            quantity: 4,
+            unit: "tbsp",
+            nutrients: { calories: 480, protein_g: 16, carbs_g: 14, fat_g: 32 },
+            sourceType: "saved_food" as const,
+            sourceSnapshot: { saved_food_id: "peanut-butter" },
+        },
+        {
+            name: "Chia seeds",
+            quantity: 2,
+            unit: "tbsp",
+            nutrients: {
+                calories: 118,
+                protein_g: 8.7,
+                carbs_g: 27.9,
+                fat_g: 9.7,
+            },
+            sourceType: "user_supplied" as const,
+            sourceSnapshot: { entered_by_user: true },
+        },
+    ],
+};
+
+const lunchSaved = await saveRecipe({
+    userId: owner.userId,
+    scope: { type: "personal" },
+    recipe: lunchRecipe,
+    idempotencyKey: `lunch:${crypto.randomUUID()}`,
+});
+if (
+    lunchSaved.nutritionStatus !== "complete" ||
+    lunchSaved.perServing.calories !== 738 ||
+    lunchSaved.perServing.protein_g !== 30.7 ||
+    lunchSaved.perServing.carbs_g !== 67.9 ||
+    lunchSaved.perServing.fat_g !== 43.7
+) {
+    throw new Error(
+        "Peanut butter lunch nutrition did not match the saved facts",
+    );
+}
+
+const halfLunch = await logRecipe({
+    userId: owner.userId,
+    recipeId: lunchSaved.recipeId,
+    recipeRevisionId: lunchSaved.revisionId,
+    servingsConsumed: 0.5,
+    mealType: "lunch",
+    idempotencyKey: `lunch-log:${crypto.randomUUID()}`,
+});
+if (
+    halfLunch.meal.sourceRecipeId !== lunchSaved.recipeId ||
+    halfLunch.meal.sourceRecipeRevisionId !== lunchSaved.revisionId ||
+    halfLunch.meal.items[1]?.quantity !== 2 ||
+    halfLunch.meal.calories !== 369
+) {
+    throw new Error(
+        "Half peanut butter lunch did not preserve scaled recipe provenance",
+    );
+}
+
+const updatedLunch = await updateRecipe({
+    userId: owner.userId,
+    scope: { type: "personal" },
+    recipeId: lunchSaved.recipeId,
+    recipe: {
+        ...lunchRecipe,
+        ingredients: lunchRecipe.ingredients.map((ingredient) =>
+            ingredient.name.includes("Peanut Butter")
+                ? {
+                      ...ingredient,
+                      quantity: 3,
+                      nutrients: {
+                          calories: 360,
+                          protein_g: 12,
+                          carbs_g: 10.5,
+                          fat_g: 24,
+                      },
+                  }
+                : ingredient,
+        ),
+    },
+    expectedVersion: 1,
+    idempotencyKey: `lunch-update:${crypto.randomUUID()}`,
+});
+if (updatedLunch.revisionNumber !== 2 || updatedLunch.version !== 2) {
+    throw new Error("Recipe update did not create revision 2");
+}
+const historicalLunch = await getRecipe(
+    owner.userId,
+    lunchSaved.recipeId,
+    lunchSaved.revisionId,
+);
+if (historicalLunch?.ingredients[1]?.quantity !== 4) {
+    throw new Error("Recipe revision 1 was mutated by the update");
+}
+const archivedLunch = await archiveRecipe({
+    userId: owner.userId,
+    scope: { type: "personal" },
+    recipeId: lunchSaved.recipeId,
+    expectedVersion: updatedLunch.version,
+});
+if (
+    archivedLunch.alreadyArchived ||
+    (await getRecipe(owner.userId, lunchSaved.recipeId))
+) {
+    throw new Error("Archived recipe remained in the active recipe surface");
+}
+if (!(await getStructuredMeal(owner.userId, halfLunch.meal.id))) {
+    throw new Error(
+        "Historical recipe meal log was lost when the recipe was archived",
+    );
+}
 
 for (const [person, role, displayName] of [
     [member, "member", "Dad"],

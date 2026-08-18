@@ -42,13 +42,13 @@ Expected tool: `lookup_food_barcode`
 
 Expected behavior: returns provider attribution, serving basis, nutrients, and a clear not-found result if the provider cannot resolve the barcode.
 
-### 5. Save, plan, and add groceries atomically
+### 5. Save, reuse, and plan a recipe revision
 
-Prompt: `Save my four-serving turkey chili recipe, plan it for dinner next Monday, and add two cans of beans and one onion to my grocery list.`
+Prompt: `Save this as My Peanut Butter Sandwich Lunch: 2 slices of Simply Nature Graintastic Organic Bread, 4 tbsp Simply Nature Organic Creamy Peanut Butter, and 2 tbsp chia seeds. It is one serving at approximately 738 kcal, 30.7 g protein, 67.9 g carbs, and 43.7 g fat. Log half of it, then add it to Thursday's lunch plan.`
 
-Expected tool: `save_recipe_and_plan`
+Expected tools: `save_recipe_and_plan`, `get_recipe`, `log_recipe`
 
-Expected behavior: returns the saved revision, planned meal, and grocery changes under the selected personal or household scope. Repeating the request with the same idempotency key must not duplicate the operation.
+Expected behavior: returns the saved revision, logs exactly 0.5 serving by scaling the saved ingredient rows and preserving the recipe/revision/source snapshots, then schedules the same immutable revision. Repeating each write with the same idempotency key must not duplicate it.
 
 ## Negative workflows
 

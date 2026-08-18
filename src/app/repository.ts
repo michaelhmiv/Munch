@@ -7,6 +7,7 @@ import { withUserDatabase } from "../platform/database.js";
 import {
     getGroceryList,
     getMealPlan,
+    getRecipe,
     searchRecipes,
 } from "../planning/repository.js";
 import { listSavedFoods } from "../saved-foods/repository.js";
@@ -422,6 +423,21 @@ export async function getPlanningWorkspace(
                 ? [{ scope: "household", ...householdGroceries }]
                 : []),
         ],
+    };
+}
+
+export async function getRecipeWorkspace(
+    userId: string,
+    recipeId: string,
+    revisionId?: string,
+) {
+    const capabilities = await resolveMunchCapabilities(userId);
+    const canRead =
+        capabilities.personalRecipesRead || capabilities.householdRead;
+    if (!canRead) return { available: false, recipe: null };
+    return {
+        available: true,
+        recipe: await getRecipe(userId, recipeId, revisionId),
     };
 }
 
