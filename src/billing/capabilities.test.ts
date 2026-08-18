@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
     capabilitiesFromSubscription,
+    failClosedMunchCapabilities,
     FREE_HISTORY_DAYS,
     FREE_SAVED_FOOD_LIMIT,
 } from "./capabilities.js";
@@ -63,5 +64,16 @@ describe("Munch capability resolution", () => {
             expect(result.coreNutrition).toBe(true);
             expect(result.tier).toBe("free");
         }
+    });
+
+    test("fails closed for gated features when capability lookup is unavailable", () => {
+        const result = failClosedMunchCapabilities();
+        expect(result.coreNutrition).toBe(true);
+        expect(result.personalRecipesRead).toBe(false);
+        expect(result.personalRecipesWrite).toBe(false);
+        expect(result.personalPlanningRead).toBe(false);
+        expect(result.personalPlanningWrite).toBe(false);
+        expect(result.householdRead).toBe(false);
+        expect(result.householdWrite).toBe(false);
     });
 });

@@ -5,8 +5,6 @@ import {
     consumeLoginChallenge,
     createLoginChallenge,
 } from "../src/accounts/repository.js";
-import { upsertSubscription } from "../src/billing/repository.js";
-import { processStripeWebhook } from "../src/billing/webhook-service.js";
 import { codeChallengeForVerifier } from "../src/oauth-platform/pkce.js";
 import {
     authorizeSession,
@@ -36,30 +34,6 @@ try {
     const webSession = await consumeLoginChallenge(challenge.token);
     if (!webSession)
         throw new Error("Unable to activate OAuth HTTP smoke user");
-
-    const nowSeconds = Math.floor(Date.now() / 1000);
-    const customerId = `cus_http_${suffix}`;
-    const subscriptionId = `sub_http_${suffix}`;
-    stage("creating active subscription snapshot");
-    await processStripeWebhook(
-        JSON.stringify({
-            id: `evt_http_${suffix}`,
-            type: "customer.subscription.created",
-            livemode: false,
-            created: nowSeconds,
-            data: {
-                object: {
-                    id: subscriptionId,
-                    customer: customerId,
-                    status: "active",
-                    current_period_start: nowSeconds,
-                    current_period_end: nowSeconds + 30 * 24 * 60 * 60,
-                    metadata: { munch_user_id: challenge.userId },
-                    items: { data: [{ price: { id: "price_http" } }] },
-                },
-            },
-        }),
-    );
 
     const app = new Hono();
     app.route("/", createPlatformOAuthRouter());
@@ -163,40 +137,15 @@ try {
     });
     if (refreshResponse.status !== 200) {
         throw new Error(
-            `Active subscription refresh failed: ${refreshResponse.status}`,
+            `OAuth refresh failed without billing state: ${refreshResponse.status}`,
         );
     }
     const rotated = (await refreshResponse.json()) as {
         refresh_token: string;
     };
 
-    stage("canceling subscription entitlement");
-    await upsertSubscription({
-        userId: challenge.userId,
-        stripeSubscriptionId: subscriptionId,
-        stripePriceId: "price_http",
-        status: "canceled",
-        canceledAt: new Date(),
-    });
-
-    stage("verifying canceled refresh is rejected");
-    const canceledRefresh = await app.request("/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-            grant_type: "refresh_token",
-            client_id: registration.client_id,
-            refresh_token: rotated.refresh_token,
-        }).toString(),
-    });
-    if (canceledRefresh.status !== 400) {
-        throw new Error(
-            "Canceled subscription was allowed to refresh OAuth access",
-        );
-    }
-    const canceledBody = (await canceledRefresh.json()) as { error?: string };
-    if (canceledBody.error !== "invalid_grant") {
-        throw new Error("Canceled subscription returned the wrong OAuth error");
+    if (!rotated.refresh_token) {
+        throw new Error("OAuth refresh did not return a rotated refresh token");
     }
 
     stage("passed");

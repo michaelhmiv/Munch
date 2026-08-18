@@ -36,6 +36,13 @@ export interface MunchCapabilities {
         | "retained_read_access";
 }
 
+export type MunchCapabilityResolutionStatus = "resolved" | "unavailable";
+
+export interface MunchCapabilityResolution {
+    capabilities: MunchCapabilities;
+    status: MunchCapabilityResolutionStatus;
+}
+
 export function subscriptionProvidesPremium(
     subscription: SubscriptionSnapshot,
     now: Date,
@@ -73,6 +80,10 @@ export function capabilitiesFromSubscription(
         household: null,
         entitlementSource: premium ? "direct_subscription" : "free",
     };
+}
+
+export function failClosedMunchCapabilities(): MunchCapabilities {
+    return capabilitiesFromSubscription({ status: null });
 }
 
 function applyPremiumOverride(
@@ -161,4 +172,30 @@ export async function resolveMunchCapabilities(
                   ? result.entitlementSource
                   : "retained_read_access",
     };
+}
+
+/**
+ * Capability lookup is an authorization dependency, not a prerequisite for
+ * discovering the MCP catalog. If billing or household storage is temporarily
+ * unavailable, fail closed for gated actions while keeping core tools and the
+ * connection alive.
+ */
+export async function resolveMunchCapabilitiesSafe(
+    userId: string,
+): Promise<MunchCapabilityResolution> {
+    try {
+        return {
+            capabilities: await resolveMunchCapabilities(userId),
+            status: "resolved",
+        };
+    } catch (error) {
+        console.warn("Munch capability resolution failed", {
+            userId,
+            errorName: error instanceof Error ? error.name : "unknown",
+        });
+        return {
+            capabilities: failClosedMunchCapabilities(),
+            status: "unavailable",
+        };
+    }
 }

@@ -36,5 +36,6 @@ describe("Better Auth consent continuation", () => {
         expect(source).not.toContain("decideEntitlement");
         expect(source).not.toContain("getSubscriptionSnapshot");
         expect(source).not.toContain("Premium");
+        expect(source).toContain("Connected Munch account");
     });
 });
