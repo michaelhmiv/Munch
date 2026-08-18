@@ -1,10 +1,6 @@
 #!/usr/bin/env bun
 
 import {
-    consumeLoginChallenge,
-    createLoginChallenge,
-} from "../src/accounts/repository.js";
-import {
     countMeals,
     deleteAllUserData,
     deleteWeight,
@@ -34,12 +30,20 @@ if (!process.env.DATABASE_URL) {
 }
 
 async function activeUser(label: string) {
-    const challenge = await createLoginChallenge(
-        `${label}-${crypto.randomUUID()}@example.test`,
-    );
-    const session = await consumeLoginChallenge(challenge.token);
-    if (!session) throw new Error(`Unable to activate ${label}`);
-    return { userId: challenge.userId, sessionToken: session.sessionToken };
+    const userId = crypto.randomUUID();
+    await withAuthDatabase(async (tx) => {
+        await tx`
+            insert into munch.users (id, email, name, email_verified, status)
+            values (
+                ${userId},
+                ${`${label}-${userId}@example.test`},
+                ${label},
+                true,
+                'active'
+            )
+        `;
+    });
+    return { userId };
 }
 
 const alpha = await activeUser("nutrition-alpha");
