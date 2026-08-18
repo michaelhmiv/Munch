@@ -146,10 +146,14 @@ export function withVersionedWidgetResources(server: McpServer): McpServer {
                     handler: (...args: any[]) => unknown,
                 ) => {
                     const versionedUri = versionWidgetResourceUri(uri);
+                    const description = widgetDescriptionForUri(versionedUri);
+                    const resourceConfig = description
+                        ? { ...config, description }
+                        : config;
                     return originalRegisterResource(
                         name,
                         versionedUri,
-                        config,
+                        resourceConfig,
                         async (...args: any[]) =>
                             decorateResourceResult(
                                 await handler(...args),
