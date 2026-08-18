@@ -17,6 +17,7 @@ const SINGLE_FILES = [
     "docs/architecture/0009-canonical-better-auth-postgresql-baseline.md",
 ];
 const SELF = "src/no-legacy-auth-runtime.test.ts";
+const INTENTIONAL_LEGACY_FIXTURE = "scripts/rebaseline-preservation-smoke.ts";
 
 const FORBIDDEN = [
     ["oauth", "platform"].join("-"),
@@ -54,7 +55,10 @@ describe("canonical Better Auth runtime", () => {
         const files = [
             ...(await Promise.all(ROOTS.map(filesUnder))).flat(),
             ...SINGLE_FILES,
-        ].filter((file) => file !== SELF);
+        ].filter(
+            (file) =>
+                file !== SELF && file !== INTENTIONAL_LEGACY_FIXTURE,
+        );
         const violations: string[] = [];
         for (const file of files) {
             const content = await readFile(file, "utf8").catch(() => "");
