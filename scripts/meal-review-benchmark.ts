@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
-const { consumeLoginChallenge, createLoginChallenge } =
-    await import("../src/accounts/repository.js");
+import { createSmokeUser } from "./support/smoke-user.js";
+
 const {
     addMealDraftQuestion,
     answerMealDraftQuestion,
@@ -53,16 +53,6 @@ const items = [
         sourceSnapshot: { source: "benchmark-photo" },
     },
 ];
-
-async function createUser(prefix: string) {
-    const challenge = await createLoginChallenge(
-        `${prefix}-${crypto.randomUUID()}@example.test`,
-    );
-    if (!(await consumeLoginChallenge(challenge.token))) {
-        throw new Error("Unable to activate benchmark user");
-    }
-    return challenge.userId;
-}
 
 async function deleteUser(userId: string) {
     await withAuthDatabase(async (tx) => {
@@ -207,10 +197,10 @@ const results: Record<string, number[]> = {
 
 for (let iteration = 0; iteration < iterations; iteration++) {
     const users = await Promise.all([
-        createUser("bench-legacy-clear"),
-        createUser("bench-atomic-clear"),
-        createUser("bench-legacy-question"),
-        createUser("bench-atomic-question"),
+        createSmokeUser("bench-legacy-clear"),
+        createSmokeUser("bench-atomic-clear"),
+        createSmokeUser("bench-legacy-question"),
+        createSmokeUser("bench-atomic-question"),
     ]);
     try {
         const legacyClearRun = await time(() => legacyClear(users[0]!));
