@@ -7,4 +7,4 @@ Disallow: /token
 Disallow: /mcp
 Disallow: /webhooks/
 
-Sitemap: https://munch-production-de3a.up.railway.app/sitemap.xml
+Sitemap: https://munch.business/sitemap.xml
