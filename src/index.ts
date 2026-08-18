@@ -4,21 +4,13 @@ import { cors } from "hono/cors";
 import { createAccountRouter } from "./accounts/routes.js";
 import { createProvenanceRouter } from "./app/provenance-routes.js";
 import { createAppRouter } from "./app/routes.js";
-import { betterAuthIsEnabled } from "./auth/config.js";
-import { resolveMcpAuthMode } from "./auth/mcp-auth-mode.js";
 import { registerBetterAuthRoutes } from "./auth/routes.js";
 import { createBillingRouter } from "./billing/routes.js";
 import { registerDiscoveryRoutes } from "./discovery.js";
 import { startExportCleanup } from "./export.js";
 import { handleMcp } from "./mcp-runtime.js";
-import {
-    authenticateBearer,
-    banRepeatAuthFailures,
-    rateLimit,
-} from "./middleware.js";
+import { authenticateBearer, banRepeatAuthFailures, rateLimit } from "./middleware.js";
 import { maskIp } from "./net.js";
-import { authenticatePlatformBearer } from "./oauth-platform/middleware.js";
-import { createPlatformOAuthRouter } from "./oauth-platform/routes.js";
 import { validateStartupConfiguration } from "./operations/config.js";
 import { createOperationsRouter } from "./operations/routes.js";
 import { getLandingStats, type LandingStats } from "./storage.js";
@@ -27,21 +19,13 @@ import { warmWidgets } from "./widgets.js";
 validateStartupConfiguration();
 
 const app = new Hono();
-const railwayAuthEnabled = process.env.MUNCH_RAILWAY_AUTH_ENABLED === "true";
-const betterAuthEnabled = betterAuthIsEnabled();
-const mcpAuthMode = resolveMcpAuthMode(betterAuthEnabled, railwayAuthEnabled);
-const mcpAuthenticator =
-    mcpAuthMode === "railway" ? authenticatePlatformBearer : authenticateBearer;
 
 app.use("*", async (c, next) => {
     const path = new URL(c.req.url).pathname;
     const start = performance.now();
     await next();
     if (c.get("suppressAccessLog")) return;
-
-    console.log(
-        `[req] ${c.req.method} ${path} ${c.res.status} ${Math.round(performance.now() - start)}ms ip=${maskIp(c.req.header("x-forwarded-for"))}`,
-    );
+    console.log(`[req] ${c.req.method} ${path} ${c.res.status} ${Math.round(performance.now() - start)}ms ip=${maskIp(c.req.header("x-forwarded-for"))}`);
 });
 
 app.use("*", async (c, next) => {
@@ -50,57 +34,25 @@ app.use("*", async (c, next) => {
     c.header("X-Frame-Options", "DENY");
     c.header("Referrer-Policy", "no-referrer");
     if (!c.res.headers.get("Content-Security-Policy")) {
-        c.header(
-            "Content-Security-Policy",
-            "default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; frame-ancestors 'none'",
-        );
+        c.header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; frame-ancestors 'none'");
     }
 });
 
-app.use(
-    "*",
-    bodyLimit({
-        maxSize: 1024 * 1024,
-        onError: (c) => c.json({ error: "payload_too_large" }, 413),
-    }),
-);
+app.use("*", bodyLimit({ maxSize: 1024 * 1024, onError: (c) => c.json({ error: "payload_too_large" }, 413) }));
 
-app.use(
-    "*",
-    cors({
-        origin: (origin) => {
-            if (!origin) return null;
-            if (
-                origin.match(/^https?:\/\/localhost(:\d+)?$/) ||
-                origin.match(/^https?:\/\/127\.0\.0\.1(:\d+)?$/)
-            ) {
-                return origin;
-            }
-            const allowed =
-                process.env.ALLOWED_ORIGINS?.split(",").map((value) =>
-                    value.trim(),
-                ) ?? [];
-            return allowed.includes(origin) ? origin : null;
-        },
-        allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allowHeaders: [
-            "Content-Type",
-            "Authorization",
-            "Mcp-Session-Id",
-            "Mcp-Protocol-Version",
-            "Last-Event-ID",
-            "Accept",
-        ],
-        exposeHeaders: [
-            "Mcp-Session-Id",
-            "Mcp-Protocol-Version",
-            "Content-Type",
-            "WWW-Authenticate",
-        ],
-        credentials: false,
-        maxAge: 86400,
-    }),
-);
+app.use("*", cors({
+    origin: (origin) => {
+        if (!origin) return null;
+        if (origin.match(/^https?:\/\/localhost(:\d+)?$/) || origin.match(/^https?:\/\/127\.0\.0\.1(:\d+)?$/)) return origin;
+        const allowed = process.env.ALLOWED_ORIGINS?.split(",").map((value) => value.trim()) ?? [];
+        return allowed.includes(origin) ? origin : null;
+    },
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Authorization", "Mcp-Session-Id", "Mcp-Protocol-Version", "Last-Event-ID", "Accept"],
+    exposeHeaders: ["Mcp-Session-Id", "Mcp-Protocol-Version", "Content-Type", "WWW-Authenticate"],
+    credentials: false,
+    maxAge: 86400,
+}));
 
 app.route("/", createOperationsRouter());
 registerDiscoveryRoutes(app);
@@ -109,32 +61,16 @@ app.route("/", createAccountRouter());
 app.route("/", createBillingRouter());
 app.route("/", createAppRouter());
 app.route("/", createProvenanceRouter());
-
-if (!betterAuthEnabled && railwayAuthEnabled) {
-    app.use("/token", async (c, next) => {
-        await next();
-        c.header("Cache-Control", "no-store");
-        c.header("Pragma", "no-cache");
-    });
-    app.route("/", createPlatformOAuthRouter());
-}
-
-app.all("/mcp", banRepeatAuthFailures, mcpAuthenticator, rateLimit, handleMcp);
+app.all("/mcp", banRepeatAuthFailures, authenticateBearer, rateLimit, handleMcp);
 
 const STATS_TTL_MS = 5 * 60 * 1000;
 let statsCache: { data: LandingStats; expiresAt: number } | null = null;
-
 app.get("/api/stats", async (c) => {
     try {
         if (!statsCache || statsCache.expiresAt < Date.now()) {
-            statsCache = {
-                data: await getLandingStats(),
-                expiresAt: Date.now() + STATS_TTL_MS,
-            };
+            statsCache = { data: await getLandingStats(), expiresAt: Date.now() + STATS_TTL_MS };
         }
-        return c.json(statsCache.data, 200, {
-            "Cache-Control": "public, max-age=300",
-        });
+        return c.json(statsCache.data, 200, { "Cache-Control": "public, max-age=300" });
     } catch {
         console.error("Failed to load landing stats");
         if (statsCache) return c.json(statsCache.data);
@@ -142,156 +78,54 @@ app.get("/api/stats", async (c) => {
     }
 });
 
-app.get("/map-data.json", async (c) =>
-    c.body(await Bun.file("./public/map-data.json").text(), 200, {
-        "Content-Type": "application/json",
-        "Cache-Control": "public, max-age=86400",
-    }),
-);
-app.get("/og.png", async (c) =>
-    c.body(await Bun.file("./public/og.png").arrayBuffer(), 200, {
-        "Content-Type": "image/png",
-        "Cache-Control": "public, max-age=86400",
-    }),
-);
-app.get("/apple-touch-icon.png", async (c) =>
-    c.body(await Bun.file("./public/apple-touch-icon.png").arrayBuffer(), 200, {
-        "Content-Type": "image/png",
-        "Cache-Control": "public, max-age=86400",
-    }),
-);
+app.get("/map-data.json", async (c) => c.body(await Bun.file("./public/map-data.json").text(), 200, { "Content-Type": "application/json", "Cache-Control": "public, max-age=86400" }));
+app.get("/og.png", async (c) => c.body(await Bun.file("./public/og.png").arrayBuffer(), 200, { "Content-Type": "image/png", "Cache-Control": "public, max-age=86400" }));
+app.get("/apple-touch-icon.png", async (c) => c.body(await Bun.file("./public/apple-touch-icon.png").arrayBuffer(), 200, { "Content-Type": "image/png", "Cache-Control": "public, max-age=86400" }));
 const BRAND_ASSETS: Record<string, { file: string; contentType: string }> = {
-    "/brand/munch-mark.svg": {
-        file: "./public/brand/munch-mark.svg",
-        contentType: "image/svg+xml",
-    },
-    "/brand/munch-mark-dark.svg": {
-        file: "./public/brand/munch-mark-dark.svg",
-        contentType: "image/svg+xml",
-    },
-    "/brand/munch-mark-white.svg": {
-        file: "./public/brand/munch-mark-white.svg",
-        contentType: "image/svg+xml",
-    },
-    "/brand/munch-mark-192.png": {
-        file: "./public/brand/munch-mark-192.png",
-        contentType: "image/png",
-    },
-    "/brand/munch-mark-512.png": {
-        file: "./public/brand/munch-mark-512.png",
-        contentType: "image/png",
-    },
+    "/brand/munch-mark.svg": { file: "./public/brand/munch-mark.svg", contentType: "image/svg+xml" },
+    "/brand/munch-mark-dark.svg": { file: "./public/brand/munch-mark-dark.svg", contentType: "image/svg+xml" },
+    "/brand/munch-mark-white.svg": { file: "./public/brand/munch-mark-white.svg", contentType: "image/svg+xml" },
+    "/brand/munch-mark-192.png": { file: "./public/brand/munch-mark-192.png", contentType: "image/png" },
+    "/brand/munch-mark-512.png": { file: "./public/brand/munch-mark-512.png", contentType: "image/png" },
 };
 for (const [route, asset] of Object.entries(BRAND_ASSETS)) {
-    app.get(route, async (c) =>
-        c.body(await Bun.file(asset.file).arrayBuffer(), 200, {
-            "Content-Type": asset.contentType,
-            "Cache-Control": "public, max-age=86400",
-        }),
-    );
+    app.get(route, async (c) => c.body(await Bun.file(asset.file).arrayBuffer(), 200, { "Content-Type": asset.contentType, "Cache-Control": "public, max-age=86400" }));
 }
 
-app.get("/robots.txt", async (c) =>
-    c.body(await Bun.file("./public/robots.txt").text(), 200, {
-        "Content-Type": "text/plain",
-    }),
-);
-app.get("/sitemap.xml", async (c) =>
-    c.body(await Bun.file("./public/sitemap.xml").text(), 200, {
-        "Content-Type": "application/xml",
-    }),
-);
-app.get("/llms.txt", async (c) =>
-    c.body(await Bun.file("./public/llms.txt").text(), 200, {
-        "Content-Type": "text/plain; charset=utf-8",
-    }),
-);
-app.get("/.well-known/security.txt", async (c) =>
-    c.body(await Bun.file("./public/security.txt").text(), 200, {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Cache-Control": "public, max-age=86400",
-    }),
-);
+app.get("/robots.txt", async (c) => c.body(await Bun.file("./public/robots.txt").text(), 200, { "Content-Type": "text/plain" }));
+app.get("/sitemap.xml", async (c) => c.body(await Bun.file("./public/sitemap.xml").text(), 200, { "Content-Type": "application/xml" }));
+app.get("/llms.txt", async (c) => c.body(await Bun.file("./public/llms.txt").text(), 200, { "Content-Type": "text/plain; charset=utf-8" }));
+app.get("/.well-known/security.txt", async (c) => c.body(await Bun.file("./public/security.txt").text(), 200, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "public, max-age=86400" }));
 
 app.get("/", async (c) => c.html(await Bun.file("./public/index.html").text()));
-app.get("/privacy", async (c) =>
-    c.html(await Bun.file("./public/privacy.html").text()),
-);
+app.get("/privacy", async (c) => c.html(await Bun.file("./public/privacy.html").text()));
 app.get("/privacy/", (c) => c.redirect("/privacy", 301));
-app.get("/terms", async (c) =>
-    c.html(await Bun.file("./public/terms.html").text()),
-);
+app.get("/terms", async (c) => c.html(await Bun.file("./public/terms.html").text()));
 app.get("/terms/", (c) => c.redirect("/terms", 301));
-app.get("/tools", async (c) =>
-    c.html(await Bun.file("./public/tools.html").text()),
-);
+app.get("/tools", async (c) => c.html(await Bun.file("./public/tools.html").text()));
 app.get("/tools/", (c) => c.redirect("/tools", 301));
-app.get("/help", async (c) =>
-    c.html(await Bun.file("./public/help.html").text()),
-);
+app.get("/help", async (c) => c.html(await Bun.file("./public/help.html").text()));
 app.get("/help/", (c) => c.redirect("/help", 301));
-app.get("/help/connect-chatgpt", async (c) =>
-    c.html(await Bun.file("./public/help-connect.html").text()),
-);
-app.get("/help/connect-chatgpt/", (c) =>
-    c.redirect("/help/connect-chatgpt", 301),
-);
-app.get("/security", async (c) =>
-    c.html(await Bun.file("./public/security.html").text()),
-);
+app.get("/help/connect-chatgpt", async (c) => c.html(await Bun.file("./public/help-connect.html").text()));
+app.get("/help/connect-chatgpt/", (c) => c.redirect("/help/connect-chatgpt", 301));
+app.get("/security", async (c) => c.html(await Bun.file("./public/security.html").text()));
 app.get("/security/", (c) => c.redirect("/security", 301));
-app.get("/open-source", async (c) =>
-    c.html(await Bun.file("./public/open-source.html").text()),
-);
+app.get("/open-source", async (c) => c.html(await Bun.file("./public/open-source.html").text()));
 app.get("/open-source/", (c) => c.redirect("/open-source", 301));
 
-const LEGACY_PUBLIC_ROUTES = [
-    "/alternatives",
-    "/myfitnesspal-mcp",
-    "/cronometer-mcp",
-    "/lose-it-mcp",
-    "/macrofactor-mcp",
-    "/yazio-mcp",
-    "/lifesum-mcp",
-];
+const LEGACY_PUBLIC_ROUTES = ["/alternatives", "/myfitnesspal-mcp", "/cronometer-mcp", "/lose-it-mcp", "/macrofactor-mcp", "/yazio-mcp", "/lifesum-mcp"];
 for (const route of LEGACY_PUBLIC_ROUTES) {
     app.get(route, (c) => c.redirect("/tools", 301));
     app.get(`${route}/`, (c) => c.redirect("/tools", 301));
 }
 
-app.get("/styles.css", async (c) =>
-    c.body(await Bun.file("./public/styles.css").text(), 200, {
-        "Content-Type": "text/css",
-    }),
-);
-app.get("/app-overrides.css", async (c) =>
-    c.body(await Bun.file("./public/app-overrides.css").text(), 200, {
-        "Content-Type": "text/css",
-        "Cache-Control": "no-cache",
-    }),
-);
-app.get("/app-patches.js", async (c) =>
-    c.body(await Bun.file("./public/app-patches.js").text(), 200, {
-        "Content-Type": "text/javascript; charset=utf-8",
-        "Cache-Control": "no-cache",
-    }),
-);
-app.get("/app-provenance.js", async (c) =>
-    c.body(await Bun.file("./public/app-provenance.js").text(), 200, {
-        "Content-Type": "text/javascript; charset=utf-8",
-        "Cache-Control": "no-cache",
-    }),
-);
+app.get("/styles.css", async (c) => c.body(await Bun.file("./public/styles.css").text(), 200, { "Content-Type": "text/css" }));
+app.get("/app-overrides.css", async (c) => c.body(await Bun.file("./public/app-overrides.css").text(), 200, { "Content-Type": "text/css", "Cache-Control": "no-cache" }));
+app.get("/app-patches.js", async (c) => c.body(await Bun.file("./public/app-patches.js").text(), 200, { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-cache" }));
+app.get("/app-provenance.js", async (c) => c.body(await Bun.file("./public/app-provenance.js").text(), 200, { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-cache" }));
 app.get("/favicon.ico", async (c) => {
     try {
-        return c.body(
-            await Bun.file("./public/favicon.ico").arrayBuffer(),
-            200,
-            {
-                "Content-Type": "image/x-icon",
-                "Cache-Control": "public, max-age=86400",
-            },
-        );
+        return c.body(await Bun.file("./public/favicon.ico").arrayBuffer(), 200, { "Content-Type": "image/x-icon", "Cache-Control": "public, max-age=86400" });
     } catch {
         return c.notFound();
     }
@@ -303,8 +137,7 @@ app.onError((_error, c) => {
 });
 
 const port = parseInt(process.env.PORT || "8080");
-console.log(`Munch server listening on 0.0.0.0:${port} auth=${mcpAuthMode}`);
-
+console.log(`Munch server listening on 0.0.0.0:${port} auth=better_auth database=railway_postgresql`);
 await warmWidgets();
 startExportCleanup();
 
@@ -318,9 +151,4 @@ function shutdown(signal: string): void {
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
-export default {
-    port,
-    hostname: "0.0.0.0",
-    idleTimeout: 120,
-    fetch: app.fetch,
-};
+export default { port, hostname: "0.0.0.0", idleTimeout: 120, fetch: app.fetch };

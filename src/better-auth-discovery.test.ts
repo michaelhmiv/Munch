@@ -1,26 +1,12 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import {
     authorizationServerMetadata,
     protectedResourceMetadata,
 } from "./discovery.js";
 
 const ORIGIN = "https://munch.example";
-let previousBackend: string | undefined;
 
-beforeEach(() => {
-    previousBackend = process.env.MUNCH_AUTH_BACKEND;
-    process.env.MUNCH_AUTH_BACKEND = "better_auth";
-});
-
-afterEach(() => {
-    if (previousBackend === undefined) {
-        delete process.env.MUNCH_AUTH_BACKEND;
-    } else {
-        process.env.MUNCH_AUTH_BACKEND = previousBackend;
-    }
-});
-
-test("Better Auth discovery advertises its path-qualified issuer", () => {
+test("discovery advertises the canonical Better Auth issuer", () => {
     expect(authorizationServerMetadata(ORIGIN)).toMatchObject({
         issuer: `${ORIGIN}/api/auth`,
         authorization_endpoint: `${ORIGIN}/api/auth/oauth2/authorize`,
@@ -33,7 +19,7 @@ test("Better Auth discovery advertises its path-qualified issuer", () => {
     });
 });
 
-test("Better Auth protected-resource metadata identifies Munch scopes", () => {
+test("protected-resource metadata identifies Munch scopes", () => {
     expect(protectedResourceMetadata(ORIGIN, `${ORIGIN}/mcp`)).toMatchObject({
         resource: `${ORIGIN}/mcp`,
         authorization_servers: [`${ORIGIN}/api/auth`],

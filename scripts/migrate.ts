@@ -4,6 +4,7 @@ import { SQL } from "bun";
 import { createHash } from "node:crypto";
 import path from "node:path";
 
+const BASELINE_GENERATION = "2026-08-18";
 const databaseUrl = process.env.DATABASE_URL?.trim();
 if (!databaseUrl) {
     throw new Error(
@@ -11,7 +12,6 @@ if (!databaseUrl) {
     );
 }
 
-const migrationsDirectory = path.resolve("db/migrations");
 const database = new SQL({
     url: databaseUrl,
     max: 1,
@@ -23,53 +23,119 @@ function checksum(source: string): string {
     return createHash("sha256").update(source).digest("hex");
 }
 
-function migrationVersion(fileName: string): string {
+async function sqlFiles(directory: string): Promise<string[]> {
+    try {
+        return (
+            await Array.fromAsync(
+                new Bun.Glob("*.sql").scan({
+                    cwd: directory,
+                    absolute: false,
+                }),
+            )
+        ).sort();
+    } catch {
+        return [];
+    }
+}
+
+async function tableExists(qualifiedName: string): Promise<boolean> {
+    const rows = await database<Array<{ present: boolean }>>`
+        select to_regclass(${qualifiedName}) is not null as present
+    `;
+    return rows[0]?.present === true;
+}
+
+async function installStateTables(tx: SQL): Promise<void> {
+    await tx.unsafe(`
+        create table if not exists munch.schema_state (
+            singleton boolean primary key default true check (singleton),
+            generation text not null,
+            installed_at timestamptz not null default now()
+        );
+        create table if not exists munch.schema_updates (
+            version text primary key,
+            file_name text not null unique,
+            checksum_sha256 text not null,
+            applied_at timestamptz not null default now()
+        );
+    `);
+    await tx`
+        insert into munch.schema_state (singleton, generation)
+        values (true, ${BASELINE_GENERATION})
+        on conflict (singleton) do update
+        set generation = excluded.generation,
+            installed_at = now()
+    `;
+}
+
+const hasUsers = await tableExists("munch.users");
+const hasSchemaState = await tableExists("munch.schema_state");
+
+if (!hasUsers) {
+    const schemaDirectory = path.resolve("db/schema");
+    const files = await sqlFiles(schemaDirectory);
+    if (files.length === 0) {
+        throw new Error(`No canonical schema modules found in ${schemaDirectory}`);
+    }
+
+    console.log(`install canonical Munch schema ${BASELINE_GENERATION}`);
+    await database.begin(async (tx) => {
+        for (const fileName of files) {
+            console.log(`  schema ${fileName}`);
+            await tx.unsafe(
+                await Bun.file(path.join(schemaDirectory, fileName)).text(),
+            );
+        }
+        await installStateTables(tx);
+    });
+} else if (!hasSchemaState) {
+    const bridgePath = path.resolve(
+        "db/legacy-bridge/retire-prebaseline-auth.sql",
+    );
+    if (!(await Bun.file(bridgePath).exists())) {
+        throw new Error(
+            "Database predates the canonical baseline but the retirement bridge is unavailable",
+        );
+    }
+
+    console.log(
+        `rebaseline existing Munch database to ${BASELINE_GENERATION} (business rows preserved)`,
+    );
+    await database.begin(async (tx) => {
+        await tx.unsafe(await Bun.file(bridgePath).text());
+        await installStateTables(tx);
+    });
+} else {
+    const state = await database<Array<{ generation: string }>>`
+        select generation from munch.schema_state where singleton = true
+    `;
+    if (state[0]?.generation !== BASELINE_GENERATION) {
+        throw new Error(
+            `Unsupported Munch schema generation ${state[0]?.generation ?? "missing"}; expected ${BASELINE_GENERATION}`,
+        );
+    }
+    console.log(`canonical Munch schema ${BASELINE_GENERATION} already installed`);
+}
+
+const updatesDirectory = path.resolve("db/updates");
+const updateFiles = await sqlFiles(updatesDirectory);
+for (const fileName of updateFiles) {
     const match = fileName.match(/^(\d{4,})_[a-z0-9_-]+\.sql$/i);
     if (!match?.[1]) {
         throw new Error(
-            `Invalid migration filename ${fileName}; expected NNNN_description.sql`,
+            `Invalid update filename ${fileName}; expected NNNN_description.sql`,
         );
     }
-    return match[1];
-}
-
-await database.unsafe(`
-    create schema if not exists munch;
-    create table if not exists munch.schema_migrations (
-        version text primary key,
-        file_name text not null unique,
-        checksum_sha256 text not null,
-        applied_at timestamptz not null default now()
-    );
-`);
-
-const files = (
-    await Array.fromAsync(
-        new Bun.Glob("*.sql").scan({
-            cwd: migrationsDirectory,
-            absolute: false,
-        }),
-    )
-).sort();
-
-if (files.length === 0) {
-    throw new Error(`No SQL migrations found in ${migrationsDirectory}`);
-}
-
-for (const fileName of files) {
-    const version = migrationVersion(fileName);
-    const filePath = path.join(migrationsDirectory, fileName);
-    const source = await Bun.file(filePath).text();
+    const version = match[1];
+    const source = await Bun.file(path.join(updatesDirectory, fileName)).text();
     const sourceChecksum = checksum(source);
-
     const existing = await database<
         Array<{ checksum_sha256: string; file_name: string }>
     >`
         select checksum_sha256, file_name
-        from munch.schema_migrations
+        from munch.schema_updates
         where version = ${version}
     `;
-
     const applied = existing[0];
     if (applied) {
         if (
@@ -77,20 +143,20 @@ for (const fileName of files) {
             applied.file_name !== fileName
         ) {
             throw new Error(
-                `Migration ${version} was modified after application. ` +
+                `Schema update ${version} was modified after application. ` +
                     `Database has ${applied.file_name}/${applied.checksum_sha256}; ` +
                     `repository has ${fileName}/${sourceChecksum}.`,
             );
         }
-        console.log(`skip ${fileName} (already applied)`);
+        console.log(`skip update ${fileName} (already applied)`);
         continue;
     }
 
-    console.log(`apply ${fileName}`);
+    console.log(`apply update ${fileName}`);
     await database.begin(async (tx) => {
         await tx.unsafe(source);
         await tx`
-            insert into munch.schema_migrations (
+            insert into munch.schema_updates (
                 version,
                 file_name,
                 checksum_sha256
@@ -104,4 +170,4 @@ for (const fileName of files) {
 }
 
 await database.close();
-console.log("Database migrations are current.");
+console.log("Database schema is current.");

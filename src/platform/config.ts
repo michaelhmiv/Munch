@@ -5,7 +5,6 @@ export interface PlatformConfig {
     stripeWebhookSecret: string;
     stripePriceId: string;
     stripeHouseholdMemberPriceId: string;
-    sessionSecret: string;
 }
 
 function requiredEnvironmentVariable(name: string): string {
@@ -50,7 +49,6 @@ export function getPlatformConfig(): PlatformConfig {
         stripeHouseholdMemberPriceId: requiredEnvironmentVariable(
             "STRIPE_HOUSEHOLD_MEMBER_PRICE_ID",
         ),
-        sessionSecret: requiredEnvironmentVariable("MUNCH_SESSION_SECRET"),
     };
 }
 
@@ -62,6 +60,5 @@ export function platformConfigurationAvailable(): boolean {
         "STRIPE_WEBHOOK_SECRET",
         "STRIPE_PRICE_ID",
         "STRIPE_HOUSEHOLD_MEMBER_PRICE_ID",
-        "MUNCH_SESSION_SECRET",
     ].every((name) => Boolean(process.env[name]?.trim()));
 }
