@@ -56,8 +56,7 @@ describe("canonical Better Auth runtime", () => {
             ...(await Promise.all(ROOTS.map(filesUnder))).flat(),
             ...SINGLE_FILES,
         ].filter(
-            (file) =>
-                file !== SELF && file !== INTENTIONAL_LEGACY_FIXTURE,
+            (file) => file !== SELF && file !== INTENTIONAL_LEGACY_FIXTURE,
         );
         const violations: string[] = [];
         for (const file of files) {
