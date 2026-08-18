@@ -183,6 +183,7 @@ const reviewOutputSchema = {
 export function registerMealReviewTools(
     server: McpServer,
     userId: string,
+    widgetsEnabled = true,
 ): void {
     const toolServer = server as unknown as {
         registerTool: (
@@ -197,6 +198,9 @@ export function registerMealReviewTools(
             handler: (...args: any[]) => unknown,
         ) => unknown;
     };
+    const uiMeta = widgetsEnabled
+        ? { _meta: { ui: { resourceUri: MEAL_REVIEW_WIDGET_URI } } }
+        : {};
 
     toolServer.registerResource(
         "meal-review-widget",
@@ -258,7 +262,7 @@ export function registerMealReviewTools(
                 questions: z.array(reviewQuestionInput).max(20).optional(),
             },
             outputSchema: reviewOutputSchema,
-            _meta: { ui: { resourceUri: MEAL_REVIEW_WIDGET_URI } },
+            ...uiMeta,
         },
         async (args) =>
             withAnalytics(
@@ -337,7 +341,7 @@ export function registerMealReviewTools(
                 accept_remaining_assumptions: z.boolean().optional(),
             },
             outputSchema: reviewOutputSchema,
-            _meta: { ui: { resourceUri: MEAL_REVIEW_WIDGET_URI } },
+            ...uiMeta,
         },
         async (args) =>
             withAnalytics(
