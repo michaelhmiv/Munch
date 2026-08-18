@@ -50,7 +50,7 @@ function categorizeError(error: unknown): string {
     return "unknown";
 }
 
-function calculateDateRangeDays(
+export function calculateDateRangeDays(
     startDate?: string,
     endDate?: string,
 ): number | undefined {
@@ -59,13 +59,17 @@ function calculateDateRangeDays(
     const start = new Date(startDate);
     if (isNaN(start.getTime())) return undefined;
 
-    if (!endDate) return 0; // single date
+    if (!endDate) return 1; // one requested date
 
     const end = new Date(endDate);
     if (isNaN(end.getTime())) return undefined;
 
-    return Math.round(
-        Math.abs(end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24),
+    // Date-range inputs are inclusive: a same-day range is one day.
+    return (
+        Math.round(
+            Math.abs(end.getTime() - start.getTime()) /
+                (1000 * 60 * 60 * 24),
+        ) + 1
     );
 }
 
