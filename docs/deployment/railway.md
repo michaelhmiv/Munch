@@ -1,13 +1,13 @@
 # Railway deployment foundation
 
-Munch uses one Railway project containing the API/MCP service and one PostgreSQL service. The account, Stripe, and Railway OAuth frameworks are implemented, but inherited nutrition storage remains Supabase-backed until its migration PRs merge.
+Munch uses one Railway project containing the API/MCP service and one PostgreSQL service. Railway PostgreSQL is the only persistence layer and Better Auth is the only authentication/OAuth implementation.
 
 ## Services
 
 1. Create a Railway project.
 2. Add a PostgreSQL service.
-3. Add a service from the `michaelhmiv/Munch` GitHub repository.
-4. Railway reads [`railway.json`](../../railway.json), builds the Dockerfile, runs `bun run db:migrate` as the pre-deploy command, and checks `/health`.
+3. Add the Munch service from the `michaelhmiv/Munch` GitHub repository.
+4. Railway reads [`railway.json`](../../railway.json), builds the production Dockerfile, runs `bun run db:migrate` as the pre-deploy command, and checks `/health/live`.
 
 ## Required variables
 
@@ -17,37 +17,43 @@ Set these on the Munch service:
 DATABASE_URL=${{Postgres.DATABASE_URL}}
 MUNCH_APP_BASE_URL=https://<munch-domain>
 MUNCH_DB_POOL_SIZE=10
-MUNCH_RAILWAY_AUTH_ENABLED=false
-MUNCH_SESSION_SECRET=<at-least-32-random-bytes>
+MUNCH_AUTH_DB_POOL_SIZE=5
+BETTER_AUTH_SECRET=<at-least-32-random-characters>
+MUNCH_MAGIC_LINK_TTL_SECONDS=600
+RESEND_API_KEY=re_...
+MUNCH_EMAIL_FROM=Munch <sign-in@verified-domain>
 STRIPE_SECRET_KEY=sk_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 STRIPE_PRICE_ID=price_...
-MUNCH_LOGIN_DELIVERY_ENDPOINT=https://<transactional-email-adapter>
-MUNCH_LOGIN_DELIVERY_SECRET=<independent-random-secret>
+STRIPE_HOUSEHOLD_MEMBER_PRICE_ID=price_...
 OFF_USER_AGENT=Munch (<support-contact>)
+USDA_FDC_API_KEY=<production-key>
 ```
 
-Keep `MUNCH_DEV_EXPOSE_LOGIN_LINK` unset or `false` in Railway.
+Food-catalog cache behavior may be tuned with the `MUNCH_FOOD_CATALOG_*` variables documented in [`.env.example`](../../.env.example). Keep secrets server-only.
 
-### OAuth cutover flag
+There is no authentication-backend selector, Railway-auth selector, Railway-data selector, custom Munch session secret, or custom login-delivery endpoint.
 
-`MUNCH_RAILWAY_AUTH_ENABLED` selects the OAuth and bearer-token implementation:
+## Database baseline
 
-- `false`: inherited Supabase-backed OAuth remains active.
-- `true`: Railway PostgreSQL client registration, passwordless authorization, Stripe subscription onboarding, short-lived access tokens, and rotating refresh tokens are active.
+`bun run db:migrate` supports exactly two initialization states:
 
-Keep the flag `false` until both conditions are satisfied:
+- An empty database is constructed from the canonical modules in `db/schema/` and receives the current schema-generation marker.
+- A pre-baseline Munch database that already contains `munch.users` but has no schema-generation marker runs the one-time `db/legacy-bridge/retire-prebaseline-auth.sql` bridge. The bridge preserves business rows and stable user UUIDs while resetting transient authentication state and removing retired custom auth/OAuth objects.
 
-1. nutrition persistence has moved to Railway PostgreSQL, so the Munch user UUID used by OAuth is also the owner key used by meal, water, weight, goal, and profile records; and
-2. the Railway deployment has passed live MCP connector registration, authorization, refresh, reconnect, and revocation certification.
+After a database has the canonical schema-generation marker, deploys apply only immutable numbered files from `db/updates/`. Applied update checksums are verified on every deployment.
 
-Enabling Railway OAuth while MCP tools still use inherited Supabase nutrition tables would create incompatible user identities and is not supported.
+Do not manually replay the removed historical migrations into a new database.
 
-The inherited runtime still requires the temporary Supabase variables documented in [`.env.example`](../../.env.example). The inherited global OAuth client variables are required only while `MUNCH_RAILWAY_AUTH_ENABLED=false`.
+## Better Auth and Resend
+
+Public sign-in uses Better Auth magic links delivered directly through Resend. The sender domain configured by `MUNCH_EMAIL_FROM` must be verified for production delivery.
+
+ChatGPT and other MCP clients use Better Auth OAuth Provider for dynamic registration, authorization, consent, token issuance/refresh, and resource-token validation. A deployment must not expose a second OAuth implementation.
 
 ## Stripe configuration
 
-Create one recurring Stripe Price for the initial Munch plan and set its ID as `STRIPE_PRICE_ID`.
+Create the recurring Stripe prices used by the owner plan and paid household seats, then configure `STRIPE_PRICE_ID` and `STRIPE_HOUSEHOLD_MEMBER_PRICE_ID`.
 
 Configure the Stripe webhook endpoint as:
 
@@ -55,37 +61,14 @@ Configure the Stripe webhook endpoint as:
 https://<munch-domain>/webhooks/stripe
 ```
 
-Subscribe to at least:
-
-- `checkout.session.completed`
-- `customer.subscription.created`
-- `customer.subscription.updated`
-- `customer.subscription.deleted`
-- `customer.subscription.paused`
-- `customer.subscription.resumed`
-
-Checkout sessions include the Munch user UUID in both Checkout metadata and subscription metadata. Webhook processing uses that value to associate Stripe records with the correct Munch account. The checkout success return also verifies the completed Checkout Session and retrieves its Subscription directly, so OAuth onboarding does not depend on webhook delivery timing.
-
-## Passwordless login delivery
-
-`MUNCH_LOGIN_DELIVERY_ENDPOINT` is a server-to-server adapter rather than a browser endpoint. Munch sends:
-
-```json
-{
-    "email": "user@example.com",
-    "loginUrl": "https://<munch-domain>/account/login/consume?token=...",
-    "expiresAt": "2026-08-03T18:00:00.000Z",
-    "product": "Munch"
-}
-```
-
-The adapter must authenticate the Bearer secret, send a transactional email, avoid logging the magic link, and return a successful 2xx response only after accepting the delivery request.
+Subscribe to the events required by the billing implementation, including subscription creation, update, deletion, pause/resume, and completed checkout. Stripe remains the billing authority; Munch stores the local billing state needed for entitlements and reconciliation.
 
 ## Deployment safety
 
-- Do not use the Railway database-owner connection for routine application queries outside the role-scoped database helpers.
+- Treat any pre-deploy migration failure as a blocked deployment.
+- Do not bypass startup configuration validation to force an unhealthy release online.
+- Do not use the database-owner connection for routine user/service queries outside the role-scoped database helpers.
 - Do not expose PostgreSQL publicly unless operationally necessary.
-- Never place Stripe secrets, database URLs, magic links, OAuth tokens, client state, or nutrition payloads in logs.
-- Enable Railway backups and test restoration before production launch.
-- Treat a migration failure as a blocked deployment; do not bypass the pre-deploy command.
-- Treat changing `MUNCH_RAILWAY_AUTH_ENABLED` as a controlled release event with an explicit rollback plan.
+- Never log Stripe secrets, database URLs, magic links, OAuth credentials, export capabilities, or nutrition payloads.
+- Enable Railway PostgreSQL backups and test restoration before accepting production users.
+- A rebaseline deployment intentionally invalidates transient sessions/OAuth credentials; affected users sign in and reconnect after the cutover while business data remains attached to the same `munch.users.id`.
