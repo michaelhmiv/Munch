@@ -13,6 +13,9 @@ const requiredFiles = [
     "public/security.html",
     "public/security.txt",
     "public/open-source.html",
+    "public/llms.txt",
+    "public/robots.txt",
+    "public/sitemap.xml",
 ];
 
 for (const path of requiredFiles) {
@@ -41,6 +44,37 @@ if (
     !normalizedHomepage.includes("Alexander Kutishevsky")
 ) {
     throw new Error("Homepage is missing upstream attribution");
+}
+
+const llms = await Bun.file("public/llms.txt").text();
+const robots = await Bun.file("public/robots.txt").text();
+const sitemap = await Bun.file("public/sitemap.xml").text();
+for (const [path, source] of [
+    ["public/llms.txt", llms],
+    ["public/robots.txt", robots],
+    ["public/sitemap.xml", sitemap],
+] as const) {
+    if (source.includes("munch-production-de3a.up.railway.app")) {
+        throw new Error(`${path} contains the retired Railway public hostname`);
+    }
+}
+if (/\btrial\b/i.test(llms)) {
+    throw new Error("public/llms.txt contains stale trial billing language");
+}
+for (const phrase of [
+    "permanent Free tier",
+    "Premium is $4.99/month",
+    "Additional household members are $2/month each",
+    "https://munch.business/mcp",
+]) {
+    if (!llms.includes(phrase)) {
+        throw new Error(
+            `public/llms.txt is missing canonical product copy: ${phrase}`,
+        );
+    }
+}
+if (!robots.includes("Sitemap: https://munch.business/sitemap.xml")) {
+    throw new Error("robots.txt does not advertise the canonical sitemap");
 }
 
 const authSurfaces = [
