@@ -34,6 +34,8 @@ jobs:
         run: bun run submission:check
       - name: Verify responsive UI surfaces
         run: bun scripts/ui-surface-smoke.ts
+      - name: Verify ChatGPT widget contracts
+        run: bun scripts/widget-contract-smoke.ts
       - name: Typecheck server
         run: bun run typecheck
       - name: Run tests and architecture invariants
