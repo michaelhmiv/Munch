@@ -1,7 +1,9 @@
 # ADR-0004: Railway-native MCP OAuth token lifecycle
 
-- Status: Accepted
+- Status: Superseded by [ADR-0009](0009-canonical-better-auth-postgresql-baseline.md)
 - Date: 2026-08-03
+
+> Historical record: this custom token lifecycle is retired. OAuth token issuance and lifecycle are owned by Better Auth OAuth Provider.
 
 ## Context
 
