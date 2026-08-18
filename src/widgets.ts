@@ -1,3 +1,5 @@
+import { MUNCH_APP_VERSION } from "./widget-release.js";
+
 // Assemble self-contained MCP App widget HTML from shared source partials.
 // Production exposes only user-facing widgets. The component gallery remains
 // available to local development and tests, but can never be linked by a
@@ -6,6 +8,7 @@
 const SRC_DIR = "./public/widgets/src";
 const INCLUDE_RE = /\/\*@include\s+([^\s@]+)\s*@\*\//g;
 const INLINE_TS_RE = /\/\*@inlinets\s+([^\s@]+)\s*@\*\//g;
+const WIDGET_VERSION_TOKEN = "__MUNCH_WIDGET_APP_VERSION__";
 
 export const USER_WIDGET_TEMPLATES: Record<string, string> = {
     "nutrition-summary": "nutrition-summary.html",
@@ -80,17 +83,20 @@ async function assemble(templateFile: string): Promise<string> {
     const template = await readSrc(templatePath);
     const withPartials = await resolveIncludes(template, [templatePath]);
     const matches = [...withPartials.matchAll(INLINE_TS_RE)];
-    if (matches.length === 0) return withPartials;
-    const compiled = new Map<string, string>();
-    for (const match of matches) {
-        const rel = match[1];
-        if (!rel || compiled.has(rel)) continue;
-        compiled.set(rel, await inlineTs(rel));
+    let assembled = withPartials;
+    if (matches.length > 0) {
+        const compiled = new Map<string, string>();
+        for (const match of matches) {
+            const rel = match[1];
+            if (!rel || compiled.has(rel)) continue;
+            compiled.set(rel, await inlineTs(rel));
+        }
+        assembled = withPartials.replace(
+            INLINE_TS_RE,
+            (_full, rel) => compiled.get(rel) ?? "",
+        );
     }
-    return withPartials.replace(
-        INLINE_TS_RE,
-        (_full, rel) => compiled.get(rel) ?? "",
-    );
+    return assembled.replaceAll(WIDGET_VERSION_TOKEN, MUNCH_APP_VERSION);
 }
 
 export async function getWidgetHtml(key: string): Promise<string> {

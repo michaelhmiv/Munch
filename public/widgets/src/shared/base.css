@@ -34,7 +34,7 @@ button {
     width: 100%;
     max-width: 720px;
     margin: 0 auto;
-    padding: 10px 8px 14px;
+    padding: 0;
 }
 :root[data-display-mode="fullscreen"] .wrap {
     max-width: 1040px;
@@ -190,8 +190,8 @@ h2 {
     color: var(--text-dim);
 }
 .btn-sm {
-    min-height: 36px;
-    padding: 7px 10px;
+    min-height: 44px;
+    padding: 9px 11px;
     font-size: 12px;
 }
 .btn:disabled {
@@ -408,7 +408,7 @@ tr:last-child td {
 
 @media (max-width: 520px) {
     .wrap {
-        padding: 8px 4px 12px;
+        padding: 0;
     }
     .card-pad {
         padding: 14px;

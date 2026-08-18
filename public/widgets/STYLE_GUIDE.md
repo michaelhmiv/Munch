@@ -8,7 +8,12 @@ user to navigate a dashboard inside the conversation.
 
 - Use the host background for the outer document. Do not create a second page
   background inside ChatGPT.
-- Prefer one bordered surface per inline result. Avoid cards nested inside cards.
+- Munch owns exactly one visible bordered surface for an inline result. Widget
+  resources therefore advertise `ui.prefersBorder: false` (and the ChatGPT
+  compatibility alias) and the inline `.wrap` has no outer padding. Do not add a
+  host border around another inset Munch card.
+- Avoid cards nested inside cards. Use dividers, restrained surface fills, and
+  progressive disclosure inside the single outer surface instead.
 - Shadows are intentionally omitted. Separation comes from host-compatible
   borders, spacing, and restrained surface fills.
 - The green Munch accent identifies primary actions, selected controls, and a
@@ -27,6 +32,8 @@ Inline constraints:
 - Do not duplicate the ChatGPT composer with another freeform text box.
 - Transform successful mutations into a durable receipt instead of leaving
   disabled controls on screen.
+- Put the object the user acted on first. A one-food receipt says the food name
+  and serving, not a generic label such as `1 food`.
 
 Fullscreen-capable widgets declare both `inline` and `fullscreen` in
 `appCapabilities.availableDisplayModes` through `initWidget`. The shared bridge
@@ -39,7 +46,8 @@ not support the mode request retain a functional expanded fallback.
 - Body text is 14px. Inline titles are generally 18px.
 - Use no more than three typographic levels in one card.
 - Numeric values use tabular numerals.
-- Touch targets are at least 44px high.
+- Every interactive touch target, including compact buttons and disclosure
+  summaries, is at least 44px high.
 
 ## Feedback and state
 
@@ -63,6 +71,23 @@ supplementary section.
 - Fullscreen tables retain semantic headers and can scroll horizontally on small
   screens; inline cards do not contain scrolling tables.
 
+## Resource identity and releases
+
+A `ui://` resource URI is a host cache identity, not merely a label. Breaking
+widget HTML, JavaScript, CSS, or host-contract changes must never replace bytes
+behind the same URI.
+
+- `src/widget-release.ts` is the source of truth for `MUNCH_APP_VERSION` and
+  `MUNCH_WIDGET_RESOURCE_VERSION`.
+- Every canonical `ui://widget/<name>.html` registration is published through
+  `withVersionedWidgetResources` as
+  `ui://widget/<name>/<MUNCH_WIDGET_RESOURCE_VERSION>.html`.
+- Increment `MUNCH_WIDGET_RESOURCE_VERSION` whenever a deployed widget change is
+  not safe to serve from an existing host cache key.
+- Increment `MUNCH_APP_VERSION` for a user-visible app release. The MCP server and
+  every widget `ui/initialize` handshake must report that same version.
+- Never reintroduce an independent hard-coded widget version in `bridge.js`.
+
 ## Shared source layout
 
 Templates live in `public/widgets/src/templates/`. Shared runtime and styling live
@@ -74,10 +99,19 @@ in `public/widgets/src/shared/` and are inlined at server startup:
 - `ui.js` — escaping, formatting, progress, metrics, and sparkline helpers
 
 The resulting widget remains one self-contained HTML document with no external
-CSS, scripts, fonts, or network dependencies.
+CSS, scripts, fonts, or network dependencies. OpenAI's Apps SDK UI component
+library is optional; Munch intentionally keeps these portable MCP Apps surfaces
+self-contained unless a future migration provides a concrete UX or maintenance
+benefit.
 
 ## Development boundary
 
 `component-gallery` is a development-only template. `src/widgets.ts` excludes it
 when `NODE_ENV=production`, and tests enforce that boundary. The local strict host
 is available through `bun run harness`.
+
+`scripts/widget-contract-smoke.ts` is the release guard for the production widget
+inventory. It verifies assembled resources, release identity, cache-key
+versioning, border ownership, touch targets, the structured single-food receipt,
+and the two-action meal-review contract. Any intentional change to those
+invariants must update the smoke test in the same pull request.
