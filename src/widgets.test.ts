@@ -6,6 +6,7 @@ import {
     WIDGET_TEMPLATES,
     getWidgetHtml,
 } from "./widgets.js";
+import { MUNCH_APP_VERSION } from "./widget-release.js";
 
 const KEYS = Object.keys(WIDGET_TEMPLATES);
 const USER_KEYS = Object.keys(USER_WIDGET_TEMPLATES);
@@ -51,7 +52,12 @@ for (const key of KEYS) {
         expect(includes.length).toBeGreaterThan(0);
         const html = await getWidgetHtml(key);
         for (const rel of includes) {
-            const partial = (await Bun.file(`${SRC}/${rel}`).text()).trim();
+            const partial = (await Bun.file(`${SRC}/${rel}`).text())
+                .trim()
+                .replaceAll(
+                    "__MUNCH_WIDGET_APP_VERSION__",
+                    MUNCH_APP_VERSION,
+                );
             expect(html).toContain(partial);
         }
     });
