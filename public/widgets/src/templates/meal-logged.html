@@ -59,7 +59,7 @@
             }
             .foods > summary,
             .log-details > summary {
-                min-height: 38px;
+                min-height: 44px;
                 display: flex;
                 align-items: center;
                 cursor: pointer;
@@ -101,7 +101,7 @@
                 margin-top: 3px;
             }
             .food-audit > summary {
-                min-height: 30px;
+                min-height: 44px;
                 display: flex;
                 align-items: center;
                 width: fit-content;
@@ -220,7 +220,11 @@
             }
             function itemRows(items) {
                 if (!items.length) return "";
-                return `<details class="foods"><summary>View ${items.length} food${items.length === 1 ? "" : "s"}</summary>${items
+                const summary =
+                    items.length === 1
+                        ? "Food details"
+                        : `View ${items.length} foods`;
+                return `<details class="foods"><summary>${summary}</summary>${items
                     .map((item) => {
                         const n = item.nutrients || {};
                         const macro = [
@@ -259,10 +263,26 @@
                 const structured = items.length > 0;
                 const action = data.action === "updated" ? "updated" : "logged";
                 const originalTitle = meal.description || "Meal";
-                const title = structured
-                    ? `${items.length} food${items.length === 1 ? "" : "s"}`
-                    : originalTitle;
+                const primaryItem = items.length === 1 ? items[0] : null;
+                const conciseDescription =
+                    originalTitle !== "Meal" && originalTitle.length <= 72
+                        ? originalTitle
+                        : null;
+                const title = primaryItem?.name
+                    ? primaryItem.name
+                    : structured
+                      ? conciseDescription || `${items.length} foods`
+                      : originalTitle;
+                const serving = primaryItem
+                    ? primaryItem.portion_label ||
+                      (primaryItem.quantity != null
+                          ? `Qty ${fmt(primaryItem.quantity, 1)}`
+                          : null)
+                    : structured
+                      ? `${items.length} foods`
+                      : null;
                 const macroLine = [
+                    serving,
                     meal.protein_g != null
                         ? `P ${fmt(meal.protein_g, 1)}g`
                         : null,
@@ -287,9 +307,10 @@
                         today = `<div class="today-line"><span>Today · calories</span><strong>${fmt(data.totals.calories)} / ${fmt(data.goals.calories)} kcal</strong></div>`;
                     }
                 }
-                const logDetails = structured
-                    ? `<details class="log-details"><summary>Log details</summary><div class="log-detail-body">${esc(originalTitle)}</div></details>`
-                    : "";
+                const logDetails =
+                    structured && originalTitle !== title
+                        ? `<details class="log-details"><summary>Log details</summary><div class="log-detail-body">${esc(originalTitle)}</div></details>`
+                        : "";
                 document.getElementById("root").innerHTML =
                     `<article class="card receipt" aria-label="Meal ${action}">
         <div class="row receipt-top">
