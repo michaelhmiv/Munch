@@ -75,7 +75,9 @@ if (!hasUsers) {
     const schemaDirectory = path.resolve("db/schema");
     const files = await sqlFiles(schemaDirectory);
     if (files.length === 0) {
-        throw new Error(`No canonical schema modules found in ${schemaDirectory}`);
+        throw new Error(
+            `No canonical schema modules found in ${schemaDirectory}`,
+        );
     }
 
     console.log(`install canonical Munch schema ${BASELINE_GENERATION}`);
@@ -114,7 +116,9 @@ if (!hasUsers) {
             `Unsupported Munch schema generation ${state[0]?.generation ?? "missing"}; expected ${BASELINE_GENERATION}`,
         );
     }
-    console.log(`canonical Munch schema ${BASELINE_GENERATION} already installed`);
+    console.log(
+        `canonical Munch schema ${BASELINE_GENERATION} already installed`,
+    );
 }
 
 const updatesDirectory = path.resolve("db/updates");

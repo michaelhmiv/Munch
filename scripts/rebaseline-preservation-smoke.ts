@@ -59,15 +59,18 @@ try {
         stderr: "inherit",
     });
     const exitCode = await migrate.exited;
-    if (exitCode !== 0) throw new Error(`Rebaseline migration exited ${exitCode}`);
+    if (exitCode !== 0)
+        throw new Error(`Rebaseline migration exited ${exitCode}`);
 
-    const preserved = await sql<Array<{
-        user_count: number;
-        meal_count: number;
-        preference_count: number;
-        goal_count: number;
-        session_count: number;
-    }>>`
+    const preserved = await sql<
+        Array<{
+            user_count: number;
+            meal_count: number;
+            preference_count: number;
+            goal_count: number;
+            session_count: number;
+        }>
+    >`
         select
             (select count(*)::integer from munch.users where id = ${userId}) as user_count,
             (select count(*)::integer from munch.meals where id = ${mealId} and user_id = ${userId}) as meal_count,
@@ -76,11 +79,21 @@ try {
             (select count(*)::integer from munch.auth_sessions where user_id = ${userId}) as session_count
     `;
     const row = preserved[0];
-    if (!row || Number(row.user_count) !== 1 || Number(row.meal_count) !== 1 || Number(row.preference_count) !== 1 || Number(row.goal_count) !== 1) {
-        throw new Error(`Business data was not preserved: ${JSON.stringify(row)}`);
+    if (
+        !row ||
+        Number(row.user_count) !== 1 ||
+        Number(row.meal_count) !== 1 ||
+        Number(row.preference_count) !== 1 ||
+        Number(row.goal_count) !== 1
+    ) {
+        throw new Error(
+            `Business data was not preserved: ${JSON.stringify(row)}`,
+        );
     }
     if (Number(row.session_count) !== 0) {
-        throw new Error("Authentication sessions must be reset by the rebaseline");
+        throw new Error(
+            "Authentication sessions must be reset by the rebaseline",
+        );
     }
 
     const retired = await sql<Array<{ name: string; present: boolean }>>`
@@ -97,7 +110,9 @@ try {
     `;
     const survivors = retired.filter((item) => item.present);
     if (survivors.length) {
-        throw new Error(`Legacy tables survived rebaseline: ${survivors.map((item) => item.name).join(', ')}`);
+        throw new Error(
+            `Legacy tables survived rebaseline: ${survivors.map((item) => item.name).join(", ")}`,
+        );
     }
 
     const state = await sql<Array<{ generation: string }>>`

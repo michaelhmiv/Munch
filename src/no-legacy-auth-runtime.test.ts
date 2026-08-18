@@ -39,12 +39,16 @@ async function filesUnder(relative: string): Promise<string[]> {
 
 describe("canonical Better Auth runtime", () => {
     test("contains no retired auth/data-plane implementation references", async () => {
-        const files = [...(await Promise.all(ROOTS.map(filesUnder))).flat(), ...SINGLE_FILES].filter((file) => file !== SELF);
+        const files = [
+            ...(await Promise.all(ROOTS.map(filesUnder))).flat(),
+            ...SINGLE_FILES,
+        ].filter((file) => file !== SELF);
         const violations: string[] = [];
         for (const file of files) {
             const content = await readFile(file, "utf8").catch(() => "");
             for (const forbidden of FORBIDDEN) {
-                if (content.includes(forbidden)) violations.push(`${file}: ${forbidden}`);
+                if (content.includes(forbidden))
+                    violations.push(`${file}: ${forbidden}`);
             }
         }
         expect(violations).toEqual([]);

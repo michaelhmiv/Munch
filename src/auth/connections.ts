@@ -19,7 +19,9 @@ function parseScopes(value: string | null): string[] {
     try {
         const parsed = JSON.parse(value);
         return Array.isArray(parsed)
-            ? parsed.filter((scope): scope is string => typeof scope === "string")
+            ? parsed.filter(
+                  (scope): scope is string => typeof scope === "string",
+              )
             : [];
     } catch {
         return [];
@@ -27,22 +29,28 @@ function parseScopes(value: string | null): string[] {
 }
 
 function isUuid(value: string): boolean {
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        value,
+    );
 }
 
-export async function listOAuthConnections(userId: string): Promise<OAuthConnectionSummary[]> {
+export async function listOAuthConnections(
+    userId: string,
+): Promise<OAuthConnectionSummary[]> {
     return withAuthDatabase(async (tx) => {
-        const rows = await tx<Array<{
-            connection_id: string;
-            client_id: string;
-            client_name: string | null;
-            scopes: string | null;
-            connected_at: Date | string;
-            last_authorized_at: Date | string;
-            expires_at: Date | string;
-            active_access_tokens: number;
-            active_refresh_tokens: number;
-        }>>`
+        const rows = await tx<
+            Array<{
+                connection_id: string;
+                client_id: string;
+                client_name: string | null;
+                scopes: string | null;
+                connected_at: Date | string;
+                last_authorized_at: Date | string;
+                expires_at: Date | string;
+                active_access_tokens: number;
+                active_refresh_tokens: number;
+            }>
+        >`
             select
                 consent.id as connection_id,
                 consent."clientId" as client_id,
@@ -121,11 +129,20 @@ export async function listOAuthConnections(userId: string): Promise<OAuthConnect
     });
 }
 
-export async function revokeOAuthConnection(userId: string, connectionId: string): Promise<boolean> {
+export async function revokeOAuthConnection(
+    userId: string,
+    connectionId: string,
+): Promise<boolean> {
     if (!isUuid(connectionId)) return false;
 
     return withAuthDatabase(async (tx) => {
-        const consents = await tx<Array<{ id: string; client_id: string; reference_id: string | null }>>`
+        const consents = await tx<
+            Array<{
+                id: string;
+                client_id: string;
+                reference_id: string | null;
+            }>
+        >`
             select id, "clientId" as client_id, "referenceId" as reference_id
             from munch."oauthConsent"
             where id = ${connectionId} and "userId" = ${userId}

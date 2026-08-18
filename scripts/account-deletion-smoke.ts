@@ -43,13 +43,15 @@ try {
 
     await deleteAllUserData(userId);
 
-    const remaining = await sql<Array<{
-        users: number;
-        meals: number;
-        preferences: number;
-        sessions: number;
-        consents: number;
-    }>>`
+    const remaining = await sql<
+        Array<{
+            users: number;
+            meals: number;
+            preferences: number;
+            sessions: number;
+            consents: number;
+        }>
+    >`
         select
             (select count(*)::integer from munch.users where id = ${userId}) as users,
             (select count(*)::integer from munch.meals where user_id = ${userId}) as meals,
@@ -59,14 +61,18 @@ try {
     `;
     const row = remaining[0];
     if (!row || Object.values(row).some((value) => Number(value) !== 0)) {
-        throw new Error(`Account deletion left user-owned rows: ${JSON.stringify(row)}`);
+        throw new Error(
+            `Account deletion left user-owned rows: ${JSON.stringify(row)}`,
+        );
     }
 
     const client = await sql<Array<{ count: number }>>`
         select count(*)::integer as count from munch."oauthClient" where "clientId" = ${clientId}
     `;
     if (Number(client[0]?.count) !== 1) {
-        throw new Error("Deleting one user must not delete a globally registered OAuth client");
+        throw new Error(
+            "Deleting one user must not delete a globally registered OAuth client",
+        );
     }
 
     console.log("Better Auth account deletion smoke checks passed.");

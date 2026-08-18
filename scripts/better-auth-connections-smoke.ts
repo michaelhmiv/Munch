@@ -1,7 +1,10 @@
 #!/usr/bin/env bun
 
 import { SQL } from "bun";
-import { listOAuthConnections, revokeOAuthConnection } from "../src/auth/connections.js";
+import {
+    listOAuthConnections,
+    revokeOAuthConnection,
+} from "../src/auth/connections.js";
 
 const databaseUrl = process.env.DATABASE_URL?.trim();
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
@@ -57,17 +60,26 @@ try {
 
     const before = await listOAuthConnections(userId);
     if (before.length !== 1 || before[0]?.connectionId !== connectionId) {
-        throw new Error(`Expected one Better Auth connection, got ${JSON.stringify(before)}`);
+        throw new Error(
+            `Expected one Better Auth connection, got ${JSON.stringify(before)}`,
+        );
     }
-    if (before[0]?.activeRefreshTokens !== 1 || before[0]?.activeAccessTokens !== 1) {
+    if (
+        before[0]?.activeRefreshTokens !== 1 ||
+        before[0]?.activeAccessTokens !== 1
+    ) {
         throw new Error("Connection token counts are incorrect");
     }
 
     if (!(await revokeOAuthConnection(userId, connectionId))) {
-        throw new Error("Expected Better Auth connection revocation to succeed");
+        throw new Error(
+            "Expected Better Auth connection revocation to succeed",
+        );
     }
     if (await revokeOAuthConnection(userId, connectionId)) {
-        throw new Error("Connection revocation must be absent after first revoke");
+        throw new Error(
+            "Connection revocation must be absent after first revoke",
+        );
     }
 
     const after = await listOAuthConnections(userId);
@@ -80,7 +92,8 @@ try {
     const access = await sql<Array<{ count: number }>>`
         select count(*)::integer as count from munch."oauthAccessToken" where id = ${accessId}
     `;
-    if (Number(access[0]?.count) !== 0) throw new Error("Access token metadata was not removed");
+    if (Number(access[0]?.count) !== 0)
+        throw new Error("Access token metadata was not removed");
 
     console.log("Better Auth connection smoke checks passed.");
 } finally {
