@@ -1,7 +1,9 @@
 # ADR-0005: Staged Railway OAuth route cutover
 
-- Status: Accepted
+- Status: Superseded by [ADR-0009](0009-canonical-better-auth-postgresql-baseline.md)
 - Date: 2026-08-03
+
+> Historical record: the selector and custom OAuth routes described below are retired. Better Auth routes are unconditional.
 
 ## Decision
 
