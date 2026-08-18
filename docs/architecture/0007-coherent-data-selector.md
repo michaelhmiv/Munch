@@ -1,7 +1,9 @@
 # ADR-0007: Coherent Railway data backend selector
 
-- Status: Accepted
+- Status: Superseded by [ADR-0009](0009-canonical-better-auth-postgresql-baseline.md)
 - Date: 2026-08-03
+
+> Historical record: the data-plane selector and Supabase compatibility facade described below are retired. Railway PostgreSQL is unconditional.
 
 ## Context
 
