@@ -1,8 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { Context } from "hono";
-import { resolveMunchCapabilities } from "./billing/capabilities.js";
+import { resolveMunchCapabilitiesSafe } from "./billing/capabilities.js";
 import { withCanonicalFoodSearch } from "./canonical-food-search.js";
+import { getAccountIdentity } from "./accounts/repository.js";
+import { registerConnectionStatusTools } from "./connection-status-tools.js";
 import { registerFoodTools } from "./food-tools.js";
 import { withFreshStructuredLogGuard } from "./fresh-log-guard.js";
 import { registerMealDetailTools } from "./meal-detail-tools.js";
@@ -35,7 +37,7 @@ For a request such as "save this as My Peanut Butter Sandwich Lunch", use save_r
 
 A planned meal does not mean anyone ate it. A grocery list is not pantry inventory. If the user says they have everything except onions, add onions only. Do not store or infer that every other ingredient is currently owned.
 
-Use search_meals and search_saved_foods for prior variations only when likely to improve the current estimate. Use the interactive importer for history files instead of repeatedly calling log_meal. Munch tool availability is account-specific; do not advertise, describe, or link to unavailable paid capabilities.`;
+Use search_meals and search_saved_foods for prior variations only when likely to improve the current estimate. Use the interactive importer for history files instead of repeatedly calling log_meal. Munch exposes a stable tool catalog across connected accounts; authorization is evaluated when each action is invoked. If the user asks about the connection or an expected feature is unavailable, call get_connection_status before suggesting account or connection troubleshooting. Do not advertise, describe, or link to unavailable paid capabilities.`;
 
 async function buildMunchMcpServer(
     c: Context,
@@ -48,7 +50,7 @@ async function buildMunchMcpServer(
     const server = new McpServer(
         {
             name: "Munch",
-            version: "0.8.1",
+            version: "0.8.2",
             icons: [
                 {
                     src: `${baseUrl}/favicon.ico`,
@@ -62,10 +64,27 @@ async function buildMunchMcpServer(
         },
     );
 
-    const [profile, capabilities] = await Promise.all([
-        getProfile(userId),
-        resolveMunchCapabilities(userId),
+    const [profile, capabilityResolution, accountIdentity] = await Promise.all([
+        getProfile(userId).catch((error) => {
+            console.warn("Munch profile lookup failed during MCP setup", {
+                userId,
+                errorName: error instanceof Error ? error.name : "unknown",
+            });
+            return null;
+        }),
+        resolveMunchCapabilitiesSafe(userId),
+        getAccountIdentity(userId).catch((error) => {
+            console.warn(
+                "Munch account identity lookup failed during MCP setup",
+                {
+                    userId,
+                    errorName: error instanceof Error ? error.name : "unknown",
+                },
+            );
+            return null;
+        }),
     ]);
+    const capabilities = capabilityResolution.capabilities;
     const drinkUnit = preferredDrinkUnitFromProfile(profile);
     const guardedLegacyServer = withFreshStructuredLogGuard(server);
     const structuredLegacyServer = withCanonicalStructuredLogMeal(
@@ -85,6 +104,11 @@ async function buildMunchMcpServer(
     registerMealReviewTools(server, userId);
     registerMealDraftTools(server, userId);
     registerRecipePlanningTools(server, userId, capabilities);
+    registerConnectionStatusTools(server, userId, {
+        accountEmail: accountIdentity?.email,
+        capabilities,
+        capabilityResolution: capabilityResolution.status,
+    });
     return server;
 }
 

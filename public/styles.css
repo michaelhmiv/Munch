@@ -1381,6 +1381,29 @@
         color: var(--green-900);
     }
 
+    .consent-account {
+        display: grid;
+        gap: 4px;
+        margin-top: 20px;
+        border: 1px solid var(--ink-100);
+        border-radius: 12px;
+        background: var(--ink-50);
+        padding: 13px 14px;
+    }
+
+    .consent-account span {
+        color: var(--ink-500);
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+
+    .consent-account strong {
+        color: var(--ink-900);
+        overflow-wrap: anywhere;
+    }
+
     .message-bar {
         display: none;
         margin-top: 18px;

@@ -3,6 +3,12 @@ import { z } from "zod";
 import { withAnalytics } from "./analytics.js";
 import type { MunchCapabilities } from "./billing/capabilities.js";
 import {
+    requirePlanningAccess,
+    requirePlanningScope,
+    requireRecipeAccess,
+    requireRecipeScope,
+} from "./mcp-capability-guard.js";
+import {
     addGroceryItems,
     archiveRecipe,
     getGroceryList,
@@ -15,7 +21,6 @@ import {
     scheduleRecipe,
     searchRecipes,
     updateRecipe,
-    type PlanningScope,
     type RecipeInput,
 } from "./planning/repository.js";
 
@@ -301,31 +306,6 @@ function toRecipeInput(value: z.infer<typeof recipeSchema>): RecipeInput {
     };
 }
 
-function requestedScope(
-    value: "personal" | "household",
-    capabilities: MunchCapabilities,
-    write: boolean,
-): PlanningScope {
-    if (value === "personal") {
-        const allowed = write
-            ? capabilities.personalRecipesWrite
-            : capabilities.personalRecipesRead;
-        if (!allowed)
-            throw new Error("Personal recipe capability is unavailable");
-        return { type: "personal" };
-    }
-    const allowed = write
-        ? capabilities.householdWrite
-        : capabilities.householdRead;
-    if (!allowed || !capabilities.household) {
-        throw new Error("Household recipe capability is unavailable");
-    }
-    return {
-        type: "household",
-        householdId: capabilities.household.householdId,
-    };
-}
-
 function groceryInputs(items: z.infer<typeof groceryItemSchema>[]) {
     return items.map((item) => ({
         name: item.name,
@@ -392,9 +372,6 @@ export function registerRecipePlanningTools(
     userId: string,
     capabilities: MunchCapabilities,
 ): void {
-    if (!capabilities.personalRecipesRead && !capabilities.householdRead) {
-        return;
-    }
     const toolServer = server as unknown as {
         registerTool: (
             name: string,
@@ -426,6 +403,7 @@ export function registerRecipePlanningTools(
             withAnalytics(
                 "search_recipes",
                 async () => {
+                    requireRecipeAccess(capabilities, scope ?? "all", false);
                     const recipes = await searchRecipes({
                         userId,
                         query,
@@ -471,6 +449,7 @@ export function registerRecipePlanningTools(
             withAnalytics(
                 "get_recipe",
                 async () => {
+                    requireRecipeAccess(capabilities);
                     const recipe = await getRecipe(
                         userId,
                         recipe_id,
@@ -492,165 +471,160 @@ export function registerRecipePlanningTools(
             ),
     );
 
-    const canWriteRecipe =
-        capabilities.personalRecipesWrite || capabilities.householdWrite;
-    if (canWriteRecipe) {
-        toolServer.registerTool(
-            "save_recipe",
-            {
-                title: "Save Recipe",
-                description:
-                    "Save the complete recipe currently established in the conversation as factual structured data. Include ingredients, quantities, servings, instructions, source type, and any available nutrient facts. Do not invent classification tags.",
-                annotations: {
-                    readOnlyHint: false,
-                    destructiveHint: false,
-                    idempotentHint: true,
-                    openWorldHint: false,
-                },
-                inputSchema: {
-                    scope: z.enum(["personal", "household"]),
-                    recipe: recipeSchema,
-                    idempotency_key: z.string().min(1).max(255),
-                },
-                outputSchema: planningOutputSchemas.save_recipe,
+    toolServer.registerTool(
+        "save_recipe",
+        {
+            title: "Save Recipe",
+            description:
+                "Save the complete recipe currently established in the conversation as factual structured data. Include ingredients, quantities, servings, instructions, source type, and any available nutrient facts. Do not invent classification tags.",
+            annotations: {
+                readOnlyHint: false,
+                destructiveHint: false,
+                idempotentHint: true,
+                openWorldHint: false,
             },
-            async ({ scope, recipe, idempotency_key }) =>
-                withAnalytics(
-                    "save_recipe",
-                    async () => {
-                        const result = await saveRecipe({
-                            userId,
-                            scope: requestedScope(scope, capabilities, true),
-                            recipe: toRecipeInput(recipe),
-                            idempotencyKey: idempotency_key,
-                        });
-                        return {
-                            content: [
-                                {
-                                    type: "text",
-                                    text: result.deduplicated
-                                        ? "Recipe was already saved; returned the existing revision."
-                                        : "Recipe saved.",
-                                },
-                            ],
-                            structuredContent: { recipe: result },
-                        };
-                    },
-                    { userId },
-                ),
-        );
-
-        toolServer.registerTool(
-            "update_recipe",
-            {
-                title: "Update Recipe",
-                description:
-                    "Replace the current recipe definition with a new immutable revision. Read the current recipe first, preserve its source facts, and send the complete replacement recipe with the current expected_version. Historical meal logs remain pinned to the revision used when they were logged.",
-                annotations: {
-                    readOnlyHint: false,
-                    destructiveHint: false,
-                    idempotentHint: true,
-                    openWorldHint: false,
-                },
-                inputSchema: {
-                    scope: z.enum(["personal", "household"]),
-                    recipe_id: z.string().uuid(),
-                    expected_version: z.number().int().positive(),
-                    recipe: recipeSchema,
-                    idempotency_key: z.string().min(1).max(255),
-                },
-                outputSchema: planningOutputSchemas.update_recipe,
+            inputSchema: {
+                scope: z.enum(["personal", "household"]),
+                recipe: recipeSchema,
+                idempotency_key: z.string().min(1).max(255),
             },
-            async (args) =>
-                withAnalytics(
-                    "update_recipe",
-                    async () => {
-                        const result = await updateRecipe({
-                            userId,
-                            scope: requestedScope(
-                                args.scope,
-                                capabilities,
-                                true,
-                            ),
-                            recipeId: args.recipe_id,
-                            recipe: toRecipeInput(args.recipe),
-                            expectedVersion: args.expected_version,
-                            idempotencyKey: args.idempotency_key,
-                        });
-                        return {
-                            content: [
-                                {
-                                    type: "text",
-                                    text: result.deduplicated
-                                        ? "Recipe update was already applied; returned the existing revision."
-                                        : `Recipe updated to revision ${result.revisionNumber}.`,
-                                },
-                            ],
-                            structuredContent: { recipe: result },
-                        };
-                    },
-                    { userId },
-                ),
-        );
-
-        toolServer.registerTool(
-            "delete_recipe",
-            {
-                title: "Delete Recipe",
-                description:
-                    "Archive a saved recipe after explicit user confirmation. This removes it from active recipe search and planning while preserving immutable revisions and historical meal logs.",
-                annotations: {
-                    readOnlyHint: false,
-                    destructiveHint: true,
-                    idempotentHint: true,
-                    openWorldHint: false,
-                },
-                inputSchema: {
-                    scope: z.enum(["personal", "household"]),
-                    recipe_id: z.string().uuid(),
-                    expected_version: z.number().int().positive().optional(),
-                    confirm: z.literal(true),
-                },
-                outputSchema: planningOutputSchemas.delete_recipe,
-            },
-            async (args) =>
-                withAnalytics(
-                    "delete_recipe",
-                    async () => {
-                        const result = await archiveRecipe({
-                            userId,
-                            scope: requestedScope(
-                                args.scope,
-                                capabilities,
-                                true,
-                            ),
-                            recipeId: args.recipe_id,
-                            expectedVersion: args.expected_version,
-                        });
-                        return {
-                            content: [
-                                {
-                                    type: "text",
-                                    text: result.alreadyArchived
-                                        ? "Recipe was already archived."
-                                        : "Recipe archived; historical logs were preserved.",
-                                },
-                            ],
-                            structuredContent: {
-                                recipe: {
-                                    recipe_id: result.recipeId,
-                                    version: result.version,
-                                    archived_at: result.archivedAt,
-                                    already_archived: result.alreadyArchived,
-                                },
+            outputSchema: planningOutputSchemas.save_recipe,
+        },
+        async ({ scope, recipe, idempotency_key }) =>
+            withAnalytics(
+                "save_recipe",
+                async () => {
+                    const result = await saveRecipe({
+                        userId,
+                        scope: requireRecipeScope(scope, capabilities, true),
+                        recipe: toRecipeInput(recipe),
+                        idempotencyKey: idempotency_key,
+                    });
+                    return {
+                        content: [
+                            {
+                                type: "text",
+                                text: result.deduplicated
+                                    ? "Recipe was already saved; returned the existing revision."
+                                    : "Recipe saved.",
                             },
-                        };
-                    },
-                    { userId },
-                ),
-        );
-    }
+                        ],
+                        structuredContent: { recipe: result },
+                    };
+                },
+                { userId },
+            ),
+    );
 
+    toolServer.registerTool(
+        "update_recipe",
+        {
+            title: "Update Recipe",
+            description:
+                "Replace the current recipe definition with a new immutable revision. Read the current recipe first, preserve its source facts, and send the complete replacement recipe with the current expected_version. Historical meal logs remain pinned to the revision used when they were logged.",
+            annotations: {
+                readOnlyHint: false,
+                destructiveHint: false,
+                idempotentHint: true,
+                openWorldHint: false,
+            },
+            inputSchema: {
+                scope: z.enum(["personal", "household"]),
+                recipe_id: z.string().uuid(),
+                expected_version: z.number().int().positive(),
+                recipe: recipeSchema,
+                idempotency_key: z.string().min(1).max(255),
+            },
+            outputSchema: planningOutputSchemas.update_recipe,
+        },
+        async (args) =>
+            withAnalytics(
+                "update_recipe",
+                async () => {
+                    const result = await updateRecipe({
+                        userId,
+                        scope: requireRecipeScope(
+                            args.scope,
+                            capabilities,
+                            true,
+                        ),
+                        recipeId: args.recipe_id,
+                        recipe: toRecipeInput(args.recipe),
+                        expectedVersion: args.expected_version,
+                        idempotencyKey: args.idempotency_key,
+                    });
+                    return {
+                        content: [
+                            {
+                                type: "text",
+                                text: result.deduplicated
+                                    ? "Recipe update was already applied; returned the existing revision."
+                                    : `Recipe updated to revision ${result.revisionNumber}.`,
+                            },
+                        ],
+                        structuredContent: { recipe: result },
+                    };
+                },
+                { userId },
+            ),
+    );
+
+    toolServer.registerTool(
+        "delete_recipe",
+        {
+            title: "Delete Recipe",
+            description:
+                "Archive a saved recipe after explicit user confirmation. This removes it from active recipe search and planning while preserving immutable revisions and historical meal logs.",
+            annotations: {
+                readOnlyHint: false,
+                destructiveHint: true,
+                idempotentHint: true,
+                openWorldHint: false,
+            },
+            inputSchema: {
+                scope: z.enum(["personal", "household"]),
+                recipe_id: z.string().uuid(),
+                expected_version: z.number().int().positive().optional(),
+                confirm: z.literal(true),
+            },
+            outputSchema: planningOutputSchemas.delete_recipe,
+        },
+        async (args) =>
+            withAnalytics(
+                "delete_recipe",
+                async () => {
+                    const result = await archiveRecipe({
+                        userId,
+                        scope: requireRecipeScope(
+                            args.scope,
+                            capabilities,
+                            true,
+                        ),
+                        recipeId: args.recipe_id,
+                        expectedVersion: args.expected_version,
+                    });
+                    return {
+                        content: [
+                            {
+                                type: "text",
+                                text: result.alreadyArchived
+                                    ? "Recipe was already archived."
+                                    : "Recipe archived; historical logs were preserved.",
+                            },
+                        ],
+                        structuredContent: {
+                            recipe: {
+                                recipe_id: result.recipeId,
+                                version: result.version,
+                                archived_at: result.archivedAt,
+                                already_archived: result.alreadyArchived,
+                            },
+                        },
+                    };
+                },
+                { userId },
+            ),
+    );
     toolServer.registerTool(
         "log_recipe",
         {
@@ -679,6 +653,7 @@ export function registerRecipePlanningTools(
             withAnalytics(
                 "log_recipe",
                 async () => {
+                    requireRecipeAccess(capabilities);
                     const result = await logRecipe({
                         userId,
                         recipeId: args.recipe_id,
@@ -707,103 +682,96 @@ export function registerRecipePlanningTools(
             ),
     );
 
-    const canReadPlanning =
-        capabilities.personalPlanningRead || capabilities.householdRead;
-    if (canReadPlanning) {
-        toolServer.registerTool(
-            "get_meal_plan",
-            {
-                title: "Get Meal Plan",
-                description:
-                    "Get factual personal or household planned meals for a date range, including recipe revision, servings, nutrition per serving, and household planner attribution when available.",
-                annotations: {
-                    readOnlyHint: true,
-                    destructiveHint: false,
-                    idempotentHint: true,
-                    openWorldHint: false,
-                },
-                inputSchema: {
-                    start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-                    end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-                    scope: z.enum(["personal", "household", "all"]).optional(),
-                },
-                outputSchema: planningOutputSchemas.get_meal_plan,
+    toolServer.registerTool(
+        "get_meal_plan",
+        {
+            title: "Get Meal Plan",
+            description:
+                "Get factual personal or household planned meals for a date range, including recipe revision, servings, nutrition per serving, and household planner attribution when available.",
+            annotations: {
+                readOnlyHint: true,
+                destructiveHint: false,
+                idempotentHint: true,
+                openWorldHint: false,
             },
-            async ({ start_date, end_date, scope }) =>
-                withAnalytics(
-                    "get_meal_plan",
-                    async () => {
-                        const planned_meals = await getMealPlan({
-                            userId,
-                            startDate: start_date,
-                            endDate: end_date,
-                            scope,
-                        });
-                        return {
-                            content: [
-                                {
-                                    type: "text",
-                                    text:
-                                        planned_meals.length === 0
-                                            ? "No meals are planned in that date range."
-                                            : `${planned_meals.length} meal${planned_meals.length === 1 ? " is" : "s are"} planned.`,
-                                },
-                            ],
-                            structuredContent: { planned_meals },
-                        };
-                    },
-                    { userId },
-                ),
-        );
-
-        toolServer.registerTool(
-            "get_grocery_list",
-            {
-                title: "Get Grocery List",
-                description:
-                    "Retrieve the active personal or household grocery list. This is an explicit shopping list, not pantry inventory.",
-                annotations: {
-                    readOnlyHint: true,
-                    destructiveHint: false,
-                    idempotentHint: true,
-                    openWorldHint: false,
-                },
-                inputSchema: {
-                    scope: z.enum(["personal", "household"]),
-                    include_purchased: z.boolean().optional(),
-                },
-                outputSchema: planningOutputSchemas.get_grocery_list,
+            inputSchema: {
+                start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+                end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+                scope: z.enum(["personal", "household", "all"]).optional(),
             },
-            async ({ scope, include_purchased }) =>
-                withAnalytics(
-                    "get_grocery_list",
-                    async () => {
-                        const grocery = await getGroceryList({
-                            userId,
-                            scope: requestedScope(scope, capabilities, false),
-                            includePurchased: include_purchased,
-                        });
-                        return {
-                            content: [
-                                {
-                                    type: "text",
-                                    text:
-                                        grocery.items.length === 0
-                                            ? "The grocery list is empty."
-                                            : `${grocery.items.length} item${grocery.items.length === 1 ? " remains" : "s remain"} on the grocery list.`,
-                                },
-                            ],
-                            structuredContent: { grocery },
-                        };
-                    },
-                    { userId },
-                ),
-        );
-    }
+            outputSchema: planningOutputSchemas.get_meal_plan,
+        },
+        async ({ start_date, end_date, scope }) =>
+            withAnalytics(
+                "get_meal_plan",
+                async () => {
+                    requirePlanningAccess(capabilities, scope ?? "all", false);
+                    const planned_meals = await getMealPlan({
+                        userId,
+                        startDate: start_date,
+                        endDate: end_date,
+                        scope,
+                    });
+                    return {
+                        content: [
+                            {
+                                type: "text",
+                                text:
+                                    planned_meals.length === 0
+                                        ? "No meals are planned in that date range."
+                                        : `${planned_meals.length} meal${planned_meals.length === 1 ? " is" : "s are"} planned.`,
+                            },
+                        ],
+                        structuredContent: { planned_meals },
+                    };
+                },
+                { userId },
+            ),
+    );
 
-    const canWritePlanning =
-        capabilities.personalPlanningWrite || capabilities.householdWrite;
-    if (!canWritePlanning) return;
+    toolServer.registerTool(
+        "get_grocery_list",
+        {
+            title: "Get Grocery List",
+            description:
+                "Retrieve the active personal or household grocery list. This is an explicit shopping list, not pantry inventory.",
+            annotations: {
+                readOnlyHint: true,
+                destructiveHint: false,
+                idempotentHint: true,
+                openWorldHint: false,
+            },
+            inputSchema: {
+                scope: z.enum(["personal", "household"]),
+                include_purchased: z.boolean().optional(),
+            },
+            outputSchema: planningOutputSchemas.get_grocery_list,
+        },
+        async ({ scope, include_purchased }) =>
+            withAnalytics(
+                "get_grocery_list",
+                async () => {
+                    const grocery = await getGroceryList({
+                        userId,
+                        scope: requirePlanningScope(scope, capabilities, false),
+                        includePurchased: include_purchased,
+                    });
+                    return {
+                        content: [
+                            {
+                                type: "text",
+                                text:
+                                    grocery.items.length === 0
+                                        ? "The grocery list is empty."
+                                        : `${grocery.items.length} item${grocery.items.length === 1 ? " remains" : "s remain"} on the grocery list.`,
+                            },
+                        ],
+                        structuredContent: { grocery },
+                    };
+                },
+                { userId },
+            ),
+    );
 
     toolServer.registerTool(
         "schedule_recipe",
@@ -835,9 +803,14 @@ export function registerRecipePlanningTools(
             withAnalytics(
                 "schedule_recipe",
                 async () => {
+                    requireRecipeAccess(capabilities, args.scope, false);
                     const planned = await scheduleRecipe({
                         userId,
-                        scope: requestedScope(args.scope, capabilities, true),
+                        scope: requirePlanningScope(
+                            args.scope,
+                            capabilities,
+                            true,
+                        ),
                         recipeId: args.recipe_id,
                         recipeRevisionId: args.recipe_revision_id,
                         plannedDate: args.planned_date,
@@ -881,7 +854,7 @@ export function registerRecipePlanningTools(
                 async () => {
                     const grocery = await addGroceryItems({
                         userId,
-                        scope: requestedScope(scope, capabilities, true),
+                        scope: requirePlanningScope(scope, capabilities, true),
                         items: groceryInputs(items),
                     });
                     return {
@@ -921,6 +894,7 @@ export function registerRecipePlanningTools(
             withAnalytics(
                 "mark_grocery_item_purchased",
                 async () => {
+                    requirePlanningAccess(capabilities, "all", true);
                     const grocery_item = await markGroceryItemPurchased({
                         userId,
                         groceryItemId: grocery_item_id,
@@ -973,9 +947,14 @@ export function registerRecipePlanningTools(
             withAnalytics(
                 "save_recipe_and_plan",
                 async () => {
+                    requireRecipeScope(args.scope, capabilities, true);
                     const result = await saveRecipeAndPlan({
                         userId,
-                        scope: requestedScope(args.scope, capabilities, true),
+                        scope: requirePlanningScope(
+                            args.scope,
+                            capabilities,
+                            true,
+                        ),
                         recipe: toRecipeInput(args.recipe),
                         plannedDate: args.planned_date,
                         mealSlot: args.meal_slot,

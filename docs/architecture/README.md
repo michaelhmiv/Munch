@@ -8,6 +8,7 @@ Architecture decision records (ADRs) document decisions that constrain later imp
 - [ADR-0004: Railway-native MCP OAuth token lifecycle](0004-oauth-token-lifecycle.md)
 - [ADR-0005: Staged Railway OAuth route cutover](0005-oauth-route-cutover.md)
 - [ADR-0006: Railway-native nutrition core](0006-railway-nutrition-core.md)
+- [ADR-0007: Stable MCP catalog and invocation-time feature access](0007-mcp-catalog-entitlement-boundary.md)
 
 ## Non-negotiable boundaries
 

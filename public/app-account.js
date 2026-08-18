@@ -278,7 +278,7 @@ function connectionsPage(data) {
     const connections = data.connections || [];
     return settingsShell(
         "settings-connections",
-        `${sectionHeading("Access", "Connections", "Review the ChatGPT and MCP clients that can call Munch on your behalf.", statusPill(`${connections.length} active`, connections.length ? "success" : "neutral"))}${
+        `${sectionHeading("Access", "Connections", "Review the ChatGPT and MCP clients that can call Munch on your behalf.", statusPill(`${connections.length} active`, connections.length ? "success" : "neutral"))}${settingGroup("Connected account", "Every connection listed here uses this Munch account.", `<div class="account-detail-row"><span>Email</span><strong>${esc(data.user?.email || "Unavailable")}</strong></div>`)}${
             connections.length
                 ? `<div class="connection-list">${connections
                       .map(

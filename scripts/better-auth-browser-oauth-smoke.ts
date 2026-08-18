@@ -206,6 +206,14 @@ const consentHtml = await consentPage.text();
 if (consentPage.status !== 200) {
     throw new Error(`Consent page failed: ${consentPage.status}`);
 }
+if (
+    !consentHtml.includes("Connected Munch account") ||
+    !consentHtml.includes(email)
+) {
+    throw new Error(
+        "Consent page omitted the connected Munch account identity",
+    );
+}
 
 const oauthQuery = hiddenValue(consentHtml, "oauth_query");
 const scope = hiddenValue(consentHtml, "scope");
@@ -387,6 +395,26 @@ for (const candidate of tools) {
 }
 if (!toolNames.has("search_foods")) {
     throw new Error("MCP tool discovery omitted search_foods");
+}
+const requiredStableTools = [
+    "search_recipes",
+    "get_recipe",
+    "save_recipe",
+    "update_recipe",
+    "delete_recipe",
+    "log_recipe",
+    "get_meal_plan",
+    "get_grocery_list",
+    "schedule_recipe",
+    "add_grocery_items",
+    "mark_grocery_item_purchased",
+    "save_recipe_and_plan",
+    "get_connection_status",
+];
+for (const requiredTool of requiredStableTools) {
+    if (!toolNames.has(requiredTool)) {
+        throw new Error(`MCP tool discovery omitted ${requiredTool}`);
+    }
 }
 
 const rejected = await app.request("https://munch.example/mcp", {

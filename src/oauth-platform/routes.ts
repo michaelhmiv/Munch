@@ -10,9 +10,6 @@ import {
     MUNCH_SESSION_COOKIE,
     requireWebSession,
 } from "../accounts/session.js";
-import { createCheckoutForUser } from "../billing/checkout-service.js";
-import { decideEntitlement } from "../billing/entitlements.js";
-import { getSubscriptionSnapshot } from "../billing/repository.js";
 import { rateLimitAuth } from "../middleware.js";
 import { getRefreshTokenSubject } from "./refresh-subject.js";
 import {
@@ -88,11 +85,12 @@ function consentPage(input: {
     sessionId: string;
     clientName: string | null;
     redirectUri: string;
+    userEmail: string;
 }): string {
     const client = input.clientName ?? "ChatGPT or this MCP client";
     return oauthShell(
         "Authorize Munch",
-        `<p class="section-kicker">Step 2 of 2</p><h1>Authorize this connection</h1><div class="consent-client"><strong>${escapeHtml(client)}</strong><p>Return destination: ${escapeHtml(new URL(input.redirectUri).origin)}</p></div><p>Approval lets this client call Munch tools to read and write nutrition records on your behalf. It does not grant access to billing credentials or unrelated conversations.</p><form class="consent-actions" method="post" action="/oauth/decision"><input type="hidden" name="session_id" value="${escapeHtml(input.sessionId)}"><button class="button button-primary" type="submit" name="decision" value="approve">Approve connection</button><button class="button button-quiet" type="submit" name="decision" value="deny">Deny</button></form><p class="auth-footnote">You can revoke this connection later from the Munch account portal.</p>`,
+        `<p class="section-kicker">Step 2 of 2</p><h1>Authorize this connection</h1><div class="consent-client"><strong>${escapeHtml(client)}</strong><p>Return destination: ${escapeHtml(new URL(input.redirectUri).origin)}</p></div><div class="consent-account"><span>Connected Munch account</span><strong>${escapeHtml(input.userEmail)}</strong></div><p>Approval lets this client call Munch tools to read and write nutrition records on your behalf. It does not grant access to billing credentials or unrelated conversations.</p><form class="consent-actions" method="post" action="/oauth/decision"><input type="hidden" name="session_id" value="${escapeHtml(input.sessionId)}"><button class="button button-primary" type="submit" name="decision" value="approve">Approve connection</button><button class="button button-quiet" type="submit" name="decision" value="deny">Deny</button></form><p class="auth-footnote">You can revoke this connection later from the Munch account portal.</p>`,
     );
 }
 
@@ -234,25 +232,12 @@ export function createPlatformOAuthRouter(): Hono {
             return oauthError(c, 400, "invalid_request", "Session unavailable");
         }
 
-        const entitlement = decideEntitlement(
-            await getSubscriptionSnapshot(user.userId),
-        );
-        if (!entitlement.canUseProtectedTools) {
-            const returnTo = `/oauth/continue?session_id=${encodeURIComponent(sessionId)}`;
-            const checkout = await createCheckoutForUser({
-                userId: user.userId,
-                pendingOAuthSessionId: sessionId,
-                successReturnTo: returnTo,
-                cancelReturnTo: returnTo,
-            });
-            return c.redirect(checkout.url, 303);
-        }
-
         return c.html(
             consentPage({
                 sessionId,
                 clientName: authorization.clientName,
                 redirectUri: authorization.redirectUri,
+                userEmail: user.email,
             }),
         );
     });
@@ -316,18 +301,6 @@ export function createPlatformOAuthRouter(): Hono {
                 );
             }
 
-            const entitlement = decideEntitlement(
-                await getSubscriptionSnapshot(userId),
-            );
-            if (!entitlement.canUseProtectedTools) {
-                return oauthError(
-                    c,
-                    400,
-                    "access_denied",
-                    "Subscription required",
-                );
-            }
-
             const code = await issueAuthorizationCode(sessionId, userId);
             const redirect = new URL(code.redirectUri);
             redirect.searchParams.set("code", code.code);
@@ -378,18 +351,6 @@ export function createPlatformOAuthRouter(): Hono {
                     clientId,
                     clientSecret,
                 });
-                const entitlement = decideEntitlement(
-                    await getSubscriptionSnapshot(userId),
-                );
-                if (!entitlement.canUseProtectedTools) {
-                    return oauthError(
-                        c,
-                        400,
-                        "invalid_grant",
-                        "Subscription required",
-                    );
-                }
-
                 const pair = await rotateRefreshToken({
                     refreshToken: body.refresh_token,
                     clientId,
