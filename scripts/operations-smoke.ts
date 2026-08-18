@@ -2,13 +2,11 @@
 
 Object.assign(process.env, {
     NODE_ENV: "production",
-    MUNCH_RAILWAY_AUTH_ENABLED: "true",
-    MUNCH_RAILWAY_DATA_ENABLED: "true",
     MUNCH_APP_BASE_URL: "https://munch.example",
-    MUNCH_SESSION_SECRET: "operations-smoke-session-secret-0123456789abcdef",
-    MUNCH_DEV_EXPOSE_LOGIN_LINK: "false",
-    MUNCH_LOGIN_DELIVERY_ENDPOINT: "https://mail.example/deliver",
-    MUNCH_LOGIN_DELIVERY_SECRET: "operations-smoke-delivery-secret",
+    BETTER_AUTH_SECRET:
+        "operations-smoke-better-auth-secret-0123456789abcdef0123456789abcdef",
+    RESEND_API_KEY: "re_test_operations",
+    MUNCH_EMAIL_FROM: "Munch <support@munch.example>",
     STRIPE_SECRET_KEY: "sk_test_operations",
     STRIPE_WEBHOOK_SECRET: "whsec_operations",
     STRIPE_PRICE_ID: "price_operations",
