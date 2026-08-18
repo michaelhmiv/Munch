@@ -339,7 +339,69 @@ async function renderRecipes() {
         );
         return;
     }
-    content.innerHTML = `<div class="page-heading"><div><h2>Recipe library</h2><p>${data.recipes.length} structured recipe${data.recipes.length === 1 ? "" : "s"}.</p></div><input class="input" id="recipe-filter" type="search" placeholder="Filter recipes" aria-label="Filter recipes" /></div><div class="capability-grid" id="recipe-grid">${data.recipes.length ? data.recipes.map((recipe) => `<article class="capability-card" data-recipe-name="${escapeHtml(recipe.name.toLowerCase())}"><span class="source-chip ${recipe.ownership === "household" ? "source-saved" : "source-usda"}">${escapeHtml(recipe.ownership)}</span><h3 class="spacer-top">${escapeHtml(recipe.name)}</h3><p>${number(recipe.servings, 1)} servings · ${escapeHtml(recipe.nutrition_status)}</p><div class="meal-macros"><span class="macro-chip">${number(recipe.nutrition_per_serving?.calories)} kcal</span><span class="macro-chip">P ${number(recipe.nutrition_per_serving?.protein_g, 1)}g</span><span class="macro-chip">C ${number(recipe.nutrition_per_serving?.carbs_g, 1)}g</span><span class="macro-chip">F ${number(recipe.nutrition_per_serving?.fat_g, 1)}g</span></div><p class="tiny spacer-top">Scheduled ${number(recipe.times_scheduled)} times · logged ${number(recipe.times_logged)} times</p></article>`).join("") : `<div class="empty-state"><div><h3>No recipes yet</h3><p>Ask ChatGPT to save a complete recipe after the ingredients and servings are established.</p></div></div>`}</div>`;
+    content.innerHTML = `<div class="page-heading"><div><h2>Recipe library</h2><p>${data.recipes.length} structured recipe${data.recipes.length === 1 ? "" : "s"}.</p></div><input class="input" id="recipe-filter" type="search" placeholder="Filter recipes" aria-label="Filter recipes" /></div><div class="capability-grid" id="recipe-grid">${data.recipes.length ? data.recipes.map((recipe) => `<article class="capability-card" data-recipe-name="${escapeHtml(recipe.name.toLowerCase())}"><span class="source-chip ${recipe.ownership === "household" ? "source-saved" : "source-usda"}">${escapeHtml(recipe.ownership)}</span><h3 class="spacer-top">${escapeHtml(recipe.name)}</h3><p>${number(recipe.servings, 1)} servings · ${escapeHtml(recipe.nutrition_status)}</p><div class="meal-macros"><span class="macro-chip">${number(recipe.nutrition_per_serving?.calories)} kcal</span><span class="macro-chip">P ${number(recipe.nutrition_per_serving?.protein_g, 1)}g</span><span class="macro-chip">C ${number(recipe.nutrition_per_serving?.carbs_g, 1)}g</span><span class="macro-chip">F ${number(recipe.nutrition_per_serving?.fat_g, 1)}g</span></div><p class="tiny spacer-top">Scheduled ${number(recipe.times_scheduled)} times · logged ${number(recipe.times_logged)} times</p><button class="button button-secondary button-small spacer-top" type="button" data-action="view-recipe" data-id="${escapeHtml(recipe.recipe_id)}">View recipe</button></article>`).join("") : `<div class="empty-state"><div><h3>No recipes yet</h3><p>Ask ChatGPT to save a complete recipe after the ingredients and servings are established.</p></div></div>`}</div>`;
+}
+
+function recipeEditorValue(recipe) {
+    return JSON.stringify(
+        {
+            name: recipe.name,
+            servings: recipe.servings,
+            description: recipe.description || undefined,
+            instructions: recipe.instructions,
+            preparation_minutes: recipe.preparation_minutes ?? undefined,
+            cooking_minutes: recipe.cooking_minutes ?? undefined,
+            source_type: recipe.source.type,
+            source_title: recipe.source.title || undefined,
+            source_url: recipe.source.url || undefined,
+            ingredients: recipe.ingredients.map((ingredient) => ({
+                name: ingredient.name,
+                quantity: ingredient.quantity ?? undefined,
+                unit: ingredient.unit || undefined,
+                preparation: ingredient.preparation || undefined,
+                optional: ingredient.optional || undefined,
+                gram_weight: ingredient.gram_weight ?? undefined,
+                nutrients: ingredient.nutrients,
+                provider: ingredient.provider || undefined,
+                provider_food_id: ingredient.provider_food_id || undefined,
+                source_type: ingredient.source_type,
+                source_url: ingredient.source_url || undefined,
+                confidence: ingredient.confidence ?? undefined,
+                source_snapshot: ingredient.source_snapshot,
+            })),
+        },
+        null,
+        2,
+    );
+}
+
+async function openRecipe(id) {
+    const data = await api(`/api/app/recipes/${encodeURIComponent(id)}`);
+    const recipe = data.recipe;
+    const ingredients = recipe.ingredients
+        .map(
+            (ingredient) =>
+                `<li><strong>${escapeHtml(ingredient.name)}</strong><span>${ingredient.quantity == null ? "" : `${number(ingredient.quantity, 3)} ${escapeHtml(ingredient.unit || "")}`} · ${number(ingredient.nutrients?.calories)} kcal</span>${sourceBadge(ingredient.source_type)}</li>`,
+        )
+        .join("");
+    openDialog(
+        recipe.name,
+        `<div class="recipe-detail"><p>${number(recipe.servings, 3)} servings · revision ${number(recipe.revision_number)} · ${escapeHtml(recipe.nutrition_status)}</p><div class="meal-macros"><span class="macro-chip">${number(recipe.nutrition_per_serving?.calories)} kcal/serving</span><span class="macro-chip">P ${number(recipe.nutrition_per_serving?.protein_g, 1)}g</span><span class="macro-chip">C ${number(recipe.nutrition_per_serving?.carbs_g, 1)}g</span><span class="macro-chip">F ${number(recipe.nutrition_per_serving?.fat_g, 1)}g</span></div><h3 class="spacer-top">Ingredients</h3><ul class="food-items">${ingredients}</ul><p class="tiny spacer-top">Every ingredient includes the source snapshot used to calculate this revision. Editing creates a new revision; historical logs stay pinned.</p><div class="auth-actions spacer-top"><button class="button button-primary" type="button" data-action="log-recipe" data-id="${escapeHtml(recipe.id)}" data-revision="${escapeHtml(recipe.revision_id)}">Log recipe</button><button class="button button-secondary" type="button" data-action="plan-recipe" data-id="${escapeHtml(recipe.id)}" data-revision="${escapeHtml(recipe.revision_id)}">Add to plan</button><button class="button button-secondary" type="button" data-action="archive-recipe" data-id="${escapeHtml(recipe.id)}" data-version="${escapeHtml(recipe.version)}">Archive</button></div><details class="spacer-top"><summary>Edit recipe revision</summary><form id="recipe-edit-form" class="auth-form" data-id="${escapeHtml(recipe.id)}" data-version="${escapeHtml(recipe.version)}"><label class="field"><span>Complete recipe JSON</span><textarea name="recipe_json" rows="18" required>${escapeHtml(recipeEditorValue(recipe))}</textarea></label><button class="button button-primary" type="submit">Save new revision</button></form></details></div>`,
+    );
+}
+
+function openRecipeLog(id, revisionId) {
+    openDialog(
+        "Log saved recipe",
+        `<form id="recipe-log-form" class="auth-form" data-id="${escapeHtml(id)}" data-revision="${escapeHtml(revisionId || "")}"><p>Use the saved ingredients and nutrition exactly as stored. Choose how much you ate.</p><label class="field"><span>Servings consumed</span><input name="servings_consumed" type="number" min="0.01" step="0.01" value="1" required /></label><label class="field"><span>Meal type</span><select name="meal_type"><option value="breakfast">Breakfast</option><option value="lunch" selected>Lunch</option><option value="dinner">Dinner</option><option value="snack">Snack</option></select></label><label class="field"><span>Notes</span><input name="notes" maxlength="4000" placeholder="Optional" /></label><button class="button button-primary" type="submit">Log meal</button></form>`,
+    );
+}
+
+function openRecipePlan(id) {
+    openDialog(
+        "Add recipe to meal plan",
+        `<form id="recipe-plan-form" class="auth-form" data-id="${escapeHtml(id)}"><label class="field"><span>Date</span><input name="planned_date" type="date" value="${escapeHtml(state.date)}" required /></label><label class="field"><span>Meal slot</span><select name="meal_slot"><option value="breakfast">Breakfast</option><option value="lunch" selected>Lunch</option><option value="dinner">Dinner</option><option value="snack">Snack</option></select></label><label class="field"><span>Servings planned</span><input name="servings" type="number" min="0.01" step="0.01" value="1" required /></label><button class="button button-primary" type="submit">Add to plan</button></form>`,
+    );
 }
 
 function weekDays(start) {
@@ -489,6 +551,28 @@ async function handleAction(button) {
     )
         return renderRoute();
     if (action === "edit-meal") return editMeal(button.dataset.id);
+    if (action === "view-recipe") return openRecipe(button.dataset.id);
+    if (action === "log-recipe")
+        return openRecipeLog(button.dataset.id, button.dataset.revision);
+    if (action === "plan-recipe") return openRecipePlan(button.dataset.id);
+    if (action === "archive-recipe") {
+        if (
+            !confirm(
+                "Archive this recipe? Historical meal logs will be preserved.",
+            )
+        )
+            return;
+        await api(`/api/app/recipes/${encodeURIComponent(button.dataset.id)}`, {
+            method: "DELETE",
+            body: JSON.stringify({
+                expected_version: Number(button.dataset.version),
+            }),
+            keepPrevious: true,
+        });
+        if (dialog.open) dialog.close();
+        toast("Recipe archived.");
+        return renderRoute();
+    }
     if (action === "duplicate-meal") {
         toast(
             "Open ChatGPT and ask Munch to log this meal again. The original entry was not changed.",
@@ -624,6 +708,9 @@ document.addEventListener("submit", async (event) => {
             "weight-form",
             "preferences-form",
             "goals-form",
+            "recipe-edit-form",
+            "recipe-log-form",
+            "recipe-plan-form",
         ].includes(form.id)
     )
         return;
@@ -674,6 +761,64 @@ document.addEventListener("submit", async (event) => {
                 keepPrevious: true,
             });
             toast("Goals saved.");
+        }
+        if (form.id === "recipe-edit-form") {
+            let recipe;
+            try {
+                recipe = JSON.parse(values.recipe_json);
+            } catch {
+                throw new Error("Recipe JSON is not valid");
+            }
+            await api(
+                `/api/app/recipes/${encodeURIComponent(form.dataset.id)}`,
+                {
+                    method: "PATCH",
+                    body: JSON.stringify({
+                        expected_version: Number(form.dataset.version),
+                        idempotency_key: crypto.randomUUID(),
+                        recipe,
+                    }),
+                    keepPrevious: true,
+                },
+            );
+            toast("Recipe updated with a new revision.");
+        }
+        if (form.id === "recipe-log-form") {
+            const result = await api(
+                `/api/app/recipes/${encodeURIComponent(form.dataset.id)}/log`,
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        servings_consumed: Number(values.servings_consumed),
+                        meal_type: values.meal_type,
+                        notes: values.notes || undefined,
+                        recipe_revision_id: form.dataset.revision || undefined,
+                        idempotency_key: crypto.randomUUID(),
+                    }),
+                    keepPrevious: true,
+                },
+            );
+            toast(
+                result.result?.deduplicated
+                    ? "This recipe meal was already logged."
+                    : "Recipe meal logged.",
+            );
+        }
+        if (form.id === "recipe-plan-form") {
+            await api(
+                `/api/app/recipes/${encodeURIComponent(form.dataset.id)}/plan`,
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        planned_date: values.planned_date,
+                        meal_slot: values.meal_slot,
+                        servings: Number(values.servings),
+                        idempotency_key: crypto.randomUUID(),
+                    }),
+                    keepPrevious: true,
+                },
+            );
+            toast("Recipe added to the meal plan.");
         }
         if (dialog.open) dialog.close();
         await renderRoute();

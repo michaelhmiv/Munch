@@ -33,6 +33,9 @@ export interface StructuredMealInput {
     loggedAt?: string;
     notes?: string;
     idempotencyKey: string;
+    sourceRecipeId?: string;
+    sourceRecipeRevisionId?: string;
+    sourcePlannedMealId?: string;
     items: StructuredMealItemInput[];
 }
 
@@ -73,6 +76,9 @@ export interface StructuredMealRecord {
     alcoholG: number | null;
     notes: string | null;
     idempotencyKey: string | null;
+    sourceRecipeId: string | null;
+    sourceRecipeRevisionId: string | null;
+    sourcePlannedMealId: string | null;
     items: StructuredMealItemRecord[];
 }
 

@@ -100,13 +100,13 @@ function createSubmission(entries: ToolInventoryEntry[]) {
             },
             {
                 description:
-                    "Using the provisioned Premium reviewer account and its seeded household, save a recipe, schedule it, and add requested ingredients to a grocery list atomically.",
+                    "Using the provisioned Premium reviewer account, save a reusable lunch, log a fractional serving without re-estimation, and put the saved revision on the meal plan.",
                 user_prompt:
-                    "Save my four-serving turkey chili recipe, plan it for dinner next Monday, and add two cans of beans and one onion to my grocery list.",
+                    "Save this as My Peanut Butter Sandwich Lunch: 2 slices of Simply Nature Graintastic Organic Bread, 4 tbsp Simply Nature Organic Creamy Peanut Butter, and 2 tbsp chia seeds. It is one serving at approximately 738 kcal, 30.7 g protein, 67.9 g carbs, and 43.7 g fat. Log half of it, then add it to Thursday's lunch plan.",
                 file_attachment_urls: null,
-                tools_triggered: "save_recipe_and_plan",
+                tools_triggered: "save_recipe_and_plan, get_recipe, log_recipe",
                 expected_output:
-                    "Returns the saved recipe revision, scheduled meal, and grocery changes while keeping personal or seeded-household ownership explicit.",
+                    "Persists the individual ingredients, quantities, nutrition facts, and source snapshots; logs exactly 0.5 serving against the saved recipe revision with scaled quantities and immutable provenance instead of estimating the lunch again; and schedules the same immutable revision for Thursday lunch.",
                 expected_output_url: null,
             },
         ],

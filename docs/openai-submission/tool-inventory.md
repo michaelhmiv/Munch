@@ -12,6 +12,7 @@ Generated from the production MCP source. Do not edit manually.
 | `confirm_meal_draft`          | `src/meal-draft-tools.ts`      |     false |      false |       false |       true |          true |
 | `delete_account`              | `src/mcp.ts`                   |     false |      false |        true |      false |          true |
 | `delete_meal`                 | `src/mcp.ts`                   |     false |      false |        true |       true |          true |
+| `delete_recipe`               | `src/recipe-planning-tools.ts` |     false |      false |        true |       true |          true |
 | `delete_saved_food`           | `src/saved-food-tools.ts`      |     false |      false |        true |       true |          true |
 | `delete_water`                | `src/mcp.ts`                   |     false |      false |        true |       true |          true |
 | `delete_weight`               | `src/mcp.ts`                   |     false |      false |        true |       true |          true |
@@ -43,6 +44,7 @@ Generated from the production MCP source. Do not edit manually.
 | `get_widget_display`          | `src/mcp.ts`                   |      true |      false |       false |       true |          true |
 | `list_saved_foods`            | `src/saved-food-tools.ts`      |      true |      false |       false |       true |          true |
 | `log_meal`                    | `src/mcp.ts`                   |     false |      false |       false |      false |          true |
+| `log_recipe`                  | `src/recipe-planning-tools.ts` |     false |      false |       false |       true |          true |
 | `log_water`                   | `src/mcp.ts`                   |     false |      false |       false |      false |          true |
 | `log_weight`                  | `src/mcp.ts`                   |     false |      false |       false |      false |          true |
 | `lookup_barcode`              | `src/mcp.ts`                   |      true |      false |       false |       true |          true |
@@ -69,5 +71,6 @@ Generated from the production MCP source. Do not edit manually.
 | `start_meal_import`           | `src/mcp.ts`                   |      true |      false |       false |       true |          true |
 | `update_meal`                 | `src/mcp.ts`                   |     false |      false |       false |       true |          true |
 | `update_meal_draft`           | `src/meal-draft-tools.ts`      |     false |      false |       false |       true |          true |
+| `update_recipe`               | `src/recipe-planning-tools.ts` |     false |      false |       false |       true |          true |
 | `update_weight`               | `src/mcp.ts`                   |     false |      false |       false |       true |          true |
 | `upsert_meal_draft_item`      | `src/meal-draft-tools.ts`      |     false |      false |       false |       true |          true |

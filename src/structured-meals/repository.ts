@@ -127,6 +127,16 @@ function mealFromRow(
         notes: row.notes == null ? null : String(row.notes),
         idempotencyKey:
             row.idempotency_key == null ? null : String(row.idempotency_key),
+        sourceRecipeId:
+            row.source_recipe_id == null ? null : String(row.source_recipe_id),
+        sourceRecipeRevisionId:
+            row.source_recipe_revision_id == null
+                ? null
+                : String(row.source_recipe_revision_id),
+        sourcePlannedMealId:
+            row.source_planned_meal_id == null
+                ? null
+                : String(row.source_planned_meal_id),
     };
 }
 
@@ -239,20 +249,6 @@ export async function insertStructuredMeal(
     }
 
     return withUserDatabase(userId, async (tx) => {
-        const existingRows = await tx<Array<{ id: string }>>`
-            select id
-            from munch.meals
-            where user_id = ${userId}
-              and idempotency_key = ${idempotencyKey}
-            limit 1
-        `;
-        if (existingRows[0]) {
-            const existing = await loadMeal(tx, existingRows[0].id);
-            if (!existing)
-                throw new Error("Idempotent meal could not be reloaded");
-            return { meal: existing, deduplicated: true };
-        }
-
         const mealRows = await tx<Array<Record<string, unknown>>>`
             insert into munch.meals (
                 user_id,
@@ -267,7 +263,10 @@ export async function insertStructuredMeal(
                 sugar_g,
                 alcohol_g,
                 notes,
-                idempotency_key
+                idempotency_key,
+                source_recipe_id,
+                source_recipe_revision_id,
+                source_planned_meal_id
             ) values (
                 ${userId},
                 ${loggedAt},
@@ -281,13 +280,39 @@ export async function insertStructuredMeal(
                 ${totals.sugar_g ?? null},
                 ${totals.alcohol_g ?? null},
                 ${input.notes?.trim() || null},
-                ${idempotencyKey}
+                ${idempotencyKey},
+                ${input.sourceRecipeId ?? null},
+                ${input.sourceRecipeRevisionId ?? null},
+                ${input.sourcePlannedMealId ?? null}
             )
+            on conflict (user_id, idempotency_key)
+                where idempotency_key is not null
+            do nothing
             returning *
         `;
-        const mealRow = mealRows[0];
-        if (!mealRow) throw new Error("Structured meal insert returned no row");
+        let mealRow = mealRows[0];
+        let deduplicated = false;
+        if (!mealRow) {
+            const existingRows = await tx<Array<{ id: string }>>`
+                select id
+                from munch.meals
+                where user_id = ${userId}
+                  and idempotency_key = ${idempotencyKey}
+                limit 1
+            `;
+            if (!existingRows[0])
+                throw new Error("Idempotent meal could not be reloaded");
+            mealRow = { id: existingRows[0].id };
+            deduplicated = true;
+        }
         const mealId = String(mealRow.id);
+
+        if (deduplicated) {
+            const existing = await loadMeal(tx, mealId);
+            if (!existing)
+                throw new Error("Idempotent meal could not be reloaded");
+            return { meal: existing, deduplicated: true };
+        }
 
         for (const [position, item] of items.entries()) {
             await tx`

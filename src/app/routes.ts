@@ -27,6 +27,15 @@ import {
     upsertProfile,
 } from "../storage.js";
 import { getStructuredMeal } from "../structured-meals/repository.js";
+import {
+    archiveRecipe,
+    getRecipe,
+    logRecipe,
+    scheduleRecipe,
+    updateRecipe,
+    type PlanningScope,
+    type RecipeInput,
+} from "../planning/repository.js";
 import { validateTz } from "../tz.js";
 import { isPlausibleWeightGrams, isWeightUnit, toGrams } from "../units.js";
 import {
@@ -42,6 +51,7 @@ import {
     getInsightsWorkspace,
     getMealHistoryWorkspace,
     getPlanningWorkspace,
+    getRecipeWorkspace,
     getTodayWorkspace,
 } from "./repository.js";
 
@@ -65,6 +75,15 @@ function positiveNumber(value: unknown): number | undefined {
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed <= 0) {
         throw new Error("Invalid quantity");
+    }
+    return parsed;
+}
+
+function nonnegativeNumber(value: unknown): number | undefined {
+    if (value === undefined) return undefined;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new Error("Invalid nonnegative number");
     }
     return parsed;
 }
@@ -102,6 +121,190 @@ function structuredSourceType(value: unknown) {
         return value;
     }
     throw new Error("Invalid food source type");
+}
+
+function recipeSourceType(value: unknown): RecipeInput["sourceType"] {
+    if (
+        value === "user_entered" ||
+        value === "chatgpt_generated" ||
+        value === "imported"
+    ) {
+        return value;
+    }
+    throw new Error("Invalid recipe source type");
+}
+
+function recipeIngredientSourceType(
+    value: unknown,
+): RecipeInput["ingredients"][number]["sourceType"] {
+    if (
+        value === "usda" ||
+        value === "open_food_facts" ||
+        value === "published_restaurant" ||
+        value === "saved_food" ||
+        value === "past_meal" ||
+        value === "user_supplied" ||
+        value === "model_estimate"
+    ) {
+        return value;
+    }
+    throw new Error("Invalid recipe ingredient source type");
+}
+
+function recordValue(value: unknown, label: string): Record<string, unknown> {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new Error(`${label} must be an object`);
+    }
+    return value as Record<string, unknown>;
+}
+
+function recipeInputFromBody(value: unknown): RecipeInput {
+    const body = recordValue(value, "Recipe");
+    const name = typeof body.name === "string" ? body.name : "";
+    const servings = positiveNumber(body.servings);
+    const instructions = Array.isArray(body.instructions)
+        ? body.instructions.filter(
+              (item): item is string => typeof item === "string",
+          )
+        : [];
+    if (
+        !servings ||
+        !name.trim() ||
+        instructions.length !==
+            (body.instructions as unknown[] | undefined)?.length
+    ) {
+        throw new Error("Recipe name, servings, and instructions are required");
+    }
+    if (!Array.isArray(body.ingredients)) {
+        throw new Error("Recipe ingredients are required");
+    }
+    return {
+        name,
+        servings,
+        description:
+            typeof body.description === "string" ? body.description : undefined,
+        instructions,
+        preparationMinutes:
+            body.preparation_minutes === undefined
+                ? undefined
+                : nonnegativeNumber(body.preparation_minutes),
+        cookingMinutes:
+            body.cooking_minutes === undefined
+                ? undefined
+                : nonnegativeNumber(body.cooking_minutes),
+        sourceType: recipeSourceType(body.source_type),
+        sourceTitle:
+            typeof body.source_title === "string"
+                ? body.source_title
+                : undefined,
+        sourceUrl:
+            typeof body.source_url === "string" ? body.source_url : undefined,
+        ingredients: body.ingredients.map((raw) => {
+            const ingredient = recordValue(raw, "Recipe ingredient");
+            const quantity =
+                ingredient.quantity === undefined
+                    ? undefined
+                    : positiveNumber(ingredient.quantity);
+            const gramWeight =
+                ingredient.gram_weight === undefined
+                    ? undefined
+                    : positiveNumber(ingredient.gram_weight);
+            const confidence =
+                ingredient.confidence === undefined
+                    ? undefined
+                    : Number(ingredient.confidence);
+            if (
+                typeof ingredient.name !== "string" ||
+                (confidence !== undefined &&
+                    (!Number.isFinite(confidence) ||
+                        confidence < 0 ||
+                        confidence > 1))
+            ) {
+                throw new Error("Recipe ingredient fields are invalid");
+            }
+            const sourceSnapshot =
+                ingredient.source_snapshot &&
+                typeof ingredient.source_snapshot === "object" &&
+                !Array.isArray(ingredient.source_snapshot)
+                    ? (ingredient.source_snapshot as Record<string, unknown>)
+                    : undefined;
+            const nutrients =
+                ingredient.nutrients &&
+                typeof ingredient.nutrients === "object" &&
+                !Array.isArray(ingredient.nutrients)
+                    ? (ingredient.nutrients as RecipeInput["ingredients"][number]["nutrients"])
+                    : undefined;
+            return {
+                name: ingredient.name,
+                quantity,
+                unit:
+                    typeof ingredient.unit === "string"
+                        ? ingredient.unit
+                        : undefined,
+                preparation:
+                    typeof ingredient.preparation === "string"
+                        ? ingredient.preparation
+                        : undefined,
+                optional:
+                    typeof ingredient.optional === "boolean"
+                        ? ingredient.optional
+                        : undefined,
+                gramWeight,
+                nutrients,
+                provider:
+                    typeof ingredient.provider === "string"
+                        ? ingredient.provider
+                        : undefined,
+                providerFoodId:
+                    typeof ingredient.provider_food_id === "string"
+                        ? ingredient.provider_food_id
+                        : undefined,
+                sourceType: recipeIngredientSourceType(ingredient.source_type),
+                sourceUrl:
+                    typeof ingredient.source_url === "string"
+                        ? ingredient.source_url
+                        : undefined,
+                confidence,
+                sourceSnapshot,
+            };
+        }),
+    };
+}
+
+function recipeScopeForCapabilities(
+    recipe: NonNullable<Awaited<ReturnType<typeof getRecipe>>>,
+    capabilities: Awaited<ReturnType<typeof resolveMunchCapabilities>>,
+    write: boolean,
+    planning = false,
+): PlanningScope {
+    if (recipe.ownership.type === "personal") {
+        const allowed = planning
+            ? write
+                ? capabilities.personalPlanningWrite
+                : capabilities.personalPlanningRead
+            : write
+              ? capabilities.personalRecipesWrite
+              : capabilities.personalRecipesRead;
+        if (!allowed)
+            throw new Error("Personal recipe capability is unavailable");
+        return { type: "personal" };
+    }
+    const household = capabilities.household;
+    const allowed = planning
+        ? write
+            ? capabilities.householdWrite
+            : capabilities.householdRead
+        : write
+          ? capabilities.householdWrite
+          : capabilities.householdRead;
+    if (
+        !allowed ||
+        !household ||
+        household.householdId !== recipe.ownership.household_id
+    ) {
+        throw new Error("Household recipe capability is unavailable");
+    }
+    return { type: "household", householdId: household.householdId };
 }
 
 const STRUCTURED_NUTRIENT_FIELDS = [
@@ -219,6 +422,138 @@ export function createAppRouter(): Hono {
             ),
         ),
     );
+
+    app.get("/api/app/recipes/:id", async (c) => {
+        const workspace = await getRecipeWorkspace(
+            c.get("munchUserId"),
+            c.req.param("id")!,
+            c.req.query("revision_id") || undefined,
+        );
+        if (!workspace.available || !workspace.recipe) {
+            throw new Error("Recipe not found");
+        }
+        return privateJson(c, { recipe: workspace.recipe });
+    });
+
+    app.patch("/api/app/recipes/:id", requireSameOrigin, async (c) => {
+        const userId = c.get("munchUserId");
+        const current = await getRecipe(userId, c.req.param("id")!);
+        if (!current) throw new Error("Recipe not found");
+        const body = recordValue(await c.req.json(), "Recipe update");
+        const capabilities = await resolveMunchCapabilities(userId);
+        const expectedVersion = Number(body.expected_version);
+        if (!Number.isInteger(expectedVersion) || expectedVersion < 1) {
+            throw new Error("Recipe expected_version is required");
+        }
+        const result = await updateRecipe({
+            userId,
+            scope: recipeScopeForCapabilities(current, capabilities, true),
+            recipeId: current.id,
+            recipe: recipeInputFromBody(body.recipe),
+            expectedVersion,
+            idempotencyKey:
+                typeof body.idempotency_key === "string"
+                    ? body.idempotency_key
+                    : crypto.randomUUID(),
+        });
+        return privateJson(c, {
+            result,
+            recipe: await getRecipe(userId, current.id),
+        });
+    });
+
+    app.delete("/api/app/recipes/:id", requireSameOrigin, async (c) => {
+        const userId = c.get("munchUserId");
+        const current = await getRecipe(userId, c.req.param("id")!);
+        if (!current) throw new Error("Recipe not found");
+        const body = recordValue(
+            await c.req.json().catch(() => ({})),
+            "Recipe delete",
+        );
+        const expectedVersion =
+            body.expected_version === undefined
+                ? undefined
+                : Number(body.expected_version);
+        const capabilities = await resolveMunchCapabilities(userId);
+        const result = await archiveRecipe({
+            userId,
+            scope: recipeScopeForCapabilities(current, capabilities, true),
+            recipeId: current.id,
+            expectedVersion,
+        });
+        return privateJson(c, { recipe: result });
+    });
+
+    app.post("/api/app/recipes/:id/log", requireSameOrigin, async (c) => {
+        const userId = c.get("munchUserId");
+        const current = await getRecipe(userId, c.req.param("id")!);
+        if (!current) throw new Error("Recipe not found");
+        const body = recordValue(await c.req.json(), "Recipe log");
+        const servingsConsumed = positiveNumber(body.servings_consumed);
+        if (!servingsConsumed) throw new Error("Serving amount is required");
+        const capabilities = await resolveMunchCapabilities(userId);
+        recipeScopeForCapabilities(current, capabilities, false);
+        const result = await logRecipe({
+            userId,
+            recipeId: current.id,
+            recipeRevisionId:
+                typeof body.recipe_revision_id === "string"
+                    ? body.recipe_revision_id
+                    : undefined,
+            servingsConsumed,
+            mealType: mealType(body.meal_type),
+            loggedAt:
+                typeof body.logged_at === "string" ? body.logged_at : undefined,
+            notes: typeof body.notes === "string" ? body.notes : undefined,
+            plannedMealId:
+                typeof body.planned_meal_id === "string"
+                    ? body.planned_meal_id
+                    : undefined,
+            idempotencyKey:
+                typeof body.idempotency_key === "string"
+                    ? body.idempotency_key
+                    : crypto.randomUUID(),
+        });
+        return privateJson(c, { result });
+    });
+
+    app.post("/api/app/recipes/:id/plan", requireSameOrigin, async (c) => {
+        const userId = c.get("munchUserId");
+        const current = await getRecipe(userId, c.req.param("id")!);
+        if (!current) throw new Error("Recipe not found");
+        const body = recordValue(await c.req.json(), "Recipe plan");
+        const plannedDate =
+            typeof body.planned_date === "string" ? body.planned_date : "";
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(plannedDate)) {
+            throw new Error("Planned date is required");
+        }
+        const servings = positiveNumber(body.servings);
+        if (!servings) throw new Error("Planned servings are required");
+        const capabilities = await resolveMunchCapabilities(userId);
+        const result = await scheduleRecipe({
+            userId,
+            scope: recipeScopeForCapabilities(
+                current,
+                capabilities,
+                true,
+                true,
+            ),
+            recipeId: current.id,
+            recipeRevisionId: current.revision_id,
+            plannedDate,
+            mealSlot:
+                body.meal_slot === undefined
+                    ? undefined
+                    : mealType(body.meal_slot),
+            servings,
+            note: typeof body.note === "string" ? body.note : undefined,
+            idempotencyKey:
+                typeof body.idempotency_key === "string"
+                    ? body.idempotency_key
+                    : crypto.randomUUID(),
+        });
+        return privateJson(c, { planned_meal: result });
+    });
 
     app.get("/api/app/household", async (c) =>
         privateJson(c, await getHouseholdWorkspace(c.get("munchUserId"))),
