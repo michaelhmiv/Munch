@@ -2,8 +2,20 @@ import { describe, expect, test } from "bun:test";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
-const ROOTS = ["src", "scripts", "public", ".github/workflows", "db/schema"];
-const SINGLE_FILES = [".env.example"];
+const ROOTS = [
+    "src",
+    "scripts",
+    "public",
+    ".github/workflows",
+    "db/schema",
+    "docs/deployment",
+];
+const SINGLE_FILES = [
+    ".env.example",
+    "docs/architecture/README.md",
+    "docs/architecture/better-auth.md",
+    "docs/architecture/0009-canonical-better-auth-postgresql-baseline.md",
+];
 const SELF = "src/no-legacy-auth-runtime.test.ts";
 
 const FORBIDDEN = [
