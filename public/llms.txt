@@ -6,12 +6,12 @@ Munch is designed for use through ChatGPT and compatible MCP clients rather than
 
 Munch does not train a Munch model on nutrition records, sell nutrition data, or use Google Analytics or advertising trackers. OpenAI separately controls ChatGPT conversation processing, retention, and training choices according to the user's ChatGPT plan, settings, and OpenAI policies.
 
-## Subscription
+## Access and billing
 
-- Seven-day free trial
-- $4.99 per month after the trial
-- One feature set; no additional paid tiers
-- Checkout, recurring billing, payment methods, invoices, and cancellation are handled through Stripe
+- Munch has a permanent Free tier for core nutrition logging, daily progress, water and weight tracking, imports, exports, connections, and account deletion.
+- Optional Premium capabilities are managed on the Munch website. ChatGPT connection and MCP use do not require a subscription prompt or payment.
+- Premium is $4.99/month for the owner. Additional household members are $2/month each after they accept an invitation; invitations are free until accepted.
+- Checkout, recurring billing, payment methods, invoices, and cancellation are handled through Stripe on the website.
 
 ## Nutrition sources
 
@@ -26,12 +26,12 @@ Sources and assumptions should remain visible. Munch is a consumer wellness prod
 
 ## Main pages
 
-- Home: https://munch-production-de3a.up.railway.app/
-- Tools and example prompts: https://munch-production-de3a.up.railway.app/tools
-- Privacy policy: https://munch-production-de3a.up.railway.app/privacy
-- Terms of service: https://munch-production-de3a.up.railway.app/terms
-- Account sign-in: https://munch-production-de3a.up.railway.app/account/login
-- MCP endpoint: https://munch-production-de3a.up.railway.app/mcp
+- Home: https://munch.business/
+- Tools and example prompts: https://munch.business/tools
+- Privacy policy: https://munch.business/privacy
+- Terms of service: https://munch.business/terms
+- Account sign-in: https://munch.business/account/login
+- MCP endpoint: https://munch.business/mcp
 - Source repository: https://github.com/michaelhmiv/Munch
 
 ## Open-source attribution
