@@ -28,6 +28,7 @@
         "src/billing/stripe-client.ts",
         "src/billing/stripe-webhook.ts",
         "src/billing/webhook-service.ts",
+        "src/hono-context.ts",
         "src/meal-drafts/index.ts",
         "src/meal-drafts/repository.ts",
         "src/meal-drafts/types.ts",
