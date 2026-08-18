@@ -1,7 +1,9 @@
 # ADR-0001: Railway and PostgreSQL runtime
 
-- Status: Accepted
+- Status: Accepted; authentication and migration-transition details superseded by [ADR-0009](0009-canonical-better-auth-postgresql-baseline.md)
 - Date: 2026-08-03
+
+> Historical note: Railway PostgreSQL remains the production system of record. Statements below about incremental replacement, custom OAuth, and migration-era runtime state describe the original transition and are not current implementation guidance.
 
 ## Context
 
