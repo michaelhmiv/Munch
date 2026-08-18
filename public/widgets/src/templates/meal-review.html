@@ -78,7 +78,7 @@
                 background: var(--panel);
             }
             .review-detail > summary {
-                min-height: 38px;
+                min-height: 44px;
                 display: flex;
                 align-items: center;
                 padding: 0 10px;
@@ -123,23 +123,6 @@
                     var(--warn) 38%,
                     var(--panel-border)
                 );
-            }
-            .adjust-panel {
-                display: none;
-                margin-top: 8px;
-                padding: 10px;
-                border: 1px solid var(--panel-border);
-                border-radius: var(--radius-sm);
-                background: var(--panel);
-            }
-            .adjust-panel.open {
-                display: grid;
-                gap: 8px;
-            }
-            .quick-adjust {
-                display: flex;
-                gap: 6px;
-                flex-wrap: wrap;
             }
             .summary .actions {
                 margin-top: 9px;
@@ -237,16 +220,17 @@
                 if (/past_meal/i.test(source)) return "Past meal";
                 return source.replaceAll("_", " ");
             }
-            function impactLine(review) {
-                const totals = review.totals || {};
-                const pieces = [];
-                if (totals.calories != null)
-                    pieces.push(`${fmt(totals.calories)} kcal`);
-                if (totals.protein_g != null)
-                    pieces.push(`${fmt(totals.protein_g, 1)} g protein`);
-                return pieces.length
-                    ? `This meal adds ${pieces.join(" and ")}.`
-                    : "Review the estimate before logging.";
+            function displayTitle(review, items) {
+                if (items.length === 1 && items[0]?.name) return items[0].name;
+                if (
+                    review.description &&
+                    review.description.length <= 72 &&
+                    review.description !== "Meal review"
+                )
+                    return review.description;
+                return items.length
+                    ? `${items.length} foods`
+                    : review.description || "Meal estimate";
             }
             function render(review) {
                 REVIEW = review;
@@ -306,9 +290,7 @@
                     review.description || sourceRows || assumptions.length
                         ? `<details class="review-detail"><summary>Estimate details${assumptions.length ? ` · ${assumptions.length} assumption${assumptions.length === 1 ? "" : "s"}` : ""}</summary><div class="detail-body">${review.description ? `<div><strong>Original description</strong><br />${esc(review.description)}</div>` : ""}${sourceRows}${assumptions.length ? `<div><strong>Meal assumptions</strong><br />${assumptions.map((value) => esc(value)).join(" · ")}</div>` : ""}</div></details>`
                         : "";
-                const reviewTitle = items.length
-                    ? `${items.length} food${items.length === 1 ? "" : "s"}`
-                    : review.description || "Meal estimate";
+                const reviewTitle = displayTitle(review, items);
                 const flags = [
                     estimated.length
                         ? `${estimated.length} estimated`
@@ -326,7 +308,6 @@
         ${question ? `<div class="question-line${low.length ? " warn" : ""}"><strong>Needs input</strong><br />${esc(question)}</div>` : ""}
         ${detail}
         <div class="actions"><button class="btn btn-primary" id="confirm" ${review.ready_for_confirmation ? "" : "disabled"}>Log meal</button><button class="btn" id="adjust">Adjust</button></div>
-        <div class="adjust-panel" id="adjust-panel"><strong>What should change?</strong><div class="quick-adjust"><button class="btn btn-sm" data-prompt="The portion is smaller than estimated.">Smaller portion</button><button class="btn btn-sm" data-prompt="The portion is larger than estimated.">Larger portion</button><button class="btn btn-sm" data-prompt="One or more foods were identified incorrectly.">Wrong food</button><button class="btn btn-sm" data-prompt="I need to change ingredients or preparation details.">Ingredients</button></div><div class="caption">Choose a starting point, then finish the correction in chat.</div></div>
         <div class="status" id="status" role="status" aria-live="polite"></div></div>
     </article>`;
                 document
@@ -334,18 +315,7 @@
                     ?.addEventListener("click", confirm);
                 document
                     .getElementById("adjust")
-                    ?.addEventListener("click", () =>
-                        document
-                            .getElementById("adjust-panel")
-                            ?.classList.toggle("open"),
-                    );
-                document
-                    .querySelectorAll("[data-prompt]")
-                    .forEach((button) =>
-                        button.addEventListener("click", () =>
-                            adjust(button.dataset.prompt),
-                        ),
-                    );
+                    ?.addEventListener("click", adjust);
             }
             function setBusy(value, message) {
                 BUSY = value;
@@ -361,22 +331,24 @@
                 const status = document.getElementById("status");
                 if (status) status.textContent = message || "";
             }
-            async function adjust(detail) {
+            async function adjust() {
                 if (BUSY) return;
                 setBusy(true, "Opening correction in chat…");
+                const detail =
+                    "I want to adjust this meal review. Ask what needs to change, then update only the affected items.";
                 const prompt = `${detail} Recalculate meal draft ${REVIEW.id} version ${REVIEW.version}, ask only the highest-impact follow-up question if needed, then show the updated meal review before logging.`;
                 try {
                     if (API?.canUpdateModelContext) {
                         await API.updateModelContext(prompt, {
                             meal_draft_id: REVIEW.id,
                             expected_version: REVIEW.version,
-                            requested_adjustment: detail,
+                            requested_adjustment: "user_requested_adjustment",
                         });
                     }
                     if (API?.canSendMessages) {
                         await API.sendMessage(
                             API.canUpdateModelContext
-                                ? "Help me adjust this meal estimate."
+                                ? "Help me adjust this meal review."
                                 : prompt,
                         );
                         setBusy(
@@ -408,11 +380,10 @@
                         `Meal draft ${REVIEW.id} was confirmed and logged.`,
                     ).catch(() => {});
                     const totals = REVIEW.totals || {};
-                    const count = Array.isArray(REVIEW.items)
-                        ? REVIEW.items.length
-                        : 0;
+                    const items = Array.isArray(REVIEW.items) ? REVIEW.items : [];
+                    const title = displayTitle(REVIEW, items);
                     document.getElementById("root").innerHTML =
-                        `<article class="card success-state"><div class="row"><div class="icon-badge success">✓</div><div><div class="eyebrow">Meal logged</div><h1>${count ? `${count} food${count === 1 ? "" : "s"}` : esc(REVIEW.description || "Meal")}</h1><div class="meta num">${fmt(totals.calories)} kcal · P ${fmt(totals.protein_g, 1)}g · C ${fmt(totals.carbs_g, 1)}g · F ${fmt(totals.fat_g, 1)}g</div></div></div></article>`;
+                        `<article class="card success-state"><div class="row"><div class="icon-badge success">✓</div><div><div class="eyebrow">Meal logged</div><h1>${esc(title)}</h1><div class="meta num">${fmt(totals.calories)} kcal · P ${fmt(totals.protein_g, 1)}g · C ${fmt(totals.carbs_g, 1)}g · F ${fmt(totals.fat_g, 1)}g</div></div></div></article>`;
                 } catch (error) {
                     setBusy(false, error?.message || "Unable to log the meal.");
                 }
