@@ -1,7 +1,4 @@
-import {
-    getWidgetHtml,
-    USER_WIDGET_TEMPLATES,
-} from "../src/widgets.js";
+import { getWidgetHtml, USER_WIDGET_TEMPLATES } from "../src/widgets.js";
 import {
     MUNCH_APP_VERSION,
     MUNCH_WIDGET_RESOURCE_VERSION,
@@ -98,7 +95,9 @@ for (const expected of [
     );
 }
 assert(
-    !logged.includes("? `${items.length} food${items.length === 1 ? \"\" : \"s\"}`"),
+    !logged.includes(
+        '? `${items.length} food${items.length === 1 ? "" : "s"}`',
+    ),
     "meal-logged regressed to a generic structured-meal title",
 );
 

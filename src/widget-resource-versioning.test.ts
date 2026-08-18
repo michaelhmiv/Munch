@@ -11,15 +11,15 @@ test("widget resources use a release-specific cache key", () => {
     expect(versionWidgetResourceUri("ui://widget/meal-logged.html")).toBe(
         "ui://widget/meal-logged/v2.html",
     );
-    expect(
-        versionWidgetResourceUri("ui://widget/meal-logged/v2.html"),
-    ).toBe("ui://widget/meal-logged/v2.html");
+    expect(versionWidgetResourceUri("ui://widget/meal-logged/v2.html")).toBe(
+        "ui://widget/meal-logged/v2.html",
+    );
     expect(versionWidgetResourceUri("https://example.com/widget.html")).toBe(
         "https://example.com/widget.html",
     );
-    expect(
-        canonicalWidgetResourceUri("ui://widget/meal-logged/v2.html"),
-    ).toBe("ui://widget/meal-logged.html");
+    expect(canonicalWidgetResourceUri("ui://widget/meal-logged/v2.html")).toBe(
+        "ui://widget/meal-logged.html",
+    );
 });
 
 test("versioned resources keep a model-facing widget description", () => {
@@ -78,9 +78,7 @@ test("registration versions tool links and disables the duplicate host border", 
         }),
     );
 
-    expect(registered.resource.uri).toBe(
-        "ui://widget/meal-logged/v2.html",
-    );
+    expect(registered.resource.uri).toBe("ui://widget/meal-logged/v2.html");
     expect(registered.resource.config.description).toContain(
         "compact Munch receipt",
     );

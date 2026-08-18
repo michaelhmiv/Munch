@@ -380,7 +380,9 @@
                         `Meal draft ${REVIEW.id} was confirmed and logged.`,
                     ).catch(() => {});
                     const totals = REVIEW.totals || {};
-                    const items = Array.isArray(REVIEW.items) ? REVIEW.items : [];
+                    const items = Array.isArray(REVIEW.items)
+                        ? REVIEW.items
+                        : [];
                     const title = displayTitle(REVIEW, items);
                     document.getElementById("root").innerHTML =
                         `<article class="card success-state"><div class="row"><div class="icon-badge success">✓</div><div><div class="eyebrow">Meal logged</div><h1>${esc(title)}</h1><div class="meta num">${fmt(totals.calories)} kcal · P ${fmt(totals.protein_g, 1)}g · C ${fmt(totals.carbs_g, 1)}g · F ${fmt(totals.fat_g, 1)}g</div></div></div></article>`;

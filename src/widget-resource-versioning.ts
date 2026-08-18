@@ -136,7 +136,12 @@ export function withVersionedWidgetResources(server: McpServer): McpServer {
                     name: string,
                     config: Record<string, any>,
                     handler: (...args: any[]) => unknown,
-                ) => originalRegisterTool(name, versionToolConfig(config), handler);
+                ) =>
+                    originalRegisterTool(
+                        name,
+                        versionToolConfig(config),
+                        handler,
+                    );
             }
             if (property === "registerResource") {
                 return (

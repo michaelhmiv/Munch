@@ -254,8 +254,7 @@ function initWidget(config) {
                 protocolVersion: "2026-01-26",
                 appInfo: {
                     name: config.name,
-                    version:
-                        config.version || "__MUNCH_WIDGET_APP_VERSION__",
+                    version: config.version || "__MUNCH_WIDGET_APP_VERSION__",
                 },
                 appCapabilities: {
                     availableDisplayModes: config.displayModes || ["inline"],
