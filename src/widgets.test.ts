@@ -54,10 +54,7 @@ for (const key of KEYS) {
         for (const rel of includes) {
             const partial = (await Bun.file(`${SRC}/${rel}`).text())
                 .trim()
-                .replaceAll(
-                    "__MUNCH_WIDGET_APP_VERSION__",
-                    MUNCH_APP_VERSION,
-                );
+                .replaceAll("__MUNCH_WIDGET_APP_VERSION__", MUNCH_APP_VERSION);
             expect(html).toContain(partial);
         }
     });
