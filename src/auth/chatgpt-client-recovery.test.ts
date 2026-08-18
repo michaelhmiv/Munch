@@ -4,9 +4,7 @@ import { parseChatGptOAuthRecoveryCandidate } from "./chatgpt-client-recovery.js
 const clientId = "AbCdEfGhIjKlMnOpQrStUvWxYz012345";
 const codeChallenge = "abcdefghijklmnopqrstuvwxyzABCDEFGH0123456789-._~";
 
-function authorizeUrl(
-    overrides: Record<string, string> = {},
-): string {
+function authorizeUrl(overrides: Record<string, string> = {}): string {
     const url = new URL("https://munch.example/api/auth/oauth2/authorize");
     const params: Record<string, string> = {
         client_id: clientId,
