@@ -65,7 +65,7 @@ test("registration versions tool links and disables the duplicate host border", 
     server.registerResource(
         "meal-logged-widget",
         "ui://widget/meal-logged.html",
-        {},
+        { description: "stale legacy resource description" },
         async (uri: URL | string) => ({
             contents: [
                 {
@@ -81,6 +81,10 @@ test("registration versions tool links and disables the duplicate host border", 
     expect(registered.resource.uri).toBe(
         "ui://widget/meal-logged/v2.html",
     );
+    expect(registered.resource.config.description).toContain(
+        "compact Munch receipt",
+    );
+    expect(registered.resource.config.description).not.toContain("stale");
     const result = await registered.resource.handler(
         new URL("ui://widget/meal-logged/v2.html"),
     );
