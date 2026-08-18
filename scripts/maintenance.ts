@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 
 import {
-    getPlatformDatabase,
     closePlatformDatabase,
+    getPlatformDatabase,
 } from "../src/platform/database.js";
 
 if (!process.env.DATABASE_URL) {
@@ -22,56 +22,45 @@ async function remove(
 
 await database.begin(async (tx) => {
     await remove(
-        "login_tokens",
+        "auth_verifications",
         () => tx<Array<{ id: string }>>`
-        delete from munch.login_tokens
-        where expires_at < now() - interval '24 hours'
-           or consumed_at < now() - interval '24 hours'
-        returning encode(token_hash, 'hex') as id
-    `,
-    );
-    await remove(
-        "web_sessions",
-        () => tx<Array<{ id: string }>>`
-        delete from munch.web_sessions
-        where expires_at < now() - interval '7 days'
-           or revoked_at < now() - interval '7 days'
-        returning encode(token_hash, 'hex') as id
-    `,
-    );
-    await remove(
-        "oauth_authorization_sessions",
-        () => tx<Array<{ id: string }>>`
-        delete from munch.oauth_authorization_sessions
+        delete from munch.auth_verifications
         where expires_at < now() - interval '24 hours'
         returning id::text
     `,
     );
     await remove(
-        "oauth_authorization_codes",
+        "auth_sessions",
         () => tx<Array<{ id: string }>>`
-        delete from munch.oauth_authorization_codes
-        where expires_at < now() - interval '24 hours'
-           or consumed_at < now() - interval '24 hours'
-        returning encode(code_hash, 'hex') as id
+        delete from munch.auth_sessions
+        where expires_at < now() - interval '7 days'
+        returning id::text
     `,
     );
     await remove(
         "oauth_access_tokens",
         () => tx<Array<{ id: string }>>`
-        delete from munch.oauth_access_tokens
-        where expires_at < now() - interval '7 days'
-           or revoked_at < now() - interval '7 days'
-        returning encode(token_hash, 'hex') as id
+        delete from munch."oauthAccessToken"
+        where "expiresAt" < now() - interval '7 days'
+        returning id::text
     `,
     );
     await remove(
         "oauth_refresh_tokens",
         () => tx<Array<{ id: string }>>`
-        delete from munch.oauth_refresh_tokens
-        where expires_at < now() - interval '30 days'
-           or revoked_at < now() - interval '30 days'
-        returning encode(token_hash, 'hex') as id
+        delete from munch."oauthRefreshToken"
+        where "expiresAt" < now() - interval '30 days'
+           or revoked < now() - interval '30 days'
+        returning id::text
+    `,
+    );
+    await remove(
+        "jwks",
+        () => tx<Array<{ id: string }>>`
+        delete from munch.jwks
+        where "expiresAt" is not null
+          and "expiresAt" < now() - interval '30 days'
+        returning id::text
     `,
     );
     await remove(
