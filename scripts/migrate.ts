@@ -91,22 +91,9 @@ if (!hasUsers) {
         await installStateTables(tx);
     });
 } else if (!hasSchemaState) {
-    const bridgePath = path.resolve(
-        "db/legacy-bridge/retire-prebaseline-auth.sql",
+    throw new Error(
+        "Unsupported prebaseline Munch database. The production rebaseline completed on 2026-08-18; restore a canonical database or perform an explicit offline migration instead of using runtime compatibility code.",
     );
-    if (!(await Bun.file(bridgePath).exists())) {
-        throw new Error(
-            "Database predates the canonical baseline but the retirement bridge is unavailable",
-        );
-    }
-
-    console.log(
-        `rebaseline existing Munch database to ${BASELINE_GENERATION} (business rows preserved)`,
-    );
-    await database.begin(async (tx) => {
-        await tx.unsafe(await Bun.file(bridgePath).text());
-        await installStateTables(tx);
-    });
 } else {
     const state = await database<Array<{ generation: string }>>`
         select generation from munch.schema_state where singleton = true

@@ -75,10 +75,6 @@ jobs:
         run: bun run db:migrate
       - name: Verify canonical schema is idempotent
         run: bun run db:migrate
-      - name: Verify business data survives pre-baseline retirement bridge
-        run: bun scripts/rebaseline-preservation-smoke.ts
-      - name: Verify rebased schema remains idempotent
-        run: bun run db:migrate
       - name: Verify Better Auth schema is current
         env:
           NODE_ENV: test
