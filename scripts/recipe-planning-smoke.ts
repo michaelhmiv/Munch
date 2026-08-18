@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
-const { consumeLoginChallenge, createLoginChallenge } =
-    await import("../src/accounts/repository.js");
+import { createSmokeIdentity } from "./support/smoke-user.js";
+
 const {
     acceptHouseholdInvitation,
     createHousehold,
@@ -26,19 +26,10 @@ if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL is required for recipe planning smoke tests");
 }
 
-async function createUser(prefix: string) {
-    const email = `${prefix}-${crypto.randomUUID()}@example.test`;
-    const challenge = await createLoginChallenge(email);
-    if (!(await consumeLoginChallenge(challenge.token))) {
-        throw new Error("Unable to activate planning smoke user");
-    }
-    return { userId: challenge.userId, email };
-}
-
-const owner = await createUser("planning-owner");
-const member = await createUser("planning-member");
-const viewer = await createUser("planning-viewer");
-const outsider = await createUser("planning-outsider");
+const owner = await createSmokeIdentity("planning-owner");
+const member = await createSmokeIdentity("planning-member");
+const viewer = await createSmokeIdentity("planning-viewer");
+const outsider = await createSmokeIdentity("planning-outsider");
 const household = await createHousehold({
     userId: owner.userId,
     name: "Planning Household",
