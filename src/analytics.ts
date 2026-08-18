@@ -67,8 +67,7 @@ export function calculateDateRangeDays(
     // Date-range inputs are inclusive: a same-day range is one day.
     return (
         Math.round(
-            Math.abs(end.getTime() - start.getTime()) /
-                (1000 * 60 * 60 * 24),
+            Math.abs(end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24),
         ) + 1
     );
 }
