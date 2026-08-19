@@ -9,7 +9,7 @@ import {
     PREMIUM_MONTHLY_CENTS,
     householdMonthlyTotalCents,
 } from "./billing/household-seats.js";
-import { PRODUCT_CONFIG } from "./product-config.js";
+import { PRODUCT_CONFIG, getPublicProductPolicy } from "./product-config.js";
 
 describe("single-source product policy", () => {
     test("capability aliases resolve from PRODUCT_CONFIG", () => {
@@ -33,32 +33,39 @@ describe("single-source product policy", () => {
         );
     });
 
-    test("legacy billing renderer cannot silently drift from product policy", async () => {
+    test("public app policy is a projection of PRODUCT_CONFIG", () => {
+        expect(getPublicProductPolicy()).toEqual({
+            premiumPriceMonthlyCents: PRODUCT_CONFIG.premiumPriceMonthlyCents,
+            householdMemberPriceMonthlyCents:
+                PRODUCT_CONFIG.householdMemberPriceMonthlyCents,
+            freeHistoryDays: PRODUCT_CONFIG.freeHistoryDays,
+            householdMemberLimit: PRODUCT_CONFIG.householdMemberLimit,
+        });
+    });
+
+    test("account renderer consumes canonical product policy and unit helpers", async () => {
         const source = await Bun.file("public/app-account.js").text();
-        expect(source).toContain(
-            String(PRODUCT_CONFIG.premiumPriceMonthlyCents),
-        );
-        expect(source).toContain(
-            String(PRODUCT_CONFIG.householdMemberPriceMonthlyCents),
-        );
-        expect(source).toContain(
-            `$${(PRODUCT_CONFIG.premiumPriceMonthlyCents / 100).toFixed(2)}`,
-        );
-        expect(source).toContain(
-            `$${(PRODUCT_CONFIG.householdMemberPriceMonthlyCents / 100).toFixed(2)}`,
-        );
+        expect(source).toContain("requireProductPolicy");
+        expect(source).toContain("policy.premiumPriceMonthlyCents");
+        expect(source).toContain("policy.householdMemberPriceMonthlyCents");
+        expect(source).toContain("policy.householdMemberLimit");
+        expect(source).toContain("weightFromGrams");
+        expect(source).not.toContain("499 + 200");
+        expect(source).not.toContain("/ 453.59237");
+        expect(source).not.toContain("/ 1000");
     });
 });
 
 describe("website data-contract surfaces", () => {
     test("Foods is retired from navigation and legacy URL redirects", async () => {
         const html = await Bun.file("public/app.html").text();
+        const account = await Bun.file("public/app-account.js").text();
         const adapter = await Bun.file("public/app-integrity.js").text();
         expect(html).not.toContain('data-route="foods"');
+        expect(account).not.toContain('["/app/foods", "Foods"');
         expect(html).toContain('src="/app-integrity.js"');
         expect(adapter).toContain('location.pathname === "/app/foods"');
         expect(adapter).toContain('location.replace("/app/log")');
-        expect(adapter).toContain('a[href="/app/foods"]');
     });
 
     test("Insights visibly binds targets to the canonical goals contract", async () => {
