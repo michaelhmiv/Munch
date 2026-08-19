@@ -58,6 +58,7 @@ describe("website data-contract surfaces", () => {
         expect(html).toContain('src="/app-integrity.js"');
         expect(adapter).toContain('location.pathname === "/app/foods"');
         expect(adapter).toContain('location.replace("/app/log")');
+        expect(adapter).toContain('a[href="/app/foods"]');
     });
 
     test("Insights visibly binds targets to the canonical goals contract", async () => {
