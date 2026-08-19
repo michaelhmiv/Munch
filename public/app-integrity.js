@@ -9,9 +9,13 @@ if (location.pathname === "/app/foods") {
     location.replace("/app/log");
 }
 
-document
-    .querySelectorAll('[data-route="foods"]')
-    .forEach((node) => node.remove());
+function retireFoodsLinks() {
+    document
+        .querySelectorAll('[data-route="foods"], a[href="/app/foods"]')
+        .forEach((node) => node.remove());
+}
+
+retireFoodsLinks();
 
 const nativeFetch = window.fetch.bind(window);
 let latestInsights = null;
@@ -99,6 +103,9 @@ function syncInsightsGoals() {
 
 const content = document.getElementById("app-content");
 if (content) {
-    const observer = new MutationObserver(syncInsightsGoals);
+    const observer = new MutationObserver(() => {
+        retireFoodsLinks();
+        syncInsightsGoals();
+    });
     observer.observe(content, { childList: true, subtree: true });
 }
