@@ -14,19 +14,19 @@ Every user-facing fact has one persistence owner, and every derived value has on
 
 ### Persistence owners
 
-| Domain | Canonical persistence owner |
-| --- | --- |
-| Meals | `munch.meals` |
-| Consumed meal items and provenance | `munch.meal_items` |
-| Nutrition goals | `munch.nutrition_goals` |
-| Water | `munch.water_logs` |
-| Weight | `munch.weight_logs` |
-| User preferences | `munch.account_preferences` |
-| Recipes and immutable revisions | recipe tables and planning repository |
-| Meal planning | meal calendar tables and planning repository |
-| Groceries | grocery tables and planning repository |
-| Billing facts | Stripe-backed billing repository |
-| Product limits and prices | `PRODUCT_CONFIG` |
+| Domain                             | Canonical persistence owner                  |
+| ---------------------------------- | -------------------------------------------- |
+| Meals                              | `munch.meals`                                |
+| Consumed meal items and provenance | `munch.meal_items`                           |
+| Nutrition goals                    | `munch.nutrition_goals`                      |
+| Water                              | `munch.water_logs`                           |
+| Weight                             | `munch.weight_logs`                          |
+| User preferences                   | `munch.account_preferences`                  |
+| Recipes and immutable revisions    | recipe tables and planning repository        |
+| Meal planning                      | meal calendar tables and planning repository |
+| Groceries                          | grocery tables and planning repository       |
+| Billing facts                      | Stripe-backed billing repository             |
+| Product limits and prices          | `PRODUCT_CONFIG`                             |
 
 ### Nutrition read contract
 
