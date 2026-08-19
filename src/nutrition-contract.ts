@@ -43,7 +43,10 @@ export function validateLocalDate(value: string): string {
     return value;
 }
 
-export function inclusiveDateSpanDays(startDate: string, endDate: string): number {
+export function inclusiveDateSpanDays(
+    startDate: string,
+    endDate: string,
+): number {
     const start = Date.parse(`${validateLocalDate(startDate)}T00:00:00Z`);
     const end = Date.parse(`${validateLocalDate(endDate)}T00:00:00Z`);
     if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
