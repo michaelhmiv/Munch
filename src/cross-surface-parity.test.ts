@@ -110,12 +110,8 @@ describe("cross-surface nutrition parity", () => {
         expect(mcp.averages.fiber_g).toBe(web.averages.fiberG);
         expect(mcp.averages.sugar_g).toBe(web.averages.sugarG);
         expect(mcp.averages.alcohol_g).toBe(web.averages.alcoholG);
-        expect(mcp.recordedDays.fiber_g).toBe(
-            web.nutrientCoverage.fiberDays,
-        );
-        expect(mcp.recordedDays.sugar_g).toBe(
-            web.nutrientCoverage.sugarDays,
-        );
+        expect(mcp.recordedDays.fiber_g).toBe(web.nutrientCoverage.fiberDays);
+        expect(mcp.recordedDays.sugar_g).toBe(web.nutrientCoverage.sugarDays);
         expect(mcp.recordedDays.alcohol_g).toBe(
             web.nutrientCoverage.alcoholDays,
         );
