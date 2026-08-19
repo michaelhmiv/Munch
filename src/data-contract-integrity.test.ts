@@ -33,35 +33,47 @@ describe("single-source product policy", () => {
         );
     });
 
-    test("legacy billing renderer cannot silently drift from product policy", async () => {
-        const source = await Bun.file("public/app-account.js").text();
-        expect(source).toContain(
-            String(PRODUCT_CONFIG.premiumPriceMonthlyCents),
-        );
-        expect(source).toContain(
-            String(PRODUCT_CONFIG.householdMemberPriceMonthlyCents),
-        );
-        expect(source).toContain(
-            `$${(PRODUCT_CONFIG.premiumPriceMonthlyCents / 100).toFixed(2)}`,
-        );
-        expect(source).toContain(
-            `$${(PRODUCT_CONFIG.householdMemberPriceMonthlyCents / 100).toFixed(2)}`,
-        );
-    });
+    test(
+        "legacy billing renderer cannot silently drift from product policy",
+        async () => {
+            const source = await Bun.file("public/app-account.js").text();
+            expect(source).toContain(
+                String(PRODUCT_CONFIG.premiumPriceMonthlyCents),
+            );
+            expect(source).toContain(
+                String(PRODUCT_CONFIG.householdMemberPriceMonthlyCents),
+            );
+            expect(source).toContain(
+                `$${(PRODUCT_CONFIG.premiumPriceMonthlyCents / 100).toFixed(2)}`,
+            );
+            expect(source).toContain(
+                `$${(PRODUCT_CONFIG.householdMemberPriceMonthlyCents / 100).toFixed(2)}`,
+            );
+        },
+    );
 });
 
 describe("website data-contract surfaces", () => {
     test("Foods is retired from navigation and legacy URL redirects", async () => {
         const html = await Bun.file("public/app.html").text();
+        const adapter = await Bun.file("public/app-integrity.js").text();
         expect(html).not.toContain('data-route="foods"');
-        expect(html).toContain('location.pathname === "/app/foods"');
-        expect(html).toContain('location.replace("/app/log")');
+        expect(html).toContain('src="/app-integrity.js"');
+        expect(adapter).toContain('location.pathname === "/app/foods"');
+        expect(adapter).toContain('location.replace("/app/log")');
     });
 
-    test("Insights visibly binds targets to the canonical goals contract", async () => {
-        const html = await Bun.file("public/app.html").text();
-        expect(html).toContain('requestPath(args[0]) === "/api/app/insights"');
-        expect(html).toContain('card.dataset.goalSource = "nutrition_goals"');
-        expect(html).toContain('latestInsights?.goals');
-    });
+    test(
+        "Insights visibly binds targets to the canonical goals contract",
+        async () => {
+            const adapter = await Bun.file("public/app-integrity.js").text();
+            expect(adapter).toContain(
+                'requestPath(args[0]) === "/api/app/insights"',
+            );
+            expect(adapter).toContain(
+                'card.dataset.goalSource = "nutrition_goals"',
+            );
+            expect(adapter).toContain("latestInsights?.goals");
+        },
+    );
 });
