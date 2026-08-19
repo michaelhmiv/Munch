@@ -94,6 +94,8 @@ describe("canonical nutrition contract", () => {
         expect(contract.calendarDays).toBe(2);
         expect(contract.loggedDays).toBe(1);
         expect(contract.averages.proteinG).toBe(150);
+        expect(contract.days[0]?.calories).toBe(1800);
+        expect(contract.days[0]?.proteinG).toBe(150);
     });
 
     test("does not treat missing partial nutrients as confirmed zero", () => {
