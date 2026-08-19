@@ -53,7 +53,7 @@ The same rule applies to browser/server unit conversion boundaries: canonical st
 
 Free-tier limits, Premium price, discounted household-seat price, and household member limits originate in `PRODUCT_CONFIG`. Authorization and billing modules may export compatibility aliases, but those aliases must derive from `PRODUCT_CONFIG` rather than redeclare numbers.
 
-Any legacy renderer that still contains presentation literals must be covered by a drift test until it is replaced by a renderer that consumes the product-policy contract directly.
+The authenticated account UI consumes a public projection of that policy from the app bootstrap contract, including billing arithmetic and household member limits. Static public marketing copy that intentionally repeats a displayed price remains protected by consistency checks.
 
 ### Foods workspace
 
