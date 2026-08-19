@@ -6,11 +6,7 @@ import {
     sumNutrition,
 } from "./nutrition-contract.js";
 
-function meal(
-    id: string,
-    loggedAt: string,
-    values: Partial<Meal> = {},
-): Meal {
+function meal(id: string, loggedAt: string, values: Partial<Meal> = {}): Meal {
     return {
         id,
         user_id: "00000000-0000-0000-0000-000000000001",
@@ -48,9 +44,9 @@ describe("canonical nutrition contract", () => {
     test("counts inclusive calendar ranges", () => {
         expect(inclusiveDateSpanDays("2026-08-01", "2026-08-01")).toBe(1);
         expect(inclusiveDateSpanDays("2026-08-01", "2026-08-07")).toBe(7);
-        expect(() =>
-            inclusiveDateSpanDays("2026-08-07", "2026-08-01"),
-        ).toThrow("Invalid date range");
+        expect(() => inclusiveDateSpanDays("2026-08-07", "2026-08-01")).toThrow(
+            "Invalid date range",
+        );
     });
 
     test("uses one total calculation for calories and macros", () => {
