@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { fromGrams } from "../src/units.js";
 import {
     GRAMS_PER_POUND,
     displayWeightUnit,
@@ -25,6 +26,19 @@ describe("web weight display units", () => {
             100,
             8,
         );
+    });
+
+    test("web and server weight conversions stay in parity", () => {
+        for (const grams of [50_000, 86_183, 100_000, 150_000]) {
+            expect(weightFromGrams(grams, "kg")).toBeCloseTo(
+                fromGrams(grams, "kg"),
+                1,
+            );
+            expect(weightFromGrams(grams, "lb")).toBeCloseTo(
+                fromGrams(grams, "lb"),
+                1,
+            );
+        }
     });
 
     test("dashboard and patched dialog are wired to the shared preference contract", async () => {

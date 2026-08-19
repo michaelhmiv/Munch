@@ -1,10 +1,13 @@
 export const PRODUCT_CONFIG = Object.freeze({
     name: "Munch",
     publicBaseUrl: "https://munch.business",
-    premiumPriceMonthlyUsd: 4.99,
+    premiumPriceMonthlyCents: 499,
+    householdMemberPriceMonthlyCents: 200,
     trialEnabled: false,
     freeTierEnabled: true,
     freeHistoryDays: 30,
+    // Legacy saved-food infrastructure remains available to MCP clients while
+    // the website moves food recall to structured meal history.
     freeSavedFoodLimit: 25,
     householdMemberLimit: 6,
     supportEmail: "support@munch.business",
@@ -12,6 +15,23 @@ export const PRODUCT_CONFIG = Object.freeze({
     legalEmail: "support@munch.business",
     securityEmail: "security@munch.business",
 });
+
+export interface PublicProductPolicy {
+    premiumPriceMonthlyCents: number;
+    householdMemberPriceMonthlyCents: number;
+    freeHistoryDays: number;
+    householdMemberLimit: number;
+}
+
+export function getPublicProductPolicy(): PublicProductPolicy {
+    return {
+        premiumPriceMonthlyCents: PRODUCT_CONFIG.premiumPriceMonthlyCents,
+        householdMemberPriceMonthlyCents:
+            PRODUCT_CONFIG.householdMemberPriceMonthlyCents,
+        freeHistoryDays: PRODUCT_CONFIG.freeHistoryDays,
+        householdMemberLimit: PRODUCT_CONFIG.householdMemberLimit,
+    };
+}
 
 export const PROTECTED_COMMERCE_TERMS = Object.freeze([
     "start free trial",
@@ -45,5 +65,9 @@ export const PROTECTED_COMMERCE_PATHS = Object.freeze([
 ]);
 
 export function formatMonthlyPrice(): string {
-    return `$${PRODUCT_CONFIG.premiumPriceMonthlyUsd.toFixed(2)}`;
+    return `$${(PRODUCT_CONFIG.premiumPriceMonthlyCents / 100).toFixed(2)}`;
+}
+
+export function formatHouseholdMemberMonthlyPrice(): string {
+    return `$${(PRODUCT_CONFIG.householdMemberPriceMonthlyCents / 100).toFixed(2)}`;
 }
