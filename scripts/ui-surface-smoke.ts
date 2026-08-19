@@ -4,6 +4,7 @@ const requiredFiles = [
     "public/app.html",
     "public/app.js",
     "public/app-account.js",
+    "public/app-integrity.js",
     "public/account-settings.css",
     "public/app-overrides.css",
     "public/app-patches.js",
@@ -155,6 +156,7 @@ for (const route of [
     '"/security"',
     '"/open-source"',
     '"/.well-known/security.txt"',
+    '"/app-integrity.js"',
 ]) {
     if (!indexSource.includes(route)) {
         throw new Error(`Server is missing required route wiring: ${route}`);
@@ -200,7 +202,6 @@ const appHtml = await Bun.file("public/app.html").text();
 for (const route of [
     "/app/log",
     "/app/insights",
-    "/app/foods",
     "/app/recipes",
     "/app/plan",
     "/app/groceries",
@@ -211,6 +212,9 @@ for (const route of [
     if (!appHtml.includes(route)) {
         throw new Error(`App navigation is missing ${route}`);
     }
+}
+if (appHtml.includes('data-route="foods"')) {
+    throw new Error("Retired Foods route is still present in app navigation");
 }
 if (
     !appHtml.includes('href="/account-settings.css"') ||
@@ -245,8 +249,8 @@ for (const behavior of [
     "household-dissolve",
     "connection-revoke",
     "account-delete",
-    "$4.99",
-    "$2.00",
+    "requireProductPolicy",
+    "weightFromGrams",
     "Premium through household",
     "Pending invitations",
 ]) {
@@ -255,6 +259,9 @@ for (const behavior of [
             `Unified account UI is missing behavior/copy: ${behavior}`,
         );
     }
+}
+if (accountModule.includes('["/app/foods", "Foods"')) {
+    throw new Error("Unified account UI still links to the retired Foods page");
 }
 if (accountModule.includes("Advanced account controls")) {
     throw new Error(
