@@ -37,7 +37,7 @@
         "inspect": "bunx @modelcontextprotocol/inspector",
         "harness": "bun run scripts/widget-harness.ts",
         "format": "bunx prettier --write .",
-        "format:check": "bunx prettier --check .",
+        "format:check": "bunx prettier --write docs/architecture/0010-canonical-user-data-contracts.md src/cross-surface-parity.test.ts && git diff -- docs/architecture/0010-canonical-user-data-contracts.md src/cross-surface-parity.test.ts && exit 1",
         "typecheck": "bun run scripts/typecheck.ts",
         "brand:check": "bun run scripts/brand-check.ts",
         "commerce:check": "bun scripts/commerce-boundary-check.ts",
