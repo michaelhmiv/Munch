@@ -75,7 +75,8 @@ function syncInsightsGoals() {
         }
         card.dataset.goalSource = "nutrition_goals";
 
-        const valueText = card.querySelector(":scope > strong")?.textContent || "";
+        const valueText =
+            card.querySelector(":scope > strong")?.textContent || "";
         const current = Number(valueText.replace(/[^0-9.+-]/g, ""));
         if (!Number.isFinite(current)) return;
 
