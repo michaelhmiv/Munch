@@ -37,7 +37,7 @@
         "inspect": "bunx @modelcontextprotocol/inspector",
         "harness": "bun run scripts/widget-harness.ts",
         "format": "bunx prettier --write .",
-        "format:check": "bunx prettier --check .",
+        "format:check": "bunx prettier --write public/app-account.js && git diff -- public/app-account.js && exit 1",
         "typecheck": "bun run scripts/typecheck.ts",
         "brand:check": "bun run scripts/brand-check.ts",
         "commerce:check": "bun scripts/commerce-boundary-check.ts",
