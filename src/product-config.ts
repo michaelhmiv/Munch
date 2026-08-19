@@ -16,6 +16,23 @@ export const PRODUCT_CONFIG = Object.freeze({
     securityEmail: "security@munch.business",
 });
 
+export interface PublicProductPolicy {
+    premiumPriceMonthlyCents: number;
+    householdMemberPriceMonthlyCents: number;
+    freeHistoryDays: number;
+    householdMemberLimit: number;
+}
+
+export function getPublicProductPolicy(): PublicProductPolicy {
+    return {
+        premiumPriceMonthlyCents: PRODUCT_CONFIG.premiumPriceMonthlyCents,
+        householdMemberPriceMonthlyCents:
+            PRODUCT_CONFIG.householdMemberPriceMonthlyCents,
+        freeHistoryDays: PRODUCT_CONFIG.freeHistoryDays,
+        householdMemberLimit: PRODUCT_CONFIG.householdMemberLimit,
+    };
+}
+
 export const PROTECTED_COMMERCE_TERMS = Object.freeze([
     "start free trial",
     "free trial",
