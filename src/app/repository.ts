@@ -3,6 +3,12 @@ import {
     getActiveHouseholdContext,
     listHouseholdMembers,
 } from "../households/repository.js";
+import {
+    buildNutritionRangeContract,
+    inclusiveDateSpanDays,
+    sumNutrition,
+    validateLocalDate,
+} from "../nutrition-contract.js";
 import { withUserDatabase } from "../platform/database.js";
 import {
     getGroceryList,
@@ -20,7 +26,6 @@ import {
     getWeightByDate,
     type Meal,
 } from "../storage.js";
-import { dateInTz } from "../tz.js";
 
 export interface AppMealItem {
     id: string;
@@ -56,22 +61,6 @@ export interface AppMeal extends Meal {
 
 function numeric(value: unknown): number | null {
     return value == null ? null : Number(value);
-}
-
-function validateDate(value: string): string {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-        throw new Error("Invalid date");
-    }
-    return value;
-}
-
-function daysBetween(startDate: string, endDate: string): number {
-    const start = Date.parse(`${startDate}T00:00:00Z`);
-    const end = Date.parse(`${endDate}T00:00:00Z`);
-    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
-        throw new Error("Invalid date range");
-    }
-    return Math.floor((end - start) / 86_400_000) + 1;
 }
 
 async function listMealItems(
@@ -151,30 +140,6 @@ async function attachItems(userId: string, meals: Meal[]): Promise<AppMeal[]> {
     }));
 }
 
-function totals(meals: Meal[]) {
-    return meals.reduce(
-        (result, meal) => {
-            result.calories += meal.calories ?? 0;
-            result.proteinG += meal.protein_g ?? 0;
-            result.carbsG += meal.carbs_g ?? 0;
-            result.fatG += meal.fat_g ?? 0;
-            result.fiberG += meal.fiber_g ?? 0;
-            result.sugarG += meal.sugar_g ?? 0;
-            result.alcoholG += meal.alcohol_g ?? 0;
-            return result;
-        },
-        {
-            calories: 0,
-            proteinG: 0,
-            carbsG: 0,
-            fatG: 0,
-            fiberG: 0,
-            sugarG: 0,
-            alcoholG: 0,
-        },
-    );
-}
-
 async function listOpenDrafts(userId: string) {
     return withUserDatabase(userId, async (tx) => {
         const rows = await tx<Array<Record<string, unknown>>>`
@@ -247,7 +212,7 @@ export async function getAppBootstrap(userId: string, email: string) {
 }
 
 export async function getTodayWorkspace(userId: string, dateValue: string) {
-    const date = validateDate(dateValue);
+    const date = validateLocalDate(dateValue);
     const [profile, capabilities] = await Promise.all([
         getProfile(userId),
         resolveMunchCapabilities(userId),
@@ -272,7 +237,7 @@ export async function getTodayWorkspace(userId: string, dateValue: string) {
     return {
         date,
         timezone,
-        totals: totals(meals),
+        totals: sumNutrition(meals),
         meals: await attachItems(userId, meals),
         goals,
         water: {
@@ -290,9 +255,9 @@ export async function getMealHistoryWorkspace(
     startValue: string,
     endValue: string,
 ) {
-    const startDate = validateDate(startValue);
-    const endDate = validateDate(endValue);
-    if (daysBetween(startDate, endDate) > 366) {
+    const startDate = validateLocalDate(startValue);
+    const endDate = validateLocalDate(endValue);
+    if (inclusiveDateSpanDays(startDate, endDate) > 366) {
         throw new Error("Date range is too large");
     }
     const profile = await getProfile(userId);
@@ -302,15 +267,22 @@ export async function getMealHistoryWorkspace(
         startDate,
         endDate,
         timezone,
-        totals: totals(meals),
+        totals: sumNutrition(meals),
         meals: await attachItems(userId, meals),
     };
 }
 
+/**
+ * Legacy compatibility endpoint for saved-food clients. The website no longer
+ * exposes a Foods workspace; historical meal items are the primary user-facing
+ * food memory. Keep this read contract until cached MCP catalogs have aged out.
+ */
 export async function getFoodsWorkspace(userId: string) {
     const capabilities = await resolveMunchCapabilities(userId);
     const foods = await listSavedFoods(userId, 200);
     return {
+        deprecated: true,
+        replacement: "/app/log",
         limit: capabilities.savedFoodLimit,
         total: foods.length,
         foods,
@@ -322,46 +294,23 @@ export async function getInsightsWorkspace(
     startValue: string,
     endValue: string,
 ) {
-    const startDate = validateDate(startValue);
-    const endDate = validateDate(endValue);
-    const dayCount = daysBetween(startDate, endDate);
+    const startDate = validateLocalDate(startValue);
+    const endDate = validateLocalDate(endValue);
+    const dayCount = inclusiveDateSpanDays(startDate, endDate);
     if (dayCount > 366) throw new Error("Date range is too large");
-    const profile = await getProfile(userId);
+    const [profile, goals] = await Promise.all([
+        getProfile(userId),
+        getNutritionGoals(userId),
+    ]);
     const timezone = profile?.timezone ?? "UTC";
     const meals = await getMealsInRange(userId, startDate, endDate, timezone);
-    const byDate = new Map<string, Meal[]>();
-    for (const meal of meals) {
-        const localDate = dateInTz(meal.logged_at, timezone);
-        const group = byDate.get(localDate) ?? [];
-        group.push(meal);
-        byDate.set(localDate, group);
-    }
-    const days = [...byDate.entries()]
-        .map(([date, entries]) => ({
-            date,
-            totals: totals(entries),
-            mealCount: entries.length,
-        }))
-        .sort((left, right) => left.date.localeCompare(right.date));
-    const aggregate = totals(meals);
-    const loggedDays = days.length;
-    const averages = Object.fromEntries(
-        Object.entries(aggregate).map(([key, value]) => [
-            key,
-            loggedDays === 0 ? 0 : Number((value / loggedDays).toFixed(1)),
-        ]),
-    );
-    return {
+    return buildNutritionRangeContract({
+        meals,
         startDate,
         endDate,
         timezone,
-        calendarDays: dayCount,
-        loggedDays,
-        mealCount: meals.length,
-        totals: aggregate,
-        averages,
-        days,
-    };
+        goals,
+    });
 }
 
 export async function getPlanningWorkspace(
@@ -369,9 +318,9 @@ export async function getPlanningWorkspace(
     startValue: string,
     endValue: string,
 ) {
-    const startDate = validateDate(startValue);
-    const endDate = validateDate(endValue);
-    if (daysBetween(startDate, endDate) > 62) {
+    const startDate = validateLocalDate(startValue);
+    const endDate = validateLocalDate(endValue);
+    if (inclusiveDateSpanDays(startDate, endDate) > 62) {
         throw new Error("Date range is too large");
     }
     const capabilities = await resolveMunchCapabilities(userId);
