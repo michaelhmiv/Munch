@@ -10,6 +10,7 @@ import {
 } from "../households/repository.js";
 import { dissolveHousehold, leaveHousehold } from "../households/lifecycle.js";
 import { getPlatformConfig } from "../platform/config.js";
+import { PRODUCT_CONFIG } from "../product-config.js";
 import {
     getLatestStripeSubscriptionRecord,
     getSubscriptionItemQuantity,
@@ -23,9 +24,14 @@ import {
     type StripeSubscription,
 } from "./stripe-client.js";
 
-export const PREMIUM_MONTHLY_CENTS = 499;
-export const HOUSEHOLD_MEMBER_MONTHLY_CENTS = 200;
-export const MAX_ADDITIONAL_HOUSEHOLD_MEMBERS = 5;
+// Backwards-compatible exports. Pricing and member-count policy live in
+// PRODUCT_CONFIG so authorization, billing calculations, and UI contracts share
+// the same inputs.
+export const PREMIUM_MONTHLY_CENTS = PRODUCT_CONFIG.premiumPriceMonthlyCents;
+export const HOUSEHOLD_MEMBER_MONTHLY_CENTS =
+    PRODUCT_CONFIG.householdMemberPriceMonthlyCents;
+export const MAX_ADDITIONAL_HOUSEHOLD_MEMBERS =
+    PRODUCT_CONFIG.householdMemberLimit - 1;
 
 export interface HouseholdSeatCoverage {
     ownerHasBillablePremium: boolean;
