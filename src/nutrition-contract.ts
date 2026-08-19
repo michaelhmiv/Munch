@@ -12,9 +12,8 @@ export interface NutritionTotals {
     alcoholG: number;
 }
 
-export interface NutritionRangeDay {
+export interface NutritionRangeDay extends NutritionTotals {
     date: string;
-    totals: NutritionTotals;
     mealCount: number;
 }
 
@@ -118,7 +117,7 @@ export function buildNutritionRangeContract(input: {
     const days = [...byDate.entries()]
         .map(([date, entries]) => ({
             date,
-            totals: sumNutrition(entries),
+            ...sumNutrition(entries),
             mealCount: entries.length,
         }))
         .sort((left, right) => left.date.localeCompare(right.date));
