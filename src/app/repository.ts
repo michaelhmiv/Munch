@@ -16,6 +16,7 @@ import {
     getRecipe,
     searchRecipes,
 } from "../planning/repository.js";
+import { getPublicProductPolicy } from "../product-config.js";
 import { listSavedFoods } from "../saved-foods/repository.js";
 import {
     getMealsByDate,
@@ -195,6 +196,7 @@ export async function getAppBootstrap(userId: string, email: string) {
     return {
         user: { id: userId, email },
         profile,
+        productPolicy: getPublicProductPolicy(),
         capabilities: {
             tier: capabilities.tier,
             entitlementSource: capabilities.entitlementSource,
