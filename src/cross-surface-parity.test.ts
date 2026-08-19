@@ -122,11 +122,12 @@ describe("cross-surface nutrition parity", () => {
     });
 
     test("analytics and web date ranges stay inclusive", () => {
-        for (const [start, end] of [
+        const ranges = [
             ["2026-08-01", "2026-08-01"],
             ["2026-08-01", "2026-08-07"],
             ["2026-07-31", "2026-08-19"],
-        ]) {
+        ] as const;
+        for (const [start, end] of ranges) {
             expect(calculateDateRangeDays(start, end)).toBe(
                 inclusiveDateSpanDays(start, end),
             );
