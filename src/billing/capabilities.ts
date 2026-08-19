@@ -1,11 +1,14 @@
 import { getActiveHouseholdContext } from "../households/repository.js";
+import { PRODUCT_CONFIG } from "../product-config.js";
 import type { SubscriptionSnapshot } from "./entitlements.js";
 import { getHouseholdSeatCoverage } from "./household-seats.js";
 import { hasActivePremiumOverride } from "./override.js";
 import { getSubscriptionSnapshot } from "./repository.js";
 
-export const FREE_HISTORY_DAYS = 30;
-export const FREE_SAVED_FOOD_LIMIT = 25;
+// Backwards-compatible exports. Product policy lives in PRODUCT_CONFIG; these
+// aliases prevent older imports from becoming a second source of truth.
+export const FREE_HISTORY_DAYS = PRODUCT_CONFIG.freeHistoryDays;
+export const FREE_SAVED_FOOD_LIMIT = PRODUCT_CONFIG.freeSavedFoodLimit;
 
 export interface HouseholdCapabilityContext {
     householdId: string;
@@ -68,8 +71,8 @@ export function capabilitiesFromSubscription(
     return {
         tier: premium ? "premium" : "free",
         coreNutrition: true,
-        historyDays: premium ? null : FREE_HISTORY_DAYS,
-        savedFoodLimit: premium ? null : FREE_SAVED_FOOD_LIMIT,
+        historyDays: premium ? null : PRODUCT_CONFIG.freeHistoryDays,
+        savedFoodLimit: premium ? null : PRODUCT_CONFIG.freeSavedFoodLimit,
         personalRecipesRead: premium,
         personalRecipesWrite: premium,
         personalPlanningRead: premium,
