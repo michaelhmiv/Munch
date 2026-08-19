@@ -254,6 +254,12 @@ app.get("/app-overrides.css", async (c) =>
         "Cache-Control": "no-cache",
     }),
 );
+app.get("/app-integrity.js", async (c) =>
+    c.body(await Bun.file("./public/app-integrity.js").text(), 200, {
+        "Content-Type": "text/javascript; charset=utf-8",
+        "Cache-Control": "no-cache",
+    }),
+);
 app.get("/app-patches.js", async (c) =>
     c.body(await Bun.file("./public/app-patches.js").text(), 200, {
         "Content-Type": "text/javascript; charset=utf-8",
