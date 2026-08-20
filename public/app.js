@@ -20,6 +20,12 @@ const state = {
     controller: null,
 };
 
+const mealComposer = {
+    items: [],
+    options: new Map(),
+    searchTimer: null,
+};
+
 const content = document.getElementById("app-content");
 const pageTitle = document.getElementById("page-title");
 const pageKicker = document.getElementById("page-kicker");
@@ -509,6 +515,17 @@ async function renderRoute() {
                 renderAccountRoute("settings-account", accountContext()),
         };
         await (renderers[state.route] || renderToday)();
+        if (state.route === "today" || state.route === "log") {
+            const actions = content.querySelector(
+                ".page-heading .auth-actions",
+            );
+            if (actions && !actions.querySelector('[data-action="add-meal"]')) {
+                actions.insertAdjacentHTML(
+                    "afterbegin",
+                    '<button class="button button-primary button-small" data-action="add-meal">Add meal</button>',
+                );
+            }
+        }
         content.focus({ preventScroll: true });
     } catch (error) {
         errorState(error);
@@ -528,6 +545,223 @@ function findMeal(id) {
 function openDialog(title, body, actions = "") {
     dialog.innerHTML = `<form method="dialog" class="auth-card" style="min-width:min(92vw,520px);max-height:85vh;overflow:auto"><div class="panel-title"><h2 style="font-size:1.6rem">${escapeHtml(title)}</h2><button class="button button-quiet button-small" value="cancel" aria-label="Close">Close</button></div>${body}${actions}</form>`;
     dialog.showModal();
+}
+
+function foodTitle(food) {
+    return [food.brand, food.name].filter(Boolean).join(" — ") || "Food";
+}
+
+function foodPortion(food, portionId) {
+    return (
+        food.portions?.find((portion) => portion.id === portionId) ||
+        food.portions?.[0] ||
+        null
+    );
+}
+
+function foodMacroLine(food, portionId) {
+    const portion = foodPortion(food, portionId);
+    if (!portion) return "No declared portion";
+    const nutrients = portion.nutrients || {};
+    return `${escapeHtml(portion.label)} · ${number(nutrients.calories)} kcal · P ${number(nutrients.protein_g, 1)}g · C ${number(nutrients.carbs_g, 1)}g · F ${number(nutrients.fat_g, 1)}g`;
+}
+
+function syncMealComposerFromDom() {
+    const root = document.getElementById("meal-selected-items");
+    if (!root) return;
+    root.querySelectorAll("[data-composer-index]").forEach((row) => {
+        const index = Number(row.dataset.composerIndex);
+        const item = mealComposer.items[index];
+        if (!item) return;
+        const field = (name) =>
+            row.querySelector(`[data-composer-field="${name}"]`);
+        const quantity = Number(field("quantity")?.value || 1);
+        item.quantity =
+            Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+        if (item.kind === "food") {
+            item.portionId = field("portion_id")?.value || item.portionId;
+        } else {
+            item.name = field("name")?.value || item.name || "";
+            item.portionLabel = field("portion_label")?.value || "";
+            item.nutrients = Object.fromEntries(
+                [
+                    "calories",
+                    "protein_g",
+                    "carbs_g",
+                    "fat_g",
+                    "fiber_g",
+                    "sugar_g",
+                    "alcohol_g",
+                    "sodium_mg",
+                ].map((key) => [
+                    key,
+                    field(key)?.value === "" || field(key)?.value == null
+                        ? undefined
+                        : Number(field(key).value),
+                ]),
+            );
+        }
+    });
+}
+
+function renderMealComposerItems() {
+    const root = document.getElementById("meal-selected-items");
+    if (!root) return;
+    if (mealComposer.items.length === 0) {
+        root.innerHTML = `<div class="empty-state"><div><strong>No foods selected yet.</strong><p>Search for a food, choose a recent item, or add a manual food.</p></div></div>`;
+        return;
+    }
+    root.innerHTML = mealComposer.items
+        .map((item, index) => {
+            if (item.kind === "food") {
+                const portions = item.food.portions || [];
+                return `<article class="meal-composer-item" data-composer-index="${index}"><div class="meal-composer-item-head"><div><strong>${escapeHtml(foodTitle(item.food))}</strong><small>${sourceBadge(item.food.provider)} ${confidenceBadge(item.food.confidence)}</small></div><button class="button button-quiet button-small" type="button" data-action="remove-meal-item" data-index="${index}">Remove</button></div><div class="meal-composer-grid"><label class="field"><span>Portion</span><select data-composer-field="portion_id">${portions.map((portion) => `<option value="${escapeHtml(portion.id)}" ${portion.id === item.portionId ? "selected" : ""}>${escapeHtml(portion.label)}</option>`).join("")}</select></label><label class="field"><span>Quantity</span><input data-composer-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity || 1)}" /></label></div><small class="meal-composer-macros">${foodMacroLine(item.food, item.portionId)}</small></article>`;
+            }
+            const nutrients = item.nutrients || {};
+            return `<article class="meal-composer-item" data-composer-index="${index}"><div class="meal-composer-item-head"><div><strong>${item.kind === "recent" ? escapeHtml(item.name) : "Manual food"}</strong><small>${sourceBadge(item.sourceType || "user_supplied")} ${item.kind === "recent" ? "From recent meal history" : "Enter the nutrition used"}</small></div><button class="button button-quiet button-small" type="button" data-action="remove-meal-item" data-index="${index}">Remove</button></div><div class="meal-composer-grid"><label class="field"><span>Name</span><input data-composer-field="name" value="${escapeHtml(item.name || "")}" required /></label><label class="field"><span>Portion</span><input data-composer-field="portion_label" value="${escapeHtml(item.portionLabel || "")}" placeholder="1 bowl, 1 slice…" /></label><label class="field"><span>Quantity</span><input data-composer-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity || 1)}" /></label></div><div class="meal-composer-nutrients">${["calories", "protein_g", "carbs_g", "fat_g", "fiber_g", "sugar_g", "sodium_mg"].map((key) => `<label class="field"><span>${escapeHtml(key.replaceAll("_g", " (g)").replace("sodium_mg", "sodium (mg)"))}</span><input data-composer-field="${key}" type="number" min="0" step="0.1" value="${escapeHtml(nutrients[key] ?? "")}" /></label>`).join("")}</div></article>`;
+        })
+        .join("");
+}
+
+function renderMealSearchResults(data) {
+    const root = document.getElementById("meal-food-results");
+    if (!root) return;
+    mealComposer.options.clear();
+    const sections = [];
+    if (data.candidates?.length) {
+        sections.push(
+            `<div class="meal-search-section"><h4>Verified foods</h4>${data.candidates
+                .map((candidate, index) => {
+                    const key = `candidate:${index}`;
+                    mealComposer.options.set(key, {
+                        kind: "candidate",
+                        candidateId: candidate.candidate_id,
+                    });
+                    const portion = candidate.default_portion;
+                    return `<button class="meal-search-result" type="button" data-action="select-meal-option" data-key="${key}"><span><strong>${escapeHtml([candidate.brand, candidate.name].filter(Boolean).join(" — ") || candidate.name)}</strong><small>${sourceBadge(candidate.provider)} ${escapeHtml(portion?.label || "Details available after selection")}</small></span><span>${portion?.calories == null ? "" : `${number(portion.calories)} kcal`}</span></button>`;
+                })
+                .join("")}</div>`,
+        );
+    }
+    if (data.savedFoods?.length) {
+        sections.push(
+            `<div class="meal-search-section"><h4>Saved foods</h4>${data.savedFoods
+                .map((saved, index) => {
+                    const key = `saved:${index}`;
+                    mealComposer.options.set(key, {
+                        kind: "food",
+                        food: saved.food,
+                        defaultPortionId: saved.defaultPortionId,
+                    });
+                    return `<button class="meal-search-result" type="button" data-action="select-meal-option" data-key="${key}"><span><strong>${escapeHtml(saved.label)}</strong><small>${sourceBadge(saved.food.provider)} ${escapeHtml(saved.food.name || "Saved food")}</small></span><span>${number(foodPortion(saved.food, saved.defaultPortionId)?.nutrients?.calories)} kcal</span></button>`;
+                })
+                .join("")}</div>`,
+        );
+    }
+    if (data.recentMealItems?.length) {
+        sections.push(
+            `<div class="meal-search-section"><h4>Recent foods</h4>${data.recentMealItems
+                .map((recent, index) => {
+                    const key = `recent:${index}`;
+                    mealComposer.options.set(key, { kind: "recent", recent });
+                    return `<button class="meal-search-result" type="button" data-action="select-meal-option" data-key="${key}"><span><strong>${escapeHtml(recent.name)}</strong><small>${sourceBadge("past_meal")} ${escapeHtml(recent.portionLabel || "Portion not recorded")}</small></span><span>${number(recent.nutrients?.calories)} kcal</span></button>`;
+                })
+                .join("")}</div>`,
+        );
+    }
+    root.innerHTML =
+        sections.join("") ||
+        `<p class="tiny">No matches yet. Try a food name or add a manual food.</p>`;
+}
+
+async function searchMealFoods(query) {
+    const root = document.getElementById("meal-food-results");
+    if (!root) return;
+    root.innerHTML = `<p class="tiny">Searching verified foods and personal history…</p>`;
+    try {
+        const data = await api(
+            `/api/app/food-search?query=${encodeURIComponent(query)}&limit=10`,
+            { keepPrevious: true },
+        );
+        renderMealSearchResults(data);
+    } catch (error) {
+        if (error?.name !== "AbortError")
+            root.innerHTML = `<p class="tiny">${escapeHtml(error.message || "Food search failed")}</p>`;
+    }
+}
+
+async function selectMealOption(key) {
+    syncMealComposerFromDom();
+    const option = mealComposer.options.get(key);
+    if (!option) return;
+    if (option.kind === "candidate") {
+        const data = await api(
+            `/api/app/food-details?candidate_id=${encodeURIComponent(option.candidateId)}`,
+            { keepPrevious: true },
+        );
+        if (!data.food) throw new Error("Food details are no longer available");
+        mealComposer.items.push({
+            kind: "food",
+            food: data.food,
+            candidateId: data.food.candidate_id,
+            portionId: data.food.portions?.[0]?.id,
+            quantity: 1,
+        });
+    } else if (option.kind === "food") {
+        mealComposer.items.push({
+            kind: "food",
+            food: option.food,
+            candidateId: option.food.candidate_id,
+            portionId: option.defaultPortionId || option.food.portions?.[0]?.id,
+            quantity: 1,
+        });
+    } else {
+        mealComposer.items.push({
+            kind: "recent",
+            name: option.recent.name,
+            quantity: 1,
+            portionLabel: option.recent.portionLabel || "",
+            nutrients: option.recent.nutrients,
+            sourceType: "past_meal",
+            provider: option.recent.provider,
+            providerFoodId: option.recent.providerFoodId,
+            sourceSnapshot: {
+                resolution_layer: "personal_history",
+                meal_id: option.recent.mealId,
+                item_id: option.recent.itemId,
+            },
+        });
+    }
+    renderMealComposerItems();
+}
+
+async function lookupMealBarcode() {
+    const input = document.getElementById("meal-food-barcode");
+    const root = document.getElementById("meal-food-results");
+    if (!input || !root) return;
+    const barcode = input.value.trim();
+    if (!barcode) return;
+    root.innerHTML = `<p class="tiny">Looking up the package barcode…</p>`;
+    const data = await api(
+        `/api/app/food-barcode?barcode=${encodeURIComponent(barcode)}`,
+        { keepPrevious: true },
+    );
+    renderMealSearchResults({
+        ...data,
+        savedFoods: [],
+        recentMealItems: [],
+    });
+}
+
+function openMealComposer() {
+    mealComposer.items = [];
+    mealComposer.options.clear();
+    openDialog(
+        "Add meal",
+        `<form id="meal-form" class="auth-form"><input type="hidden" name="logged_at" value="${escapeHtml(`${state.date}T12:00:00.000Z`)}" /><label class="field"><span>Meal name</span><input name="description" value="Meal" maxlength="500" required /></label><label class="field"><span>Meal type</span><select name="meal_type"><option value="breakfast">Breakfast</option><option value="lunch" selected>Lunch</option><option value="dinner">Dinner</option><option value="snack">Snack</option></select></label><section class="meal-composer-search"><div class="panel-title"><h3>Find foods</h3><span>Verified, saved, and recent</span></div><div class="meal-composer-search-row"><input class="input" id="meal-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><input class="input" id="meal-food-barcode" inputmode="numeric" placeholder="Barcode" aria-label="Food barcode" /><button class="button button-secondary" type="button" data-action="lookup-food-barcode">Look up</button></div><div id="meal-food-results" class="meal-food-results"></div></section><section><div class="panel-title"><h3>Selected foods</h3><button class="button button-secondary button-small" type="button" data-action="add-manual-food">Add manual food</button></div><div id="meal-selected-items" class="meal-selected-items"></div></section><label class="field"><span>Notes</span><textarea name="notes" rows="2" maxlength="4000" placeholder="Optional"></textarea></label><button class="button button-primary" type="submit">Log meal</button></form>`,
+    );
+    renderMealComposerItems();
+    searchMealFoods("");
 }
 
 async function editMeal(id) {
@@ -560,6 +794,34 @@ async function handleAction(button) {
         ].includes(action)
     )
         return renderRoute();
+    if (action === "add-meal") return openMealComposer();
+    if (action === "select-meal-option") {
+        await selectMealOption(button.dataset.key);
+        return;
+    }
+    if (action === "remove-meal-item") {
+        syncMealComposerFromDom();
+        mealComposer.items.splice(Number(button.dataset.index), 1);
+        renderMealComposerItems();
+        return;
+    }
+    if (action === "add-manual-food") {
+        syncMealComposerFromDom();
+        mealComposer.items.push({
+            kind: "manual",
+            name: "",
+            quantity: 1,
+            portionLabel: "",
+            nutrients: {},
+            sourceType: "user_supplied",
+        });
+        renderMealComposerItems();
+        return;
+    }
+    if (action === "lookup-food-barcode") {
+        await lookupMealBarcode();
+        return;
+    }
     if (action === "edit-meal") return editMeal(button.dataset.id);
     if (action === "insight-range") {
         const days = Number(button.dataset.days);
@@ -684,6 +946,13 @@ document.addEventListener("click", async (event) => {
 });
 
 document.addEventListener("input", (event) => {
+    if (event.target.id === "meal-food-search") {
+        window.clearTimeout(mealComposer.searchTimer);
+        mealComposer.searchTimer = window.setTimeout(
+            () => searchMealFoods(event.target.value),
+            240,
+        );
+    }
     if (event.target.id === "food-filter") {
         const value = event.target.value.toLowerCase();
         document.querySelectorAll("[data-food-label]").forEach((row) => {
@@ -697,6 +966,28 @@ document.addEventListener("input", (event) => {
         });
     }
 });
+
+function mealComposerPayload() {
+    syncMealComposerFromDom();
+    return mealComposer.items.map((item) =>
+        item.kind === "food"
+            ? {
+                  candidate_id: item.candidateId,
+                  portion_id: item.portionId,
+                  quantity: item.quantity,
+              }
+            : {
+                  name: item.name,
+                  quantity: item.quantity,
+                  portion_label: item.portionLabel,
+                  nutrients: item.nutrients,
+                  source_type: item.sourceType || "user_supplied",
+                  provider: item.provider,
+                  provider_food_id: item.providerFoodId,
+                  source_snapshot: item.sourceSnapshot,
+              },
+    );
+}
 
 document.addEventListener("submit", async (event) => {
     const form = event.target;
@@ -720,6 +1011,7 @@ document.addEventListener("submit", async (event) => {
     if (
         ![
             "edit-meal-form",
+            "meal-form",
             "water-form",
             "weight-form",
             "preferences-form",
@@ -735,6 +1027,26 @@ document.addEventListener("submit", async (event) => {
     const submit = form.querySelector("button[type='submit']");
     submit.disabled = true;
     try {
+        if (form.id === "meal-form") {
+            const items = mealComposerPayload();
+            const result = await api("/api/app/meals", {
+                method: "POST",
+                body: JSON.stringify({
+                    description: values.description,
+                    meal_type: values.meal_type,
+                    logged_at: values.logged_at,
+                    notes: values.notes || undefined,
+                    idempotency_key: crypto.randomUUID(),
+                    items,
+                }),
+                keepPrevious: true,
+            });
+            toast(
+                result.deduplicated
+                    ? "This meal was already logged."
+                    : "Meal logged.",
+            );
+        }
         if (form.id === "edit-meal-form") {
             await api(`/api/app/meals/${encodeURIComponent(form.dataset.id)}`, {
                 method: "PATCH",

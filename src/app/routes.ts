@@ -45,6 +45,12 @@ import {
     updateStructuredMealItem,
 } from "./meal-mutations.js";
 import {
+    createAppMeal,
+    getAppFoodDetails,
+    lookupAppFoodBarcode,
+    searchAppFoods,
+} from "./meal-entry.js";
+import {
     getAppBootstrap,
     getFoodsWorkspace,
     getHouseholdWorkspace,
@@ -58,6 +64,15 @@ import {
 function requiredQuery(value: string | undefined, name: string): string {
     if (!value) throw new Error(`${name} is required`);
     return value;
+}
+
+function optionalLimit(value: string | undefined): number | undefined {
+    if (value === undefined || value === "") return undefined;
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 25) {
+        throw new Error("Invalid result limit");
+    }
+    return parsed;
 }
 
 function numberOrNull(value: unknown): number | null | undefined {
@@ -388,6 +403,25 @@ export function createAppRouter(): Hono {
         ),
     );
 
+    app.post("/api/app/meals", requireSameOrigin, async (c) => {
+        const body = recordValue(await c.req.json(), "Meal");
+        if (!Array.isArray(body.items)) {
+            throw new Error("Meal items are required");
+        }
+        const result = await createAppMeal(c.get("munchUserId"), {
+            description: body.description,
+            mealType: body.meal_type,
+            loggedAt: body.logged_at,
+            notes: body.notes,
+            idempotencyKey: body.idempotency_key,
+            items: body.items.map((item) => recordValue(item, "Meal item")),
+        });
+        return privateJson(c, {
+            meal: result.meal,
+            deduplicated: result.deduplicated,
+        });
+    });
+
     app.get("/api/app/meals/:id", async (c) => {
         const meal = await getStructuredMeal(
             c.get("munchUserId"),
@@ -399,6 +433,36 @@ export function createAppRouter(): Hono {
 
     app.get("/api/app/foods", async (c) =>
         privateJson(c, await getFoodsWorkspace(c.get("munchUserId"))),
+    );
+
+    app.get("/api/app/food-search", async (c) =>
+        privateJson(
+            c,
+            await searchAppFoods(
+                c.get("munchUserId"),
+                c.req.query("query") ?? c.req.query("q") ?? "",
+                optionalLimit(c.req.query("limit")),
+            ),
+        ),
+    );
+
+    app.get("/api/app/food-details", async (c) => {
+        const candidateId = requiredQuery(
+            c.req.query("candidate_id"),
+            "candidate_id",
+        );
+        const food = await getAppFoodDetails(candidateId);
+        if (!food) throw new Error("Food candidate not found");
+        return privateJson(c, { food });
+    });
+
+    app.get("/api/app/food-barcode", async (c) =>
+        privateJson(
+            c,
+            await lookupAppFoodBarcode(
+                requiredQuery(c.req.query("barcode"), "barcode"),
+            ),
+        ),
     );
 
     app.get("/api/app/insights", async (c) =>
@@ -964,7 +1028,7 @@ export function createAppRouter(): Hono {
         console.error("App route failed", { name: error.name });
         const knownMessage =
             error instanceof Error &&
-            /^(Invalid|Connection not found|Date range|Weight|Target weight|Meal item|Meal not found|Structured meal|A structured meal)/.test(
+            /^(Invalid|Connection not found|Date range|Weight|Target weight|Meal item|Meal |Meal$|Meal not found|Food |Nutrition|Add at least|A meal|Structured meal|A structured meal)/.test(
                 error.message,
             )
                 ? error.message

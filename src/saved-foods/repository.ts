@@ -243,39 +243,73 @@ export async function searchRecentMealItems(
             limit ${boundedLimit}
         `;
         return rows.map((row) => {
-            const nutrients: Record<string, number> = {};
-            for (const column of [
-                "calories",
-                "protein_g",
-                "carbs_g",
-                "fat_g",
-                "fiber_g",
-                "sugar_g",
-                "alcohol_g",
-                "sodium_mg",
-            ]) {
-                if (row[column] != null)
-                    nutrients[column] = Number(row[column]);
-            }
-            return {
-                mealId: String(row.meal_id),
-                itemId: String(row.item_id),
-                name: String(row.name),
-                portionLabel:
-                    row.portion_label == null
-                        ? null
-                        : String(row.portion_label),
-                nutrients,
-                sourceType: String(row.source_type),
-                provider: row.provider == null ? null : String(row.provider),
-                providerFoodId:
-                    row.provider_food_id == null
-                        ? null
-                        : String(row.provider_food_id),
-                confidence:
-                    row.confidence == null ? null : Number(row.confidence),
-                loggedAt: new Date(String(row.logged_at)).toISOString(),
-            };
+            return recentMealItemFromRow(row);
         });
+    });
+}
+
+function recentMealItemFromRow(
+    row: Record<string, unknown>,
+): RecentMealItemMemory {
+    const nutrients: Record<string, number> = {};
+    for (const column of [
+        "calories",
+        "protein_g",
+        "carbs_g",
+        "fat_g",
+        "fiber_g",
+        "sugar_g",
+        "alcohol_g",
+        "sodium_mg",
+    ]) {
+        if (row[column] != null) nutrients[column] = Number(row[column]);
+    }
+    return {
+        mealId: String(row.meal_id),
+        itemId: String(row.item_id),
+        name: String(row.name),
+        portionLabel:
+            row.portion_label == null ? null : String(row.portion_label),
+        nutrients,
+        sourceType: String(row.source_type),
+        provider: row.provider == null ? null : String(row.provider),
+        providerFoodId:
+            row.provider_food_id == null ? null : String(row.provider_food_id),
+        confidence: row.confidence == null ? null : Number(row.confidence),
+        loggedAt: new Date(String(row.logged_at)).toISOString(),
+    };
+}
+
+export async function listRecentMealItems(
+    userId: string,
+    limit = 10,
+): Promise<RecentMealItemMemory[]> {
+    const boundedLimit = Math.max(1, Math.min(25, limit));
+    return withUserDatabase(userId, async (tx) => {
+        const rows = await tx<Array<Record<string, unknown>>>`
+            select
+                i.id as item_id,
+                i.meal_id,
+                i.name,
+                i.portion_label,
+                i.calories,
+                i.protein_g,
+                i.carbs_g,
+                i.fat_g,
+                i.fiber_g,
+                i.sugar_g,
+                i.alcohol_g,
+                i.sodium_mg,
+                i.source_type,
+                i.provider,
+                i.provider_food_id,
+                i.confidence,
+                m.logged_at
+            from munch.meal_items i
+            join munch.meals m on m.id = i.meal_id
+            order by m.logged_at desc, i.position asc
+            limit ${boundedLimit}
+        `;
+        return rows.map(recentMealItemFromRow);
     });
 }

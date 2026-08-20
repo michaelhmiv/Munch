@@ -194,6 +194,128 @@ dialog .auth-card {
     gap: 5px;
 }
 
+.meal-composer-search,
+.meal-composer-item {
+    display: grid;
+    gap: 10px;
+    border: 1px solid var(--ink-100);
+    border-radius: 14px;
+    background: var(--surface-muted);
+    padding: 12px;
+}
+
+.meal-composer-search {
+    margin-top: 4px;
+}
+
+.meal-composer-search-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 132px auto;
+    gap: 7px;
+}
+
+.meal-food-results,
+.meal-selected-items {
+    display: grid;
+    gap: 6px;
+}
+
+.meal-search-section {
+    display: grid;
+    gap: 5px;
+}
+
+.meal-search-section h4 {
+    color: var(--ink-600);
+    font-size: 0.76rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.meal-search-result {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    border: 1px solid var(--ink-100);
+    border-radius: 10px;
+    background: white;
+    color: var(--ink-900);
+    padding: 9px 10px;
+    text-align: left;
+}
+
+.meal-search-result:hover,
+.meal-search-result:focus-visible {
+    border-color: var(--green-500);
+    box-shadow: var(--focus);
+}
+
+.meal-search-result > span:first-child {
+    min-width: 0;
+}
+
+.meal-search-result strong,
+.meal-search-result small {
+    display: block;
+}
+
+.meal-search-result small {
+    margin-top: 3px;
+    color: var(--ink-500);
+    font-size: 0.74rem;
+}
+
+.meal-composer-item {
+    background: white;
+}
+
+.meal-composer-item-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.meal-composer-item-head strong,
+.meal-composer-item-head small {
+    display: block;
+}
+
+.meal-composer-item-head small {
+    margin-top: 4px;
+}
+
+.meal-composer-grid,
+.meal-composer-nutrients {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.meal-composer-nutrients {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.meal-composer-grid .field,
+.meal-composer-nutrients .field {
+    gap: 4px;
+    font-size: 0.75rem;
+}
+
+.meal-composer-grid input,
+.meal-composer-grid select,
+.meal-composer-nutrients input {
+    min-height: 40px;
+    padding: 8px 9px;
+    font-size: 0.9rem;
+}
+
+.meal-composer-macros {
+    color: var(--ink-500);
+}
+
 /* Repetitive collection screens should read like lists, not a wall of cards. */
 .app-content .settings-index-card,
 .app-content .more-card {
@@ -268,6 +390,12 @@ dialog .auth-card {
 }
 
 @media (max-width: 620px) {
+    .meal-composer-search-row,
+    .meal-composer-grid,
+    .meal-composer-nutrients {
+        grid-template-columns: 1fr;
+    }
+
     dialog {
         width: 100vw;
         max-height: 100dvh;
