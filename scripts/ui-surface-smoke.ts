@@ -207,6 +207,27 @@ if (!appRouterSource.includes('"/api/app/household/manage"')) {
         "App router is missing the household management read model",
     );
 }
+for (const route of [
+    'app.get("/api/app/food-search"',
+    'app.get("/api/app/food-details"',
+    'app.get("/api/app/food-barcode"',
+    'app.post("/api/app/meals"',
+]) {
+    if (!appRouterSource.includes(route)) {
+        throw new Error(`App meal composer is missing route: ${route}`);
+    }
+}
+for (const behavior of [
+    'data-action="add-meal"',
+    'data-action="select-meal-option"',
+    'data-action="lookup-food-barcode"',
+    "mealComposerPayload",
+    'api("/api/app/meals"',
+]) {
+    if (!appSource.includes(behavior)) {
+        throw new Error(`App meal composer is missing behavior: ${behavior}`);
+    }
+}
 
 const appHtml = await Bun.file("public/app.html").text();
 for (const route of [
