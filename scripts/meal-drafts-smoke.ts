@@ -8,6 +8,7 @@ const {
     cancelMealDraft,
     confirmMealDraft,
     createMealDraft,
+    deleteMealDraftItem,
     getMealDraft,
     prepareMealDraftConfirmation,
     updateMealDraftMetadata,
@@ -196,6 +197,41 @@ cancelled = await cancelMealDraft({
 });
 if (cancelled.status !== "cancelled" || cancelled.confirmedMealId) {
     throw new Error("Draft cancellation created an unexpected meal");
+}
+
+let removable = await createMealDraft({
+    userId: userA,
+    sourceMode: "text",
+    description: "Draft with removable items",
+    mealType: "dinner",
+});
+for (const [position, name] of (
+    ["First item", "Second item"] as const
+).entries()) {
+    removable = await upsertMealDraftItem({
+        userId: userA,
+        draftId: removable.id,
+        expectedVersion: removable.version,
+        position,
+        item: {
+            name,
+            nutrients: { calories: 100 + position },
+            sourceType: "user_supplied",
+        },
+    });
+}
+removable = await deleteMealDraftItem({
+    userId: userA,
+    draftId: removable.id,
+    itemId: removable.items[0]!.id,
+    expectedVersion: removable.version,
+});
+if (
+    removable.items.length !== 1 ||
+    removable.items[0]?.position !== 0 ||
+    removable.items[0]?.item.name !== "Second item"
+) {
+    throw new Error("Draft item deletion did not compact positions safely");
 }
 
 await closePlatformDatabase();

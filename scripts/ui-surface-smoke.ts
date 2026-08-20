@@ -212,6 +212,10 @@ for (const route of [
     'app.get("/api/app/food-details"',
     'app.get("/api/app/food-barcode"',
     'app.post("/api/app/meals"',
+    'app.get("/api/app/meal-drafts/:id"',
+    '"/api/app/meal-drafts/:id/items"',
+    '"/api/app/meal-drafts/:id/confirm"',
+    '"/api/app/meal-drafts/:id/cancel"',
 ]) {
     if (!appRouterSource.includes(route)) {
         throw new Error(`App meal composer is missing route: ${route}`);
@@ -223,10 +227,21 @@ for (const behavior of [
     'data-action="lookup-food-barcode"',
     "mealComposerPayload",
     'api("/api/app/meals"',
+    'data-action="open-meal-draft"',
+    'data-action="confirm-meal-draft"',
+    'data-action="cancel-meal-draft"',
 ]) {
     if (!appSource.includes(behavior)) {
         throw new Error(`App meal composer is missing behavior: ${behavior}`);
     }
+}
+if (!appRouterSource.includes("serializeMealDraftForApp")) {
+    throw new Error(
+        "App draft routes do not use the canonical draft serializer",
+    );
+}
+if (appSource.includes("Continue this draft in ChatGPT")) {
+    throw new Error("Pending drafts still redirect users to ChatGPT");
 }
 
 const appHtml = await Bun.file("public/app.html").text();

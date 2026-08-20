@@ -349,6 +349,51 @@ export async function upsertMealDraftItem(input: {
     });
 }
 
+export async function deleteMealDraftItem(input: {
+    userId: string;
+    draftId: string;
+    itemId: string;
+    expectedVersion: number;
+}): Promise<MealDraft> {
+    return withUserDatabase(input.userId, async (tx) => {
+        const draft = await loadDraft(tx, input.draftId, true);
+        if (!draft) throw new Error("Meal draft not found");
+        assertEditable(draft);
+        assertVersion(draft, input.expectedVersion);
+        const item = draft.items.find((record) => record.id === input.itemId);
+        if (!item) throw new Error("Meal draft item not found");
+
+        await tx`
+            delete from munch.meal_draft_items
+            where id = ${input.itemId}
+              and draft_id = ${input.draftId}
+        `;
+        // Keep positions dense while avoiding an immediate unique-index
+        // collision during the compaction update.
+        await tx`
+            update munch.meal_draft_items
+            set position = position + 1000,
+                updated_at = now()
+            where draft_id = ${input.draftId}
+              and position > ${item.position}
+        `;
+        await tx`
+            update munch.meal_draft_items
+            set position = position - 1001,
+                updated_at = now()
+            where draft_id = ${input.draftId}
+              and position > ${item.position + 1000}
+        `;
+        await tx`
+            update munch.meal_drafts
+            set version = version + 1, updated_at = now()
+            where id = ${input.draftId}
+        `;
+        await refreshStatus(tx, input.draftId);
+        return (await loadDraft(tx, input.draftId))!;
+    });
+}
+
 export async function addMealDraftQuestion(input: {
     userId: string;
     draftId: string;
