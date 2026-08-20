@@ -164,6 +164,16 @@ for (const route of [
 }
 
 const appRouterSource = await Bun.file("src/app/routes.ts").text();
+const appSource = await Bun.file("public/app.js").text();
+if (
+    !appSource.includes('data-action="insight-range"') ||
+    !appSource.includes('action === "insight-range"') ||
+    !appSource.includes("state.insightsDays")
+) {
+    throw new Error(
+        "Insights 7/30/90 controls are rendered without a working range handler",
+    );
+}
 const browserEntryPoints = [
     "public/app.js",
     "public/app-account.js",

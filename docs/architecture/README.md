@@ -13,6 +13,7 @@ Architecture decision records (ADRs) document decisions that constrain later imp
 - [ADR-0008: Atomic meal review](0008-atomic-meal-review.md)
 - [ADR-0009: Canonical Better Auth and PostgreSQL baseline](0009-canonical-better-auth-postgresql-baseline.md)
 - [ADR-0010: Canonical user data contracts](0010-canonical-user-data-contracts.md)
+- [ADR-0011: Cross-surface capability contracts](0011-cross-surface-capability-contracts.md)
 
 ## Current non-negotiable boundaries
 
@@ -28,3 +29,4 @@ Architecture decision records (ADRs) document decisions that constrain later imp
 - Raw nutrition payloads are excluded from application logs and analytics.
 - Fresh databases are constructed from `db/schema/`; retired architecture is not replayed.
 - User-facing facts and derived values have canonical domain owners; renderers must not establish alternate business semantics.
+- Outcome capabilities are tracked across MCP and the website; new MCP tools require an explicit parity mapping or a documented channel exception.
