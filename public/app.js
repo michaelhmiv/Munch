@@ -737,7 +737,44 @@ async function renderGroceries() {
         );
         return;
     }
-    content.innerHTML = `<div class="page-heading"><div><h2>Groceries</h2><p>Explicit shopping lists only. Munch does not infer pantry inventory.</p></div><button class="button button-secondary button-small" data-action="shopping-mode">Shopping mode</button></div><div class="dashboard-grid">${data.groceries.map((list) => `<section class="panel panel-span-6"><div class="panel-title"><h3>${list.scope === "household" ? "Household list" : "Personal list"}</h3><span>${list.items.length} items</span></div>${list.items.length ? `<div class="meal-groups">${list.items.map((item) => `<label class="food-row"><div><strong>${escapeHtml(item.name)}</strong><small>${item.quantity == null ? "" : `${number(item.quantity, 2)} ${escapeHtml(item.unit || "")}`}${item.note ? ` · ${escapeHtml(item.note)}` : ""}</small></div><input type="checkbox" ${item.purchased_at ? "checked" : ""} disabled aria-label="${escapeHtml(item.name)} purchased" /></label>`).join("")}</div>` : `<div class="empty-state"><div><h3>The list is empty</h3><p>Ask ChatGPT to add the groceries you explicitly need.</p></div></div>`}</section>`).join("")}</div>`;
+    const lists = (data.groceries || [])
+        .map((list) => {
+            const editable = Boolean(data.permissions?.[list.scope]);
+            const purchasedCount = list.items.filter(
+                (item) => item.purchased_at,
+            ).length;
+            const listAddButton = editable
+                ? `<button class="button button-primary button-small" type="button" data-action="add-grocery" data-scope="${list.scope}">Add item</button>`
+                : "";
+            return `<section class="panel panel-span-6 grocery-list" data-grocery-scope="${list.scope}"><div class="panel-title"><div><h3>${list.scope === "household" ? "Household list" : "Personal list"}</h3><span>${list.scope === "household" && data.permissions?.householdRole ? `${escapeHtml(data.permissions.householdRole)} · ` : ""}${list.items.length} items</span></div><div class="auth-actions">${listAddButton}${editable && purchasedCount ? `<button class="button button-quiet button-small" type="button" data-action="clear-purchased" data-scope="${list.scope}">Clear purchased</button>` : ""}</div></div>${list.items.length ? `<div class="grocery-items">${list.items.map((item) => `<article class="grocery-item-row ${item.purchased_at ? "is-purchased" : ""}" data-grocery-item-id="${escapeHtml(item.grocery_item_id)}" data-quantity="${escapeHtml(item.quantity ?? "")}" data-unit="${escapeHtml(item.unit || "")}" data-note="${escapeHtml(item.note || "")}"><div class="grocery-item-main"><strong>${escapeHtml(item.name)}</strong><small>${item.quantity == null ? "" : `${number(item.quantity, 2)} ${escapeHtml(item.unit || "")}`}${item.note ? ` · ${escapeHtml(item.note)}` : ""}</small><small class="grocery-provenance">${escapeHtml(grocerySourceLabel(item))}</small></div><div class="grocery-item-actions"><label class="grocery-check"><input type="checkbox" data-action="toggle-grocery-purchased" data-id="${escapeHtml(item.grocery_item_id)}" data-version="${escapeHtml(item.version)}" data-scope="${list.scope}" ${item.purchased_at ? "checked" : ""} ${editable ? "" : "disabled"} aria-label="${escapeHtml(item.name)} purchased" /><span>${item.purchased_at ? "Purchased" : "Mark purchased"}</span></label>${editable ? `<button class="button button-secondary button-small" type="button" data-action="edit-grocery" data-id="${escapeHtml(item.grocery_item_id)}" data-version="${escapeHtml(item.version)}" data-scope="${list.scope}">Edit</button><button class="button button-quiet button-small" type="button" data-action="remove-grocery" data-id="${escapeHtml(item.grocery_item_id)}" data-version="${escapeHtml(item.version)}" data-scope="${list.scope}">Remove</button>` : ""}</div></article>`).join("")}</div>` : `<div class="empty-state"><div><h3>The list is empty</h3><p>Add an item manually or ask ChatGPT to record an explicit shopping need.</p></div></div>`}</section>`;
+        })
+        .join("");
+    content.innerHTML = `<div class="page-heading"><div><h2>Groceries</h2><p>Explicit shopping lists only. Munch does not infer pantry inventory.</p></div><div class="auth-actions"><button class="button button-secondary button-small" data-action="shopping-mode">Shopping mode</button></div></div><div class="dashboard-grid">${lists}</div>`;
+}
+
+function grocerySourceLabel(item) {
+    const sources = [];
+    if (item.source_recipe_id) sources.push("From recipe");
+    if (item.source_planned_meal_id) sources.push("From meal plan");
+    if (!sources.length) sources.push("Manual addition");
+    if (item.added_by) sources.push(`Added by ${item.added_by}`);
+    return sources.join(" · ");
+}
+
+function openGroceryAdd(scope) {
+    openDialog(
+        scope === "household"
+            ? "Add household grocery"
+            : "Add personal grocery",
+        `<form id="grocery-add-form" class="auth-form" data-scope="${escapeHtml(scope)}"><label class="field"><span>Item</span><input name="name" maxlength="300" required placeholder="Onions, oat milk…" /></label><div class="meal-composer-grid"><label class="field"><span>Quantity</span><input name="quantity" type="number" min="0.01" step="0.01" placeholder="Optional" /></label><label class="field"><span>Unit</span><input name="unit" maxlength="80" placeholder="whole, lb, carton…" /></label></div><label class="field"><span>Note</span><textarea name="note" rows="2" maxlength="500" placeholder="Optional preparation or brand note"></textarea></label><button class="button button-primary" type="submit">Add to list</button></form>`,
+    );
+}
+
+function openGroceryEdit(item, scope) {
+    openDialog(
+        "Edit grocery item",
+        `<form id="grocery-edit-form" class="auth-form" data-id="${escapeHtml(item.grocery_item_id)}" data-version="${escapeHtml(item.version)}" data-scope="${escapeHtml(scope)}"><label class="field"><span>Item</span><input name="name" maxlength="300" required value="${escapeHtml(item.name)}" /></label><div class="meal-composer-grid"><label class="field"><span>Quantity</span><input name="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity ?? "")}" placeholder="Optional" /></label><label class="field"><span>Unit</span><input name="unit" maxlength="80" value="${escapeHtml(item.unit || "")}" placeholder="whole, lb, carton…" /></label></div><label class="field"><span>Note</span><textarea name="note" rows="2" maxlength="500">${escapeHtml(item.note || "")}</textarea></label><button class="button button-primary" type="submit">Save item</button></form>`,
+    );
 }
 
 function accountContext() {
@@ -1668,6 +1705,84 @@ async function handleAction(button) {
         location.href = "/account/portal";
         return;
     }
+    if (action === "add-grocery") {
+        return openGroceryAdd(button.dataset.scope);
+    }
+    if (action === "edit-grocery") {
+        const list = document.querySelector(
+            `[data-grocery-scope="${CSS.escape(button.dataset.scope)}"]`,
+        );
+        const item = list?.querySelector(
+            `[data-grocery-item-id="${CSS.escape(button.dataset.id)}"]`,
+        );
+        if (!item) throw new Error("Grocery item is no longer visible");
+        openGroceryEdit(
+            {
+                grocery_item_id: button.dataset.id,
+                version: Number(button.dataset.version),
+                name: item.querySelector(".grocery-item-main strong")
+                    ?.textContent,
+                quantity:
+                    item.dataset.quantity === ""
+                        ? null
+                        : Number(item.dataset.quantity),
+                unit: item.dataset.unit || null,
+                note: item.dataset.note || null,
+            },
+            button.dataset.scope,
+        );
+        return;
+    }
+    if (action === "remove-grocery") {
+        if (!confirm("Remove this grocery item from the list?")) return;
+        await api(
+            `/api/app/groceries/items/${encodeURIComponent(button.dataset.id)}`,
+            {
+                method: "DELETE",
+                body: JSON.stringify({
+                    scope: button.dataset.scope,
+                    expected_version: Number(button.dataset.version),
+                }),
+                keepPrevious: true,
+            },
+        );
+        toast("Grocery item removed.");
+        return renderRoute();
+    }
+    if (action === "toggle-grocery-purchased") {
+        const purchased = Boolean(button.checked);
+        try {
+            await api(
+                `/api/app/groceries/items/${encodeURIComponent(button.dataset.id)}/purchased`,
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        scope: button.dataset.scope,
+                        purchased,
+                        expected_version: Number(button.dataset.version),
+                    }),
+                    keepPrevious: true,
+                },
+            );
+        } catch (error) {
+            button.checked = !purchased;
+            throw error;
+        }
+        toast(purchased ? "Marked purchased." : "Restored to the list.");
+        return renderRoute();
+    }
+    if (action === "clear-purchased") {
+        if (!confirm("Remove all purchased items from this list?")) return;
+        const result = await api("/api/app/groceries/clear-purchased", {
+            method: "POST",
+            body: JSON.stringify({ scope: button.dataset.scope }),
+            keepPrevious: true,
+        });
+        toast(
+            `${number(result.clearedCount)} purchased item${result.clearedCount === 1 ? "" : "s"} cleared.`,
+        );
+        return renderRoute();
+    }
     if (action === "shopping-mode")
         document.body.classList.toggle("shopping-mode");
 }
@@ -1783,6 +1898,8 @@ document.addEventListener("submit", async (event) => {
             "recipe-edit-form",
             "recipe-log-form",
             "recipe-plan-form",
+            "grocery-add-form",
+            "grocery-edit-form",
         ].includes(form.id)
     )
         return;
@@ -1917,6 +2034,49 @@ document.addEventListener("submit", async (event) => {
                 },
             );
             toast("Recipe added to the meal plan.");
+        }
+        if (form.id === "grocery-add-form") {
+            await api("/api/app/groceries/items", {
+                method: "POST",
+                body: JSON.stringify({
+                    scope: form.dataset.scope,
+                    item: {
+                        name: values.name,
+                        quantity:
+                            values.quantity === ""
+                                ? null
+                                : Number(values.quantity),
+                        unit: values.unit || undefined,
+                        note: values.note || undefined,
+                        idempotency_key: crypto.randomUUID(),
+                    },
+                }),
+                keepPrevious: true,
+            });
+            toast("Grocery item added.");
+        }
+        if (form.id === "grocery-edit-form") {
+            await api(
+                `/api/app/groceries/items/${encodeURIComponent(form.dataset.id)}`,
+                {
+                    method: "PATCH",
+                    body: JSON.stringify({
+                        scope: form.dataset.scope,
+                        expected_version: Number(form.dataset.version),
+                        item: {
+                            name: values.name,
+                            quantity:
+                                values.quantity === ""
+                                    ? null
+                                    : Number(values.quantity),
+                            unit: values.unit || undefined,
+                            note: values.note || undefined,
+                        },
+                    }),
+                    keepPrevious: true,
+                },
+            );
+            toast("Grocery item updated.");
         }
         if (dialog.open) dialog.close();
         await renderRoute();

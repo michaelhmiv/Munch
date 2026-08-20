@@ -463,6 +463,75 @@ dialog .auth-card {
     line-height: 1.45;
 }
 
+.grocery-items {
+    display: grid;
+    gap: 6px;
+}
+
+.grocery-item-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border: 1px solid var(--ink-100);
+    border-radius: 12px;
+    background: white;
+    padding: 10px 12px;
+}
+
+.grocery-item-row.is-purchased {
+    background: var(--surface-muted);
+}
+
+.grocery-item-row.is-purchased .grocery-item-main > strong {
+    color: var(--ink-500);
+    text-decoration: line-through;
+}
+
+.grocery-item-main,
+.grocery-item-actions {
+    display: grid;
+    gap: 4px;
+}
+
+.grocery-item-main {
+    min-width: 0;
+}
+
+.grocery-item-main > strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.grocery-item-main > small {
+    color: var(--ink-600);
+}
+
+.grocery-provenance {
+    font-size: 0.72rem;
+}
+
+.grocery-item-actions {
+    flex: 0 0 auto;
+    grid-template-columns: auto auto auto;
+    align-items: center;
+}
+
+.grocery-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 42px;
+    color: var(--ink-600);
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
+.grocery-check input {
+    width: 22px;
+    height: 22px;
+}
+
 @media (max-width: 620px) {
     .meal-composer-search-row,
     .meal-composer-grid,
@@ -513,6 +582,22 @@ dialog .auth-card {
     .app-content .meal-card > .auth-actions .button {
         width: 100%;
         padding-inline: 7px;
+    }
+
+    .grocery-item-row {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .grocery-item-actions {
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        border-top: 1px solid var(--ink-100);
+        padding-top: 7px;
+    }
+
+    .grocery-check {
+        min-height: 46px;
     }
 
     .app-content .settings-index-card,

@@ -1291,7 +1291,8 @@ export async function getGroceryList(input: {
             select
                 item.id, item.name, item.quantity, item.unit, item.note,
                 item.purchased_at, item.source_recipe_id,
-                item.source_planned_meal_id, item.version,
+                item.source_recipe_revision_id, item.source_planned_meal_id,
+                item.version,
                 coalesce(membership.display_name, item.added_by_display_name) as added_by
             from munch.grocery_items item
             left join munch.household_memberships membership
@@ -1318,6 +1319,10 @@ export async function getGroceryList(input: {
                     row.source_recipe_id == null
                         ? null
                         : String(row.source_recipe_id),
+                source_recipe_revision_id:
+                    row.source_recipe_revision_id == null
+                        ? null
+                        : String(row.source_recipe_revision_id),
                 source_planned_meal_id:
                     row.source_planned_meal_id == null
                         ? null
@@ -1334,18 +1339,32 @@ export async function markGroceryItemPurchased(input: {
     groceryItemId: string;
     purchased: boolean;
     expectedVersion: number;
+    scope?: PlanningScope;
 }) {
     return withUserDatabase(input.userId, async (tx) => {
+        const owner = input.scope
+            ? ownerValues(input.scope, input.userId)
+            : null;
         const rows = await tx<Array<Record<string, unknown>>>`
-            update munch.grocery_items
+            update munch.grocery_items item
             set purchased_at = case when ${input.purchased} then now() else null end,
-                purchased_by_user_id = case when ${input.purchased} then ${input.userId} else null end,
+                purchased_by_user_id = case when ${input.purchased} then ${input.userId}::uuid else null end,
                 updated_by_user_id = ${input.userId},
                 updated_at = now(), version = version + 1
-            where id = ${input.groceryItemId}
-              and version = ${input.expectedVersion}
-              and deleted_at is null
-            returning id, purchased_at, version
+            where item.id = ${input.groceryItemId}
+              and item.version = ${input.expectedVersion}
+              and item.deleted_at is null
+              and (
+                ${owner === null}
+                or exists (
+                    select 1 from munch.grocery_lists list
+                    where list.id = item.grocery_list_id
+                      and list.status = 'active'
+                      and list.personal_owner_user_id is not distinct from ${owner?.personalOwnerUserId ?? null}
+                      and list.household_id is not distinct from ${owner?.householdId ?? null}
+                )
+              )
+            returning item.id, item.purchased_at, item.version
         `;
         if (!rows[0]) throw new Error("Grocery item changed or is unavailable");
         return {
@@ -1356,6 +1375,146 @@ export async function markGroceryItemPurchased(input: {
                     : new Date(String(rows[0].purchased_at)).toISOString(),
             version: Number(rows[0].version),
         };
+    });
+}
+
+export async function updateGroceryItem(input: {
+    userId: string;
+    scope: PlanningScope;
+    groceryItemId: string;
+    name: string;
+    quantity: number | null;
+    unit?: string | null;
+    note?: string | null;
+    expectedVersion: number;
+}) {
+    const name = input.name.trim();
+    if (!name || name.length > 300) {
+        throw new Error("Grocery item name is invalid");
+    }
+    if (
+        input.quantity !== null &&
+        (!Number.isFinite(input.quantity) || input.quantity <= 0)
+    ) {
+        throw new Error("Grocery item quantity must be positive");
+    }
+    if (!Number.isInteger(input.expectedVersion) || input.expectedVersion < 1) {
+        throw new Error("Grocery item expected version is required");
+    }
+
+    return withUserDatabase(input.userId, async (tx) => {
+        const owner = ownerValues(input.scope, input.userId);
+        const rows = await tx<Array<Record<string, unknown>>>`
+            update munch.grocery_items item
+            set name = ${name},
+                normalized_name = ${normalizeName(name)},
+                quantity = ${input.quantity},
+                unit = ${input.unit?.trim() || null},
+                note = ${input.note?.trim() || null},
+                updated_by_user_id = ${input.userId},
+                updated_at = now(),
+                version = item.version + 1
+            from munch.grocery_lists list
+            where item.id = ${input.groceryItemId}
+              and item.grocery_list_id = list.id
+              and list.status = 'active'
+              and list.personal_owner_user_id is not distinct from ${owner.personalOwnerUserId}
+              and list.household_id is not distinct from ${owner.householdId}
+              and item.deleted_at is null
+              and item.version = ${input.expectedVersion}
+            returning item.id, item.name, item.quantity, item.unit, item.note,
+                      item.purchased_at, item.source_recipe_id,
+                      item.source_recipe_revision_id, item.source_planned_meal_id,
+                      item.version
+        `;
+        const row = rows[0];
+        if (!row) throw new Error("Grocery item changed or is unavailable");
+        return {
+            grocery_item_id: String(row.id),
+            name: String(row.name),
+            quantity: row.quantity == null ? null : Number(row.quantity),
+            unit: row.unit == null ? null : String(row.unit),
+            note: row.note == null ? null : String(row.note),
+            purchased_at:
+                row.purchased_at == null
+                    ? null
+                    : new Date(String(row.purchased_at)).toISOString(),
+            source_recipe_id:
+                row.source_recipe_id == null
+                    ? null
+                    : String(row.source_recipe_id),
+            source_recipe_revision_id:
+                row.source_recipe_revision_id == null
+                    ? null
+                    : String(row.source_recipe_revision_id),
+            source_planned_meal_id:
+                row.source_planned_meal_id == null
+                    ? null
+                    : String(row.source_planned_meal_id),
+            version: Number(row.version),
+        };
+    });
+}
+
+export async function deleteGroceryItem(input: {
+    userId: string;
+    scope: PlanningScope;
+    groceryItemId: string;
+    expectedVersion: number;
+}) {
+    if (!Number.isInteger(input.expectedVersion) || input.expectedVersion < 1) {
+        throw new Error("Grocery item expected version is required");
+    }
+    return withUserDatabase(input.userId, async (tx) => {
+        const owner = ownerValues(input.scope, input.userId);
+        const rows = await tx<Array<Record<string, unknown>>>`
+            update munch.grocery_items item
+            set deleted_at = now(),
+                updated_by_user_id = ${input.userId},
+                updated_at = now(),
+                version = item.version + 1
+            from munch.grocery_lists list
+            where item.id = ${input.groceryItemId}
+              and item.grocery_list_id = list.id
+              and list.status = 'active'
+              and list.personal_owner_user_id is not distinct from ${owner.personalOwnerUserId}
+              and list.household_id is not distinct from ${owner.householdId}
+              and item.deleted_at is null
+              and item.version = ${input.expectedVersion}
+            returning item.id, item.version, item.deleted_at
+        `;
+        const row = rows[0];
+        if (!row) throw new Error("Grocery item changed or is unavailable");
+        return {
+            grocery_item_id: String(row.id),
+            version: Number(row.version),
+            deleted_at: new Date(String(row.deleted_at)).toISOString(),
+        };
+    });
+}
+
+export async function clearPurchasedGroceryItems(input: {
+    userId: string;
+    scope: PlanningScope;
+}) {
+    return withUserDatabase(input.userId, async (tx) => {
+        const owner = ownerValues(input.scope, input.userId);
+        const rows = await tx<Array<{ id: string }>>`
+            update munch.grocery_items item
+            set deleted_at = now(),
+                updated_by_user_id = ${input.userId},
+                updated_at = now(),
+                version = item.version + 1
+            from munch.grocery_lists list
+            where item.grocery_list_id = list.id
+              and list.status = 'active'
+              and list.personal_owner_user_id is not distinct from ${owner.personalOwnerUserId}
+              and list.household_id is not distinct from ${owner.householdId}
+              and item.purchased_at is not null
+              and item.deleted_at is null
+            returning item.id
+        `;
+        return { clearedCount: rows.length };
     });
 }
 

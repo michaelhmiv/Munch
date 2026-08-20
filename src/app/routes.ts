@@ -11,6 +11,7 @@ import {
 import { requireSameOrigin } from "../accounts/csrf.js";
 import { requireWebSession } from "../accounts/session.js";
 import { getSubscriptionSnapshot } from "../billing/repository.js";
+import { requirePlanningScope } from "../mcp-capability-guard.js";
 import {
     listOAuthConnections,
     revokeOAuthConnection,
@@ -28,12 +29,18 @@ import {
 } from "../storage.js";
 import { getStructuredMeal } from "../structured-meals/repository.js";
 import {
+    addGroceryItems,
     archiveRecipe,
+    clearPurchasedGroceryItems,
+    deleteGroceryItem,
     getRecipe,
     logRecipe,
+    markGroceryItemPurchased,
     saveRecipe,
     scheduleRecipe,
+    updateGroceryItem,
     updateRecipe,
+    type GroceryItemInput,
     type PlanningScope,
     type RecipeInput,
 } from "../planning/repository.js";
@@ -379,6 +386,91 @@ function recipeScopeForCreation(
         throw new Error("Household recipe capability is unavailable");
     }
     return { type: "household", householdId: household.householdId };
+}
+
+function groceryText(
+    value: unknown,
+    label: string,
+    maxLength: number,
+): string | undefined {
+    if (value === undefined || value === null) return undefined;
+    if (typeof value !== "string" || value.trim().length > maxLength) {
+        throw new Error(`${label} is invalid`);
+    }
+    return value.trim() || undefined;
+}
+
+function groceryQuantity(value: unknown): number | null {
+    if (value === null || value === "") return null;
+    const parsed = positiveNumber(value);
+    if (parsed === undefined)
+        throw new Error("Grocery item quantity is invalid");
+    return parsed;
+}
+
+function groceryItemInputFromBody(value: unknown): GroceryItemInput {
+    const body = recordValue(value, "Grocery item");
+    const name = groceryText(body.name, "Grocery item name", 300);
+    if (!name) throw new Error("Grocery item name is required");
+    const quantity =
+        body.quantity === undefined
+            ? undefined
+            : groceryQuantity(body.quantity);
+    return {
+        name,
+        quantity: quantity === null ? undefined : quantity,
+        unit: groceryText(body.unit, "Grocery item unit", 80),
+        note: groceryText(body.note, "Grocery item note", 500),
+        foodProvider: groceryText(
+            body.food_provider,
+            "Grocery food provider",
+            80,
+        ),
+        providerFoodId: groceryText(
+            body.provider_food_id,
+            "Grocery provider food ID",
+            300,
+        ),
+        sourceRecipeId: groceryText(
+            body.source_recipe_id,
+            "Grocery recipe source",
+            100,
+        ),
+        sourceRecipeRevisionId: groceryText(
+            body.source_recipe_revision_id,
+            "Grocery recipe revision source",
+            100,
+        ),
+        sourcePlannedMealId: groceryText(
+            body.source_planned_meal_id,
+            "Grocery plan source",
+            100,
+        ),
+        idempotencyKey: groceryText(
+            body.idempotency_key,
+            "Grocery idempotency key",
+            255,
+        ),
+    };
+}
+
+function planningScopeFromBody(
+    body: Record<string, unknown>,
+    capabilities: Awaited<ReturnType<typeof resolveMunchCapabilities>>,
+    write: boolean,
+): PlanningScope {
+    if (body.scope !== "personal" && body.scope !== "household") {
+        throw new Error("Grocery scope is required");
+    }
+    return requirePlanningScope(body.scope, capabilities, write);
+}
+
+function groceryExpectedVersion(body: Record<string, unknown>): number {
+    const value = Number(body.expected_version);
+    if (!Number.isInteger(value) || value < 1) {
+        throw new Error("Grocery item expected_version is required");
+    }
+    return value;
 }
 
 const STRUCTURED_NUTRIENT_FIELDS = [
@@ -903,6 +995,110 @@ export function createAppRouter(): Hono {
         return privateJson(c, { planned_meal: result });
     });
 
+    app.post("/api/app/groceries/items", requireSameOrigin, async (c) => {
+        const body = recordValue(await c.req.json(), "Grocery items");
+        const capabilities = await resolveMunchCapabilities(
+            c.get("munchUserId"),
+        );
+        const scope = planningScopeFromBody(body, capabilities, true);
+        const rawItems = Array.isArray(body.items)
+            ? body.items
+            : [body.item === undefined ? body : body.item];
+        const items = rawItems.map(groceryItemInputFromBody);
+        const grocery = await addGroceryItems({
+            userId: c.get("munchUserId"),
+            scope,
+            items: items.map((item) => ({
+                ...item,
+                idempotencyKey: item.idempotencyKey ?? crypto.randomUUID(),
+            })),
+        });
+        return privateJson(c, { grocery });
+    });
+
+    app.patch("/api/app/groceries/items/:id", requireSameOrigin, async (c) => {
+        const body = recordValue(await c.req.json(), "Grocery item update");
+        const capabilities = await resolveMunchCapabilities(
+            c.get("munchUserId"),
+        );
+        const scope = planningScopeFromBody(body, capabilities, true);
+        const input = groceryItemInputFromBody(body.item ?? body);
+        const groceryItem = await updateGroceryItem({
+            userId: c.get("munchUserId"),
+            scope,
+            groceryItemId: c.req.param("id")!,
+            name: input.name,
+            quantity: input.quantity ?? null,
+            unit: input.unit,
+            note: input.note,
+            expectedVersion: groceryExpectedVersion(body),
+        });
+        return privateJson(c, { grocery_item: groceryItem });
+    });
+
+    app.delete("/api/app/groceries/items/:id", requireSameOrigin, async (c) => {
+        const body = recordValue(
+            await c.req.json().catch(() => ({})),
+            "Grocery item delete",
+        );
+        const capabilities = await resolveMunchCapabilities(
+            c.get("munchUserId"),
+        );
+        const scope = planningScopeFromBody(body, capabilities, true);
+        const groceryItem = await deleteGroceryItem({
+            userId: c.get("munchUserId"),
+            scope,
+            groceryItemId: c.req.param("id")!,
+            expectedVersion: groceryExpectedVersion(body),
+        });
+        return privateJson(c, { grocery_item: groceryItem });
+    });
+
+    app.post(
+        "/api/app/groceries/items/:id/purchased",
+        requireSameOrigin,
+        async (c) => {
+            const body = recordValue(
+                await c.req.json(),
+                "Grocery purchase update",
+            );
+            if (typeof body.purchased !== "boolean") {
+                throw new Error("Grocery purchased state is required");
+            }
+            const capabilities = await resolveMunchCapabilities(
+                c.get("munchUserId"),
+            );
+            planningScopeFromBody(body, capabilities, true);
+            const groceryItem = await markGroceryItemPurchased({
+                userId: c.get("munchUserId"),
+                groceryItemId: c.req.param("id")!,
+                purchased: body.purchased,
+                expectedVersion: groceryExpectedVersion(body),
+            });
+            return privateJson(c, { grocery_item: groceryItem });
+        },
+    );
+
+    app.post(
+        "/api/app/groceries/clear-purchased",
+        requireSameOrigin,
+        async (c) => {
+            const body = recordValue(
+                await c.req.json(),
+                "Clear purchased groceries",
+            );
+            const capabilities = await resolveMunchCapabilities(
+                c.get("munchUserId"),
+            );
+            const scope = planningScopeFromBody(body, capabilities, true);
+            const result = await clearPurchasedGroceryItems({
+                userId: c.get("munchUserId"),
+                scope,
+            });
+            return privateJson(c, result);
+        },
+    );
+
     app.get("/api/app/household", async (c) =>
         privateJson(c, await getHouseholdWorkspace(c.get("munchUserId"))),
     );
@@ -1312,7 +1508,7 @@ export function createAppRouter(): Hono {
         console.error("App route failed", { name: error.name });
         const knownMessage =
             error instanceof Error &&
-            /^(Invalid|Connection not found|Date range|Weight|Target weight|Meal item|Meal |Meal$|Meal not found|Food |Nutrition|Add at least|A meal|Structured meal|A structured meal|Draft )/.test(
+            /^(Invalid|Connection not found|Date range|Weight|Target weight|Meal item|Meal |Meal$|Meal not found|Food |Nutrition|Add at least|A meal|Structured meal|A structured meal|Draft |Grocery )/.test(
                 error.message,
             )
                 ? error.message

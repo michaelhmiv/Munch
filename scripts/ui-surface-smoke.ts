@@ -213,6 +213,10 @@ for (const route of [
     'app.get("/api/app/food-barcode"',
     'app.post("/api/app/meals"',
     'app.post("/api/app/recipes"',
+    'app.post("/api/app/groceries/items"',
+    '"/api/app/groceries/items/:id"',
+    '"/api/app/groceries/items/:id/purchased"',
+    '"/api/app/groceries/clear-purchased"',
     'app.get("/api/app/meal-drafts/:id"',
     '"/api/app/meal-drafts/:id/items"',
     '"/api/app/meal-drafts/:id/confirm"',
@@ -236,6 +240,11 @@ for (const behavior of [
     'data-action="add-recipe-ingredient"',
     "recipePayloadFromForm",
     'api("/api/app/recipes"',
+    'data-action="add-grocery"',
+    'data-action="edit-grocery"',
+    'data-action="toggle-grocery-purchased"',
+    'data-action="clear-purchased"',
+    "grocery-add-form",
 ]) {
     if (!appSource.includes(behavior)) {
         throw new Error(`App meal composer is missing behavior: ${behavior}`);

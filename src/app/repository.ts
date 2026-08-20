@@ -369,6 +369,11 @@ export async function getPlanningWorkspace(
         ]);
     return {
         available: true,
+        permissions: {
+            personal: capabilities.personalPlanningWrite,
+            household: Boolean(household) && capabilities.householdWrite,
+            householdRole: household?.role ?? null,
+        },
         recipes,
         plannedMeals,
         groceries: [
