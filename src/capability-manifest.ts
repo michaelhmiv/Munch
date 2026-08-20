@@ -397,10 +397,10 @@ export const CAPABILITY_MANIFEST = [
     {
         id: "recipe.create",
         mcp: complete(["save_recipe"]),
-        web: missing(),
+        web: complete(["POST /api/app/recipes", "/app/recipes"]),
         intentionalChannelException: null,
-        gap: "The website has no structured Create Recipe form.",
-        targetPr: "PR 4",
+        gap: null,
+        targetPr: null,
     },
     {
         id: "recipe.read",
@@ -421,10 +421,10 @@ export const CAPABILITY_MANIFEST = [
     {
         id: "recipe.update",
         mcp: complete(["update_recipe"]),
-        web: partial(["PATCH /api/app/recipes/:id"]),
+        web: complete(["PATCH /api/app/recipes/:id"]),
         intentionalChannelException: null,
-        gap: "The website editor still requires raw recipe JSON.",
-        targetPr: "PR 4",
+        gap: null,
+        targetPr: null,
     },
     {
         id: "recipe.archive",

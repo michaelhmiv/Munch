@@ -204,6 +204,9 @@ export async function getAppBootstrap(userId: string, email: string) {
             savedFoodLimit: capabilities.savedFoodLimit,
             recipes:
                 capabilities.personalRecipesRead || capabilities.householdRead,
+            recipeWrite: capabilities.personalRecipesWrite,
+            householdRecipeWrite:
+                Boolean(capabilities.household) && capabilities.householdWrite,
             planning:
                 capabilities.personalPlanningRead || capabilities.householdRead,
             household: capabilities.householdRead,

@@ -212,6 +212,7 @@ for (const route of [
     'app.get("/api/app/food-details"',
     'app.get("/api/app/food-barcode"',
     'app.post("/api/app/meals"',
+    'app.post("/api/app/recipes"',
     'app.get("/api/app/meal-drafts/:id"',
     '"/api/app/meal-drafts/:id/items"',
     '"/api/app/meal-drafts/:id/confirm"',
@@ -230,6 +231,11 @@ for (const behavior of [
     'data-action="open-meal-draft"',
     'data-action="confirm-meal-draft"',
     'data-action="cancel-meal-draft"',
+    'data-action="create-recipe"',
+    'data-action="select-recipe-food-option"',
+    'data-action="add-recipe-ingredient"',
+    "recipePayloadFromForm",
+    'api("/api/app/recipes"',
 ]) {
     if (!appSource.includes(behavior)) {
         throw new Error(`App meal composer is missing behavior: ${behavior}`);
@@ -242,6 +248,9 @@ if (!appRouterSource.includes("serializeMealDraftForApp")) {
 }
 if (appSource.includes("Continue this draft in ChatGPT")) {
     throw new Error("Pending drafts still redirect users to ChatGPT");
+}
+if (appSource.includes("Complete recipe JSON")) {
+    throw new Error("Recipe editing still requires raw JSON");
 }
 
 const appHtml = await Bun.file("public/app.html").text();

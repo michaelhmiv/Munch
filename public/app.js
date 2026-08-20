@@ -33,6 +33,22 @@ const mealDraftReview = {
     searchTimer: null,
 };
 
+const recipeComposer = {
+    ingredients: [],
+    options: new Map(),
+    searchTimer: null,
+};
+
+const recipeNutrientFields = [
+    "calories",
+    "protein_g",
+    "carbs_g",
+    "fat_g",
+    "fiber_g",
+    "sugar_g",
+    "sodium_mg",
+];
+
 const content = document.getElementById("app-content");
 const pageTitle = document.getElementById("page-title");
 const pageKicker = document.getElementById("page-kicker");
@@ -372,40 +388,276 @@ async function renderRecipes() {
         );
         return;
     }
-    content.innerHTML = `<div class="page-heading"><div><h2>Recipe library</h2><p>${data.recipes.length} structured recipe${data.recipes.length === 1 ? "" : "s"}.</p></div><input class="input" id="recipe-filter" type="search" placeholder="Filter recipes" aria-label="Filter recipes" /></div><div class="capability-grid" id="recipe-grid">${data.recipes.length ? data.recipes.map((recipe) => `<article class="capability-card" data-recipe-name="${escapeHtml(recipe.name.toLowerCase())}"><span class="source-chip ${recipe.ownership === "household" ? "source-saved" : "source-usda"}">${escapeHtml(recipe.ownership)}</span><h3 class="spacer-top">${escapeHtml(recipe.name)}</h3><p>${number(recipe.servings, 1)} servings · ${escapeHtml(recipe.nutrition_status)}</p><div class="meal-macros"><span class="macro-chip">${number(recipe.nutrition_per_serving?.calories)} kcal</span><span class="macro-chip">P ${number(recipe.nutrition_per_serving?.protein_g, 1)}g</span><span class="macro-chip">C ${number(recipe.nutrition_per_serving?.carbs_g, 1)}g</span><span class="macro-chip">F ${number(recipe.nutrition_per_serving?.fat_g, 1)}g</span></div><p class="tiny spacer-top">Scheduled ${number(recipe.times_scheduled)} times · logged ${number(recipe.times_logged)} times</p><button class="button button-secondary button-small spacer-top" type="button" data-action="view-recipe" data-id="${escapeHtml(recipe.recipe_id)}">View recipe</button></article>`).join("") : `<div class="empty-state"><div><h3>No recipes yet</h3><p>Ask ChatGPT to save a complete recipe after the ingredients and servings are established.</p></div></div>`}</div>`;
+    const canCreate = Boolean(
+        state.bootstrap?.capabilities?.recipeWrite ||
+        state.bootstrap?.capabilities?.householdRecipeWrite,
+    );
+    const createButton = canCreate
+        ? '<button class="button button-primary button-small" data-action="create-recipe">Create recipe</button>'
+        : "";
+    content.innerHTML = `<div class="page-heading"><div><h2>Recipe library</h2><p>${data.recipes.length} structured recipe${data.recipes.length === 1 ? "" : "s"}.</p></div><div class="auth-actions">${createButton}<input class="input" id="recipe-filter" type="search" placeholder="Filter recipes" aria-label="Filter recipes" /></div></div><div class="capability-grid" id="recipe-grid">${data.recipes.length ? data.recipes.map((recipe) => `<article class="capability-card" data-recipe-name="${escapeHtml(recipe.name.toLowerCase())}"><span class="source-chip ${recipe.ownership === "household" ? "source-saved" : "source-usda"}">${escapeHtml(recipe.ownership)}</span><h3 class="spacer-top">${escapeHtml(recipe.name)}</h3><p>${number(recipe.servings, 1)} servings · ${escapeHtml(recipe.nutrition_status)}</p><div class="meal-macros"><span class="macro-chip">${number(recipe.nutrition_per_serving?.calories)} kcal</span><span class="macro-chip">P ${number(recipe.nutrition_per_serving?.protein_g, 1)}g</span><span class="macro-chip">C ${number(recipe.nutrition_per_serving?.carbs_g, 1)}g</span><span class="macro-chip">F ${number(recipe.nutrition_per_serving?.fat_g, 1)}g</span></div><p class="tiny spacer-top">Scheduled ${number(recipe.times_scheduled)} times · logged ${number(recipe.times_logged)} times</p><button class="button button-secondary button-small spacer-top" type="button" data-action="view-recipe" data-id="${escapeHtml(recipe.recipe_id)}">View recipe</button></article>`).join("") : `<div class="empty-state"><div><h3>No recipes yet</h3><p>Start with a structured recipe here, or save one from ChatGPT.</p>${canCreate ? '<button class="button button-primary spacer-top" type="button" data-action="create-recipe">Create your first recipe</button>' : ""}</div></div>`}</div>`;
 }
 
-function recipeEditorValue(recipe) {
-    return JSON.stringify(
-        {
-            name: recipe.name,
-            servings: recipe.servings,
-            description: recipe.description || undefined,
-            instructions: recipe.instructions,
-            preparation_minutes: recipe.preparation_minutes ?? undefined,
-            cooking_minutes: recipe.cooking_minutes ?? undefined,
-            source_type: recipe.source.type,
-            source_title: recipe.source.title || undefined,
-            source_url: recipe.source.url || undefined,
-            ingredients: recipe.ingredients.map((ingredient) => ({
-                name: ingredient.name,
-                quantity: ingredient.quantity ?? undefined,
-                unit: ingredient.unit || undefined,
-                preparation: ingredient.preparation || undefined,
-                optional: ingredient.optional || undefined,
-                gram_weight: ingredient.gram_weight ?? undefined,
-                nutrients: ingredient.nutrients,
-                provider: ingredient.provider || undefined,
-                provider_food_id: ingredient.provider_food_id || undefined,
-                source_type: ingredient.source_type,
-                source_url: ingredient.source_url || undefined,
-                confidence: ingredient.confidence ?? undefined,
-                source_snapshot: ingredient.source_snapshot,
-            })),
+function recipeIngredientFromFood(food, portionId) {
+    const portion = foodPortion(food, portionId);
+    if (!portion) throw new Error("Food has no usable portion");
+    const candidateId = food.candidate_id;
+    return {
+        name: foodTitle(food),
+        quantity: 1,
+        unit: portion.label,
+        preparation: "",
+        optional: false,
+        gramWeight: portion.gram_weight ?? undefined,
+        nutrients: portion.nutrients || {},
+        provider: food.provider,
+        providerFoodId: food.provider_food_id,
+        sourceType: food.provider,
+        sourceUrl: food.source_url || undefined,
+        confidence: food.confidence,
+        sourceSnapshot: {
+            resolution_layer: "food_search",
+            candidate_id: candidateId,
+            provider: food.provider,
+            provider_food_id: food.provider_food_id,
+            selected_portion_id: portion.id,
+            selected_portion_label: portion.label,
+            selected_quantity: 1,
+            nutrition_snapshot: portion.nutrients,
         },
-        null,
-        2,
-    );
+    };
+}
+
+function recipeIngredientFromRecord(ingredient) {
+    return {
+        name: ingredient.name,
+        quantity: ingredient.quantity ?? undefined,
+        unit: ingredient.unit || "",
+        preparation: ingredient.preparation || "",
+        optional: Boolean(ingredient.optional),
+        gramWeight: ingredient.gram_weight ?? undefined,
+        nutrients: ingredient.nutrients || {},
+        provider: ingredient.provider || undefined,
+        providerFoodId: ingredient.provider_food_id || undefined,
+        sourceType: ingredient.source_type || "user_supplied",
+        sourceUrl: ingredient.source_url || undefined,
+        confidence: ingredient.confidence ?? undefined,
+        sourceSnapshot: ingredient.source_snapshot || {},
+    };
+}
+
+function recipeIngredientFromRecent(recent) {
+    return {
+        name: recent.name,
+        quantity: 1,
+        unit: recent.portionLabel || "serving",
+        preparation: "",
+        optional: false,
+        gramWeight: undefined,
+        nutrients: recent.nutrients || {},
+        provider: recent.provider || undefined,
+        providerFoodId: recent.providerFoodId || undefined,
+        sourceType: "past_meal",
+        sourceUrl: undefined,
+        confidence: recent.confidence ?? undefined,
+        sourceSnapshot: {
+            resolution_layer: "personal_history",
+            meal_id: recent.mealId,
+            item_id: recent.itemId,
+        },
+    };
+}
+
+function recipeFormMarkup(mode, recipe = null) {
+    const editing = mode === "edit";
+    const scopeOptions = editing
+        ? '<input type="hidden" name="scope" value="personal" />'
+        : `<label class="field"><span>Save to</span><select name="scope">${state.bootstrap?.capabilities?.recipeWrite !== false ? '<option value="personal">Personal recipes</option>' : ""}${state.bootstrap?.capabilities?.householdRecipeWrite ? '<option value="household">Household recipes</option>' : ""}</select></label>`;
+    const sourceType = recipe?.source?.type || "user_entered";
+    return `<form id="${editing ? "recipe-edit-form" : "recipe-create-form"}" class="auth-form"${editing ? ` data-id="${escapeHtml(recipe.id)}" data-version="${escapeHtml(recipe.version)}"` : ""}><div class="meal-composer-grid"><label class="field"><span>Recipe name</span><input name="name" value="${escapeHtml(recipe?.name || "")}" maxlength="200" required /></label><label class="field"><span>Servings</span><input name="servings" type="number" min="0.01" step="0.01" value="${escapeHtml(recipe?.servings ?? 2)}" required /></label></div>${scopeOptions}<label class="field"><span>Description</span><textarea name="description" rows="2" maxlength="2000" placeholder="What is this recipe for?">${escapeHtml(recipe?.description || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Prep time (minutes)</span><input name="preparation_minutes" type="number" min="0" step="1" value="${escapeHtml(recipe?.preparation_minutes ?? "")}" /></label><label class="field"><span>Cook time (minutes)</span><input name="cooking_minutes" type="number" min="0" step="1" value="${escapeHtml(recipe?.cooking_minutes ?? "")}" /></label></div><section class="recipe-editor-section"><div class="panel-title"><div><h3>Ingredients</h3><span>Search verified foods or add your own.</span></div><button class="button button-secondary button-small" type="button" data-action="add-recipe-ingredient">Add ingredient</button></div><div class="meal-composer-search"><div class="meal-composer-search-row"><input class="input" id="recipe-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><span class="tiny">Food search facts are stored with this revision.</span></div><div id="recipe-food-results" class="meal-food-results"></div></div><div id="recipe-ingredients" class="meal-selected-items"></div></section><label class="field"><span>Instructions</span><textarea name="instructions" rows="6" maxlength="20000" placeholder="One step per line" required>${escapeHtml(recipe?.instructions?.join("\n") || "")}</textarea><small class="tiny">Put each instruction on its own line.</small></label><div class="meal-composer-grid"><label class="field"><span>Source title</span><input name="source_title" maxlength="500" value="${escapeHtml(recipe?.source?.title || "")}" placeholder="Optional cookbook, site, or note" /></label><label class="field"><span>Source type</span><select name="source_type"><option value="user_entered" ${sourceType === "user_entered" ? "selected" : ""}>User entered</option><option value="chatgpt_generated" ${sourceType === "chatgpt_generated" ? "selected" : ""}>ChatGPT generated</option><option value="imported" ${sourceType === "imported" ? "selected" : ""}>Imported</option></select></label></div><label class="field"><span>Source URL</span><input name="source_url" type="url" maxlength="2000" value="${escapeHtml(recipe?.source?.url || "")}" placeholder="https://…" /></label><button class="button button-primary" type="submit">${editing ? "Save new revision" : "Create recipe"}</button></form>`;
+}
+
+function renderRecipeIngredients() {
+    const root = document.getElementById("recipe-ingredients");
+    if (!root) return;
+    if (recipeComposer.ingredients.length === 0) {
+        root.innerHTML = `<div class="empty-state"><div><strong>No ingredients yet.</strong><p>Search for a food or add a manual ingredient.</p></div></div>`;
+        return;
+    }
+    root.innerHTML = recipeComposer.ingredients
+        .map((ingredient, index) => {
+            const nutrients = ingredient.nutrients || {};
+            return `<article class="meal-composer-item recipe-ingredient-editor" data-recipe-ingredient-index="${index}"><div class="meal-composer-item-head"><div><strong>${escapeHtml(ingredient.name || "New ingredient")}</strong><small>${sourceBadge(ingredient.sourceType || "user_supplied")} ${ingredient.provider ? escapeHtml(ingredient.provider) : "Nutrition can be entered below"}</small></div><button class="button button-quiet button-small" type="button" data-action="remove-recipe-ingredient" data-index="${index}">Remove</button></div><div class="meal-composer-grid"><label class="field"><span>Name</span><input data-recipe-field="name" value="${escapeHtml(ingredient.name || "")}" maxlength="300" required /></label><label class="field"><span>Quantity</span><input data-recipe-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(ingredient.quantity ?? "")}" /></label><label class="field"><span>Unit</span><input data-recipe-field="unit" maxlength="80" value="${escapeHtml(ingredient.unit || "")}" placeholder="cup, gram, serving…" /></label><label class="field"><span>Preparation</span><input data-recipe-field="preparation" maxlength="200" value="${escapeHtml(ingredient.preparation || "")}" placeholder="chopped, warmed…" /></label></div><label class="checkbox-row"><input data-recipe-field="optional" type="checkbox" ${ingredient.optional ? "checked" : ""} /> Optional ingredient</label><div class="meal-composer-nutrients">${recipeNutrientFields.map((key) => `<label class="field"><span>${escapeHtml(key.replace("_g", " (g)").replace("sodium_mg", "sodium (mg)"))}</span><input data-recipe-field="${key}" type="number" min="0" step="0.1" value="${escapeHtml(nutrients[key] ?? "")}" /></label>`).join("")}</div></article>`;
+        })
+        .join("");
+}
+
+function renderRecipeSearchResults(data) {
+    const root = document.getElementById("recipe-food-results");
+    if (!root) return;
+    recipeComposer.options.clear();
+    const sections = [];
+    if (data.candidates?.length) {
+        sections.push(
+            `<div class="meal-search-section"><h4>Verified foods</h4>${data.candidates
+                .map((candidate, index) => {
+                    const key = `candidate:${index}`;
+                    recipeComposer.options.set(key, {
+                        kind: "candidate",
+                        candidateId: candidate.candidate_id,
+                    });
+                    return `<button class="meal-search-result" type="button" data-action="select-recipe-food-option" data-key="${key}"><span><strong>${escapeHtml([candidate.brand, candidate.name].filter(Boolean).join(" — ") || candidate.name)}</strong><small>${sourceBadge(candidate.provider)} ${escapeHtml(candidate.default_portion?.label || "Details available after selection")}</small></span><span>${candidate.default_portion?.calories == null ? "" : `${number(candidate.default_portion.calories)} kcal`}</span></button>`;
+                })
+                .join("")}</div>`,
+        );
+    }
+    if (data.savedFoods?.length) {
+        sections.push(
+            `<div class="meal-search-section"><h4>Saved foods</h4>${data.savedFoods
+                .map((saved, index) => {
+                    const key = `saved:${index}`;
+                    recipeComposer.options.set(key, {
+                        kind: "food",
+                        food: saved.food,
+                        portionId: saved.defaultPortionId,
+                    });
+                    return `<button class="meal-search-result" type="button" data-action="select-recipe-food-option" data-key="${key}"><span><strong>${escapeHtml(saved.label)}</strong><small>${sourceBadge(saved.food.provider)} ${escapeHtml(saved.food.name || "Saved food")}</small></span><span>${number(foodPortion(saved.food, saved.defaultPortionId)?.nutrients?.calories)} kcal</span></button>`;
+                })
+                .join("")}</div>`,
+        );
+    }
+    if (data.recentMealItems?.length) {
+        sections.push(
+            `<div class="meal-search-section"><h4>Recent foods</h4>${data.recentMealItems
+                .map((recent, index) => {
+                    const key = `recent:${index}`;
+                    recipeComposer.options.set(key, { kind: "recent", recent });
+                    return `<button class="meal-search-result" type="button" data-action="select-recipe-food-option" data-key="${key}"><span><strong>${escapeHtml(recent.name)}</strong><small>${sourceBadge("past_meal")} ${escapeHtml(recent.portionLabel || "Portion not recorded")}</small></span><span>${number(recent.nutrients?.calories)} kcal</span></button>`;
+                })
+                .join("")}</div>`,
+        );
+    }
+    root.innerHTML =
+        sections.join("") ||
+        `<p class="tiny">No matches yet. Try a food name or add a manual ingredient.</p>`;
+}
+
+async function searchRecipeFoods(query) {
+    const root = document.getElementById("recipe-food-results");
+    if (!root) return;
+    root.innerHTML = `<p class="tiny">Searching verified foods and personal history…</p>`;
+    try {
+        const data = await api(
+            `/api/app/food-search?query=${encodeURIComponent(query)}&limit=8`,
+            { keepPrevious: true },
+        );
+        renderRecipeSearchResults(data);
+    } catch (error) {
+        if (error?.name !== "AbortError")
+            root.innerHTML = `<p class="tiny">${escapeHtml(error.message || "Food search failed")}</p>`;
+    }
+}
+
+async function selectRecipeFoodOption(key) {
+    syncRecipeComposerFromDom();
+    const option = recipeComposer.options.get(key);
+    if (!option) return;
+    if (option.kind === "candidate") {
+        const data = await api(
+            `/api/app/food-details?candidate_id=${encodeURIComponent(option.candidateId)}`,
+            { keepPrevious: true },
+        );
+        if (!data.food) throw new Error("Food details are no longer available");
+        recipeComposer.ingredients.push(
+            recipeIngredientFromFood(data.food, data.food.portions?.[0]?.id),
+        );
+    } else if (option.kind === "food") {
+        recipeComposer.ingredients.push(
+            recipeIngredientFromFood(option.food, option.portionId),
+        );
+    } else {
+        recipeComposer.ingredients.push(
+            recipeIngredientFromRecent(option.recent),
+        );
+    }
+    renderRecipeIngredients();
+}
+
+function syncRecipeComposerFromDom() {
+    const root = document.getElementById("recipe-ingredients");
+    if (!root) return;
+    root.querySelectorAll("[data-recipe-ingredient-index]").forEach((row) => {
+        const index = Number(row.dataset.recipeIngredientIndex);
+        const ingredient = recipeComposer.ingredients[index];
+        if (!ingredient) return;
+        const field = (name) =>
+            row.querySelector(`[data-recipe-field="${name}"]`);
+        const numeric = (name) => {
+            const value = field(name)?.value;
+            if (value === "" || value == null) return undefined;
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : undefined;
+        };
+        ingredient.name = field("name")?.value || "";
+        ingredient.quantity = numeric("quantity");
+        ingredient.unit = field("unit")?.value || "";
+        ingredient.preparation = field("preparation")?.value || "";
+        ingredient.optional = Boolean(field("optional")?.checked);
+        ingredient.gramWeight = numeric("gram_weight");
+        ingredient.nutrients = Object.fromEntries(
+            recipeNutrientFields
+                .map((key) => [key, numeric(key)])
+                .filter(([, value]) => value !== undefined),
+        );
+    });
+}
+
+function recipePayloadFromForm(values) {
+    syncRecipeComposerFromDom();
+    const instructions = String(values.instructions || "")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+    return {
+        name: values.name,
+        servings: Number(values.servings),
+        description: values.description || undefined,
+        instructions,
+        preparation_minutes:
+            values.preparation_minutes === ""
+                ? undefined
+                : Number(values.preparation_minutes),
+        cooking_minutes:
+            values.cooking_minutes === ""
+                ? undefined
+                : Number(values.cooking_minutes),
+        source_type: values.source_type,
+        source_title: values.source_title || undefined,
+        source_url: values.source_url || undefined,
+        ingredients: recipeComposer.ingredients.map((ingredient) => ({
+            name: ingredient.name,
+            quantity: ingredient.quantity,
+            unit: ingredient.unit || undefined,
+            preparation: ingredient.preparation || undefined,
+            optional: ingredient.optional || undefined,
+            gram_weight: ingredient.gramWeight,
+            nutrients: ingredient.nutrients,
+            provider: ingredient.provider,
+            provider_food_id: ingredient.providerFoodId,
+            source_type: ingredient.sourceType || "user_supplied",
+            source_url: ingredient.sourceUrl,
+            confidence: ingredient.confidence,
+            source_snapshot: ingredient.sourceSnapshot,
+        })),
+    };
+}
+
+function openRecipeCreate() {
+    recipeComposer.ingredients = [];
+    recipeComposer.options.clear();
+    openDialog("Create recipe", recipeFormMarkup("create"));
+    renderRecipeIngredients();
+    searchRecipeFoods("");
 }
 
 async function openRecipe(id) {
@@ -419,8 +671,14 @@ async function openRecipe(id) {
         .join("");
     openDialog(
         recipe.name,
-        `<div class="recipe-detail"><p>${number(recipe.servings, 3)} servings · revision ${number(recipe.revision_number)} · ${escapeHtml(recipe.nutrition_status)}</p><div class="meal-macros"><span class="macro-chip">${number(recipe.nutrition_per_serving?.calories)} kcal/serving</span><span class="macro-chip">P ${number(recipe.nutrition_per_serving?.protein_g, 1)}g</span><span class="macro-chip">C ${number(recipe.nutrition_per_serving?.carbs_g, 1)}g</span><span class="macro-chip">F ${number(recipe.nutrition_per_serving?.fat_g, 1)}g</span></div><h3 class="spacer-top">Ingredients</h3><ul class="food-items">${ingredients}</ul><p class="tiny spacer-top">Every ingredient includes the source snapshot used to calculate this revision. Editing creates a new revision; historical logs stay pinned.</p><div class="auth-actions spacer-top"><button class="button button-primary" type="button" data-action="log-recipe" data-id="${escapeHtml(recipe.id)}" data-revision="${escapeHtml(recipe.revision_id)}">Log recipe</button><button class="button button-secondary" type="button" data-action="plan-recipe" data-id="${escapeHtml(recipe.id)}" data-revision="${escapeHtml(recipe.revision_id)}">Add to plan</button><button class="button button-secondary" type="button" data-action="archive-recipe" data-id="${escapeHtml(recipe.id)}" data-version="${escapeHtml(recipe.version)}">Archive</button></div><details class="spacer-top"><summary>Edit recipe revision</summary><form id="recipe-edit-form" class="auth-form" data-id="${escapeHtml(recipe.id)}" data-version="${escapeHtml(recipe.version)}"><label class="field"><span>Complete recipe JSON</span><textarea name="recipe_json" rows="18" required>${escapeHtml(recipeEditorValue(recipe))}</textarea></label><button class="button button-primary" type="submit">Save new revision</button></form></details></div>`,
+        `<div class="recipe-detail"><p>${number(recipe.servings, 3)} servings · revision ${number(recipe.revision_number)} · ${escapeHtml(recipe.nutrition_status)}</p><div class="meal-macros"><span class="macro-chip">${number(recipe.nutrition_per_serving?.calories)} kcal/serving</span><span class="macro-chip">P ${number(recipe.nutrition_per_serving?.protein_g, 1)}g</span><span class="macro-chip">C ${number(recipe.nutrition_per_serving?.carbs_g, 1)}g</span><span class="macro-chip">F ${number(recipe.nutrition_per_serving?.fat_g, 1)}g</span></div><h3 class="spacer-top">Ingredients</h3><ul class="food-items">${ingredients}</ul><h3 class="spacer-top">Instructions</h3><ol class="recipe-instructions">${recipe.instructions.map((instruction) => `<li>${escapeHtml(instruction)}</li>`).join("") || "<li>No instructions recorded.</li>"}</ol><p class="tiny spacer-top">Every ingredient includes the source snapshot used to calculate this revision. Editing creates a new revision; historical logs stay pinned.</p><div class="auth-actions spacer-top"><button class="button button-primary" type="button" data-action="log-recipe" data-id="${escapeHtml(recipe.id)}" data-revision="${escapeHtml(recipe.revision_id)}">Log recipe</button><button class="button button-secondary" type="button" data-action="plan-recipe" data-id="${escapeHtml(recipe.id)}" data-revision="${escapeHtml(recipe.revision_id)}">Add to plan</button><button class="button button-secondary" type="button" data-action="archive-recipe" data-id="${escapeHtml(recipe.id)}" data-version="${escapeHtml(recipe.version)}">Archive</button></div><details class="spacer-top"><summary>Edit recipe revision</summary>${recipeFormMarkup("edit", recipe)}</details></div>`,
     );
+    recipeComposer.ingredients = recipe.ingredients.map(
+        recipeIngredientFromRecord,
+    );
+    recipeComposer.options.clear();
+    renderRecipeIngredients();
+    searchRecipeFoods("");
 }
 
 function openRecipeLog(id, revisionId) {
@@ -560,7 +818,7 @@ function findMeal(id) {
 }
 
 function openDialog(title, body, actions = "") {
-    dialog.innerHTML = `<form method="dialog" class="auth-card" style="min-width:min(92vw,520px);max-height:85vh;overflow:auto"><div class="panel-title"><h2 style="font-size:1.6rem">${escapeHtml(title)}</h2><button class="button button-quiet button-small" value="cancel" aria-label="Close">Close</button></div>${body}${actions}</form>`;
+    dialog.innerHTML = `<div class="auth-card" style="min-width:min(92vw,520px);max-height:85vh;overflow:auto"><div class="panel-title"><h2 style="font-size:1.6rem">${escapeHtml(title)}</h2><button class="button button-quiet button-small" type="button" data-action="close-dialog" aria-label="Close">Close</button></div>${body}${actions}</div>`;
     dialog.showModal();
 }
 
@@ -1051,6 +1309,10 @@ async function handleAction(button) {
     const action = button.dataset.action;
     if (!action) return;
     if (await handleAccountAction(button, accountContext())) return;
+    if (action === "close-dialog") {
+        dialog.close();
+        return;
+    }
     if (action === "refresh") return renderRoute();
     if (action === "date-prev") state.date = shiftDate(state.date, -1);
     if (action === "date-next") state.date = shiftDate(state.date, 1);
@@ -1290,6 +1552,32 @@ async function handleAction(button) {
         state.insightsDays = days;
         return renderInsights();
     }
+    if (action === "create-recipe") return openRecipeCreate();
+    if (action === "add-recipe-ingredient") {
+        syncRecipeComposerFromDom();
+        recipeComposer.ingredients.push({
+            name: "",
+            quantity: 1,
+            unit: "",
+            preparation: "",
+            optional: false,
+            nutrients: {},
+            sourceType: "user_supplied",
+            sourceSnapshot: { entered_by_user: true },
+        });
+        renderRecipeIngredients();
+        return;
+    }
+    if (action === "remove-recipe-ingredient") {
+        syncRecipeComposerFromDom();
+        recipeComposer.ingredients.splice(Number(button.dataset.index), 1);
+        renderRecipeIngredients();
+        return;
+    }
+    if (action === "select-recipe-food-option") {
+        await selectRecipeFoodOption(button.dataset.key);
+        return;
+    }
     if (action === "view-recipe") return openRecipe(button.dataset.id);
     if (action === "log-recipe")
         return openRecipeLog(button.dataset.id, button.dataset.revision);
@@ -1421,6 +1709,13 @@ document.addEventListener("input", (event) => {
             240,
         );
     }
+    if (event.target.id === "recipe-food-search") {
+        window.clearTimeout(recipeComposer.searchTimer);
+        recipeComposer.searchTimer = window.setTimeout(
+            () => searchRecipeFoods(event.target.value),
+            240,
+        );
+    }
     if (event.target.id === "food-filter") {
         const value = event.target.value.toLowerCase();
         document.querySelectorAll("[data-food-label]").forEach((row) => {
@@ -1484,6 +1779,7 @@ document.addEventListener("submit", async (event) => {
             "weight-form",
             "preferences-form",
             "goals-form",
+            "recipe-create-form",
             "recipe-edit-form",
             "recipe-log-form",
             "recipe-plan-form",
@@ -1558,13 +1854,19 @@ document.addEventListener("submit", async (event) => {
             });
             toast("Goals saved.");
         }
+        if (form.id === "recipe-create-form") {
+            await api("/api/app/recipes", {
+                method: "POST",
+                body: JSON.stringify({
+                    scope: values.scope || "personal",
+                    idempotency_key: crypto.randomUUID(),
+                    recipe: recipePayloadFromForm(values),
+                }),
+                keepPrevious: true,
+            });
+            toast("Recipe created.");
+        }
         if (form.id === "recipe-edit-form") {
-            let recipe;
-            try {
-                recipe = JSON.parse(values.recipe_json);
-            } catch {
-                throw new Error("Recipe JSON is not valid");
-            }
             await api(
                 `/api/app/recipes/${encodeURIComponent(form.dataset.id)}`,
                 {
@@ -1572,7 +1874,7 @@ document.addEventListener("submit", async (event) => {
                     body: JSON.stringify({
                         expected_version: Number(form.dataset.version),
                         idempotency_key: crypto.randomUUID(),
-                        recipe,
+                        recipe: recipePayloadFromForm(values),
                     }),
                     keepPrevious: true,
                 },
