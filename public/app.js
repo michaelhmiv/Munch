@@ -39,6 +39,21 @@ const recipeComposer = {
     searchTimer: null,
 };
 
+const webMealImport = {
+    table: null,
+    mapping: {},
+    dateFormat: "iso",
+    energyUnit: "kcal",
+    sourceApp: "",
+    rows: [],
+    skipped: 0,
+    warnings: [],
+    preview: null,
+    result: null,
+    fileName: "",
+    busy: false,
+};
+
 const recipeNutrientFields = [
     "calories",
     "protein_g",
@@ -196,12 +211,15 @@ function toast(message, kind = "success") {
 async function api(path, options = {}) {
     if (state.controller) state.controller.abort();
     const controller = new AbortController();
+    const isFormData = options.body instanceof FormData;
     if (!options.keepPrevious) state.controller = controller;
     const response = await fetch(path, {
         credentials: "same-origin",
         headers: {
             Accept: "application/json",
-            ...(options.body ? { "Content-Type": "application/json" } : {}),
+            ...(options.body && !isFormData
+                ? { "Content-Type": "application/json" }
+                : {}),
             ...options.headers,
         },
         ...options,
@@ -856,7 +874,522 @@ function findMeal(id) {
 
 function openDialog(title, body, actions = "") {
     dialog.innerHTML = `<div class="auth-card" style="min-width:min(92vw,520px);max-height:85vh;overflow:auto"><div class="panel-title"><h2 style="font-size:1.6rem">${escapeHtml(title)}</h2><button class="button button-quiet button-small" type="button" data-action="close-dialog" aria-label="Close">Close</button></div>${body}${actions}</div>`;
-    dialog.showModal();
+    if (!dialog.open) dialog.showModal();
+}
+
+const webImportFields = [
+    { key: "logged_at", label: "Date", required: true },
+    { key: "time", label: "Time" },
+    { key: "description", label: "Food name" },
+    { key: "meal_type", label: "Meal type" },
+    { key: "calories", label: "Calories" },
+    { key: "protein_g", label: "Protein (g)" },
+    { key: "carbs_g", label: "Carbs (g)" },
+    { key: "fat_g", label: "Fat (g)" },
+    { key: "fiber_g", label: "Fiber (g)" },
+    { key: "sugar_g", label: "Total sugar (g)" },
+    { key: "alcohol_g", label: "Alcohol (g)", alcoholOnly: true },
+    { key: "notes", label: "Notes" },
+    { key: "deleted", label: "Deleted flag" },
+];
+
+const webImportAliases = {
+    logged_at: ["date", "day", "logged_at", "timestamp", "datum"],
+    time: ["time", "uhrzeit"],
+    description: [
+        "food",
+        "food_name",
+        "description",
+        "name",
+        "item",
+        "lebensmittel",
+    ],
+    meal_type: ["meal", "meal_type", "type", "group", "mahlzeit"],
+    calories: ["calories", "energy_kcal", "energy", "kcal", "kalorien"],
+    protein_g: ["protein_g", "protein", "eiweiss"],
+    carbs_g: [
+        "carbs_g",
+        "carbohydrates_g",
+        "carbs",
+        "carbohydrates",
+        "kohlenhydrate",
+    ],
+    fat_g: ["fat_g", "fat", "total_fat", "fett"],
+    fiber_g: [
+        "fiber_g",
+        "fiber",
+        "fibre_g",
+        "fibre",
+        "dietary_fiber",
+        "ballaststoffe",
+    ],
+    sugar_g: [
+        "sugar_g",
+        "sugar",
+        "sugars",
+        "total_sugar",
+        "total_sugars",
+        "zucker",
+    ],
+    alcohol_g: [
+        "alcohol_g",
+        "alcohol",
+        "alcohol_ethyl",
+        "ethanol",
+        "ethanol_g",
+        "alkohol",
+    ],
+    notes: ["note", "notes", "comment", "kommentar"],
+    deleted: ["deleted"],
+};
+
+function webImportHeader(value) {
+    return String(value ?? "")
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+}
+
+function webImportFindColumn(headers, aliases) {
+    const normalized = headers.map(webImportHeader);
+    const wanted = aliases.map(webImportHeader);
+    const exact = wanted.find((alias) => normalized.includes(alias));
+    if (exact !== undefined) return normalized.indexOf(exact);
+    return normalized.findIndex((header) =>
+        wanted.some(
+            (alias) =>
+                alias.length > 3 &&
+                (header.includes(alias) || alias.includes(header)),
+        ),
+    );
+}
+
+function webImportDateFormat(values) {
+    let ambiguous = false;
+    let detected = "iso";
+    for (const raw of values) {
+        const value = String(raw ?? "").trim();
+        const slash = /^(\d{1,2})[./-](\d{1,2})[./-](\d{4})/.exec(value);
+        if (!slash) {
+            if (/^\d{4}-\d{2}-\d{2}/.test(value)) detected = "iso";
+            continue;
+        }
+        const first = Number(slash[1]);
+        const second = Number(slash[2]);
+        if (first > 12 && second <= 12) detected = "dmy";
+        else if (second > 12 && first <= 12) detected = "mdy";
+        else ambiguous = true;
+    }
+    return {
+        format: detected === "iso" && ambiguous ? "mdy" : detected,
+        ambiguous,
+    };
+}
+
+function webImportToIsoDate(raw, format) {
+    const value = String(raw ?? "").trim();
+    const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(value);
+    const slash = /^(\d{1,2})[./-](\d{1,2})[./-](\d{4})/.exec(value);
+    let year;
+    let month;
+    let day;
+    if (iso) {
+        year = Number(iso[1]);
+        month = Number(iso[2]);
+        day = Number(iso[3]);
+    } else if (slash) {
+        const first = Number(slash[1]);
+        const second = Number(slash[2]);
+        year = Number(slash[3]);
+        month = format === "dmy" ? second : first;
+        day = format === "dmy" ? first : second;
+    } else return null;
+    const probe = new Date(Date.UTC(year, month - 1, day));
+    if (
+        !Number.isInteger(year) ||
+        !Number.isInteger(month) ||
+        !Number.isInteger(day) ||
+        probe.getUTCFullYear() !== year ||
+        probe.getUTCMonth() !== month - 1 ||
+        probe.getUTCDate() !== day
+    ) {
+        return null;
+    }
+    return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function webImportTime(raw) {
+    const value = String(raw ?? "").trim();
+    if (!value) return "";
+    const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([ap]m)?$/i.exec(value);
+    if (!match) return "";
+    let hour = Number(match[1]);
+    const minute = Number(match[2]);
+    const second = Number(match[3] || 0);
+    const meridiem = (match[4] || "").toLowerCase();
+    if (meridiem === "pm" && hour < 12) hour += 12;
+    if (meridiem === "am" && hour === 12) hour = 0;
+    if (hour > 23 || minute > 59 || second > 59) return "";
+    return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}`;
+}
+
+function webImportNumber(raw, decimalSeparator) {
+    const value = String(raw ?? "").trim();
+    if (
+        !value ||
+        ["-", "--", "n/a", "na", "null", "none"].includes(value.toLowerCase())
+    )
+        return undefined;
+    const normalized =
+        decimalSeparator === ","
+            ? value.replace(/\./g, "").replace(",", ".")
+            : value.replace(/,/g, "");
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function webImportDeleted(raw) {
+    return ["1", "true", "yes", "deleted"].includes(
+        String(raw ?? "")
+            .trim()
+            .toLowerCase(),
+    );
+}
+
+function webImportAlcoholEnabled() {
+    return state.bootstrap?.profile?.alcohol_tracking_enabled === true;
+}
+
+function webImportAutoMap() {
+    const headers = webMealImport.table.headers;
+    webMealImport.mapping = Object.fromEntries(
+        webImportFields.map((field) => [
+            field.key,
+            webImportFindColumn(headers, webImportAliases[field.key] || []),
+        ]),
+    );
+    const dateColumn = webMealImport.mapping.logged_at;
+    const sniffed = webImportDateFormat(
+        dateColumn >= 0
+            ? webMealImport.table.rows
+                  .slice(0, 50)
+                  .map((row) => row[dateColumn])
+            : [],
+    );
+    webMealImport.dateFormat = sniffed.format;
+    webMealImport.dateAmbiguous = sniffed.ambiguous;
+}
+
+function webImportMapped(row, key) {
+    const index = webMealImport.mapping[key];
+    return index >= 0 ? row[index] : undefined;
+}
+
+function webImportBuildRows() {
+    const table = webMealImport.table;
+    if (!table || webMealImport.mapping.logged_at < 0) {
+        webMealImport.warnings = ["Map a date column before continuing."];
+        return false;
+    }
+    const rows = [];
+    let skipped = 0;
+    for (let index = 0; index < table.rows.length; index++) {
+        const source = table.rows[index];
+        if (webImportDeleted(webImportMapped(source, "deleted"))) {
+            skipped++;
+            continue;
+        }
+        const date = webImportToIsoDate(
+            webImportMapped(source, "logged_at"),
+            webMealImport.dateFormat,
+        );
+        if (!date) {
+            skipped++;
+            continue;
+        }
+        const separateTime = webImportTime(webImportMapped(source, "time"));
+        const embeddedTime = /[T ](\d{1,2}:\d{2}(?::\d{2})?)/.exec(
+            String(webImportMapped(source, "logged_at") || ""),
+        );
+        const time = separateTime || webImportTime(embeddedTime?.[1]);
+        const row = {
+            source_line: table.sourceLines[index],
+            logged_at: time ? `${date}T${time}` : date,
+            description: String(
+                webImportMapped(source, "description") ||
+                    `${webMealImport.sourceApp || "Imported"} meal`,
+            ).trim(),
+            meal_type:
+                String(webImportMapped(source, "meal_type") || "").trim() ||
+                undefined,
+            calories: webImportNumber(
+                webImportMapped(source, "calories"),
+                table.decimalSeparator,
+            ),
+            protein_g: webImportNumber(
+                webImportMapped(source, "protein_g"),
+                table.decimalSeparator,
+            ),
+            carbs_g: webImportNumber(
+                webImportMapped(source, "carbs_g"),
+                table.decimalSeparator,
+            ),
+            fat_g: webImportNumber(
+                webImportMapped(source, "fat_g"),
+                table.decimalSeparator,
+            ),
+            fiber_g: webImportNumber(
+                webImportMapped(source, "fiber_g"),
+                table.decimalSeparator,
+            ),
+            sugar_g: webImportNumber(
+                webImportMapped(source, "sugar_g"),
+                table.decimalSeparator,
+            ),
+            alcohol_g: webImportAlcoholEnabled()
+                ? webImportNumber(
+                      webImportMapped(source, "alcohol_g"),
+                      table.decimalSeparator,
+                  )
+                : undefined,
+            notes:
+                String(webImportMapped(source, "notes") || "").trim() ||
+                undefined,
+        };
+        if (webMealImport.energyUnit === "kj" && row.calories != null) {
+            row.calories = Math.round((row.calories / 4.184) * 10) / 10;
+        }
+        for (const key of Object.keys(row)) {
+            if (row[key] === undefined || row[key] === "") delete row[key];
+        }
+        rows.push(row);
+    }
+    webMealImport.rows = rows;
+    webMealImport.skipped = skipped;
+    const mapped = new Set(
+        Object.values(webMealImport.mapping).filter((value) => value >= 0),
+    );
+    webMealImport.unmappedColumns = table.headers.filter(
+        (_, index) => !mapped.has(index),
+    );
+    webMealImport.localDuplicateCount = 0;
+    const seen = new Set();
+    for (const row of rows) {
+        const digest = JSON.stringify([
+            row.description,
+            row.meal_type,
+            row.calories,
+            row.protein_g,
+            row.carbs_g,
+            row.fat_g,
+            row.notes,
+            row.logged_at,
+        ]);
+        if (seen.has(digest)) webMealImport.localDuplicateCount++;
+        seen.add(digest);
+    }
+    webMealImport.warnings = [
+        ...(table.warnings || []),
+        ...(skipped
+            ? [
+                  `${skipped} row${skipped === 1 ? "" : "s"} will be skipped because the date is unreadable or the source marks it deleted.`,
+              ]
+            : []),
+    ];
+    return rows.length > 0;
+}
+
+function webImportPayload(rows, dryRun, firstBatch = false) {
+    const payload = {
+        meals: rows,
+        expected_row_count: rows.length,
+        dry_run: dryRun,
+        on_error: "continue",
+        rows_skipped: firstBatch ? webMealImport.skipped : 0,
+        source_app: webMealImport.sourceApp || undefined,
+        unmapped_columns: webMealImport.unmappedColumns || [],
+    };
+    if (rows.every((row) => row.calories !== undefined)) {
+        payload.expected_total_kcal = rows.reduce(
+            (sum, row) => sum + row.calories,
+            0,
+        );
+    }
+    return payload;
+}
+
+function resetWebMealImport() {
+    Object.assign(webMealImport, {
+        table: null,
+        mapping: {},
+        dateFormat: "iso",
+        dateAmbiguous: false,
+        energyUnit: "kcal",
+        sourceApp: "",
+        rows: [],
+        skipped: 0,
+        warnings: [],
+        unmappedColumns: [],
+        localDuplicateCount: 0,
+        preview: null,
+        result: null,
+        fileName: "",
+        busy: false,
+    });
+}
+
+function webImportOptionList(selected) {
+    return `<option value="-1">Not in file</option>${webMealImport.table.headers
+        .map(
+            (header, index) =>
+                `<option value="${index}" ${selected === index ? "selected" : ""}>${escapeHtml(header || `Column ${index + 1}`)}</option>`,
+        )
+        .join("")}`;
+}
+
+function webImportFileView() {
+    return `<form id="web-import-file-form" class="auth-form"><p class="tiny">Upload a supported CSV export. Munch parses it for mapping and preview; nothing is saved at this step.</p><label class="field"><span>Meal-history CSV</span><input name="file" type="file" accept=".csv,text/csv,text/plain" required /></label><button class="button button-primary" type="submit">Parse file</button></form>`;
+}
+
+function webImportMappingView() {
+    const fields = webImportFields
+        .filter((field) => !field.alcoholOnly || webImportAlcoholEnabled())
+        .map((field) => {
+            const selected = webMealImport.mapping[field.key] ?? -1;
+            const sample =
+                selected >= 0
+                    ? webMealImport.table.rows[0]?.[selected] || ""
+                    : "";
+            return `<label class="field"><span>${escapeHtml(field.label)}${field.required ? " *" : ""}</span><select name="${field.key}">${webImportOptionList(selected)}</select><small class="tiny">${sample ? `Example: ${escapeHtml(sample)}` : "No value detected"}</small></label>`;
+        })
+        .join("");
+    const alcoholNotice =
+        !webImportAlcoholEnabled() &&
+        webImportFindColumn(
+            webMealImport.table.headers,
+            webImportAliases.alcohol_g,
+        ) >= 0
+            ? `<div class="notice"><strong>Alcohol column excluded.</strong> Alcohol tracking is off, so this column will not be imported. Turn it on in Profile & preferences before importing to retain it.</div>`
+            : "";
+    return `<form id="web-import-map-form" class="auth-form"><p class="tiny"><strong>${escapeHtml(webMealImport.fileName)}</strong> · ${number(webMealImport.table.rows.length)} parsed rows · ${escapeHtml(webMealImport.table.encoding)}</p>${webMealImport.table.warnings.map((warning) => `<div class="notice">${escapeHtml(warning)}</div>`).join("")}${alcoholNotice}${webMealImport.dateAmbiguous ? `<div class="notice"><strong>Confirm date order.</strong> The sample contains dates that could be month/day or day/month.</div>` : ""}<div class="import-native-grid">${fields}</div><div class="import-native-grid"><label class="field"><span>Date format</span><select name="date_format"><option value="iso" ${webMealImport.dateFormat === "iso" ? "selected" : ""}>Year-month-day</option><option value="mdy" ${webMealImport.dateFormat === "mdy" ? "selected" : ""}>Month/day/year</option><option value="dmy" ${webMealImport.dateFormat === "dmy" ? "selected" : ""}>Day/month/year</option></select></label><label class="field"><span>Energy unit</span><select name="energy_unit"><option value="kcal" ${webMealImport.energyUnit === "kcal" ? "selected" : ""}>Calories (kcal)</option><option value="kj" ${webMealImport.energyUnit === "kj" ? "selected" : ""}>Kilojoules (kJ)</option></select></label><label class="field"><span>Source app (optional)</span><input name="source_app" value="${escapeHtml(webMealImport.sourceApp)}" maxlength="120" placeholder="MyFitnessPal, Cronometer…" /></label></div><div class="auth-actions"><button class="button button-primary" type="submit">Preview import</button><button class="button button-quiet" type="button" data-action="restart-web-import">Choose another file</button></div></form>`;
+}
+
+function webImportPreviewView() {
+    const preview = webMealImport.preview || {};
+    const rows = webMealImport.rows.slice(0, 12);
+    const totalKcal = webMealImport.rows.reduce(
+        (sum, row) => sum + (row.calories || 0),
+        0,
+    );
+    const previewErrors = (preview.results || [])
+        .filter((row) => row.error)
+        .slice(0, 5);
+    const blocked = preview.status === "failed";
+    return `<section class="import-native-stack"><p class="tiny"><strong>${escapeHtml(webMealImport.fileName)}</strong> · Review the exact rows and warnings before anything is saved.</p><div class="import-native-stats"><div><strong>${number(webMealImport.rows.length)}</strong><span>ready</span></div><div><strong>${number(totalKcal)}</strong><span>kcal</span></div><div><strong>${number(webMealImport.skipped)}</strong><span>skipped</span></div><div><strong>${number(webMealImport.localDuplicateCount)}</strong><span>duplicate rows</span></div></div>${webMealImport.warnings.map((warning) => `<div class="notice">${escapeHtml(warning)}</div>`).join("")}${(preview.warnings || []).map((warning) => `<div class="notice">${escapeHtml(warning)}</div>`).join("")}${preview.summary ? `<div class="tiny">Canonical validation preview: ${number(preview.summary.would_create || 0)} would be added, ${number(preview.summary.deduplicated || 0)} already logged, ${number(preview.summary.failed || 0)} need attention.</div>` : ""}${previewErrors.map((row) => `<div class="notice warning">Line ${number(row.source_line)}: ${escapeHtml(row.error.message)}</div>`).join("")}${rows.length ? `<div class="import-native-table-wrap"><table class="import-native-table"><thead><tr><th>Date</th><th>Meal</th><th>Food</th><th>kcal</th></tr></thead><tbody>${rows.map((row) => `<tr><td>${escapeHtml(row.logged_at)}</td><td>${escapeHtml(row.meal_type || "—")}</td><td>${escapeHtml(row.description || "Imported meal")}</td><td>${row.calories == null ? "—" : number(row.calories)}</td></tr>`).join("")}</tbody></table></div>` : ""}${webMealImport.rows.length > rows.length ? `<p class="tiny">Showing the first ${number(rows.length)} of ${number(webMealImport.rows.length)} rows.</p>` : ""}<div class="auth-actions"><button class="button button-primary" type="button" data-action="web-import-commit" ${blocked || !webMealImport.rows.length ? "disabled" : ""}>Import ${number(webMealImport.rows.length)} meals</button><button class="button button-quiet" type="button" data-action="web-import-map-back">Back to mapping</button></div>${blocked ? `<div class="notice danger">The canonical validation pass found blocking errors. Go back, correct the mapping, and preview again.</div>` : `<p class="tiny">This confirmation is explicit. The import is idempotent, so retrying the same file will report already logged rows instead of duplicating them.</p>`}</section>`;
+}
+
+function webImportProgressView(done, total, label) {
+    const percent = total ? Math.round((done / total) * 100) : 0;
+    return `<section class="import-native-stack" aria-live="polite"><p class="tiny">${escapeHtml(label)}</p><div class="progress" aria-label="Import progress"><span style="width:${percent}%"></span></div><p class="tiny">Batch ${number(done)} of ${number(total)}</p></section>`;
+}
+
+function webImportReportView() {
+    const result = webMealImport.result || {};
+    const errors = result.rowErrors || [];
+    const success = !result.failed && !result.chunkErrors?.length;
+    return `<section class="import-native-stack" aria-live="polite"><div class="import-native-stats"><div><strong>${number(result.created)}</strong><span>imported</span></div><div><strong>${number(result.deduplicated)}</strong><span>already logged</span></div><div><strong>${number(result.failed)}</strong><span>failed</span></div><div><strong>${number(webMealImport.skipped)}</strong><span>skipped</span></div></div><h3>${success ? "Meal history imported" : "Import finished with issues"}</h3>${(result.chunkErrors || []).map((error) => `<div class="notice danger">${escapeHtml(error)}</div>`).join("")}${(result.warnings || []).map((warning) => `<div class="notice">${escapeHtml(warning)}</div>`).join("")}${errors
+        .slice(0, 8)
+        .map(
+            (error) =>
+                `<div class="notice warning">Line ${number(error.line)}: ${escapeHtml(error.message)}</div>`,
+        )
+        .join(
+            "",
+        )}${errors.length > 8 ? `<p class="tiny">${number(errors.length - 8)} more row errors are available by retrying with the corrected rows.</p>` : ""}<div class="auth-actions"><button class="button button-primary" type="button" data-action="close-import-report">Done</button><button class="button button-quiet" type="button" data-action="restart-web-import">Import another file</button></div></section>`;
+}
+
+function openWebMealImport() {
+    resetWebMealImport();
+    openDialog("Import meal history", webImportFileView());
+}
+
+async function previewWebMealImport() {
+    if (!webImportBuildRows()) {
+        openDialog("Map meal history", webImportMappingView());
+        return;
+    }
+    const batch = webMealImport.rows.slice(0, 50);
+    webMealImport.preview = await api("/api/app/import", {
+        method: "POST",
+        body: JSON.stringify(webImportPayload(batch, true, true)),
+        keepPrevious: true,
+    });
+    openDialog("Preview meal history", webImportPreviewView());
+}
+
+async function runWebMealImport() {
+    if (webMealImport.busy || !webMealImport.rows.length) return;
+    webMealImport.busy = true;
+    const batches = [];
+    for (let index = 0; index < webMealImport.rows.length; index += 50) {
+        batches.push(webMealImport.rows.slice(index, index + 50));
+    }
+    webMealImport.result = {
+        created: 0,
+        deduplicated: 0,
+        failed: 0,
+        rowErrors: [],
+        chunkErrors: [],
+        warnings: [],
+    };
+    for (let index = 0; index < batches.length; index++) {
+        const batch = batches[index];
+        openDialog(
+            "Importing meal history",
+            webImportProgressView(
+                index,
+                batches.length,
+                `Saving rows ${number(batch[0].source_line)}–${number(batch[batch.length - 1].source_line)}…`,
+            ),
+        );
+        try {
+            const result = await api("/api/app/import", {
+                method: "POST",
+                body: JSON.stringify(
+                    webImportPayload(batch, false, index === 0),
+                ),
+                keepPrevious: true,
+            });
+            webMealImport.result.created += result.summary?.created || 0;
+            webMealImport.result.deduplicated +=
+                result.summary?.deduplicated || 0;
+            webMealImport.result.failed += result.summary?.failed || 0;
+            webMealImport.result.warnings.push(...(result.warnings || []));
+            if (result.status === "failed" && !(result.results || []).length) {
+                webMealImport.result.chunkErrors.push(
+                    `Rows ${batch[0].source_line}–${batch[batch.length - 1].source_line}: ${(result.warnings || []).join(" ") || "The batch failed validation."}`,
+                );
+                webMealImport.result.failed += batch.length;
+            }
+            for (const row of result.results || []) {
+                if (row.error) {
+                    webMealImport.result.rowErrors.push({
+                        line: row.source_line,
+                        message: row.error.message,
+                    });
+                }
+            }
+        } catch (error) {
+            webMealImport.result.chunkErrors.push(
+                `Rows ${batch[0].source_line}–${batch[batch.length - 1].source_line}: ${error.message || "Import failed"}`,
+            );
+            webMealImport.result.failed += batch.length;
+        }
+    }
+    webMealImport.busy = false;
+    openDialog("Import report", webImportReportView());
 }
 
 const draftNutrientFields = [
@@ -1350,6 +1883,29 @@ async function handleAction(button) {
         dialog.close();
         return;
     }
+    if (action === "open-import") {
+        openWebMealImport();
+        return;
+    }
+    if (action === "restart-web-import") {
+        openWebMealImport();
+        return;
+    }
+    if (action === "web-import-map-back") {
+        if (webMealImport.table) {
+            openDialog("Map meal history", webImportMappingView());
+        }
+        return;
+    }
+    if (action === "web-import-commit") {
+        await runWebMealImport();
+        return;
+    }
+    if (action === "close-import-report") {
+        dialog.close();
+        await renderRoute();
+        return;
+    }
     if (action === "refresh") return renderRoute();
     if (action === "date-prev") state.date = shiftDate(state.date, -1);
     if (action === "date-next") state.date = shiftDate(state.date, 1);
@@ -1697,10 +2253,6 @@ async function handleAction(button) {
         location.href = "/";
         return;
     }
-    if (action === "open-chatgpt-import") {
-        toast("Open ChatGPT and ask Munch to import your meal-history file.");
-        return;
-    }
     if (action === "export-account") {
         location.href = "/account/portal";
         return;
@@ -1883,6 +2435,58 @@ document.addEventListener("submit", async (event) => {
             await handleAccountSubmit(form, accountContext());
         } catch (error) {
             toast(error.message || "Save failed", "error");
+        }
+        return;
+    }
+    if (form.id === "web-import-file-form") {
+        event.preventDefault();
+        const submit = form.querySelector("button[type='submit']");
+        const file = form.elements.file?.files?.[0];
+        if (!file) {
+            toast("Choose a CSV file first.", "error");
+            return;
+        }
+        submit.disabled = true;
+        try {
+            const data = await api("/api/app/import/parse", {
+                method: "POST",
+                body: new FormData(form),
+                keepPrevious: true,
+            });
+            webMealImport.fileName = data.fileName || file.name;
+            webMealImport.table = data.table;
+            webMealImport.warnings = data.table?.warnings || [];
+            webImportAutoMap();
+            openDialog("Map meal history", webImportMappingView());
+        } catch (error) {
+            toast(error.message || "The file could not be parsed.", "error");
+        } finally {
+            submit.disabled = false;
+        }
+        return;
+    }
+    if (form.id === "web-import-map-form") {
+        event.preventDefault();
+        const values = Object.fromEntries(new FormData(form));
+        for (const field of webImportFields) {
+            const value = values[field.key];
+            if (value !== undefined)
+                webMealImport.mapping[field.key] = Number(value);
+        }
+        webMealImport.dateFormat = values.date_format || "iso";
+        webMealImport.energyUnit = values.energy_unit || "kcal";
+        webMealImport.sourceApp = String(values.source_app || "").trim();
+        const submit = form.querySelector("button[type='submit']");
+        submit.disabled = true;
+        try {
+            await previewWebMealImport();
+        } catch (error) {
+            toast(
+                error.message || "The import preview could not be created.",
+                "error",
+            );
+        } finally {
+            submit.disabled = false;
         }
         return;
     }

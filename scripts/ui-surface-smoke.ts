@@ -212,6 +212,8 @@ for (const route of [
     'app.get("/api/app/food-details"',
     'app.get("/api/app/food-barcode"',
     'app.post("/api/app/meals"',
+    'app.post("/api/app/import/parse"',
+    'app.post("/api/app/import"',
     'app.post("/api/app/recipes"',
     'app.post("/api/app/groceries/items"',
     '"/api/app/groceries/items/:id"',
@@ -232,6 +234,11 @@ for (const behavior of [
     'data-action="lookup-food-barcode"',
     "mealComposerPayload",
     'api("/api/app/meals"',
+    "web-import-file-form",
+    "web-import-map-form",
+    'api("/api/app/import/parse"',
+    'api("/api/app/import"',
+    'data-action="web-import-commit"',
     'data-action="open-meal-draft"',
     'data-action="confirm-meal-draft"',
     'data-action="cancel-meal-draft"',
@@ -317,6 +324,7 @@ for (const behavior of [
     "weightFromGrams",
     "Premium through household",
     "Pending invitations",
+    'data-action="open-import"',
 ]) {
     if (!accountModule.includes(behavior)) {
         throw new Error(
