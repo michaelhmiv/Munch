@@ -48,8 +48,23 @@ import {
     createAppMeal,
     getAppFoodDetails,
     lookupAppFoodBarcode,
+    resolveWebMealItem,
     searchAppFoods,
 } from "./meal-entry.js";
+import {
+    draftItemInputFromBody,
+    serializeMealDraftForApp,
+} from "./meal-draft-review.js";
+import {
+    answerMealDraftQuestion,
+    cancelMealDraft,
+    confirmMealDraft,
+    deleteMealDraftItem,
+    getMealDraft,
+    prepareMealDraftConfirmation,
+    updateMealDraftMetadata,
+    upsertMealDraftItem,
+} from "../meal-drafts/index.js";
 import {
     getAppBootstrap,
     getFoodsWorkspace,
@@ -171,6 +186,28 @@ function recordValue(value: unknown, label: string): Record<string, unknown> {
         throw new Error(`${label} must be an object`);
     }
     return value as Record<string, unknown>;
+}
+
+function draftExpectedVersion(body: Record<string, unknown>): number {
+    const value = Number(body.expected_version);
+    if (!Number.isInteger(value) || value < 1) {
+        throw new Error("Meal draft expected_version is required");
+    }
+    return value;
+}
+
+function draftText(
+    body: Record<string, unknown>,
+    key: string,
+    maxLength: number,
+): string | null | undefined {
+    const value = body[key];
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    if (typeof value !== "string" || value.trim().length > maxLength) {
+        throw new Error(`Meal draft ${key} is invalid`);
+    }
+    return value.trim() || null;
 }
 
 function recipeInputFromBody(value: unknown): RecipeInput {
@@ -463,6 +500,212 @@ export function createAppRouter(): Hono {
                 requiredQuery(c.req.query("barcode"), "barcode"),
             ),
         ),
+    );
+
+    app.get("/api/app/meal-drafts/:id", async (c) => {
+        const draft = await getMealDraft(
+            c.get("munchUserId"),
+            c.req.param("id")!,
+        );
+        if (!draft) throw new Error("Meal draft not found");
+        return privateJson(c, { draft: serializeMealDraftForApp(draft) });
+    });
+
+    app.patch("/api/app/meal-drafts/:id", requireSameOrigin, async (c) => {
+        const body = recordValue(await c.req.json(), "Meal draft");
+        const draft = await updateMealDraftMetadata({
+            userId: c.get("munchUserId"),
+            draftId: c.req.param("id")!,
+            expectedVersion: draftExpectedVersion(body),
+            mealType:
+                body.meal_type === undefined
+                    ? undefined
+                    : body.meal_type === null
+                      ? null
+                      : mealType(body.meal_type),
+            description: draftText(body, "description", 2_000),
+            loggedAt: draftText(body, "logged_at", 100),
+            notes: draftText(body, "notes", 4_000),
+        });
+        return privateJson(c, {
+            draft: serializeMealDraftForApp(draft),
+        });
+    });
+
+    app.post("/api/app/meal-drafts/:id/items", requireSameOrigin, async (c) => {
+        const body = recordValue(await c.req.json(), "Meal draft item");
+        const userId = c.get("munchUserId");
+        const draftId = c.req.param("id")!;
+        const current = await getMealDraft(userId, draftId);
+        if (!current) throw new Error("Meal draft not found");
+        const rawItem = body.item === undefined ? body : body.item;
+        const item =
+            rawItem &&
+            typeof rawItem === "object" &&
+            !Array.isArray(rawItem) &&
+            "candidate_id" in rawItem
+                ? await resolveWebMealItem(rawItem)
+                : draftItemInputFromBody(rawItem);
+        const draft = await upsertMealDraftItem({
+            userId,
+            draftId,
+            expectedVersion: draftExpectedVersion(body),
+            position: current.items.length,
+            item,
+        });
+        return privateJson(c, {
+            draft: serializeMealDraftForApp(draft),
+        });
+    });
+
+    app.patch(
+        "/api/app/meal-drafts/:draftId/items/:itemId",
+        requireSameOrigin,
+        async (c) => {
+            const body = recordValue(await c.req.json(), "Meal draft item");
+            const userId = c.get("munchUserId");
+            const draftId = c.req.param("draftId")!;
+            const current = await getMealDraft(userId, draftId);
+            if (!current) throw new Error("Meal draft not found");
+            const currentItem = current.items.find(
+                (item) => item.id === c.req.param("itemId"),
+            );
+            if (!currentItem) throw new Error("Meal draft item not found");
+            const rawItem = body.item === undefined ? body : body.item;
+            const item = draftItemInputFromBody(rawItem);
+            const draft = await upsertMealDraftItem({
+                userId,
+                draftId,
+                expectedVersion: draftExpectedVersion(body),
+                position: currentItem.position,
+                item,
+            });
+            return privateJson(c, {
+                draft: serializeMealDraftForApp(draft),
+            });
+        },
+    );
+
+    app.delete(
+        "/api/app/meal-drafts/:draftId/items/:itemId",
+        requireSameOrigin,
+        async (c) => {
+            const body = recordValue(
+                await c.req.json().catch(() => ({})),
+                "Meal draft item delete",
+            );
+            const draft = await deleteMealDraftItem({
+                userId: c.get("munchUserId"),
+                draftId: c.req.param("draftId")!,
+                itemId: c.req.param("itemId")!,
+                expectedVersion: draftExpectedVersion(body),
+            });
+            return privateJson(c, {
+                draft: serializeMealDraftForApp(draft),
+            });
+        },
+    );
+
+    app.post(
+        "/api/app/meal-drafts/:draftId/questions/:questionId/answer",
+        requireSameOrigin,
+        async (c) => {
+            const body = recordValue(
+                await c.req.json(),
+                "Meal draft question answer",
+            );
+            if (typeof body.answer !== "string" || !body.answer.trim()) {
+                throw new Error("Meal draft answer is required");
+            }
+            const draft = await answerMealDraftQuestion({
+                userId: c.get("munchUserId"),
+                draftId: c.req.param("draftId")!,
+                expectedVersion: draftExpectedVersion(body),
+                questionId: c.req.param("questionId")!,
+                answer: body.answer,
+            });
+            return privateJson(c, {
+                draft: serializeMealDraftForApp(draft),
+            });
+        },
+    );
+
+    app.post(
+        "/api/app/meal-drafts/:id/prepare",
+        requireSameOrigin,
+        async (c) => {
+            const body = recordValue(await c.req.json(), "Meal draft prepare");
+            const draft = await prepareMealDraftConfirmation({
+                userId: c.get("munchUserId"),
+                draftId: c.req.param("id")!,
+                expectedVersion: draftExpectedVersion(body),
+                acceptRemainingAssumptions:
+                    body.accept_remaining_assumptions === true,
+            });
+            return privateJson(c, {
+                draft: serializeMealDraftForApp(draft),
+            });
+        },
+    );
+
+    app.post(
+        "/api/app/meal-drafts/:id/confirm",
+        requireSameOrigin,
+        async (c) => {
+            const body = recordValue(await c.req.json(), "Meal draft confirm");
+            if (body.confirmed !== true) {
+                throw new Error("Meal draft confirmation is required");
+            }
+            const userId = c.get("munchUserId");
+            const draftId = c.req.param("id")!;
+            let current = await getMealDraft(userId, draftId);
+            if (!current) throw new Error("Meal draft not found");
+            if (
+                current.status !== "awaiting_confirmation" ||
+                current.questions.some((question) => question.status === "open")
+            ) {
+                current = await prepareMealDraftConfirmation({
+                    userId,
+                    draftId,
+                    expectedVersion: draftExpectedVersion(body),
+                    acceptRemainingAssumptions:
+                        body.accept_remaining_assumptions === true,
+                });
+            } else if (current.version !== draftExpectedVersion(body)) {
+                throw new Error(
+                    `Meal draft changed: expected version ${draftExpectedVersion(body)}, current version ${current.version}`,
+                );
+            }
+            const draft = await confirmMealDraft({
+                userId,
+                draftId,
+                expectedVersion: current.version,
+                confirmed: true,
+            });
+            return privateJson(c, {
+                draft: serializeMealDraftForApp(draft),
+                meal_id: draft.confirmedMealId,
+            });
+        },
+    );
+
+    app.post(
+        "/api/app/meal-drafts/:id/cancel",
+        requireSameOrigin,
+        async (c) => {
+            const body = recordValue(await c.req.json(), "Meal draft cancel");
+            if (body.confirm !== true) {
+                throw new Error("Meal draft cancellation is required");
+            }
+            const draft = await cancelMealDraft({
+                userId: c.get("munchUserId"),
+                draftId: c.req.param("id")!,
+                expectedVersion: draftExpectedVersion(body),
+            });
+            return privateJson(c, {
+                draft: serializeMealDraftForApp(draft),
+            });
+        },
     );
 
     app.get("/api/app/insights", async (c) =>
@@ -1028,7 +1271,7 @@ export function createAppRouter(): Hono {
         console.error("App route failed", { name: error.name });
         const knownMessage =
             error instanceof Error &&
-            /^(Invalid|Connection not found|Date range|Weight|Target weight|Meal item|Meal |Meal$|Meal not found|Food |Nutrition|Add at least|A meal|Structured meal|A structured meal)/.test(
+            /^(Invalid|Connection not found|Date range|Weight|Target weight|Meal item|Meal |Meal$|Meal not found|Food |Nutrition|Add at least|A meal|Structured meal|A structured meal|Draft )/.test(
                 error.message,
             )
                 ? error.message

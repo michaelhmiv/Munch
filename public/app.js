@@ -26,6 +26,13 @@ const mealComposer = {
     searchTimer: null,
 };
 
+const mealDraftReview = {
+    draft: null,
+    options: new Map(),
+    pendingManual: [],
+    searchTimer: null,
+};
+
 const content = document.getElementById("app-content");
 const pageTitle = document.getElementById("page-title");
 const pageKicker = document.getElementById("page-kicker");
@@ -273,6 +280,16 @@ function groupedMeals(meals) {
         .join("")}</div>`;
 }
 
+function pendingDraftCard(draft) {
+    const status =
+        draft.openQuestionCount > 0
+            ? `${draft.openQuestionCount} question${draft.openQuestionCount === 1 ? "" : "s"} remaining`
+            : draft.status === "awaiting_confirmation"
+              ? "Ready for confirmation"
+              : "Needs review";
+    return `<article class="meal-card"><strong>${escapeHtml(draft.description || `${draft.sourceMode} meal`)}</strong><p>${escapeHtml(status)} · ${draft.itemCount} item${draft.itemCount === 1 ? "" : "s"}</p><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="open-meal-draft" data-id="${escapeHtml(draft.id)}">Review draft</button></div></article>`;
+}
+
 async function renderToday() {
     setLoading("Loading today’s meals and progress…");
     const data = await api(
@@ -286,7 +303,7 @@ async function renderToday() {
     const latestWeightValue = latestWeight
         ? weightFromGrams(latestWeight.weight_g, weightUnit)
         : null;
-    content.innerHTML = `<div class="page-heading"><div><h2>${escapeHtml(formatDate(state.date, { weekday: true }))}</h2><p>Your structured nutrition record for this day.</p></div><div class="auth-actions"><button class="button button-secondary button-small" data-action="date-prev">Previous</button><button class="button button-secondary button-small" data-action="date-today">Today</button><button class="button button-secondary button-small" data-action="date-next">Next</button></div></div><div class="dashboard-grid"><section class="panel panel-span-12"><div class="summary-grid">${metricCard("Calories", data.totals.calories, " kcal", goals.daily_calories, true)}${metricCard("Protein", data.totals.proteinG, "g", goals.daily_protein_g)}${metricCard("Carbohydrates", data.totals.carbsG, "g", goals.daily_carbs_g)}${metricCard("Fat", data.totals.fatG, "g", goals.daily_fat_g)}</div></section><section class="panel panel-span-8"><div class="panel-title"><h3>Meals</h3><span>${data.meals.length} logged</span></div>${groupedMeals(data.meals)}</section><aside class="panel panel-span-4"><div class="panel-title"><h3>Daily details</h3></div><div class="summary-grid" style="grid-template-columns:1fr 1fr">${metricCard("Water", data.water.totalMl, " ml", goals.daily_water_ml)}${metricCard("Weight", latestWeightValue, ` ${weightUnit}`, null)}</div><div class="auth-actions"><button class="button button-secondary button-small" data-action="add-water">Add water</button><button class="button button-secondary button-small" data-action="add-weight">Add weight</button></div>${data.drafts?.length ? `<div class="panel-title spacer-top"><h3>Pending drafts</h3><span>${data.drafts.length}</span></div><div class="meal-groups">${data.drafts.map((draft) => `<article class="meal-card"><strong>${escapeHtml(draft.description || `${draft.sourceMode} meal`)}</strong><p>${draft.openQuestionCount ? `${draft.openQuestionCount} question${draft.openQuestionCount === 1 ? "" : "s"} remaining` : "Ready for confirmation"}</p><small>Continue this draft in ChatGPT.</small></article>`).join("")}</div>` : ""}${data.plannedMeals?.length ? `<div class="panel-title spacer-top"><h3>Planned today</h3><span>${data.plannedMeals.length}</span></div>${data.plannedMeals.map((meal) => `<div class="food-row"><div><strong>${escapeHtml(meal.recipe_name)}</strong><small>${escapeHtml(meal.meal_slot || "Meal")} · ${number(meal.servings, 1)} servings</small></div><span>${meal.nutrition_per_serving?.calories ? `${number(meal.nutrition_per_serving.calories * meal.servings)} kcal` : ""}</span></div>`).join("")}` : ""}</aside></div>`;
+    content.innerHTML = `<div class="page-heading"><div><h2>${escapeHtml(formatDate(state.date, { weekday: true }))}</h2><p>Your structured nutrition record for this day.</p></div><div class="auth-actions"><button class="button button-secondary button-small" data-action="date-prev">Previous</button><button class="button button-secondary button-small" data-action="date-today">Today</button><button class="button button-secondary button-small" data-action="date-next">Next</button></div></div><div class="dashboard-grid"><section class="panel panel-span-12"><div class="summary-grid">${metricCard("Calories", data.totals.calories, " kcal", goals.daily_calories, true)}${metricCard("Protein", data.totals.proteinG, "g", goals.daily_protein_g)}${metricCard("Carbohydrates", data.totals.carbsG, "g", goals.daily_carbs_g)}${metricCard("Fat", data.totals.fatG, "g", goals.daily_fat_g)}</div></section><section class="panel panel-span-8"><div class="panel-title"><h3>Meals</h3><span>${data.meals.length} logged</span></div>${groupedMeals(data.meals)}</section><aside class="panel panel-span-4"><div class="panel-title"><h3>Daily details</h3></div><div class="summary-grid" style="grid-template-columns:1fr 1fr">${metricCard("Water", data.water.totalMl, " ml", goals.daily_water_ml)}${metricCard("Weight", latestWeightValue, ` ${weightUnit}`, null)}</div><div class="auth-actions"><button class="button button-secondary button-small" data-action="add-water">Add water</button><button class="button button-secondary button-small" data-action="add-weight">Add weight</button></div>${data.drafts?.length ? `<div class="panel-title spacer-top"><h3>Pending drafts</h3><span>${data.drafts.length}</span></div><div class="meal-groups">${data.drafts.map(pendingDraftCard).join("")}</div>` : ""}${data.plannedMeals?.length ? `<div class="panel-title spacer-top"><h3>Planned today</h3><span>${data.plannedMeals.length}</span></div>${data.plannedMeals.map((meal) => `<div class="food-row"><div><strong>${escapeHtml(meal.recipe_name)}</strong><small>${escapeHtml(meal.meal_slot || "Meal")} · ${number(meal.servings, 1)} servings</small></div><span>${meal.nutrition_per_serving?.calories ? `${number(meal.nutrition_per_serving.calories * meal.servings)} kcal` : ""}</span></div>`).join("")}` : ""}</aside></div>`;
 }
 
 async function renderLog() {
@@ -547,6 +564,263 @@ function openDialog(title, body, actions = "") {
     dialog.showModal();
 }
 
+const draftNutrientFields = [
+    "calories",
+    "protein_g",
+    "carbs_g",
+    "fat_g",
+    "fiber_g",
+    "sugar_g",
+    "alcohol_g",
+    "sodium_mg",
+    "saturated_fat_g",
+    "cholesterol_mg",
+    "potassium_mg",
+];
+
+function draftDateTimeValue(value) {
+    return value ? new Date(value).toISOString().slice(0, 16) : "";
+}
+
+function draftNumber(value) {
+    if (value === "" || value == null) return undefined;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function draftNutrientLabel(key) {
+    return key
+        .replace("_g", " (g)")
+        .replace("_mg", " (mg)")
+        .replace("saturated_fat", "sat. fat");
+}
+
+function draftItemPayloadFromDom(index) {
+    const root = document.querySelector(`[data-draft-item-index="${index}"]`);
+    const original = mealDraftReview.draft.items[index];
+    if (!root || !original)
+        throw new Error("Draft item is no longer available");
+    const field = (name) => root.querySelector(`[data-draft-field="${name}"]`);
+    const nutrientValues = Object.fromEntries(
+        draftNutrientFields
+            .map((key) => [key, draftNumber(field(key)?.value)])
+            .filter(([, value]) => value !== undefined),
+    );
+    return {
+        name: field("name")?.value || original.name,
+        quantity: draftNumber(field("quantity")?.value),
+        portion_label: field("portion_label")?.value || undefined,
+        gram_weight: draftNumber(field("gram_weight")?.value),
+        nutrients: nutrientValues,
+        source_type: original.source_type,
+        provider: original.provider || undefined,
+        provider_food_id: original.provider_food_id || undefined,
+        provider_revision: original.provider_revision || undefined,
+        source_url: original.source_url || undefined,
+        source_updated_at: original.source_updated_at || undefined,
+        confidence: original.confidence ?? undefined,
+        assumptions: original.assumptions || [],
+        source_snapshot: original.source_snapshot || {},
+    };
+}
+
+function draftManualPayloadFromDom(index) {
+    const root = document.querySelector(
+        `[data-draft-pending-index="${index}"]`,
+    );
+    if (!root) throw new Error("Manual draft item is no longer available");
+    const field = (name) => root.querySelector(`[data-draft-field="${name}"]`);
+    const nutrientValues = Object.fromEntries(
+        draftNutrientFields
+            .map((key) => [key, draftNumber(field(key)?.value)])
+            .filter(([, value]) => value !== undefined),
+    );
+    return {
+        name: field("name")?.value || "",
+        quantity: draftNumber(field("quantity")?.value),
+        portion_label: field("portion_label")?.value || undefined,
+        gram_weight: draftNumber(field("gram_weight")?.value),
+        nutrients: nutrientValues,
+        source_type: "user_supplied",
+        assumptions: [],
+        source_snapshot: { resolution_layer: "web_manual" },
+    };
+}
+
+function draftItemEditor(item, index) {
+    const nutrientFields = draftNutrientFields
+        .map(
+            (key) =>
+                `<label class="field"><span>${escapeHtml(draftNutrientLabel(key))}</span><input data-draft-field="${key}" type="number" min="0" step="0.1" value="${escapeHtml(item.nutrients?.[key] ?? "")}" /></label>`,
+        )
+        .join("");
+    return `<article class="meal-draft-item meal-composer-item" data-draft-item-index="${index}"><div class="meal-composer-item-head"><div><strong>${escapeHtml(item.name)}</strong><small>${sourceBadge(item.source_type)} ${confidenceBadge(item.confidence)}</small></div><div class="auth-actions"><button class="button button-primary button-small" type="button" data-action="save-draft-item" data-index="${index}">Save item</button><button class="button button-quiet button-small" type="button" data-action="remove-draft-item" data-index="${index}">Remove</button></div></div><div class="meal-composer-grid"><label class="field"><span>Name</span><input data-draft-field="name" value="${escapeHtml(item.name)}" maxlength="500" required /></label><label class="field"><span>Portion</span><input data-draft-field="portion_label" value="${escapeHtml(item.portion_label || "")}" placeholder="1 bowl, 1 slice…" /></label><label class="field"><span>Quantity</span><input data-draft-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity ?? 1)}" /></label><label class="field"><span>Gram weight</span><input data-draft-field="gram_weight" type="number" min="0.01" step="0.1" value="${escapeHtml(item.gram_weight ?? "")}" /></label></div><div class="meal-composer-nutrients">${nutrientFields}</div><details class="food-audit"><summary>Provenance and assumptions</summary><div class="food-audit-body"><div>${sourceBadge(item.source_type)} ${escapeHtml(item.provider || "Source snapshot preserved")}</div>${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noreferrer">View source</a>` : ""}${item.assumptions?.length ? `<div>Assumptions: ${escapeHtml(item.assumptions.join("; "))}</div>` : ""}</div></details></article>`;
+}
+
+function draftManualEditor(item, index) {
+    const nutrientFields = draftNutrientFields
+        .map(
+            (key) =>
+                `<label class="field"><span>${escapeHtml(draftNutrientLabel(key))}</span><input data-draft-field="${key}" type="number" min="0" step="0.1" value="${escapeHtml(item.nutrients?.[key] ?? "")}" /></label>`,
+        )
+        .join("");
+    return `<article class="meal-draft-item meal-composer-item" data-draft-pending-index="${index}"><div class="meal-composer-item-head"><div><strong>New manual food</strong><small>${sourceBadge("user_supplied")} Enter the nutrition used</small></div><button class="button button-primary button-small" type="button" data-action="save-draft-manual" data-index="${index}">Add item</button></div><div class="meal-composer-grid"><label class="field"><span>Name</span><input data-draft-field="name" value="${escapeHtml(item.name || "")}" maxlength="500" required /></label><label class="field"><span>Portion</span><input data-draft-field="portion_label" value="${escapeHtml(item.portion_label || "")}" placeholder="1 bowl, 1 slice…" /></label><label class="field"><span>Quantity</span><input data-draft-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity ?? 1)}" /></label><label class="field"><span>Gram weight</span><input data-draft-field="gram_weight" type="number" min="0.01" step="0.1" value="${escapeHtml(item.gram_weight ?? "")}" /></label></div><div class="meal-composer-nutrients">${nutrientFields}</div></article>`;
+}
+
+function renderMealDraftReview(draft) {
+    mealDraftReview.draft = draft;
+    const root = document.getElementById("meal-draft-review");
+    if (!root) return;
+    const openQuestions = draft.questions.filter(
+        (question) => question.status === "open",
+    );
+    const totals = draft.totals || {};
+    const editable = [
+        "open",
+        "awaiting_answers",
+        "awaiting_confirmation",
+    ].includes(draft.status);
+    root.innerHTML = `<div class="meal-draft-review"><div class="panel-title"><div><span class="section-kicker">${escapeHtml(draft.status.replaceAll("_", " "))}</span><h3>${escapeHtml(draft.description || "Meal draft")}</h3></div><span>Version ${draft.version}</span></div><p class="tiny">${draft.expires_at ? `Expires ${escapeHtml(formatTime(draft.expires_at))}` : ""} ${draft.source_mode ? `· Source: ${escapeHtml(draft.source_mode)}` : ""}</p><div class="summary-grid">${metricCard("Calories", totals.calories, " kcal", null, true)}${metricCard("Protein", totals.protein_g, "g", null)}${metricCard("Carbs", totals.carbs_g, "g", null)}${metricCard("Fat", totals.fat_g, "g", null)}</div>${editable ? `<section class="meal-draft-section"><div class="panel-title"><h4>Meal details</h4><button class="button button-primary button-small" type="button" data-action="save-meal-draft">Save details</button></div><div class="meal-composer-grid"><label class="field"><span>Description</span><input data-draft-field="description" value="${escapeHtml(draft.description || "")}" maxlength="2000" /></label><label class="field"><span>Meal type</span><select data-draft-field="meal_type"><option value="breakfast" ${draft.meal_type === "breakfast" ? "selected" : ""}>Breakfast</option><option value="lunch" ${draft.meal_type === "lunch" ? "selected" : ""}>Lunch</option><option value="dinner" ${draft.meal_type === "dinner" ? "selected" : ""}>Dinner</option><option value="snack" ${draft.meal_type === "snack" ? "selected" : ""}>Snack</option></select></label><label class="field"><span>Logged at</span><input data-draft-field="logged_at" type="datetime-local" value="${escapeHtml(draftDateTimeValue(draft.logged_at))}" /></label></div><label class="field"><span>Notes</span><textarea data-draft-field="notes" rows="2" maxlength="4000">${escapeHtml(draft.notes || "")}</textarea></label></section>` : ""}<section class="meal-draft-section"><div class="panel-title"><h4>Foods and provenance</h4><span>${draft.items.length} item${draft.items.length === 1 ? "" : "s"}</span></div>${draft.items.map(draftItemEditor).join("") || `<p class="tiny">No foods are in this draft yet.</p>`}${mealDraftReview.pendingManual.map(draftManualEditor).join("")}</section>${editable ? `<section class="meal-draft-section meal-composer-search"><div class="panel-title"><h4>Add another food</h4><button class="button button-secondary button-small" type="button" data-action="add-draft-manual">Add manual food</button></div><div class="meal-composer-search-row"><input class="input" id="meal-draft-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><input class="input" id="meal-draft-food-barcode" inputmode="numeric" placeholder="Barcode" aria-label="Food barcode" /><button class="button button-secondary" type="button" data-action="lookup-draft-food-barcode">Look up</button></div><div id="meal-draft-food-results" class="meal-food-results"></div></section>` : ""}${openQuestions.length ? `<section class="meal-draft-section"><div class="panel-title"><h4>Questions</h4><span>${openQuestions.length} open</span></div>${openQuestions.map((question) => `<div class="meal-draft-question" data-draft-question-id="${escapeHtml(question.id)}"><strong>${escapeHtml(question.prompt)}</strong><div class="meal-composer-search-row"><input class="input" data-draft-question-answer placeholder="Answer or correction" maxlength="2000" /><button class="button button-secondary button-small" type="button" data-action="answer-meal-draft-question" data-question-id="${escapeHtml(question.id)}">Save answer</button></div></div>`).join("")}<label class="checkbox-row"><input type="checkbox" data-draft-accept-assumptions /> Accept the remaining assumptions as shown</label></section>` : ""}<div class="auth-actions meal-draft-actions">${editable ? `<button class="button button-primary" type="button" data-action="confirm-meal-draft">${openQuestions.length ? "Confirm and accept assumptions" : "Confirm and log meal"}</button><button class="button button-quiet" type="button" data-action="cancel-meal-draft">Abandon draft</button>` : `<p class="tiny">This draft is ${escapeHtml(draft.status)}.</p>`}</div></div>`;
+}
+
+function renderDraftFoodResults(data) {
+    const root = document.getElementById("meal-draft-food-results");
+    if (!root) return;
+    mealDraftReview.options.clear();
+    const sections = [];
+    if (data.candidates?.length) {
+        sections.push(
+            `<div class="meal-search-section"><h4>Verified foods</h4>${data.candidates
+                .map((candidate, index) => {
+                    const key = `candidate:${index}`;
+                    mealDraftReview.options.set(key, {
+                        kind: "candidate",
+                        candidateId: candidate.candidate_id,
+                    });
+                    return `<button class="meal-search-result" type="button" data-action="select-draft-food-option" data-key="${key}"><span><strong>${escapeHtml([candidate.brand, candidate.name].filter(Boolean).join(" — ") || candidate.name)}</strong><small>${sourceBadge(candidate.provider)} ${escapeHtml(candidate.default_portion?.label || "Details available after selection")}</small></span><span>${candidate.default_portion?.calories == null ? "" : `${number(candidate.default_portion.calories)} kcal`}</span></button>`;
+                })
+                .join("")}</div>`,
+        );
+    }
+    if (data.savedFoods?.length) {
+        sections.push(
+            `<div class="meal-search-section"><h4>Saved foods</h4>${data.savedFoods
+                .map((saved, index) => {
+                    const key = `saved:${index}`;
+                    mealDraftReview.options.set(key, {
+                        kind: "food",
+                        candidateId: saved.food?.candidate_id,
+                        portionId: saved.defaultPortionId,
+                    });
+                    return `<button class="meal-search-result" type="button" data-action="select-draft-food-option" data-key="${key}"><span><strong>${escapeHtml(saved.label)}</strong><small>${sourceBadge(saved.food?.provider)} ${escapeHtml(saved.food?.name || "Saved food")}</small></span><span>${number(foodPortion(saved.food, saved.defaultPortionId)?.nutrients?.calories)} kcal</span></button>`;
+                })
+                .join("")}</div>`,
+        );
+    }
+    if (data.recentMealItems?.length) {
+        sections.push(
+            `<div class="meal-search-section"><h4>Recent foods</h4>${data.recentMealItems
+                .map((recent, index) => {
+                    const key = `recent:${index}`;
+                    mealDraftReview.options.set(key, {
+                        kind: "recent",
+                        recent,
+                    });
+                    return `<button class="meal-search-result" type="button" data-action="select-draft-food-option" data-key="${key}"><span><strong>${escapeHtml(recent.name)}</strong><small>${sourceBadge("past_meal")} ${escapeHtml(recent.portionLabel || "Portion not recorded")}</small></span><span>${number(recent.nutrients?.calories)} kcal</span></button>`;
+                })
+                .join("")}</div>`,
+        );
+    }
+    root.innerHTML =
+        sections.join("") ||
+        `<p class="tiny">No matches yet. Try a food name or add a manual food.</p>`;
+}
+
+async function searchDraftFoods(query) {
+    const root = document.getElementById("meal-draft-food-results");
+    if (!root) return;
+    root.innerHTML = `<p class="tiny">Searching verified foods and personal history…</p>`;
+    try {
+        const data = await api(
+            `/api/app/food-search?query=${encodeURIComponent(query)}&limit=8`,
+            { keepPrevious: true },
+        );
+        renderDraftFoodResults(data);
+    } catch (error) {
+        if (error?.name !== "AbortError") {
+            root.innerHTML = `<p class="tiny">${escapeHtml(error.message || "Food search failed")}</p>`;
+        }
+    }
+}
+
+async function selectDraftFoodOption(key) {
+    const option = mealDraftReview.options.get(key);
+    const draft = mealDraftReview.draft;
+    if (!option || !draft) return;
+    let item;
+    if (option.kind === "candidate" || option.kind === "food") {
+        item = {
+            candidate_id: option.candidateId,
+            portion_id: option.portionId,
+            quantity: 1,
+        };
+    } else {
+        item = {
+            name: option.recent.name,
+            quantity: 1,
+            portion_label: option.recent.portionLabel || undefined,
+            nutrients: option.recent.nutrients,
+            source_type: "past_meal",
+            provider: option.recent.provider,
+            provider_food_id: option.recent.providerFoodId,
+            source_snapshot: {
+                resolution_layer: "personal_history",
+                meal_id: option.recent.mealId,
+                item_id: option.recent.itemId,
+            },
+        };
+    }
+    const result = await api(
+        `/api/app/meal-drafts/${encodeURIComponent(draft.id)}/items`,
+        {
+            method: "POST",
+            body: JSON.stringify({ expected_version: draft.version, item }),
+            keepPrevious: true,
+        },
+    );
+    mealDraftReview.pendingManual = [];
+    renderMealDraftReview(result.draft);
+    toast("Food added to draft.");
+    searchDraftFoods("");
+}
+
+async function lookupDraftFoodBarcode() {
+    const input = document.getElementById("meal-draft-food-barcode");
+    const root = document.getElementById("meal-draft-food-results");
+    if (!input || !root || !input.value.trim()) return;
+    root.innerHTML = `<p class="tiny">Looking up the package barcode…</p>`;
+    const data = await api(
+        `/api/app/food-barcode?barcode=${encodeURIComponent(input.value.trim())}`,
+        { keepPrevious: true },
+    );
+    renderDraftFoodResults({ ...data, savedFoods: [], recentMealItems: [] });
+}
+
+async function openMealDraft(id) {
+    mealDraftReview.draft = null;
+    mealDraftReview.options.clear();
+    mealDraftReview.pendingManual = [];
+    openDialog(
+        "Review meal draft",
+        `<div id="meal-draft-review"><p class="tiny">Loading draft…</p></div>`,
+    );
+    const data = await api(`/api/app/meal-drafts/${encodeURIComponent(id)}`, {
+        keepPrevious: true,
+    });
+    renderMealDraftReview(data.draft);
+    searchDraftFoods("");
+}
+
 function foodTitle(food) {
     return [food.brand, food.name].filter(Boolean).join(" — ") || "Food";
 }
@@ -795,6 +1069,193 @@ async function handleAction(button) {
     )
         return renderRoute();
     if (action === "add-meal") return openMealComposer();
+    if (action === "open-meal-draft") {
+        await openMealDraft(button.dataset.id);
+        return;
+    }
+    if (action === "select-draft-food-option") {
+        await selectDraftFoodOption(button.dataset.key);
+        return;
+    }
+    if (action === "lookup-draft-food-barcode") {
+        await lookupDraftFoodBarcode();
+        return;
+    }
+    if (action === "add-draft-manual") {
+        mealDraftReview.pendingManual.push({
+            name: "",
+            quantity: 1,
+            portion_label: "",
+            nutrients: {},
+        });
+        renderMealDraftReview(mealDraftReview.draft);
+        return;
+    }
+    if (action === "save-draft-manual") {
+        const draft = mealDraftReview.draft;
+        if (!draft) return;
+        const item = draftManualPayloadFromDom(Number(button.dataset.index));
+        const result = await api(
+            `/api/app/meal-drafts/${encodeURIComponent(draft.id)}/items`,
+            {
+                method: "POST",
+                body: JSON.stringify({
+                    expected_version: draft.version,
+                    item,
+                }),
+                keepPrevious: true,
+            },
+        );
+        mealDraftReview.pendingManual = [];
+        renderMealDraftReview(result.draft);
+        toast("Manual food added to draft.");
+        return;
+    }
+    if (action === "save-meal-draft") {
+        const draft = mealDraftReview.draft;
+        if (!draft) return;
+        const root = document.getElementById("meal-draft-review");
+        const field = (name) =>
+            root?.querySelector(`[data-draft-field="${name}"]`);
+        const loggedAt = field("logged_at")?.value
+            ? new Date(field("logged_at").value).toISOString()
+            : null;
+        const result = await api(
+            `/api/app/meal-drafts/${encodeURIComponent(draft.id)}`,
+            {
+                method: "PATCH",
+                body: JSON.stringify({
+                    expected_version: draft.version,
+                    description: field("description")?.value || null,
+                    meal_type: field("meal_type")?.value,
+                    logged_at: loggedAt,
+                    notes: field("notes")?.value || null,
+                }),
+                keepPrevious: true,
+            },
+        );
+        renderMealDraftReview(result.draft);
+        toast("Draft details saved.");
+        return;
+    }
+    if (action === "save-draft-item") {
+        const draft = mealDraftReview.draft;
+        if (!draft) return;
+        const index = Number(button.dataset.index);
+        const item = draftItemPayloadFromDom(index);
+        const record = draft.items[index];
+        const result = await api(
+            `/api/app/meal-drafts/${encodeURIComponent(draft.id)}/items/${encodeURIComponent(record.id)}`,
+            {
+                method: "PATCH",
+                body: JSON.stringify({ expected_version: draft.version, item }),
+                keepPrevious: true,
+            },
+        );
+        renderMealDraftReview(result.draft);
+        toast("Draft item saved.");
+        return;
+    }
+    if (action === "remove-draft-item") {
+        const draft = mealDraftReview.draft;
+        if (!draft) return;
+        const index = Number(button.dataset.index);
+        const record = draft.items[index];
+        if (!record || !confirm(`Remove ${record.name} from this draft?`))
+            return;
+        const result = await api(
+            `/api/app/meal-drafts/${encodeURIComponent(draft.id)}/items/${encodeURIComponent(record.id)}`,
+            {
+                method: "DELETE",
+                body: JSON.stringify({ expected_version: draft.version }),
+                keepPrevious: true,
+            },
+        );
+        renderMealDraftReview(result.draft);
+        toast("Draft item removed.");
+        return;
+    }
+    if (action === "answer-meal-draft-question") {
+        const draft = mealDraftReview.draft;
+        const question = button.closest("[data-draft-question-id]");
+        const answer = question?.querySelector(
+            "[data-draft-question-answer]",
+        )?.value;
+        if (!draft || !answer?.trim()) {
+            toast("Enter an answer or correction first.", "error");
+            return;
+        }
+        const result = await api(
+            `/api/app/meal-drafts/${encodeURIComponent(draft.id)}/questions/${encodeURIComponent(button.dataset.questionId)}/answer`,
+            {
+                method: "POST",
+                body: JSON.stringify({
+                    expected_version: draft.version,
+                    answer,
+                }),
+                keepPrevious: true,
+            },
+        );
+        renderMealDraftReview(result.draft);
+        toast("Draft question answered.");
+        return;
+    }
+    if (action === "confirm-meal-draft") {
+        const draft = mealDraftReview.draft;
+        if (!draft) return;
+        const accepted = Boolean(
+            document.querySelector("[data-draft-accept-assumptions]")?.checked,
+        );
+        if (
+            draft.questions.some((question) => question.status === "open") &&
+            !accepted
+        ) {
+            toast(
+                "Answer the open questions or accept the remaining assumptions.",
+                "error",
+            );
+            return;
+        }
+        const result = await api(
+            `/api/app/meal-drafts/${encodeURIComponent(draft.id)}/confirm`,
+            {
+                method: "POST",
+                body: JSON.stringify({
+                    expected_version: draft.version,
+                    confirmed: true,
+                    accept_remaining_assumptions: accepted,
+                }),
+                keepPrevious: true,
+            },
+        );
+        dialog.close();
+        toast("Meal confirmed and logged.");
+        await renderRoute();
+        return result;
+    }
+    if (action === "cancel-meal-draft") {
+        const draft = mealDraftReview.draft;
+        if (
+            !draft ||
+            !confirm("Abandon this meal draft? No meal will be logged.")
+        )
+            return;
+        await api(
+            `/api/app/meal-drafts/${encodeURIComponent(draft.id)}/cancel`,
+            {
+                method: "POST",
+                body: JSON.stringify({
+                    expected_version: draft.version,
+                    confirm: true,
+                }),
+                keepPrevious: true,
+            },
+        );
+        dialog.close();
+        toast("Meal draft abandoned.");
+        await renderRoute();
+        return;
+    }
     if (action === "select-meal-option") {
         await selectMealOption(button.dataset.key);
         return;
@@ -950,6 +1411,13 @@ document.addEventListener("input", (event) => {
         window.clearTimeout(mealComposer.searchTimer);
         mealComposer.searchTimer = window.setTimeout(
             () => searchMealFoods(event.target.value),
+            240,
+        );
+    }
+    if (event.target.id === "meal-draft-food-search") {
+        window.clearTimeout(mealDraftReview.searchTimer);
+        mealDraftReview.searchTimer = window.setTimeout(
+            () => searchDraftFoods(event.target.value),
             240,
         );
     }
