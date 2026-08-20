@@ -532,11 +532,84 @@ dialog .auth-card {
     height: 22px;
 }
 
+.import-native-stack {
+    display: grid;
+    gap: 12px;
+}
+
+.import-native-grid {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.import-native-stats {
+    display: grid;
+    gap: 7px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.import-native-stats > div {
+    display: grid;
+    gap: 2px;
+    border: 1px solid var(--ink-100);
+    border-radius: 10px;
+    background: var(--surface-muted);
+    padding: 9px;
+}
+
+.import-native-stats strong {
+    font-size: 1.05rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.import-native-stats span {
+    color: var(--ink-500);
+    font-size: 0.7rem;
+}
+
+.import-native-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--ink-100);
+    border-radius: 10px;
+}
+
+.import-native-table {
+    width: 100%;
+    min-width: 500px;
+    border-collapse: collapse;
+    font-size: 0.76rem;
+}
+
+.import-native-table th,
+.import-native-table td {
+    padding: 8px;
+    border-bottom: 1px solid var(--ink-100);
+    text-align: left;
+    vertical-align: top;
+}
+
+.import-native-table th {
+    color: var(--ink-500);
+    font-size: 0.67rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.import-native-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
 @media (max-width: 620px) {
     .meal-composer-search-row,
     .meal-composer-grid,
-    .meal-composer-nutrients {
+    .meal-composer-nutrients,
+    .import-native-grid {
         grid-template-columns: 1fr;
+    }
+
+    .import-native-stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     dialog {

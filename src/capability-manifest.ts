@@ -131,10 +131,14 @@ export const CAPABILITY_MANIFEST = [
     {
         id: "meal.import",
         mcp: complete(["bulk_import_meals", "start_meal_import"]),
-        web: missing(),
+        web: complete([
+            "POST /api/app/import/parse",
+            "POST /api/app/import",
+            "/app/settings/data",
+        ]),
         intentionalChannelException: null,
-        gap: "The website still redirects imports to ChatGPT.",
-        targetPr: "PR 6",
+        gap: null,
+        targetPr: null,
     },
     {
         id: "mealDraft.create",

@@ -12,6 +12,14 @@ import { requireSameOrigin } from "../accounts/csrf.js";
 import { requireWebSession } from "../accounts/session.js";
 import { getSubscriptionSnapshot } from "../billing/repository.js";
 import { requirePlanningScope } from "../mcp-capability-guard.js";
+import { parseCsv } from "../csv.js";
+import {
+    serializeImportResult,
+    MAX_ROWS_PER_CALL,
+    type BulkImportArgs,
+    type ImportRow,
+} from "../import.js";
+import { runUserImport } from "../import-service.js";
 import {
     listOAuthConnections,
     revokeOAuthConnection,
@@ -473,6 +481,99 @@ function groceryExpectedVersion(body: Record<string, unknown>): number {
     return value;
 }
 
+const MAX_IMPORT_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_IMPORT_PARSED_ROWS = 50_000;
+
+function importText(
+    value: unknown,
+    label: string,
+    maxLength: number,
+): string | undefined {
+    if (value === undefined || value === null || value === "") return undefined;
+    if (typeof value !== "string" || value.length > maxLength) {
+        throw new Error(`Import ${label} is invalid`);
+    }
+    return value;
+}
+
+function importNumber(value: unknown, label: string): number | undefined {
+    if (value === undefined || value === null || value === "") return undefined;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) throw new Error(`Import ${label} is invalid`);
+    return parsed;
+}
+
+function importRowFromBody(value: unknown): ImportRow {
+    const body = recordValue(value, "Import row");
+    const sourceLine = Number(body.source_line);
+    if (!Number.isInteger(sourceLine) || sourceLine < 1) {
+        throw new Error("Import source_line is invalid");
+    }
+    return {
+        source_line: sourceLine,
+        description: importText(body.description, "description", 2_000),
+        logged_at: importText(body.logged_at, "logged_at", 100),
+        meal_type: importText(body.meal_type, "meal_type", 80),
+        calories: importNumber(body.calories, "calories"),
+        protein_g: importNumber(body.protein_g, "protein_g"),
+        carbs_g: importNumber(body.carbs_g, "carbs_g"),
+        fat_g: importNumber(body.fat_g, "fat_g"),
+        fiber_g: importNumber(body.fiber_g, "fiber_g"),
+        sugar_g: importNumber(body.sugar_g, "sugar_g"),
+        alcohol_g: importNumber(body.alcohol_g, "alcohol_g"),
+        notes: importText(body.notes, "notes", 4_000),
+        client_row_id: importText(body.client_row_id, "client_row_id", 255),
+    };
+}
+
+function importArgsFromBody(value: unknown): BulkImportArgs {
+    const body = recordValue(value, "Import");
+    if (!Array.isArray(body.meals)) {
+        throw new Error("Import meals are required");
+    }
+    if (body.meals.length === 0 || body.meals.length > MAX_ROWS_PER_CALL) {
+        throw new Error(
+            `Import requests must carry 1 to ${MAX_ROWS_PER_CALL} rows`,
+        );
+    }
+    const expectedRowCount = Number(body.expected_row_count);
+    if (!Number.isInteger(expectedRowCount) || expectedRowCount < 0) {
+        throw new Error("Import expected_row_count is invalid");
+    }
+    const onError = body.on_error ?? "continue";
+    if (onError !== "continue" && onError !== "abort") {
+        throw new Error("Import on_error is invalid");
+    }
+    const unmapped = Array.isArray(body.unmapped_columns)
+        ? body.unmapped_columns.map((column) =>
+              importText(column, "unmapped column", 120),
+          )
+        : [];
+    if (unmapped.some((column) => column === undefined)) {
+        throw new Error("Import unmapped column is invalid");
+    }
+    const rowsSkipped = importNumber(body.rows_skipped, "rows_skipped");
+    if (
+        rowsSkipped !== undefined &&
+        (!Number.isInteger(rowsSkipped) || rowsSkipped < 0)
+    ) {
+        throw new Error("Import rows_skipped is invalid");
+    }
+    return {
+        meals: body.meals.map(importRowFromBody),
+        expected_row_count: expectedRowCount,
+        expected_total_kcal: importNumber(
+            body.expected_total_kcal,
+            "expected_total_kcal",
+        ),
+        dry_run: body.dry_run === true,
+        on_error: onError,
+        rows_skipped: rowsSkipped,
+        unmapped_columns: unmapped as string[],
+        source_app: importText(body.source_app, "source_app", 120),
+    };
+}
+
 const STRUCTURED_NUTRIENT_FIELDS = [
     "calories",
     "protein_g",
@@ -571,6 +672,53 @@ export function createAppRouter(): Hono {
             meal: result.meal,
             deduplicated: result.deduplicated,
         });
+    });
+
+    app.post("/api/app/import/parse", requireSameOrigin, async (c) => {
+        const form = await c.req.parseBody();
+        const uploaded = form.file;
+        if (
+            !uploaded ||
+            typeof uploaded !== "object" ||
+            typeof (uploaded as File).arrayBuffer !== "function"
+        ) {
+            throw new Error("Import CSV file is required");
+        }
+        const file = uploaded as File;
+        if (file.size > MAX_IMPORT_FILE_BYTES) {
+            throw new Error("Import file is too large (maximum 10 MB)");
+        }
+        const table = parseCsv(new Uint8Array(await file.arrayBuffer()));
+        if (!table.headers.length || !table.rows.length) {
+            throw new Error("Import file does not contain any meal rows");
+        }
+        if (table.rows.length > MAX_IMPORT_PARSED_ROWS) {
+            throw new Error(
+                `Import file contains too many rows (maximum ${MAX_IMPORT_PARSED_ROWS.toLocaleString()})`,
+            );
+        }
+        return privateJson(c, {
+            fileName: file.name,
+            table: {
+                headers: table.headers,
+                rows: table.rows,
+                sourceLines: table.sourceLines,
+                delimiter: table.delimiter,
+                decimalSeparator: table.decimalSeparator,
+                encoding: table.encoding,
+                skippedTotalsRows: table.skippedTotalsRows,
+                skippedBlankRows: table.skippedBlankRows,
+                warnings: table.warnings,
+            },
+        });
+    });
+
+    app.post("/api/app/import", requireSameOrigin, async (c) => {
+        const result = await runUserImport(
+            c.get("munchUserId"),
+            importArgsFromBody(await c.req.json()),
+        );
+        return privateJson(c, serializeImportResult(result));
     });
 
     app.get("/api/app/meals/:id", async (c) => {
@@ -1508,7 +1656,7 @@ export function createAppRouter(): Hono {
         console.error("App route failed", { name: error.name });
         const knownMessage =
             error instanceof Error &&
-            /^(Invalid|Connection not found|Date range|Weight|Target weight|Meal item|Meal |Meal$|Meal not found|Food |Nutrition|Add at least|A meal|Structured meal|A structured meal|Draft |Grocery )/.test(
+            /^(Invalid|Connection not found|Date range|Weight|Target weight|Meal item|Meal |Meal$|Meal not found|Food |Nutrition|Add at least|A meal|Structured meal|A structured meal|Draft |Grocery |Import )/.test(
                 error.message,
             )
                 ? error.message

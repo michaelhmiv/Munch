@@ -30,8 +30,6 @@ import {
     preferredDrinkUnitFromProfile,
     upsertProfile,
     getProfile,
-    countMeals,
-    existingIdempotencyKeys,
     type Meal,
     type NutritionGoals,
     type WaterEntry,
@@ -68,7 +66,6 @@ import {
 import { formatAlcohol, isDrinkUnit, type DrinkUnit } from "./alcohol.js";
 import { exportMeals } from "./export.js";
 import {
-    runImport,
     buildSummaryText,
     serializeImportResult,
     BULK_IMPORT_OUTPUT_SCHEMA,
@@ -78,6 +75,7 @@ import {
     MAX_ALCOHOL_G,
     type BulkImportArgs,
 } from "./import.js";
+import { runUserImport } from "./import-service.js";
 import { normalizeBarcode, lookupBarcode, formatFoodResult } from "./foods.js";
 import { formatMealSearchResults } from "./search.js";
 import {
@@ -438,12 +436,6 @@ export function totalsPayloadOf(totals: DailyTotals, alcohol: AlcoholDisplay) {
 }
 
 // ---------- bulk_import_meals ----------
-
-// Ceiling on total rows per user. Rate limiting is per HTTP request, so one
-// batched call writes up to MAX_ROWS_PER_CALL rows for a single limiter hit;
-// without this there is no bound on table growth. Set far above any real user:
-// 200k rows is ~180 years at three meals a day.
-const MAX_MEALS_PER_USER = 200_000;
 
 // Deliberately permissive: bounds live in validateRow so a single bad cell
 // produces an identified per-row error instead of a Zod rejection that discards
@@ -1254,61 +1246,10 @@ export function registerTools(
             return withAnalytics(
                 "bulk_import_meals",
                 async () => {
-                    // One profile read serves both: the timezone, and whether the
-                    // user ever configured one. profiles.timezone defaults to
-                    // 'UTC', so a missing profile row is the reliable "never set"
-                    // signal — and rows without an explicit offset are placed with
-                    // it, so the import warns rather than silently guessing.
-                    const profile = await getProfile(userId);
-                    const tz = profile?.timezone ?? "UTC";
-                    const tzConfigured = profile !== null;
-
-                    // Bound total growth before doing any work (see
-                    // MAX_MEALS_PER_USER).
-                    const existingCount = await countMeals(userId);
-                    if (
-                        existingCount + args.meals.length >
-                        MAX_MEALS_PER_USER
-                    ) {
-                        const structuredContent = serializeImportResult({
-                            status: "failed",
-                            dry_run: args.dry_run ?? false,
-                            summary: {
-                                total: args.meals.length,
-                                created: 0,
-                                deduplicated: 0,
-                                would_create: 0,
-                                failed: 0,
-                                not_attempted: 0,
-                                duplicate_rows_in_file: 0,
-                                rows_without_calories: 0,
-                                skipped_by_caller: args.rows_skipped ?? 0,
-                            },
-                            warnings: [
-                                `This import would exceed the maximum of ${MAX_MEALS_PER_USER} stored meals (you have ${existingCount}). Delete some history first.`,
-                            ],
-                            results: [],
-                        });
-                        return {
-                            content: [
-                                {
-                                    type: "text" as const,
-                                    text: structuredContent.warnings[0]!,
-                                },
-                            ],
-                            structuredContent,
-                        };
-                    }
-
-                    const result = await runImport(args as BulkImportArgs, {
+                    const result = await runUserImport(
                         userId,
-                        tz,
-                        tzConfigured,
-                        nowMs: Date.now(),
-                        insert: (input) => insertMeal(userId, input),
-                        existingKeys: (keys) =>
-                            existingIdempotencyKeys(userId, keys),
-                    });
+                        args as BulkImportArgs,
+                    );
 
                     // Same discovery problem as log_meal, one rung louder: a
                     // backfill can carry alcohol on dozens of rows and, with
