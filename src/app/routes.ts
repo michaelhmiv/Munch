@@ -31,6 +31,7 @@ import {
     archiveRecipe,
     getRecipe,
     logRecipe,
+    saveRecipe,
     scheduleRecipe,
     updateRecipe,
     type PlanningScope,
@@ -210,7 +211,7 @@ function draftText(
     return value.trim() || null;
 }
 
-function recipeInputFromBody(value: unknown): RecipeInput {
+export function recipeInputFromBody(value: unknown): RecipeInput {
     const body = recordValue(value, "Recipe");
     const name = typeof body.name === "string" ? body.name : "";
     const servings = positiveNumber(body.servings);
@@ -354,6 +355,27 @@ function recipeScopeForCapabilities(
         !household ||
         household.householdId !== recipe.ownership.household_id
     ) {
+        throw new Error("Household recipe capability is unavailable");
+    }
+    return { type: "household", householdId: household.householdId };
+}
+
+function recipeScopeForCreation(
+    body: Record<string, unknown>,
+    capabilities: Awaited<ReturnType<typeof resolveMunchCapabilities>>,
+): PlanningScope {
+    const requestedScope = body.scope ?? "personal";
+    if (requestedScope === "personal") {
+        if (!capabilities.personalRecipesWrite) {
+            throw new Error("Personal recipe capability is unavailable");
+        }
+        return { type: "personal" };
+    }
+    if (requestedScope !== "household") {
+        throw new Error("Invalid recipe scope");
+    }
+    const household = capabilities.household;
+    if (!capabilities.householdWrite || !household) {
         throw new Error("Household recipe capability is unavailable");
     }
     return { type: "household", householdId: household.householdId };
@@ -729,6 +751,25 @@ export function createAppRouter(): Hono {
             ),
         ),
     );
+
+    app.post("/api/app/recipes", requireSameOrigin, async (c) => {
+        const userId = c.get("munchUserId");
+        const body = recordValue(await c.req.json(), "Recipe create");
+        const capabilities = await resolveMunchCapabilities(userId);
+        const result = await saveRecipe({
+            userId,
+            scope: recipeScopeForCreation(body, capabilities),
+            recipe: recipeInputFromBody(body.recipe),
+            idempotencyKey:
+                typeof body.idempotency_key === "string"
+                    ? body.idempotency_key
+                    : crypto.randomUUID(),
+        });
+        return privateJson(c, {
+            result,
+            recipe: await getRecipe(userId, result.recipeId),
+        });
+    });
 
     app.get("/api/app/recipes/:id", async (c) => {
         const workspace = await getRecipeWorkspace(
