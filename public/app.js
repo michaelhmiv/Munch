@@ -16,6 +16,7 @@ const state = {
     bootstrap: null,
     route: "today",
     date: null,
+    insightsDays: 30,
     controller: null,
 };
 
@@ -306,9 +307,18 @@ function barChart(days, key, label, unit = "") {
 async function renderInsights() {
     setLoading("Calculating trends and patterns…");
     const end = state.date;
-    const start = shiftDate(end, -29);
+    const days = [7, 30, 90].includes(state.insightsDays)
+        ? state.insightsDays
+        : 30;
+    const start = shiftDate(end, -(days - 1));
     const data = await api(`/api/app/insights?start=${start}&end=${end}`);
-    content.innerHTML = `<div class="page-heading"><div><h2>Last 30 days</h2><p>${data.loggedDays} logged days and ${data.mealCount} meals from ${escapeHtml(formatDate(start))} through ${escapeHtml(formatDate(end))}.</p></div><div class="auth-actions"><button class="button button-secondary button-small" data-action="insight-range" data-days="7">7 days</button><button class="button button-secondary button-small" data-action="insight-range" data-days="30">30 days</button><button class="button button-secondary button-small" data-action="insight-range" data-days="90">90 days</button></div></div><div class="dashboard-grid"><section class="panel panel-span-12"><div class="summary-grid">${metricCard("Average calories", data.averages.calories, " kcal", null, true)}${metricCard("Average protein", data.averages.proteinG, "g", null)}${metricCard("Average carbs", data.averages.carbsG, "g", null)}${metricCard("Average fat", data.averages.fatG, "g", null)}</div></section><section class="panel panel-span-8"><div class="panel-title"><h3>Daily calories</h3><span>${data.loggedDays} days</span></div>${data.days.length ? barChart(data.days, "calories", "Daily calories", "kilocalories") : `<div class="empty-state"><div><h3>No logged days</h3><p>Log meals to build a trend.</p></div></div>`}</section><section class="panel panel-span-4"><div class="panel-title"><h3>Coverage</h3></div><div class="summary-grid" style="grid-template-columns:1fr 1fr">${metricCard("Logged days", data.loggedDays, "", null)}${metricCard("Calendar days", data.calendarDays, "", null)}${metricCard("Meals", data.mealCount, "", null)}${metricCard("Meals per logged day", data.loggedDays ? data.mealCount / data.loggedDays : 0, "", null)}</div><p class="tiny spacer-top">Averages exclude days with no meal records. Missing nutrients are not automatically treated as confirmed zero values in source-level records.</p></section></div>`;
+    const rangeButtons = [7, 30, 90]
+        .map(
+            (range) =>
+                `<button class="button ${range === days ? "button-primary" : "button-secondary"} button-small" data-action="insight-range" data-days="${range}" aria-pressed="${range === days}">${range} days</button>`,
+        )
+        .join("");
+    content.innerHTML = `<div class="page-heading"><div><h2>Last ${days} days</h2><p>${data.loggedDays} logged days and ${data.mealCount} meals from ${escapeHtml(formatDate(start))} through ${escapeHtml(formatDate(end))}.</p></div><div class="auth-actions">${rangeButtons}</div></div><div class="dashboard-grid"><section class="panel panel-span-12"><div class="summary-grid">${metricCard("Average calories", data.averages.calories, " kcal", null, true)}${metricCard("Average protein", data.averages.proteinG, "g", null)}${metricCard("Average carbs", data.averages.carbsG, "g", null)}${metricCard("Average fat", data.averages.fatG, "g", null)}</div></section><section class="panel panel-span-8"><div class="panel-title"><h3>Daily calories</h3><span>${data.loggedDays} days</span></div>${data.days.length ? barChart(data.days, "calories", "Daily calories", "kilocalories") : `<div class="empty-state"><div><h3>No logged days</h3><p>Log meals to build a trend.</p></div></div>`}</section><section class="panel panel-span-4"><div class="panel-title"><h3>Coverage</h3></div><div class="summary-grid" style="grid-template-columns:1fr 1fr">${metricCard("Logged days", data.loggedDays, "", null)}${metricCard("Calendar days", data.calendarDays, "", null)}${metricCard("Meals", data.mealCount, "", null)}${metricCard("Meals per logged day", data.loggedDays ? data.mealCount / data.loggedDays : 0, "", null)}</div><p class="tiny spacer-top">Averages exclude days with no meal records. Missing nutrients are not automatically treated as confirmed zero values in source-level records.</p></section></div>`;
 }
 
 async function renderFoods() {
@@ -551,6 +561,12 @@ async function handleAction(button) {
     )
         return renderRoute();
     if (action === "edit-meal") return editMeal(button.dataset.id);
+    if (action === "insight-range") {
+        const days = Number(button.dataset.days);
+        if (![7, 30, 90].includes(days)) return;
+        state.insightsDays = days;
+        return renderInsights();
+    }
     if (action === "view-recipe") return openRecipe(button.dataset.id);
     if (action === "log-recipe")
         return openRecipeLog(button.dataset.id, button.dataset.revision);
