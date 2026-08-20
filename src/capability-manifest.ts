@@ -291,7 +291,7 @@ export const CAPABILITY_MANIFEST = [
     },
     {
         id: "water.update",
-        mcp: websiteOnly([]),
+        mcp: missing(),
         web: missing(),
         intentionalChannelException: null,
         gap: "Canonical water update semantics are not exposed on either surface.",
