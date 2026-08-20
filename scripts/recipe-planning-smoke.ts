@@ -8,14 +8,19 @@ const {
     createHouseholdInvitation,
 } = await import("../src/households/repository.js");
 const {
+    addGroceryItems,
     archiveRecipe,
+    clearPurchasedGroceryItems,
+    deleteGroceryItem,
     getGroceryList,
     getMealPlan,
     getRecipe,
     logRecipe,
+    markGroceryItemPurchased,
     saveRecipe,
     saveRecipeAndPlan,
     searchRecipes,
+    updateGroceryItem,
     updateRecipe,
 } = await import("../src/planning/repository.js");
 const { getStructuredMeal } =
@@ -291,6 +296,7 @@ if (
 const memberGroceries = await getGroceryList({
     userId: member.userId,
     scope,
+    includePurchased: true,
 });
 if (
     memberGroceries.items.length !== 1 ||
@@ -298,6 +304,86 @@ if (
 ) {
     throw new Error("Household member could not read the shared grocery list");
 }
+
+const groceryItem = memberGroceries.items[0]!;
+const updatedGrocery = await updateGroceryItem({
+    userId: member.userId,
+    scope,
+    groceryItemId: groceryItem.grocery_item_id,
+    name: "Red onion",
+    quantity: 2,
+    unit: "whole",
+    note: "Diced",
+    expectedVersion: groceryItem.version,
+});
+if (
+    updatedGrocery.name !== "Red onion" ||
+    updatedGrocery.quantity !== 2 ||
+    updatedGrocery.note !== "Diced" ||
+    !updatedGrocery.source_recipe_id ||
+    !updatedGrocery.source_recipe_revision_id ||
+    !updatedGrocery.source_planned_meal_id
+) {
+    throw new Error("Grocery editing did not preserve item provenance");
+}
+const purchasedGrocery = await markGroceryItemPurchased({
+    userId: member.userId,
+    scope,
+    groceryItemId: groceryItem.grocery_item_id,
+    purchased: true,
+    expectedVersion: updatedGrocery.version,
+});
+if (!purchasedGrocery.purchased_at) {
+    throw new Error("Household member could not mark a grocery purchased");
+}
+
+let viewerGroceryWriteDenied = false;
+try {
+    await updateGroceryItem({
+        userId: viewer.userId,
+        scope,
+        groceryItemId: groceryItem.grocery_item_id,
+        name: "Viewer edit",
+        quantity: null,
+        expectedVersion: purchasedGrocery.version,
+    });
+} catch {
+    viewerGroceryWriteDenied = true;
+}
+if (!viewerGroceryWriteDenied) {
+    throw new Error("Viewer was allowed to edit household groceries");
+}
+
+const cleared = await clearPurchasedGroceryItems({
+    userId: member.userId,
+    scope,
+});
+if (cleared.clearedCount !== 1) {
+    throw new Error("Clear purchased did not remove the purchased grocery");
+}
+
+const personalGrocery = await addGroceryItems({
+    userId: owner.userId,
+    scope: { type: "personal" },
+    items: [
+        {
+            name: "Personal lemons",
+            quantity: 2,
+            unit: "whole",
+            note: "For tea",
+            idempotencyKey: `personal-grocery:${crypto.randomUUID()}`,
+        },
+    ],
+});
+if (personalGrocery.items[0]?.name !== "Personal lemons") {
+    throw new Error("Personal grocery addition did not persist");
+}
+await deleteGroceryItem({
+    userId: owner.userId,
+    scope: { type: "personal" },
+    groceryItemId: String(personalGrocery.items[0].id),
+    expectedVersion: Number(personalGrocery.items[0].version),
+});
 
 const found = await searchRecipes({
     userId: member.userId,

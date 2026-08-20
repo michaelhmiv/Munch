@@ -477,18 +477,33 @@ export const CAPABILITY_MANIFEST = [
     {
         id: "grocery.add",
         mcp: complete(["add_grocery_items"]),
-        web: missing(),
+        web: complete(["POST /api/app/groceries/items"]),
         intentionalChannelException: null,
-        gap: "Website grocery lists are currently read-only.",
-        targetPr: "PR 5",
+        gap: null,
+        targetPr: null,
     },
     {
         id: "grocery.purchase",
         mcp: complete(["mark_grocery_item_purchased"]),
-        web: missing(),
+        web: complete([
+            "POST /api/app/groceries/items/:id/purchased",
+            "POST /api/app/groceries/clear-purchased",
+        ]),
         intentionalChannelException: null,
-        gap: "The website renders disabled purchased checkboxes.",
-        targetPr: "PR 5",
+        gap: null,
+        targetPr: null,
+    },
+    {
+        id: "grocery.manage",
+        mcp: websiteOnly([]),
+        web: complete([
+            "PATCH /api/app/groceries/items/:id",
+            "DELETE /api/app/groceries/items/:id",
+        ]),
+        intentionalChannelException:
+            "The MCP catalog exposes explicit grocery additions and purchase state; direct item editing and removal are website list-management controls.",
+        gap: null,
+        targetPr: null,
     },
     {
         id: "nutrition.export",
