@@ -1348,7 +1348,7 @@ export async function markGroceryItemPurchased(input: {
         const rows = await tx<Array<Record<string, unknown>>>`
             update munch.grocery_items item
             set purchased_at = case when ${input.purchased} then now() else null end,
-                purchased_by_user_id = case when ${input.purchased} then ${input.userId} else null end,
+                purchased_by_user_id = case when ${input.purchased} then ${input.userId}::uuid else null end,
                 updated_by_user_id = ${input.userId},
                 updated_at = now(), version = version + 1
             where item.id = ${input.groceryItemId}
