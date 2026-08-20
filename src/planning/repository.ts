@@ -1413,7 +1413,7 @@ export async function updateGroceryItem(input: {
                 note = ${input.note?.trim() || null},
                 updated_by_user_id = ${input.userId},
                 updated_at = now(),
-                version = version + 1
+                version = item.version + 1
             from munch.grocery_lists list
             where item.id = ${input.groceryItemId}
               and item.grocery_list_id = list.id
@@ -1472,7 +1472,7 @@ export async function deleteGroceryItem(input: {
             set deleted_at = now(),
                 updated_by_user_id = ${input.userId},
                 updated_at = now(),
-                version = version + 1
+                version = item.version + 1
             from munch.grocery_lists list
             where item.id = ${input.groceryItemId}
               and item.grocery_list_id = list.id
@@ -1504,7 +1504,7 @@ export async function clearPurchasedGroceryItems(input: {
             set deleted_at = now(),
                 updated_by_user_id = ${input.userId},
                 updated_at = now(),
-                version = version + 1
+                version = item.version + 1
             from munch.grocery_lists list
             where item.grocery_list_id = list.id
               and list.status = 'active'
