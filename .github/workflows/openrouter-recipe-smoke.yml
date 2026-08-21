@@ -23,12 +23,12 @@ on:
                 type: string
 
 pull_request:
-        paths:
-            - ".github/workflows/openrouter-recipe-smoke.yml"
-            - "scripts/openrouter-recipe-live-smoke.ts"
-            - "src/recipe-import/**"
-            - "package.json"
-            - "bun.lock"
+    paths:
+        - ".github/workflows/openrouter-recipe-smoke.yml"
+        - "scripts/openrouter-recipe-live-smoke.ts"
+        - "src/recipe-import/**"
+        - "package.json"
+        - "bun.lock"
 
 permissions:
     contents: read
