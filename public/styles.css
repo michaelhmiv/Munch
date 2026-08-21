@@ -1318,6 +1318,120 @@
         margin-top: 24px;
     }
 
+    .recipe-import-progress {
+        display: grid;
+        gap: 16px;
+        border: 1px solid var(--ink-100);
+        border-radius: 14px;
+        background: var(--surface-muted);
+        padding: 16px;
+        text-align: left;
+    }
+
+    .recipe-import-progress[data-state="error"] {
+        border-color: rgb(177 63 63 / 0.35);
+        background: rgb(177 63 63 / 0.06);
+    }
+
+    .recipe-import-progress-heading {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .recipe-import-progress-heading strong {
+        display: block;
+        color: var(--ink-900);
+    }
+
+    .recipe-import-progress-heading p {
+        margin-top: 4px;
+        color: var(--ink-600);
+        font-size: 0.85rem;
+    }
+
+    .recipe-import-spinner {
+        flex: 0 0 auto;
+        width: 18px;
+        height: 18px;
+        margin-top: 1px;
+        border: 2px solid var(--green-200);
+        border-top-color: var(--green-700);
+        border-radius: 999px;
+        animation: recipe-import-spin 850ms linear infinite;
+    }
+
+    .recipe-import-progress[data-state="error"] .recipe-import-spinner {
+        display: none;
+    }
+
+    .recipe-import-steps {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .recipe-import-steps li {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        color: var(--ink-500);
+        font-size: 0.82rem;
+    }
+
+    .recipe-import-steps li > span:first-child {
+        display: grid;
+        width: 22px;
+        height: 22px;
+        flex: 0 0 auto;
+        place-items: center;
+        border: 1px solid var(--ink-200);
+        border-radius: 999px;
+        background: white;
+        color: var(--ink-500);
+        font-size: 0.72rem;
+        font-weight: 800;
+    }
+
+    .recipe-import-steps li[data-state="active"] {
+        color: var(--ink-900);
+        font-weight: 760;
+    }
+
+    .recipe-import-steps li[data-state="active"] > span:first-child {
+        border-color: var(--green-500);
+        background: var(--green-100);
+        color: var(--green-800);
+    }
+
+    .recipe-import-steps li[data-state="complete"] {
+        color: var(--green-800);
+    }
+
+    .recipe-import-steps li[data-state="complete"] > span:first-child {
+        border-color: var(--green-500);
+        background: var(--green-600);
+        color: white;
+    }
+
+    .recipe-import-steps li[data-state="error"] {
+        color: var(--danger-700);
+        font-weight: 760;
+    }
+
+    .recipe-import-steps li[data-state="error"] > span:first-child {
+        border-color: var(--danger-700);
+        color: var(--danger-700);
+    }
+
+    @keyframes recipe-import-spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
     .field {
         display: grid;
         gap: 7px;
