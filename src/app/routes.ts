@@ -55,6 +55,7 @@ import {
     logRecipe,
     markGroceryItemPurchased,
     saveRecipe,
+    saveRecipeAndPlan,
     scheduleRecipe,
     updateGroceryItem,
     updateRecipe,
@@ -349,6 +350,45 @@ export function recipeInputFromBody(value: unknown): RecipeInput {
                 sourceSnapshot,
             };
         }),
+    };
+}
+
+export function recipeComposeInputFromBody(value: unknown): {
+    recipe: RecipeInput;
+    plannedDate: string;
+    mealSlot?: "breakfast" | "lunch" | "dinner" | "snack";
+    plannedServings: number;
+    note?: string;
+    groceryItems: GroceryItemInput[];
+} {
+    const body = recordValue(value, "Recipe compose");
+    const plannedDate =
+        typeof body.planned_date === "string" ? body.planned_date : "";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(plannedDate)) {
+        throw new Error("Planned date is required");
+    }
+    const plannedServings = positiveNumber(body.planned_servings);
+    if (!plannedServings) throw new Error("Planned servings are required");
+    const mealSlot =
+        body.meal_slot === undefined ||
+        body.meal_slot === null ||
+        body.meal_slot === ""
+            ? undefined
+            : mealType(body.meal_slot);
+    const rawGroceryItems = body.grocery_items_needed;
+    if (rawGroceryItems !== undefined && !Array.isArray(rawGroceryItems)) {
+        throw new Error("Grocery items needed must be an array");
+    }
+    if (Array.isArray(rawGroceryItems) && rawGroceryItems.length > 100) {
+        throw new Error("Too many grocery items needed");
+    }
+    return {
+        recipe: recipeInputFromBody(body.recipe),
+        plannedDate,
+        mealSlot,
+        plannedServings,
+        note: groceryText(body.note, "Recipe planning note", 500),
+        groceryItems: (rawGroceryItems ?? []).map(groceryItemInputFromBody),
     };
 }
 
@@ -1098,6 +1138,32 @@ export function createAppRouter(): Hono {
         return privateJson(c, {
             result,
             recipe: await getRecipe(userId, result.recipeId),
+        });
+    });
+
+    app.post("/api/app/recipes/compose", requireSameOrigin, async (c) => {
+        const userId = c.get("munchUserId");
+        const body = recordValue(await c.req.json(), "Recipe compose");
+        const capabilities = await resolveMunchCapabilities(userId);
+        const recipeScope = recipeScopeForCreation(body, capabilities);
+        const scope = requirePlanningScope(
+            recipeScope.type,
+            capabilities,
+            true,
+        );
+        const input = recipeComposeInputFromBody(body);
+        const result = await saveRecipeAndPlan({
+            userId,
+            scope,
+            ...input,
+            idempotencyKey:
+                typeof body.idempotency_key === "string"
+                    ? body.idempotency_key
+                    : crypto.randomUUID(),
+        });
+        return privateJson(c, {
+            result,
+            recipe: await getRecipe(userId, result.recipe.recipeId),
         });
     });
 

@@ -499,10 +499,14 @@ export const CAPABILITY_MANIFEST = [
     {
         id: "mealPlan.compose",
         mcp: complete(["save_recipe_and_plan"]),
-        web: partial(["/api/app/recipes/:id", "/api/app/planning"]),
+        web: complete([
+            "POST /api/app/recipes/compose",
+            "[data-action=compose-recipe]",
+            "/app/recipes",
+        ]),
         intentionalChannelException: null,
-        gap: "The website exposes the underlying recipe and planning actions but not one combined compose workflow.",
-        targetPr: "PR 4",
+        gap: null,
+        targetPr: null,
     },
     {
         id: "grocery.read",
