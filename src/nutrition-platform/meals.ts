@@ -237,7 +237,7 @@ export async function getAllMeals(userId: string): Promise<Meal[]> {
 export async function searchMeals(
     userId: string,
     queries: string[],
-    opts: { limit?: number; sinceIso?: string } = {},
+    opts: { limit?: number; sinceIso?: string; untilIso?: string } = {},
 ): Promise<Meal[]> {
     const limit = opts.limit ?? 50;
     if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
@@ -265,6 +265,10 @@ export async function searchMeals(
                   and (
                     ${opts.sinceIso ?? null}::timestamptz is null
                     or logged_at >= ${opts.sinceIso ?? null}::timestamptz
+                  )
+                  and (
+                    ${opts.untilIso ?? null}::timestamptz is null
+                    or logged_at < ${opts.untilIso ?? null}::timestamptz
                   )
                   and (
                     not exists (

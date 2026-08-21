@@ -9,6 +9,12 @@ import {
     sumNutrition,
     validateLocalDate,
 } from "../nutrition-contract.js";
+import {
+    buildDailyBuckets,
+    computeMealPatterns,
+    computeTrends,
+} from "../insights.js";
+import { getNutritionProvenanceAnalysis } from "../nutrition-provenance.js";
 import { withUserDatabase } from "../platform/database.js";
 import {
     getGroceryList,
@@ -18,15 +24,22 @@ import {
 } from "../planning/repository.js";
 import { getPublicProductPolicy } from "../product-config.js";
 import { listSavedFoods } from "../saved-foods/repository.js";
+import { groupMealVariations } from "../search.js";
 import {
     getMealsByDate,
     getMealsInRange,
+    getLatestWeight,
     getNutritionGoals,
     getProfile,
+    getPreferredWeightUnit,
+    searchMeals,
     getWaterByDate,
+    getWaterInRange,
     getWeightByDate,
     type Meal,
 } from "../storage.js";
+import { dateInTz, zonedDayStartUtc, zonedNextDayStartUtc } from "../tz.js";
+import { fromGrams } from "../units.js";
 
 export interface AppMealItem {
     id: string;
@@ -259,6 +272,7 @@ export async function getMealHistoryWorkspace(
     userId: string,
     startValue: string,
     endValue: string,
+    options: { query?: string } = {},
 ) {
     const startDate = validateLocalDate(startValue);
     const endDate = validateLocalDate(endValue);
@@ -267,13 +281,39 @@ export async function getMealHistoryWorkspace(
     }
     const profile = await getProfile(userId);
     const timezone = profile?.timezone ?? "UTC";
-    const meals = await getMealsInRange(userId, startDate, endDate, timezone);
+    const query = options.query?.trim() ?? "";
+    const meals = query
+        ? await searchMeals(userId, [query], {
+              limit: 200,
+              sinceIso: zonedDayStartUtc(startDate, timezone).toISOString(),
+              untilIso: zonedNextDayStartUtc(endDate, timezone).toISOString(),
+          })
+        : await getMealsInRange(userId, startDate, endDate, timezone);
+    const variations = query
+        ? groupMealVariations(meals).map((variation) => ({
+              key: variation.key,
+              label: variation.label,
+              count: variation.count,
+              lastLoggedAt: variation.lastLoggedAt,
+              typicalCalories: variation.typicalCalories,
+              typicalProteinG: variation.typicalProteinG,
+              typicalCarbsG: variation.typicalCarbsG,
+              typicalFatG: variation.typicalFatG,
+          }))
+        : [];
     return {
         startDate,
         endDate,
         timezone,
         totals: sumNutrition(meals),
         meals: await attachItems(userId, meals),
+        search: query
+            ? {
+                  query,
+                  resultCount: meals.length,
+                  variations,
+              }
+            : null,
     };
 }
 
@@ -308,14 +348,140 @@ export async function getInsightsWorkspace(
         getNutritionGoals(userId),
     ]);
     const timezone = profile?.timezone ?? "UTC";
-    const meals = await getMealsInRange(userId, startDate, endDate, timezone);
-    return buildNutritionRangeContract({
-        meals,
+    const [meals, water, latestWeight, weightUnit] = await Promise.all([
+        getMealsInRange(userId, startDate, endDate, timezone),
+        getWaterInRange(userId, startDate, endDate, timezone),
+        getLatestWeight(userId),
+        getPreferredWeightUnit(userId),
+    ]);
+    const displayMeals = profile?.alcohol_tracking_enabled
+        ? meals
+        : meals.map((meal) => ({ ...meal, alcohol_g: 0 }));
+    const range = buildNutritionRangeContract({
+        meals: displayMeals,
         startDate,
         endDate,
         timezone,
         goals,
     });
+    const buckets = buildDailyBuckets(
+        displayMeals,
+        water,
+        startDate,
+        endDate,
+        timezone,
+    );
+    const progressDay = buckets.find((bucket) => bucket.date === endDate) ?? {
+        date: endDate,
+        meals: [],
+        waterMl: 0,
+        calories: 0,
+        protein_g: 0,
+        carbs_g: 0,
+        fat_g: 0,
+        fiber_g: 0,
+        sugar_g: 0,
+        alcohol_g: 0,
+        mealTypes: new Set<string>(),
+    };
+    const progressMeals = progressDay.meals.map((meal) => ({
+        description: meal.description,
+        meal_type: meal.meal_type,
+        date: dateInTz(meal.logged_at, timezone),
+        calories: Math.round(meal.calories ?? 0),
+        protein_g: Math.round((meal.protein_g ?? 0) * 10) / 10,
+        carbs_g: Math.round((meal.carbs_g ?? 0) * 10) / 10,
+        fat_g: Math.round((meal.fat_g ?? 0) * 10) / 10,
+        fiber_g: Math.round((meal.fiber_g ?? 0) * 10) / 10,
+        sugar_g: Math.round((meal.sugar_g ?? 0) * 10) / 10,
+        alcohol_g: Math.round((meal.alcohol_g ?? 0) * 10) / 10,
+    }));
+    const displayUnit = weightUnit ?? "kg";
+    const weight =
+        latestWeight || goals?.target_weight_g != null
+            ? {
+                  current: latestWeight
+                      ? fromGrams(latestWeight.weight_g, displayUnit)
+                      : null,
+                  target:
+                      goals?.target_weight_g != null
+                          ? fromGrams(goals.target_weight_g, displayUnit)
+                          : null,
+                  unit: displayUnit,
+                  loggedOn: latestWeight
+                      ? dateInTz(latestWeight.logged_at, timezone)
+                      : null,
+              }
+            : null;
+    const provenance = await getNutritionProvenanceAnalysis(
+        userId,
+        startDate,
+        endDate,
+        timezone,
+    );
+    const trendDays = buckets.map((bucket) => ({
+        date: bucket.date,
+        mealCount: bucket.meals.length,
+        hasLog: bucket.meals.length > 0 || bucket.waterMl > 0,
+        mealTypes: [...bucket.mealTypes],
+        totals: {
+            calories: Math.round(bucket.calories),
+            proteinG: Math.round(bucket.protein_g * 10) / 10,
+            carbsG: Math.round(bucket.carbs_g * 10) / 10,
+            fatG: Math.round(bucket.fat_g * 10) / 10,
+            fiberG: Math.round(bucket.fiber_g * 10) / 10,
+            sugarG: Math.round(bucket.sugar_g * 10) / 10,
+            alcoholG: Math.round(bucket.alcohol_g * 10) / 10,
+            waterMl: bucket.waterMl,
+        },
+    }));
+    return {
+        ...range,
+        progress: {
+            date: endDate,
+            mealCount: progressMeals.length,
+            waterEntries: water.filter(
+                (entry) => dateInTz(entry.logged_at, timezone) === endDate,
+            ).length,
+            goals,
+            totals: {
+                calories: Math.round(progressDay.calories),
+                proteinG: Math.round(progressDay.protein_g * 10) / 10,
+                carbsG: Math.round(progressDay.carbs_g * 10) / 10,
+                fatG: Math.round(progressDay.fat_g * 10) / 10,
+                fiberG: Math.round(progressDay.fiber_g * 10) / 10,
+                sugarG: Math.round(progressDay.sugar_g * 10) / 10,
+                alcoholG: Math.round(progressDay.alcohol_g * 10) / 10,
+                waterMl: progressDay.waterMl,
+            },
+            weight,
+            meals: progressMeals,
+        },
+        trends: {
+            endDate,
+            defaultRange: [7, 14, 30].includes(dayCount) ? dayCount : 30,
+            narrative: computeTrends(buckets, goals),
+            days: trendDays,
+        },
+        patterns: {
+            narrative: computeMealPatterns(buckets, timezone),
+        },
+        provenance: {
+            coverage: {
+                mealCount: provenance.coverage.mealCount,
+                structuredMealCount: provenance.coverage.structuredMealCount,
+                legacyMealCount: provenance.coverage.legacyMealCount,
+                itemCount: provenance.coverage.itemCount,
+                totalCalories: provenance.coverage.totalCalories,
+                itemizedCalories: provenance.coverage.itemizedCalories,
+                itemizedCaloriePercent:
+                    provenance.coverage.itemizedCaloriePercent,
+            },
+            sources: provenance.sources,
+            confidence: provenance.confidence,
+            contributors: provenance.contributors,
+        },
+    };
 }
 
 export async function getPlanningWorkspace(
