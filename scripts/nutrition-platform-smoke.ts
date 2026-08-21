@@ -15,6 +15,7 @@ import {
     insertWeight,
     searchMeals,
     updateMeal,
+    updateWater,
     updateWeight,
     upsertNutritionGoals,
     upsertProfile,
@@ -157,6 +158,16 @@ if (
         .length !== 1
 ) {
     throw new Error("Hydration date retrieval failed");
+}
+const updatedWater = await updateWater(alpha.userId, water.entry.id, {
+    amount_ml: 500,
+    notes: "refilled bottle",
+});
+if (
+    updatedWater.amount_ml !== 500 ||
+    updatedWater.notes !== "refilled bottle"
+) {
+    throw new Error("Hydration update failed");
 }
 
 const weight = await insertWeight(alpha.userId, {

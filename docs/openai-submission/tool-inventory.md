@@ -73,5 +73,6 @@ Generated from the production MCP source. Do not edit manually.
 | `update_meal`                 | `src/mcp.ts`                     |     false |      false |       false |       true |          true |
 | `update_meal_draft`           | `src/meal-draft-tools.ts`        |     false |      false |       false |       true |          true |
 | `update_recipe`               | `src/recipe-planning-tools.ts`   |     false |      false |       false |       true |          true |
+| `update_water`                | `src/mcp.ts`                     |     false |      false |       false |       true |          true |
 | `update_weight`               | `src/mcp.ts`                     |     false |      false |       false |       true |          true |
 | `upsert_meal_draft_item`      | `src/meal-draft-tools.ts`        |     false |      false |       false |       true |          true |

@@ -28,6 +28,7 @@ export {
     getWaterByDate,
     getWaterInRange,
     insertWater,
+    updateWater,
 } from "./water.js";
 export {
     deleteWeight,

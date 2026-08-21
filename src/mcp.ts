@@ -16,6 +16,7 @@ import {
     getWaterByDate,
     getWaterInRange,
     deleteWater,
+    updateWater,
     insertWeight,
     getWeightByDate,
     getWeightInRange,
@@ -2617,6 +2618,75 @@ export function registerTools(
                             {
                                 type: "text",
                                 text: `Total: ${total} ml (${entries.length} entr${entries.length === 1 ? "y" : "ies"})\n\n${lines.join("\n")}`,
+                            },
+                        ],
+                    };
+                },
+                { userId },
+                undefined,
+                { textOutput: true },
+            );
+        },
+    );
+
+    toolServer.registerTool(
+        "update_water",
+        {
+            title: "Update Water Entry",
+            description:
+                "Update fields of an existing water log entry. Amounts are in milliliters and must remain positive.",
+            outputSchema: TEXT_OUTPUT_SCHEMA,
+            annotations: {
+                readOnlyHint: false,
+                destructiveHint: false,
+                idempotentHint: true,
+                openWorldHint: false,
+            },
+            inputSchema: {
+                id: z.string().describe("UUID of the water entry to update"),
+                amount_ml: z.coerce
+                    .number()
+                    .int()
+                    .positive()
+                    .max(20_000)
+                    .optional()
+                    .describe("New amount in milliliters."),
+                logged_at: z
+                    .string()
+                    .optional()
+                    .describe("New ISO 8601 timestamp."),
+                notes: z
+                    .string()
+                    .nullable()
+                    .optional()
+                    .describe("New notes, or null to clear them."),
+            },
+        },
+        async ({ id, amount_ml, logged_at, notes }) => {
+            return withAnalytics(
+                "update_water",
+                async () => {
+                    if (
+                        amount_ml === undefined &&
+                        logged_at === undefined &&
+                        notes === undefined
+                    ) {
+                        throw new Error(
+                            "Provide at least one water field to update",
+                        );
+                    }
+                    if (logged_at !== undefined)
+                        validateLoggedAt(logged_at, Date.now());
+                    const entry = await updateWater(userId, id, {
+                        ...(amount_ml === undefined ? {} : { amount_ml }),
+                        ...(logged_at === undefined ? {} : { logged_at }),
+                        ...(notes === undefined ? {} : { notes }),
+                    });
+                    return {
+                        content: [
+                            {
+                                type: "text",
+                                text: `Water updated: ${entry.amount_ml} ml at ${entry.logged_at}${entry.notes ? ` (${entry.notes})` : ""}. ID: ${entry.id}`,
                             },
                         ],
                     };
