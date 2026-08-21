@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { exportAccountData } from "./account-export.js";
 import { requireSameOrigin } from "./accounts/csrf.js";
 import { requireWebSession } from "./accounts/session.js";
-import { getRailwayExportFile } from "./export.js";
+import { exportMeals, getRailwayExportFile } from "./export.js";
 
 export function createAccountExportRouter(): Hono {
     const router = new Hono();
@@ -12,6 +12,16 @@ export function createAccountExportRouter(): Hono {
         requireSameOrigin,
         requireWebSession,
         async (c) => c.json(await exportAccountData(c.get("munchUserId"))),
+    );
+
+    router.post(
+        "/api/app/export/meals",
+        requireSameOrigin,
+        requireWebSession,
+        async (c) => {
+            const result = await exportMeals(c.get("munchUserId"));
+            return c.json({ count: result.count, url: result.url ?? null });
+        },
     );
 
     router.get("/exports/download", async (c) => {
