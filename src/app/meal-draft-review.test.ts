@@ -1,10 +1,37 @@
 import { describe, expect, test } from "bun:test";
 import {
     draftItemInputFromBody,
+    mealDraftInputFromBody,
     serializeMealDraftForApp,
 } from "./meal-draft-review.js";
 
 describe("web meal draft review", () => {
+    test("normalizes a website draft creation request", () => {
+        expect(
+            mealDraftInputFromBody({
+                description: "Chicken burrito",
+                meal_type: "dinner",
+                logged_at: "2026-08-21T23:00:00.000Z",
+                notes: "Restaurant estimate",
+            }),
+        ).toEqual({
+            sourceMode: "text",
+            mealType: "dinner",
+            description: "Chicken burrito",
+            loggedAt: "2026-08-21T23:00:00.000Z",
+            notes: "Restaurant estimate",
+        });
+    });
+
+    test("rejects unsupported draft creation fields", () => {
+        expect(() => mealDraftInputFromBody({ source_mode: "voice" })).toThrow(
+            "Meal draft source mode is invalid",
+        );
+        expect(() => mealDraftInputFromBody({ meal_type: "brunch" })).toThrow(
+            "Meal draft meal type is invalid",
+        );
+    });
+
     test("normalizes editable item fields without filling missing nutrients", () => {
         expect(
             draftItemInputFromBody({

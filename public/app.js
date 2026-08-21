@@ -980,7 +980,7 @@ async function renderRoute() {
             if (actions && !actions.querySelector('[data-action="add-meal"]')) {
                 actions.insertAdjacentHTML(
                     "afterbegin",
-                    '<button class="button button-primary button-small" data-action="add-meal">Add meal</button>',
+                    '<button class="button button-primary button-small" data-action="add-meal">Add meal</button><button class="button button-secondary button-small" data-action="start-meal-draft">Start draft</button>',
                 );
             }
         }
@@ -1994,6 +1994,13 @@ function openMealComposer() {
     searchMealFoods("");
 }
 
+function openMealDraftComposer() {
+    openDialog(
+        "Start meal draft",
+        `<form id="meal-draft-create-form" class="auth-form"><p class="tiny">Create a reviewable draft when the meal needs clarification or a nutrition check before it is logged.</p><input type="hidden" name="source_mode" value="text" /><input type="hidden" name="logged_at" value="${escapeHtml(`${state.date}T12:00:00.000Z`)}" /><label class="field"><span>What are you logging?</span><input name="description" maxlength="2000" placeholder="Chicken burrito, restaurant dinner…" required /></label><label class="field"><span>Meal type</span><select name="meal_type"><option value="breakfast">Breakfast</option><option value="lunch" selected>Lunch</option><option value="dinner">Dinner</option><option value="snack">Snack</option></select></label><label class="field"><span>Notes or context</span><textarea name="notes" rows="3" maxlength="4000" placeholder="Optional details, uncertainty, or corrections"></textarea></label><button class="button button-primary" type="submit">Start reviewable draft</button></form>`,
+    );
+}
+
 async function editMeal(id) {
     const card = document.querySelector(`[data-meal-id="${CSS.escape(id)}"]`);
     const description = card?.querySelector("h4")?.textContent || "";
@@ -2108,6 +2115,7 @@ async function handleAction(button) {
     )
         return renderRoute();
     if (action === "add-meal") return openMealComposer();
+    if (action === "start-meal-draft") return openMealDraftComposer();
     if (action === "open-meal-draft") {
         await openMealDraft(button.dataset.id);
         return;
@@ -2733,6 +2741,7 @@ document.addEventListener("submit", async (event) => {
             "weight-form",
             "edit-water-form",
             "edit-weight-form",
+            "meal-draft-create-form",
             "preferences-form",
             "goals-form",
             "recipe-create-form",
@@ -2768,6 +2777,21 @@ document.addEventListener("submit", async (event) => {
                     ? "This meal was already logged."
                     : "Meal logged.",
             );
+        }
+        if (form.id === "meal-draft-create-form") {
+            const result = await api("/api/app/meal-drafts", {
+                method: "POST",
+                body: JSON.stringify({
+                    source_mode: values.source_mode,
+                    description: values.description,
+                    meal_type: values.meal_type,
+                    logged_at: values.logged_at,
+                    notes: values.notes || undefined,
+                }),
+                keepPrevious: true,
+            });
+            toast("Meal draft started.");
+            await openMealDraft(result.draft.id);
         }
         if (form.id === "edit-meal-form") {
             await api(`/api/app/meals/${encodeURIComponent(form.dataset.id)}`, {

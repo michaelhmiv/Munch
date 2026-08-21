@@ -146,10 +146,13 @@ export const CAPABILITY_MANIFEST = [
     {
         id: "mealDraft.create",
         mcp: complete(["start_meal_draft", "prepare_meal_review"]),
-        web: partial(["/api/app/today"]),
+        web: complete([
+            "POST /api/app/meal-drafts",
+            '[data-action="start-meal-draft"]',
+        ]),
         intentionalChannelException: null,
-        gap: "The website can review drafts created through MCP; standalone AI draft creation remains optional.",
-        targetPr: "PR 10",
+        gap: null,
+        targetPr: null,
     },
     {
         id: "mealDraft.read",

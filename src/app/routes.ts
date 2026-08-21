@@ -72,12 +72,14 @@ import {
 } from "./meal-entry.js";
 import {
     draftItemInputFromBody,
+    mealDraftInputFromBody,
     serializeMealDraftForApp,
 } from "./meal-draft-review.js";
 import {
     answerMealDraftQuestion,
     cancelMealDraft,
     confirmMealDraft,
+    createMealDraft,
     deleteMealDraftItem,
     getMealDraft,
     prepareMealDraftConfirmation,
@@ -767,6 +769,16 @@ export function createAppRouter(): Hono {
             ),
         ),
     );
+
+    app.post("/api/app/meal-drafts", requireSameOrigin, async (c) => {
+        const draft = await createMealDraft({
+            userId: c.get("munchUserId"),
+            ...mealDraftInputFromBody(await c.req.json()),
+        });
+        return privateJson(c, {
+            draft: serializeMealDraftForApp(draft),
+        });
+    });
 
     app.get("/api/app/meal-drafts/:id", async (c) => {
         const draft = await getMealDraft(

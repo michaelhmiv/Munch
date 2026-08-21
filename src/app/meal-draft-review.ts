@@ -4,7 +4,16 @@ import type {
     StructuredMealItemInput,
 } from "../structured-meals/types.js";
 import type { NutrientValues } from "../food-providers/types.js";
-import type { MealDraft } from "../meal-drafts/types.js";
+import type { MealDraft, MealDraftSourceMode } from "../meal-drafts/types.js";
+
+const DRAFT_SOURCE_MODES = [
+    "text",
+    "photo",
+    "barcode",
+    "restaurant",
+    "saved_food",
+    "history",
+] as const satisfies readonly MealDraftSourceMode[];
 
 const NUTRIENT_KEYS = [
     "calories",
@@ -38,6 +47,33 @@ function record(value: unknown, label: string): Record<string, unknown> {
     return value as Record<string, unknown>;
 }
 
+function draftSourceMode(value: unknown): MealDraftSourceMode {
+    if (
+        typeof value === "string" &&
+        (DRAFT_SOURCE_MODES as readonly string[]).includes(value)
+    ) {
+        return value as MealDraftSourceMode;
+    }
+    throw new Error("Meal draft source mode is invalid");
+}
+
+function draftMealType(
+    value: unknown,
+): NonNullable<MealDraft["mealType"]> | undefined {
+    if (value === undefined || value === null || value === "") {
+        return undefined;
+    }
+    if (
+        value === "breakfast" ||
+        value === "lunch" ||
+        value === "dinner" ||
+        value === "snack"
+    ) {
+        return value;
+    }
+    throw new Error("Meal draft meal type is invalid");
+}
+
 function optionalText(
     value: unknown,
     label: string,
@@ -48,6 +84,30 @@ function optionalText(
         throw new Error(`${label} is invalid`);
     }
     return value.trim() || undefined;
+}
+
+export function mealDraftInputFromBody(value: unknown): {
+    sourceMode: MealDraftSourceMode;
+    mealType?: NonNullable<MealDraft["mealType"]>;
+    description?: string;
+    loggedAt?: string;
+    notes?: string;
+} {
+    const body = record(value, "Meal draft");
+    return {
+        sourceMode:
+            body.source_mode === undefined
+                ? "text"
+                : draftSourceMode(body.source_mode),
+        mealType: draftMealType(body.meal_type),
+        description: optionalText(
+            body.description,
+            "Meal draft description",
+            2_000,
+        ),
+        loggedAt: optionalText(body.logged_at, "Meal draft logged_at", 100),
+        notes: optionalText(body.notes, "Meal draft notes", 4_000),
+    };
 }
 
 function optionalPositiveNumber(
