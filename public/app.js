@@ -43,6 +43,11 @@ const recipeComposer = {
     searchTimer: null,
 };
 
+const savedFoodManager = {
+    options: new Map(),
+    foods: [],
+};
+
 const webMealImport = {
     table: null,
     mapping: {},
@@ -439,7 +444,87 @@ async function renderLog() {
     const resultText = query
         ? `${number(data.meals.length)} matching meal${data.meals.length === 1 ? "" : "s"} from ${escapeHtml(formatDate(start))} through ${escapeHtml(formatDate(state.date))}.`
         : `Review meals, item-level provenance, notes, and totals from ${escapeHtml(formatDate(start))} through ${escapeHtml(formatDate(state.date))}.`;
-    content.innerHTML = `<div class="page-heading"><div><h2>${escapeHtml(heading)}</h2><p>${resultText}</p></div><div class="auth-actions"><button class="button button-secondary button-small" data-action="date-prev">Previous</button><button class="button button-secondary button-small" data-action="date-today">Today</button><button class="button button-secondary button-small" data-action="date-next">Next</button></div></div><section class="panel"><form id="meal-history-search-form" class="meal-composer-search-row"><label class="field" style="flex:1"><span>Search meal history</span><input class="input" id="meal-history-search" name="query" type="search" value="${escapeHtml(query)}" placeholder="Search chicken, peanut butter, restaurant…" autocomplete="off" /></label><div class="auth-actions"><button class="button button-primary button-small" type="submit">Search</button>${query ? '<button class="button button-quiet button-small" type="button" data-action="clear-meal-search">Clear</button>' : ""}</div></form><div class="auth-actions spacer-top">${rangeButtons}</div></section><section class="panel spacer-top"><div class="summary-grid">${metricCard("Calories", data.totals.calories, " kcal", null, true)}${metricCard("Protein", data.totals.proteinG, "g", null)}${metricCard("Carbohydrates", data.totals.carbsG, "g", null)}${metricCard("Fat", data.totals.fatG, "g", null)}</div></section>${mealSearchSummary(data.search)}<div class="spacer-top">${data.meals.length ? groupedMeals(data.meals) : `<div class="empty-state"><div><h3>${query ? "No matching meals" : "No meals logged"}</h3><p>${query ? "Try another keyword or expand the date range." : "Log a meal to build your history."}</p></div></div>`}</div>`;
+    content.innerHTML = `<div class="page-heading"><div><h2>${escapeHtml(heading)}</h2><p>${resultText}</p></div><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="manage-saved-foods">Saved foods</button><button class="button button-secondary button-small" data-action="date-prev">Previous</button><button class="button button-secondary button-small" data-action="date-today">Today</button><button class="button button-secondary button-small" data-action="date-next">Next</button></div></div><section class="panel"><form id="meal-history-search-form" class="meal-composer-search-row"><label class="field" style="flex:1"><span>Search meal history</span><input class="input" id="meal-history-search" name="query" type="search" value="${escapeHtml(query)}" placeholder="Search chicken, peanut butter, restaurant…" autocomplete="off" /></label><div class="auth-actions"><button class="button button-primary button-small" type="submit">Search</button>${query ? '<button class="button button-quiet button-small" type="button" data-action="clear-meal-search">Clear</button>' : ""}</div></form><div class="auth-actions spacer-top">${rangeButtons}</div></section><section class="panel spacer-top"><div class="summary-grid">${metricCard("Calories", data.totals.calories, " kcal", null, true)}${metricCard("Protein", data.totals.proteinG, "g", null)}${metricCard("Carbohydrates", data.totals.carbsG, "g", null)}${metricCard("Fat", data.totals.fatG, "g", null)}</div></section>${mealSearchSummary(data.search)}<div class="spacer-top">${data.meals.length ? groupedMeals(data.meals) : `<div class="empty-state"><div><h3>${query ? "No matching meals" : "No meals logged"}</h3><p>${query ? "Try another keyword or expand the date range." : "Log a meal to build your history."}</p></div></div>`}</div>`;
+}
+
+function savedFoodListMarkup(foods) {
+    if (!foods?.length) {
+        return `<div class="empty-state"><div><h3>No saved foods yet</h3><p>Search for a verified food below to save a reusable snapshot.</p></div></div>`;
+    }
+    return `<div class="food-items">${foods
+        .map((food) => {
+            const snapshot = food.food || {};
+            const portion = foodPortion(snapshot, food.defaultPortionId);
+            return `<div class="food-row"><div><strong>${escapeHtml(food.label)}</strong><small>${sourceBadge(food.provider || snapshot.provider)} ${escapeHtml(foodTitle(snapshot))} · ${escapeHtml(portion?.label || "Choose a portion when logging")} · used ${number(food.useCount)} time${food.useCount === 1 ? "" : "s"}</small></div><button class="button button-quiet button-small" type="button" data-action="delete-saved-food" data-id="${escapeHtml(food.id)}">Remove</button></div>`;
+        })
+        .join("")}</div>`;
+}
+
+function savedFoodManagerMarkup(data) {
+    const limit =
+        data.limit == null
+            ? "No limit"
+            : `${number(data.total)} of ${number(data.limit)}`;
+    return `<p class="tiny">Saved foods retain the verified nutrition snapshot, so the same food can be reused even when a provider is unavailable.</p><form id="saved-food-search-form" class="meal-composer-search-row"><label class="field" style="flex:1"><span>Find a verified food to save</span><input class="input" id="saved-food-search" name="query" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /></label><button class="button button-secondary" type="submit">Search</button></form><div id="saved-food-search-results" class="meal-food-results"><p class="tiny">Search for a provider food, then choose its label and default portion.</p></div><section class="meal-draft-section"><div class="panel-title"><div><h3>Your saved foods</h3><span>${escapeHtml(limit)}</span></div></div><div id="saved-food-list">${savedFoodListMarkup(data.foods)}</div></section>`;
+}
+
+async function openSavedFoodsManager() {
+    const data = await api("/api/app/foods", { keepPrevious: true });
+    savedFoodManager.foods = data.foods || [];
+    savedFoodManager.options.clear();
+    openDialog("Saved foods", savedFoodManagerMarkup(data));
+}
+
+function renderSavedFoodSearchResults(data) {
+    const root = document.getElementById("saved-food-search-results");
+    if (!root) return;
+    savedFoodManager.options.clear();
+    if (!data.candidates?.length) {
+        root.innerHTML = `<p class="tiny">No verified provider foods matched that search.</p>`;
+        return;
+    }
+    root.innerHTML = `<div class="meal-search-section"><h4>Verified foods</h4>${data.candidates
+        .map((candidate, index) => {
+            const key = `candidate:${index}`;
+            savedFoodManager.options.set(key, {
+                candidateId: candidate.candidate_id,
+            });
+            return `<button class="meal-search-result" type="button" data-action="select-saved-food-candidate" data-key="${key}"><span><strong>${escapeHtml([candidate.brand, candidate.name].filter(Boolean).join(" — ") || candidate.name)}</strong><small>${sourceBadge(candidate.provider)} ${escapeHtml(candidate.default_portion?.label || "Details available after selection")}</small></span><span class="button button-secondary button-small">Save</span></button>`;
+        })
+        .join("")}</div>`;
+}
+
+async function searchSavedFoodCandidates() {
+    const input = document.getElementById("saved-food-search");
+    const root = document.getElementById("saved-food-search-results");
+    if (!input || !root) return;
+    const query = input.value.trim();
+    if (!query) {
+        root.innerHTML = `<p class="tiny">Enter a food name to search verified providers.</p>`;
+        return;
+    }
+    root.innerHTML = `<p class="tiny">Searching verified foods…</p>`;
+    const data = await api(
+        `/api/app/food-search?query=${encodeURIComponent(query)}&limit=8`,
+        { keepPrevious: true },
+    );
+    renderSavedFoodSearchResults(data);
+}
+
+async function openSavedFoodCandidate(key) {
+    const option = savedFoodManager.options.get(key);
+    if (!option) return;
+    const data = await api(
+        `/api/app/food-details?candidate_id=${encodeURIComponent(option.candidateId)}`,
+        { keepPrevious: true },
+    );
+    const food = data.food;
+    if (!food) throw new Error("Food details are no longer available");
+    const portions = food.portions || [];
+    openDialog(
+        "Save reusable food",
+        `<form id="saved-food-form" class="auth-form" data-candidate-id="${escapeHtml(food.candidate_id)}"><p class="tiny">${escapeHtml(foodTitle(food))} · ${sourceBadge(food.provider)}</p><label class="field"><span>Your label</span><input name="label" maxlength="200" value="${escapeHtml(foodTitle(food))}" placeholder="My usual yogurt" required /></label><label class="field"><span>Default portion</span><select name="default_portion_id"><option value="">Choose when logging</option>${portions.map((portion, index) => `<option value="${escapeHtml(portion.id)}" ${index === 0 ? "selected" : ""}>${escapeHtml(portion.label)}</option>`).join("")}</select></label><div class="auth-actions"><button class="button button-quiet" type="button" data-action="manage-saved-foods">Back</button><button class="button button-primary" type="submit">Save food</button></div></form>`,
+    );
 }
 
 function barChart(days, key, label, unit = "") {
@@ -1666,6 +1751,7 @@ function renderDraftFoodResults(data) {
                     mealDraftReview.options.set(key, {
                         kind: "food",
                         candidateId: saved.food?.candidate_id,
+                        savedFoodId: saved.id,
                         portionId: saved.defaultPortionId,
                     });
                     return `<button class="meal-search-result" type="button" data-action="select-draft-food-option" data-key="${key}"><span><strong>${escapeHtml(saved.label)}</strong><small>${sourceBadge(saved.food?.provider)} ${escapeHtml(saved.food?.name || "Saved food")}</small></span><span>${number(foodPortion(saved.food, saved.defaultPortionId)?.nutrients?.calories)} kcal</span></button>`;
@@ -1717,6 +1803,7 @@ async function selectDraftFoodOption(key) {
     if (option.kind === "candidate" || option.kind === "food") {
         item = {
             candidate_id: option.candidateId,
+            saved_food_id: option.savedFoodId,
             portion_id: option.portionId,
             quantity: 1,
         };
@@ -1845,7 +1932,7 @@ function renderMealComposerItems() {
         .map((item, index) => {
             if (item.kind === "food") {
                 const portions = item.food.portions || [];
-                return `<article class="meal-composer-item" data-composer-index="${index}"><div class="meal-composer-item-head"><div><strong>${escapeHtml(foodTitle(item.food))}</strong><small>${sourceBadge(item.food.provider)} ${confidenceBadge(item.food.confidence)}</small></div><button class="button button-quiet button-small" type="button" data-action="remove-meal-item" data-index="${index}">Remove</button></div><div class="meal-composer-grid"><label class="field"><span>Portion</span><select data-composer-field="portion_id">${portions.map((portion) => `<option value="${escapeHtml(portion.id)}" ${portion.id === item.portionId ? "selected" : ""}>${escapeHtml(portion.label)}</option>`).join("")}</select></label><label class="field"><span>Quantity</span><input data-composer-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity || 1)}" /></label></div><small class="meal-composer-macros">${foodMacroLine(item.food, item.portionId)}</small></article>`;
+                return `<article class="meal-composer-item" data-composer-index="${index}"><div class="meal-composer-item-head"><div><strong>${escapeHtml(foodTitle(item.food))}</strong><small>${sourceBadge(item.savedFoodId ? "saved_food" : item.food.provider)} ${confidenceBadge(item.food.confidence)}</small></div><button class="button button-quiet button-small" type="button" data-action="remove-meal-item" data-index="${index}">Remove</button></div><div class="meal-composer-grid"><label class="field"><span>Portion</span><select data-composer-field="portion_id">${portions.map((portion) => `<option value="${escapeHtml(portion.id)}" ${portion.id === item.portionId ? "selected" : ""}>${escapeHtml(portion.label)}</option>`).join("")}</select></label><label class="field"><span>Quantity</span><input data-composer-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity || 1)}" /></label></div><small class="meal-composer-macros">${foodMacroLine(item.food, item.portionId)}</small></article>`;
             }
             const nutrients = item.nutrients || {};
             return `<article class="meal-composer-item" data-composer-index="${index}"><div class="meal-composer-item-head"><div><strong>${item.kind === "recent" ? escapeHtml(item.name) : "Manual food"}</strong><small>${sourceBadge(item.sourceType || "user_supplied")} ${item.kind === "recent" ? "From recent meal history" : "Enter the nutrition used"}</small></div><button class="button button-quiet button-small" type="button" data-action="remove-meal-item" data-index="${index}">Remove</button></div><div class="meal-composer-grid"><label class="field"><span>Name</span><input data-composer-field="name" value="${escapeHtml(item.name || "")}" required /></label><label class="field"><span>Portion</span><input data-composer-field="portion_label" value="${escapeHtml(item.portionLabel || "")}" placeholder="1 bowl, 1 slice…" /></label><label class="field"><span>Quantity</span><input data-composer-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity || 1)}" /></label></div><div class="meal-composer-nutrients">${["calories", "protein_g", "carbs_g", "fat_g", "fiber_g", "sugar_g", "sodium_mg"].map((key) => `<label class="field"><span>${escapeHtml(key.replaceAll("_g", " (g)").replace("sodium_mg", "sodium (mg)"))}</span><input data-composer-field="${key}" type="number" min="0" step="0.1" value="${escapeHtml(nutrients[key] ?? "")}" /></label>`).join("")}</div></article>`;
@@ -1881,6 +1968,7 @@ function renderMealSearchResults(data) {
                     mealComposer.options.set(key, {
                         kind: "food",
                         food: saved.food,
+                        savedFoodId: saved.id,
                         defaultPortionId: saved.defaultPortionId,
                     });
                     return `<button class="meal-search-result" type="button" data-action="select-meal-option" data-key="${key}"><span><strong>${escapeHtml(saved.label)}</strong><small>${sourceBadge(saved.food.provider)} ${escapeHtml(saved.food.name || "Saved food")}</small></span><span>${number(foodPortion(saved.food, saved.defaultPortionId)?.nutrients?.calories)} kcal</span></button>`;
@@ -1942,6 +2030,7 @@ async function selectMealOption(key) {
             kind: "food",
             food: option.food,
             candidateId: option.food.candidate_id,
+            savedFoodId: option.savedFoodId,
             portionId: option.defaultPortionId || option.food.portions?.[0]?.id,
             quantity: 1,
         });
@@ -2072,6 +2161,37 @@ async function handleAction(button) {
     if (await handleAccountAction(button, accountContext())) return;
     if (action === "close-dialog") {
         dialog.close();
+        return;
+    }
+    if (action === "manage-saved-foods") {
+        await openSavedFoodsManager();
+        return;
+    }
+    if (action === "select-saved-food-candidate") {
+        await openSavedFoodCandidate(button.dataset.key);
+        return;
+    }
+    if (action === "delete-saved-food") {
+        if (
+            !confirm(
+                "Remove this saved food? Existing meal history will be preserved.",
+            )
+        )
+            return;
+        const result = await api(
+            `/api/app/foods/${encodeURIComponent(button.dataset.id)}`,
+            {
+                method: "DELETE",
+                body: "{}",
+                keepPrevious: true,
+            },
+        );
+        toast(
+            result.deleted
+                ? "Saved food removed."
+                : "Saved food was already removed.",
+        );
+        await openSavedFoodsManager();
         return;
     }
     if (action === "open-import") {
@@ -2637,6 +2757,7 @@ function mealComposerPayload() {
         item.kind === "food"
             ? {
                   candidate_id: item.candidateId,
+                  saved_food_id: item.savedFoodId,
                   portion_id: item.portionId,
                   quantity: item.quantity,
               }
@@ -2733,6 +2854,15 @@ document.addEventListener("submit", async (event) => {
         await renderLog();
         return;
     }
+    if (form.id === "saved-food-search-form") {
+        event.preventDefault();
+        try {
+            await searchSavedFoodCandidates();
+        } catch (error) {
+            toast(error.message || "Food search failed", "error");
+        }
+        return;
+    }
     if (
         ![
             "edit-meal-form",
@@ -2750,6 +2880,7 @@ document.addEventListener("submit", async (event) => {
             "recipe-plan-form",
             "grocery-add-form",
             "grocery-edit-form",
+            "saved-food-form",
         ].includes(form.id)
     )
         return;
@@ -2758,6 +2889,20 @@ document.addEventListener("submit", async (event) => {
     const submit = form.querySelector("button[type='submit']");
     submit.disabled = true;
     try {
+        if (form.id === "saved-food-form") {
+            const result = await api("/api/app/foods", {
+                method: "POST",
+                body: JSON.stringify({
+                    candidate_id: form.dataset.candidateId,
+                    label: values.label,
+                    default_portion_id: values.default_portion_id || undefined,
+                }),
+                keepPrevious: true,
+            });
+            toast(`Saved ${result.saved_food?.label || "food"} for reuse.`);
+            await openSavedFoodsManager();
+            return;
+        }
         if (form.id === "meal-form") {
             const items = mealComposerPayload();
             const result = await api("/api/app/meals", {

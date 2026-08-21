@@ -5,10 +5,10 @@ import type { MunchCapabilities } from "./billing/capabilities.js";
 import { serializeFoodCandidate } from "./food-tools.js";
 import { getFoodSearchService } from "./food-providers/service.js";
 import {
+    assertSavedFoodCapacity,
     deleteSavedFood,
     listSavedFoods,
     markSavedFoodUsed,
-    normalizeSavedFoodLabel,
     saveFood,
     searchRecentMealItems,
     searchSavedFoods,
@@ -70,27 +70,6 @@ function formatSavedFood(record: SavedFoodRecord, index: number): string {
             (candidate) => candidate.id === record.defaultPortionId,
         ) ?? record.food.portions[0];
     return `${index + 1}. ${record.label}\n   ${portion?.label ?? "No default portion"}${portion?.nutrients.calories == null ? "" : ` · ${portion.nutrients.calories} kcal`}\n   saved_food_id: ${record.id} · used ${record.useCount} times`;
-}
-
-async function assertSavedFoodCapacity(
-    userId: string,
-    label: string,
-    capabilities: MunchCapabilities,
-): Promise<void> {
-    if (capabilities.savedFoodLimit === null) return;
-    const existing = await listSavedFoods(
-        userId,
-        capabilities.savedFoodLimit + 1,
-    );
-    const normalized = normalizeSavedFoodLabel(label);
-    const updatesExisting = existing.some(
-        (record) => normalizeSavedFoodLabel(record.label) === normalized,
-    );
-    if (!updatesExisting && existing.length >= capabilities.savedFoodLimit) {
-        throw new Error(
-            `Saved food capacity reached (${capabilities.savedFoodLimit}). Existing foods can still be used, updated, or deleted.`,
-        );
-    }
 }
 
 export function registerSavedFoodTools(

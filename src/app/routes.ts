@@ -38,6 +38,13 @@ import {
     upsertNutritionGoals,
     upsertProfile,
 } from "../storage.js";
+import { getFoodSearchService } from "../food-providers/service.js";
+import {
+    assertSavedFoodCapacity,
+    deleteSavedFood,
+    markSavedFoodUsed,
+    saveFood,
+} from "../saved-foods/repository.js";
 import { getStructuredMeal } from "../structured-meals/repository.js";
 import {
     addGroceryItems,
@@ -69,6 +76,7 @@ import {
     lookupAppFoodBarcode,
     resolveWebMealItem,
     searchAppFoods,
+    serializeSavedFood,
 } from "./meal-entry.js";
 import {
     draftItemInputFromBody,
@@ -740,6 +748,72 @@ export function createAppRouter(): Hono {
         privateJson(c, await getFoodsWorkspace(c.get("munchUserId"))),
     );
 
+    app.post("/api/app/foods", requireSameOrigin, async (c) => {
+        const body = recordValue(await c.req.json(), "Saved food");
+        const candidateId =
+            typeof body.candidate_id === "string"
+                ? body.candidate_id.trim()
+                : "";
+        const label = typeof body.label === "string" ? body.label.trim() : "";
+        if (!candidateId || candidateId.length > 300) {
+            throw new Error("Food candidate ID is required");
+        }
+        if (!label || label.length > 200) {
+            throw new Error("Saved food label is required");
+        }
+        let defaultPortionId: string | undefined;
+        if (
+            body.default_portion_id !== undefined &&
+            body.default_portion_id !== null &&
+            body.default_portion_id !== ""
+        ) {
+            if (
+                typeof body.default_portion_id !== "string" ||
+                body.default_portion_id.length > 200
+            ) {
+                throw new Error("Saved food portion is invalid");
+            }
+            defaultPortionId = body.default_portion_id;
+        }
+        const userId = c.get("munchUserId");
+        await assertSavedFoodCapacity(
+            userId,
+            label,
+            await resolveMunchCapabilities(userId),
+        );
+        const candidate = await getFoodSearchService().details(candidateId);
+        if (!candidate) {
+            throw new Error(
+                "Food candidate is invalid or expired; search again before saving",
+            );
+        }
+        const saved = await saveFood({
+            userId,
+            label,
+            food: candidate,
+            defaultPortionId,
+        });
+        return privateJson(c, {
+            saved_food: serializeSavedFood(saved),
+        });
+    });
+
+    app.delete("/api/app/foods/:id", requireSameOrigin, async (c) => {
+        const deleted = await deleteSavedFood(
+            c.get("munchUserId"),
+            c.req.param("id")!,
+        );
+        return privateJson(c, { deleted });
+    });
+
+    app.post("/api/app/foods/:id/used", requireSameOrigin, async (c) => {
+        const updated = await markSavedFoodUsed(
+            c.get("munchUserId"),
+            c.req.param("id")!,
+        );
+        return privateJson(c, { updated });
+    });
+
     app.get("/api/app/food-search", async (c) =>
         privateJson(
             c,
@@ -821,8 +895,8 @@ export function createAppRouter(): Hono {
             rawItem &&
             typeof rawItem === "object" &&
             !Array.isArray(rawItem) &&
-            "candidate_id" in rawItem
-                ? await resolveWebMealItem(rawItem)
+            ("candidate_id" in rawItem || "saved_food_id" in rawItem)
+                ? await resolveWebMealItem(userId, rawItem)
                 : draftItemInputFromBody(rawItem);
         const draft = await upsertMealDraftItem({
             userId,

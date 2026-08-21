@@ -4,6 +4,7 @@ import { createSmokeUser } from "./support/smoke-user.js";
 
 const {
     deleteSavedFood,
+    getSavedFood,
     listSavedFoods,
     markSavedFoodUsed,
     saveFood,
@@ -12,6 +13,7 @@ const {
 } = await import("../src/saved-foods/repository.js");
 const { insertStructuredMeal } =
     await import("../src/structured-meals/repository.js");
+const { createAppMeal } = await import("../src/app/meal-entry.js");
 const { closePlatformDatabase } = await import("../src/platform/database.js");
 
 if (!process.env.DATABASE_URL) {
@@ -66,8 +68,34 @@ if (updated.id !== saved.id || updated.food.confidence !== 0.97) {
 if (!(await markSavedFoodUsed(userA, saved.id))) {
     throw new Error("Saved-food usage could not be recorded");
 }
+if ((await getSavedFood(userA, saved.id))?.id !== saved.id) {
+    throw new Error("Saved-food detail lookup failed");
+}
+if (await getSavedFood(userB, saved.id)) {
+    throw new Error("Cross-tenant saved-food detail lookup was allowed");
+}
+const webMeal = await createAppMeal(userA, {
+    description: "Web saved apple snack",
+    mealType: "snack",
+    idempotencyKey: `saved-web:${crypto.randomUUID()}`,
+    items: [
+        {
+            saved_food_id: saved.id,
+            portion_id: "medium",
+            quantity: 1,
+        },
+    ],
+});
+if (
+    webMeal.meal.items[0]?.sourceType !== "saved_food" ||
+    (await getSavedFood(userA, saved.id))?.useCount !== 2
+) {
+    throw new Error(
+        "Website saved-food reuse did not preserve provenance or usage",
+    );
+}
 const search = await searchSavedFoods(userA, "usual green apple", 10);
-if (search[0]?.id !== saved.id || search[0].useCount !== 1) {
+if (search[0]?.id !== saved.id || search[0].useCount !== 2) {
     throw new Error("Saved-food search or usage ranking failed");
 }
 if ((await searchSavedFoods(userB, "green apple", 10)).length !== 0) {
@@ -92,11 +120,14 @@ await insertStructuredMeal(userA, {
         },
     ],
 });
-const history = await searchRecentMealItems(userA, "green apple", 10);
-if (history.length !== 1 || history[0]?.sourceType !== "saved_food") {
+const history = await searchRecentMealItems(userA, "apple", 10);
+if (
+    history.length !== 2 ||
+    history.some((item) => item.sourceType !== "saved_food")
+) {
     throw new Error("Recent structured meal-item memory was not searchable");
 }
-if ((await searchRecentMealItems(userB, "green apple", 10)).length !== 0) {
+if ((await searchRecentMealItems(userB, "apple", 10)).length !== 0) {
     throw new Error("Cross-tenant recent item memory was allowed");
 }
 
