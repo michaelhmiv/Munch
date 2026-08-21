@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { recipeInputFromBody } from "./routes.js";
+import { recipeComposeInputFromBody, recipeInputFromBody } from "./routes.js";
 
 describe("website recipe input", () => {
     test("maps the structured form payload to canonical recipe input", () => {
@@ -71,5 +71,74 @@ describe("website recipe input", () => {
                 ingredients: "not an array",
             }),
         ).toThrow("Recipe ingredients are required");
+    });
+
+    test("maps the atomic recipe compose payload", () => {
+        const result = recipeComposeInputFromBody({
+            planned_date: "2026-08-24",
+            meal_slot: "dinner",
+            planned_servings: "2",
+            note: "Use the fresh basil",
+            grocery_items_needed: [
+                {
+                    name: "Fresh basil",
+                    quantity: "1",
+                    unit: "bunch",
+                    note: "Only if not on hand",
+                },
+            ],
+            recipe: {
+                name: "Tomato pasta",
+                servings: 2,
+                instructions: ["Cook"],
+                source_type: "user_entered",
+                ingredients: [
+                    {
+                        name: "Pasta",
+                        quantity: 8,
+                        unit: "oz",
+                        source_type: "user_supplied",
+                    },
+                ],
+            },
+        });
+
+        expect(result.plannedDate).toBe("2026-08-24");
+        expect(result.mealSlot).toBe("dinner");
+        expect(result.plannedServings).toBe(2);
+        expect(result.note).toBe("Use the fresh basil");
+        expect(result.groceryItems).toEqual([
+            {
+                name: "Fresh basil",
+                quantity: 1,
+                unit: "bunch",
+                note: "Only if not on hand",
+                foodProvider: undefined,
+                providerFoodId: undefined,
+                sourceRecipeId: undefined,
+                sourceRecipeRevisionId: undefined,
+                sourcePlannedMealId: undefined,
+                idempotencyKey: undefined,
+            },
+        ]);
+    });
+
+    test("rejects an invalid compose schedule", () => {
+        expect(() =>
+            recipeComposeInputFromBody({
+                planned_date: "tomorrow",
+                planned_servings: 1,
+                grocery_items_needed: [],
+                recipe: {
+                    name: "Pasta",
+                    servings: 1,
+                    instructions: ["Cook"],
+                    source_type: "user_entered",
+                    ingredients: [
+                        { name: "Pasta", source_type: "user_supplied" },
+                    ],
+                },
+            }),
+        ).toThrow("Planned date is required");
     });
 });
