@@ -164,6 +164,9 @@ for (const route of [
 }
 
 const appRouterSource = await Bun.file("src/app/routes.ts").text();
+const exportRouterSource = await Bun.file(
+    "src/account-export-routes.ts",
+).text();
 const appSource = await Bun.file("public/app.js").text();
 if (
     !appSource.includes('data-action="insight-range"') ||
@@ -206,6 +209,9 @@ if (!appRouterSource.includes('"/api/app/household/manage"')) {
     throw new Error(
         "App router is missing the household management read model",
     );
+}
+if (!exportRouterSource.includes('"/api/app/export/meals"')) {
+    throw new Error("Focused meal export route is missing");
 }
 for (const route of [
     'app.get("/api/app/food-search"',
@@ -348,6 +354,8 @@ for (const behavior of [
     "Premium through household",
     "Pending invitations",
     'data-action="open-import"',
+    'data-action="export-meals"',
+    'api("/api/app/export/meals"',
 ]) {
     if (!accountModule.includes(behavior)) {
         throw new Error(

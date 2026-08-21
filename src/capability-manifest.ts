@@ -526,10 +526,10 @@ export const CAPABILITY_MANIFEST = [
     {
         id: "nutrition.export",
         mcp: complete(["export_meals"]),
-        web: partial(["/account/portal"]),
+        web: complete(["POST /api/app/export/meals", "/app/settings/data"]),
         intentionalChannelException: null,
-        gap: "The website has complete-account export but not a focused nutrition-history export.",
-        targetPr: "PR 9",
+        gap: null,
+        targetPr: null,
     },
     {
         id: "account.delete",
