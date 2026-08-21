@@ -44,9 +44,13 @@ MUNCH_RECIPE_IMPORT_AI_MODEL=openai/gpt-5.6-luna
 MUNCH_RECIPE_IMPORT_AI_TIMEOUT_MS=10000
 MUNCH_RECIPE_IMPORT_AI_MAX_TOKENS=4000
 MUNCH_RECIPE_IMPORT_AI_MAX_CALLS_PER_IMPORT=2
+MUNCH_RECIPE_IMPORT_AI_RESPONSE_HEALING=true
+MUNCH_RECIPE_IMPORT_AI_RESPONSE_FORMAT=json_schema
 ```
 
-`MUNCH_RECIPE_IMPORT_AI_MODEL` is the model switch; changing it does not require code changes. The resolver is bounded to two calls per import, uses at most two food-search queries per ingredient, skips reranking when the provider result is already a strong match, and never accepts model-generated food IDs or nutrition values. The default AI timeout is 10 seconds; override `MUNCH_RECIPE_IMPORT_AI_TIMEOUT_MS` when testing another model. Production logs include safe phase timings under `[recipe_import]` and `[recipe_import_ai]` without recipe text, URLs, nutrition payloads, or secrets.
+`MUNCH_RECIPE_IMPORT_AI_MODEL` is the model switch; changing it does not require code changes. The resolver is bounded to two calls per import, uses at most two food-search queries per ingredient, sends uncertain rows through one batched assignment prompt, and never accepts model-generated food IDs or nutrition values. `MUNCH_RECIPE_IMPORT_AI_RESPONSE_HEALING` explicitly enables OpenRouter Response Healing, while `MUNCH_RECIPE_IMPORT_AI_RESPONSE_FORMAT` can be changed to `json_object` for models that do not support strict JSON Schema output. The default AI timeout is 10 seconds; override `MUNCH_RECIPE_IMPORT_AI_TIMEOUT_MS` when testing another model. Production logs include safe phase timings under `[recipe_import]` and `[recipe_import_ai]` without recipe text, URLs, nutrition payloads, or secrets.
+
+The live OpenRouter smoke is intentionally manual-only. Run **Actions → Manual OpenRouter Recipe Smoke → Run workflow** when validating a key, model, response format, or Response Healing configuration; ordinary pull requests use mocked resolver tests and never spend OpenRouter credits.
 
 There is no authentication-backend selector, Railway-auth selector, Railway-data selector, custom Munch session secret, or custom login-delivery endpoint.
 

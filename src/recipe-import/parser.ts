@@ -32,12 +32,15 @@ const COMMON_UNITS = new Set([
     "bottle",
     "can",
     "clove",
+    "cloves",
     "cup",
     "cups",
     "dash",
     "drop",
     "each",
     "g",
+    "head",
+    "heads",
     "gram",
     "grams",
     "inch",
@@ -236,7 +239,7 @@ function parseQuantityPrefix(value: string): {
         const second = fractionValue(range[2]!);
         if (first !== undefined && second !== undefined) {
             return {
-                quantity: first,
+                quantity: (first + second) / 2,
                 remainder: normalized.slice(range[0].length).trim(),
                 range: true,
             };
@@ -256,8 +259,10 @@ function parseQuantityPrefix(value: string): {
 function normalizeUnit(value: string): string {
     const aliases: Record<string, string> = {
         cups: "cup",
+        cloves: "clove",
         grams: "g",
         gram: "g",
+        heads: "head",
         kilograms: "kg",
         kilogram: "kg",
         liters: "l",
@@ -309,7 +314,7 @@ export function parseIngredientText(rawValue: string): {
         warnings.push(
             warning(
                 "quantity_range",
-                `The source listed a quantity range; using the lower value ${parsed.quantity}.`,
+                `The source listed a quantity range; using the midpoint ${parsed.quantity}.`,
             ),
         );
     }
