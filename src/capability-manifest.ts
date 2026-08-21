@@ -79,13 +79,18 @@ export const CAPABILITY_MANIFEST = [
     {
         id: "meal.update",
         mcp: complete(["update_meal"]),
-        web: partial([
+        web: complete([
             "/api/app/meals/:id",
             "/api/app/meals/:mealId/items/:itemId",
+            "/api/app/meals/:mealId/items",
+            "DELETE /api/app/meals/:mealId/items/:itemId",
+            '[data-action="edit-meal"]',
+            "[data-patch-food-search-form]",
+            "[data-patch-food-option]",
         ]),
         intentionalChannelException: null,
-        gap: "Draft/item replacement and a unified meal editor remain incomplete.",
-        targetPr: "PR 3",
+        gap: null,
+        targetPr: null,
     },
     {
         id: "meal.delete",

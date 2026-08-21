@@ -29,7 +29,9 @@ function finiteNonnegative(value: number | undefined, label: string) {
     return Math.round(value * 100) / 100;
 }
 
-function validateItem(item: StructuredMealItemInput): StructuredMealItemInput {
+export function validateStructuredMealItem(
+    item: StructuredMealItemInput,
+): StructuredMealItemInput {
     const name = item.name.trim();
     if (!name) throw new Error("Structured meal item name is required");
     if (name.length > 500)
@@ -241,7 +243,7 @@ export async function insertStructuredMeal(
     if (input.items.length === 0 || input.items.length > 100) {
         throw new Error("Structured meal must contain between 1 and 100 items");
     }
-    const items = input.items.map(validateItem);
+    const items = input.items.map(validateStructuredMealItem);
     const totals = aggregateStructuredMealItems(items);
     const loggedAt = input.loggedAt ? new Date(input.loggedAt) : new Date();
     if (!Number.isFinite(loggedAt.getTime())) {

@@ -219,6 +219,42 @@ if (corrected.calories !== 755) {
     );
 }
 
+const replaced = await updateStructuredMealItem(
+    userA,
+    copied.mealId,
+    copiedMeal.items[1]!.id,
+    {
+        replacement: {
+            name: "Brown rice replacement",
+            quantity: 1,
+            portionLabel: "1 cup",
+            nutrients: { calories: 180, protein_g: 4, carbs_g: 38, fat_g: 1 },
+            sourceType: "usda",
+            provider: "usda",
+            providerFoodId: "999",
+            providerRevision: "2026-08-04",
+            sourceSnapshot: {
+                resolution_layer: "food_search",
+                candidate_id: "usda:999",
+            },
+        },
+    },
+);
+const replacedItem = replaced.items.find(
+    (item) => item.id === copiedMeal.items[1]!.id,
+);
+if (
+    replaced.calories !== 730 ||
+    replacedItem?.name !== "Brown rice replacement" ||
+    replacedItem.sourceType !== "usda" ||
+    replacedItem.providerFoodId !== "999" ||
+    replacedItem.sourceSnapshot.replaced_item == null
+) {
+    throw new Error(
+        "Structured meal item replacement did not preserve canonical provenance",
+    );
+}
+
 const afterDelete = await deleteStructuredMealItem(
     userA,
     first.meal.id,

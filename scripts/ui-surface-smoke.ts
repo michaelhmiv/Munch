@@ -228,6 +228,8 @@ for (const route of [
     'app.patch("/api/app/weight/:id"',
     'app.delete("/api/app/weight/:id"',
     'app.get("/api/app/meals/:id"',
+    'app.patch(\n        "/api/app/meals/:mealId/items/:itemId"',
+    'app.post("/api/app/meals/:mealId/items"',
     'app.post("/api/app/meal-drafts"',
     'app.post("/api/app/recipes"',
     'app.post("/api/app/groceries/items"',
@@ -303,6 +305,21 @@ if (!appRouterSource.includes("serializeMealDraftForApp")) {
 }
 if (appSource.includes("Continue this draft in ChatGPT")) {
     throw new Error("Pending drafts still redirect users to ChatGPT");
+}
+
+const mealPatchSource = await Bun.file("public/app-patches.js").text();
+for (const behavior of [
+    "data-patch-item-form",
+    "data-patch-new-item-form",
+    "data-patch-food-search-form",
+    "data-patch-food-option",
+    "patch-replace-target",
+    "replace_item",
+    "Food replaced and totals recalculated.",
+]) {
+    if (!mealPatchSource.includes(behavior)) {
+        throw new Error(`Meal editor is missing behavior: ${behavior}`);
+    }
 }
 if (appSource.includes("Complete recipe JSON")) {
     throw new Error("Recipe editing still requires raw JSON");

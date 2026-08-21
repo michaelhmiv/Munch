@@ -1482,6 +1482,24 @@ export function createAppRouter(): Hono {
         requireSameOrigin,
         async (c) => {
             const body = (await c.req.json()) as Record<string, unknown>;
+            const userId = c.get("munchUserId");
+            if (
+                body.candidate_id !== undefined ||
+                body.saved_food_id !== undefined ||
+                body.replace_item === true
+            ) {
+                const replacement = await resolveWebMealItem(userId, body);
+                const meal = await updateStructuredMealItem(
+                    userId,
+                    c.req.param("mealId")!,
+                    c.req.param("itemId")!,
+                    { replacement },
+                );
+                if (typeof body.saved_food_id === "string") {
+                    await markSavedFoodUsed(userId, body.saved_food_id);
+                }
+                return privateJson(c, { meal });
+            }
             const nutrientBody =
                 body.nutrients && typeof body.nutrients === "object"
                     ? (body.nutrients as Record<string, unknown>)
@@ -1504,7 +1522,7 @@ export function createAppRouter(): Hono {
                 if (value !== undefined) nutrients[field] = value;
             }
             const meal = await updateStructuredMealItem(
-                c.get("munchUserId"),
+                userId,
                 c.req.param("mealId")!,
                 c.req.param("itemId")!,
                 {
@@ -1523,6 +1541,22 @@ export function createAppRouter(): Hono {
 
     app.post("/api/app/meals/:mealId/items", requireSameOrigin, async (c) => {
         const body = (await c.req.json()) as Record<string, unknown>;
+        const userId = c.get("munchUserId");
+        if (
+            body.candidate_id !== undefined ||
+            body.saved_food_id !== undefined
+        ) {
+            const item = await resolveWebMealItem(userId, body);
+            const meal = await addStructuredMealItem(
+                userId,
+                c.req.param("mealId")!,
+                item,
+            );
+            if (typeof body.saved_food_id === "string") {
+                await markSavedFoodUsed(userId, body.saved_food_id);
+            }
+            return privateJson(c, { meal });
+        }
         const name = typeof body.name === "string" ? body.name.trim() : "";
         if (!name) throw new Error("Meal item name is required");
         const nutrientBody =
@@ -1557,7 +1591,7 @@ export function createAppRouter(): Hono {
                 ? (body.source_snapshot as Record<string, unknown>)
                 : {};
         const meal = await addStructuredMealItem(
-            c.get("munchUserId"),
+            userId,
             c.req.param("mealId")!,
             {
                 name,
@@ -1567,13 +1601,25 @@ export function createAppRouter(): Hono {
                 ...(typeof body.portion_label === "string"
                     ? { portionLabel: body.portion_label }
                     : {}),
+                ...(body.gram_weight !== undefined
+                    ? { gramWeight: nonnegativeNumber(body.gram_weight) }
+                    : {}),
                 nutrients,
                 sourceType: structuredSourceType(body.source_type),
                 ...(typeof body.provider === "string"
                     ? { provider: body.provider }
                     : {}),
+                ...(typeof body.provider_food_id === "string"
+                    ? { providerFoodId: body.provider_food_id }
+                    : {}),
+                ...(typeof body.provider_revision === "string"
+                    ? { providerRevision: body.provider_revision }
+                    : {}),
                 ...(typeof body.source_url === "string"
                     ? { sourceUrl: body.source_url }
+                    : {}),
+                ...(typeof body.source_updated_at === "string"
+                    ? { sourceUpdatedAt: body.source_updated_at }
                     : {}),
                 ...(typeof body.confidence === "number"
                     ? { confidence: body.confidence }
