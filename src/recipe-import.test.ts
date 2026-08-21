@@ -496,6 +496,77 @@ describe("recipe import enrichment", () => {
         expect(draft.requires_review).toBe(false);
     });
 
+    test("normalizes plural semantic units before selecting provider portions", async () => {
+        const thyme: FoodCandidate = {
+            provider: "usda",
+            providerFoodId: "302",
+            name: "fresh thyme",
+            dataKind: "generic",
+            portions: [
+                {
+                    id: "sprig",
+                    amount: 1,
+                    unit: "sprig",
+                    label: "1 sprig",
+                    gramWeight: 1,
+                    nutrients: {
+                        calories: 1,
+                        protein_g: 0.1,
+                        carbs_g: 0.2,
+                        fat_g: 0,
+                    },
+                },
+            ],
+            attribution: {
+                label: "USDA FoodData Central",
+                url: "https://fdc.nal.usda.gov/food/302",
+            },
+            confidence: 0.8,
+        };
+        const draft = await previewRecipeUrl("https://example.com/recipe", {
+            semanticResolver: {
+                label: "openrouter:openai/gpt-test",
+                normalizeRecipe: async () => [
+                    {
+                        rawIndex: 0,
+                        componentIndex: 0,
+                        rawText: "4 thyme sprigs",
+                        name: "fresh thyme",
+                        quantity: 4,
+                        unit: "sprigs",
+                        searchQueries: ["fresh thyme"],
+                        impact: "low",
+                        confidence: 0.9,
+                    },
+                ],
+            },
+            fetchPage: async (url) => ({
+                submittedUrl: url,
+                finalUrl: url,
+                html: `
+                    <script type="application/ld+json">
+                    {"@type":"Recipe","name":"Thyme","recipeYield":"2","recipeIngredient":["4 thyme sprigs"],"recipeInstructions":"Add thyme."}
+                    </script>
+                `,
+            }),
+            foodSearch: {
+                search: async () => ({ candidates: [thyme], failures: [] }),
+            },
+        });
+
+        expect(draft.recipe.ingredients[0]).toMatchObject({
+            unit: "sprigs",
+            source_type: "usda",
+            nutrients: {
+                calories: 4,
+                protein_g: 0.4,
+                carbs_g: 0.8,
+                fat_g: 0,
+            },
+        });
+        expect(draft.nutrition.status).toBe("complete");
+    });
+
     test("keeps the import usable when semantic normalization times out", async () => {
         const cupFlour: FoodCandidate = {
             ...candidate,
