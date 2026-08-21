@@ -41,12 +41,12 @@ OPENROUTER_API_KEY=<server-only-key>
 MUNCH_RECIPE_IMPORT_AI_ENABLED=true
 MUNCH_RECIPE_IMPORT_AI_BASE_URL=https://openrouter.ai/api/v1
 MUNCH_RECIPE_IMPORT_AI_MODEL=openai/gpt-5.6-luna
-MUNCH_RECIPE_IMPORT_AI_TIMEOUT_MS=20000
+MUNCH_RECIPE_IMPORT_AI_TIMEOUT_MS=10000
 MUNCH_RECIPE_IMPORT_AI_MAX_TOKENS=4000
 MUNCH_RECIPE_IMPORT_AI_MAX_CALLS_PER_IMPORT=2
 ```
 
-`MUNCH_RECIPE_IMPORT_AI_MODEL` is the model switch; changing it does not require code changes. The resolver is bounded to two calls per import and never accepts model-generated food IDs or nutrition values.
+`MUNCH_RECIPE_IMPORT_AI_MODEL` is the model switch; changing it does not require code changes. The resolver is bounded to two calls per import, uses at most two food-search queries per ingredient, skips reranking when the provider result is already a strong match, and never accepts model-generated food IDs or nutrition values. The default AI timeout is 10 seconds; override `MUNCH_RECIPE_IMPORT_AI_TIMEOUT_MS` when testing another model. Production logs include safe phase timings under `[recipe_import]` and `[recipe_import_ai]` without recipe text, URLs, nutrition payloads, or secrets.
 
 There is no authentication-backend selector, Railway-auth selector, Railway-data selector, custom Munch session secret, or custom login-delivery endpoint.
 

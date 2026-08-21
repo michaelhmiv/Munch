@@ -36,7 +36,7 @@ const AUTO_MATCH_MIN_CONFIDENCE = 0.84;
 const AUTO_MATCH_MIN_SIMILARITY = 0.72;
 const AUTO_MATCH_MIN_MARGIN = 0.08;
 const MAX_CONCURRENT_FOOD_MATCHES = 4;
-const MAX_SEMANTIC_SEARCH_QUERIES = 4;
+const MAX_SEMANTIC_SEARCH_QUERIES = 2;
 
 export interface RecipeImportDependencies {
     fetchPage?: (
@@ -54,12 +54,49 @@ type EnrichedIngredient = {
     assumption?: RecipeImportAssumption;
 };
 
+type RecipeImportSearchStats = {
+    queryAttempts: number;
+    uniqueSearches: number;
+    cacheHits: number;
+    rerankRequests: number;
+    searchMs: number;
+    rerankMs: number;
+};
+
 function warning(
     code: string,
     message: string,
     field?: string,
 ): RecipeImportWarning {
     return { code, message, severity: "warning", ...(field ? { field } : {}) };
+}
+
+function safeImportLogValue(value: string | number | boolean): string {
+    return String(value)
+        .replace(/[^a-zA-Z0-9._:-]/g, "_")
+        .slice(0, 120);
+}
+
+function importErrorCode(error: unknown): string {
+    if (
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        typeof error.code === "string"
+    ) {
+        return error.code;
+    }
+    return error instanceof Error ? error.name : "unknown";
+}
+
+function logRecipeImportSummary(
+    fields: Record<string, string | number | boolean>,
+) {
+    console.info(
+        `[recipe_import] ${Object.entries(fields)
+            .map(([key, value]) => `${key}=${safeImportLogValue(value)}`)
+            .join(" ")}`,
+    );
 }
 
 function round(value: number): number {
@@ -313,6 +350,23 @@ function rankedCandidates(
         .sort((left, right) => right.score - left.score);
 }
 
+function hasStrongDeterministicMatch(
+    ingredient: ParsedRecipeIngredient,
+    candidates: FoodCandidate[],
+): boolean {
+    const ranked = rankedCandidates(ingredient, candidates);
+    const top = ranked[0];
+    const second = ranked[1];
+    if (!top || top.candidate.confidence < AUTO_MATCH_MIN_CONFIDENCE) {
+        return false;
+    }
+    return (
+        top.score === 1 ||
+        (top.score >= AUTO_MATCH_MIN_SIMILARITY &&
+            (!second || top.score - second.score >= AUTO_MATCH_MIN_MARGIN))
+    );
+}
+
 function ingredientAssumption(
     ingredient: ParsedRecipeIngredient,
 ): RecipeImportAssumption | undefined {
@@ -487,7 +541,7 @@ function enrichIngredient(
     const provider = selected.provider;
     const providerFoodId = selected.providerFoodId;
     const assumption = ingredientAssumption(ingredient);
-    const resolution = assumption || selectedByModel ? "assumed" : "matched";
+    const resolution = assumption ? "assumed" : "matched";
     const result: EnrichedIngredient = {
         ingredient: {
             name: ingredient.name,
@@ -518,6 +572,9 @@ function enrichIngredient(
                           semantic_confidence:
                               ingredient.semanticConfidence ?? null,
                           search_queries: ingredient.searchQueries ?? [],
+                          candidate_selection_method: selectedByModel
+                              ? "semantic_ai"
+                              : "deterministic",
                       }
                     : {}),
                 ...(assumption ? { assumption: assumption.message } : {}),
@@ -558,6 +615,7 @@ async function searchIngredientCandidates(
         string,
         Promise<{ candidates: FoodCandidate[]; unavailable: boolean }>
     >,
+    stats: RecipeImportSearchStats,
 ): Promise<{ candidates: FoodCandidate[]; unavailable: boolean }> {
     if (isLowImpactUnmeasurable(ingredient)) {
         return { candidates: [], unavailable: false };
@@ -571,8 +629,10 @@ async function searchIngredientCandidates(
     const candidates: FoodCandidate[] = [];
     let unavailable = false;
     for (const query of queries) {
+        stats.queryAttempts += 1;
         let request = cache.get(query.toLowerCase());
         if (!request) {
+            stats.uniqueSearches += 1;
             request = foodSearch
                 .search(query, MATCH_CANDIDATE_LIMIT)
                 .then((result) => ({
@@ -586,6 +646,8 @@ async function searchIngredientCandidates(
                 }))
                 .catch(() => ({ candidates: [], unavailable: true }));
             cache.set(query.toLowerCase(), request);
+        } else {
+            stats.cacheHits += 1;
         }
         const result = await request;
         unavailable ||= result.unavailable;
@@ -599,12 +661,7 @@ async function searchIngredientCandidates(
                 candidates.push(candidate);
             }
         }
-        const ranked = rankedCandidates(ingredient, candidates);
-        if (
-            ranked[0] &&
-            ranked[0].candidate.confidence >= AUTO_MATCH_MIN_CONFIDENCE &&
-            ranked[0].score >= AUTO_MATCH_MIN_SIMILARITY
-        ) {
+        if (hasStrongDeterministicMatch(ingredient, candidates)) {
             break;
         }
     }
@@ -628,6 +685,14 @@ async function enrichIngredients(
         string,
         Promise<{ candidates: FoodCandidate[]; unavailable: boolean }>
     >();
+    const stats: RecipeImportSearchStats = {
+        queryAttempts: 0,
+        uniqueSearches: 0,
+        cacheHits: 0,
+        rerankRequests: 0,
+        searchMs: 0,
+        rerankMs: 0,
+    };
     let next = 0;
     const worker = async () => {
         while (next < ingredients.length) {
@@ -637,10 +702,12 @@ async function enrichIngredients(
                 ingredient,
                 foodSearch,
                 cache,
+                stats,
             );
             searched[index] = { ingredient, ...result };
         }
     };
+    const searchStartedAt = Date.now();
     await Promise.all(
         Array.from(
             {
@@ -652,13 +719,18 @@ async function enrichIngredients(
             worker,
         ),
     );
+    stats.searchMs = Math.max(0, Date.now() - searchStartedAt);
 
     const rerankRequests: RecipeImportCandidateChoiceRequest[] = searched
         .filter(
             (entry) =>
                 Boolean(semanticResolver?.chooseCandidates) &&
                 entry.candidates.length > 1 &&
-                !isLowImpactUnmeasurable(entry.ingredient),
+                !isLowImpactUnmeasurable(entry.ingredient) &&
+                !hasStrongDeterministicMatch(
+                    entry.ingredient,
+                    entry.candidates,
+                ),
         )
         .map((entry) => ({
             key:
@@ -667,9 +739,11 @@ async function enrichIngredients(
             ingredient: entry.ingredient,
             candidates: entry.candidates,
         }));
+    stats.rerankRequests = rerankRequests.length;
     let choices = new Map<string, RecipeImportCandidateChoice>();
     const warnings: RecipeImportWarning[] = [];
     if (rerankRequests.length > 0 && semanticResolver?.chooseCandidates) {
+        const rerankStartedAt = Date.now();
         try {
             choices = await semanticResolver.chooseCandidates(rerankRequests);
         } catch {
@@ -680,6 +754,8 @@ async function enrichIngredients(
                     "ingredients",
                 ),
             );
+        } finally {
+            stats.rerankMs = Math.max(0, Date.now() - rerankStartedAt);
         }
     }
     const results = searched.map((entry) =>
@@ -696,7 +772,7 @@ async function enrichIngredients(
             entry.unavailable,
         ),
     );
-    return { results, warnings };
+    return { results, warnings, stats };
 }
 
 function toRecipeInput(recipe: RecipeImportDraft["recipe"]): RecipeInput {
@@ -732,10 +808,14 @@ export async function previewRecipeUrl(
     submittedUrl: string,
     options: RecipeImportDependencies & { rateLimitKey?: string } = {},
 ): Promise<RecipeImportDraft> {
+    const importStartedAt = Date.now();
+    const fetchStartedAt = Date.now();
     const fetchPage = options.fetchPage ?? fetchRecipePage;
     const page = await fetchPage(submittedUrl, {
         rateLimitKey: options.rateLimitKey,
     });
+    const fetchMs = Math.max(0, Date.now() - fetchStartedAt);
+    const parseStartedAt = Date.now();
     let parsed;
     try {
         parsed = parseRecipeHtml(page.html);
@@ -744,6 +824,7 @@ export async function previewRecipeUrl(
             `Recipe import could not parse the page: ${error instanceof Error ? error.message : "unsupported recipe structure."}`,
         );
     }
+    const parseMs = Math.max(0, Date.now() - parseStartedAt);
     let canonicalUrl: string | null = null;
     if (parsed.canonicalUrl) {
         try {
@@ -758,7 +839,9 @@ export async function previewRecipeUrl(
     const foodSearch = options.foodSearch ?? getFoodSearchService();
     let ingredients = parsed.ingredients;
     let semanticWarning: RecipeImportWarning | undefined;
+    let semanticMs = 0;
     if (options.semanticResolver) {
+        const semanticStartedAt = Date.now();
         try {
             const intents =
                 await options.semanticResolver.normalizeRecipe(parsed);
@@ -776,12 +859,19 @@ export async function previewRecipeUrl(
                 impact: intent.impact,
                 semanticConfidence: intent.confidence,
             }));
-        } catch {
+        } catch (error) {
+            semanticMs = Math.max(0, Date.now() - semanticStartedAt);
+            console.warn(
+                `[recipe_import_ai] phase=normalize status=fallback duration_ms=${semanticMs} code=${safeImportLogValue(importErrorCode(error))}`,
+            );
             semanticWarning = warning(
                 "semantic_ai_unavailable",
                 "The website AI could not interpret the ingredient language, so Munch used conservative database matching instead.",
                 "ingredients",
             );
+        }
+        if (semanticMs === 0) {
+            semanticMs = Math.max(0, Date.now() - semanticStartedAt);
         }
     }
     const enrichedResult = await enrichIngredients(
@@ -834,7 +924,8 @@ export async function previewRecipeUrl(
                         candidate.position === entry.position &&
                         candidate.message === entry.message,
                 ) === index,
-        );
+        )
+        .filter((entry) => entry.impact !== "low");
     const hasBlockingReview = ingredientReview.some(
         (entry) =>
             entry.resolution === "ambiguous" ||
@@ -845,7 +936,7 @@ export async function previewRecipeUrl(
         warnings.length > 0 ||
         parsed.instructions.length === 0 ||
         parsed.servings === 1;
-    return recipeImportDraftOutputSchema.parse({
+    const draft = recipeImportDraftOutputSchema.parse({
         schema_version: 2,
         status:
             hasBlockingReview ||
@@ -876,4 +967,34 @@ export async function previewRecipeUrl(
         assumptions,
         warnings,
     });
+    logRecipeImportSummary({
+        status: draft.status,
+        parsed_ingredients: parsed.ingredients.length,
+        normalized_ingredients: ingredients.length,
+        resolved_ingredients: draft.ingredient_review.filter(
+            (entry) =>
+                entry.resolution === "matched" ||
+                entry.resolution === "assumed",
+        ).length,
+        blocking_review: draft.ingredient_review.filter(
+            (entry) =>
+                entry.resolution === "ambiguous" ||
+                entry.resolution === "unresolved",
+        ).length,
+        assumptions: draft.assumptions.length,
+        warnings: draft.warnings.length,
+        semantic_enabled: Boolean(options.semanticResolver),
+        semantic_fallback: Boolean(semanticWarning),
+        fetch_ms: fetchMs,
+        parse_ms: parseMs,
+        semantic_ms: semanticMs,
+        search_ms: enrichedResult.stats.searchMs,
+        rerank_ms: enrichedResult.stats.rerankMs,
+        query_attempts: enrichedResult.stats.queryAttempts,
+        unique_searches: enrichedResult.stats.uniqueSearches,
+        cache_hits: enrichedResult.stats.cacheHits,
+        rerank_requests: enrichedResult.stats.rerankRequests,
+        total_ms: Math.max(0, Date.now() - importStartedAt),
+    });
+    return draft;
 }

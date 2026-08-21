@@ -303,10 +303,119 @@ describe("recipe import enrichment", () => {
         expect(draft.ingredient_review[0]?.resolution).toBe("assumed");
         expect(draft.ingredient_review[1]?.resolution).toBe("assumed");
         expect(draft.recipe.ingredients[1]?.source_type).toBe("model_estimate");
-        expect(draft.assumptions).toHaveLength(2);
+        expect(draft.assumptions).toHaveLength(1);
         expect(
             draft.warnings.some((item) => item.code === "quantity_range"),
         ).toBe(false);
         expect(searches).not.toContain("kosher salt and black pepper");
+    });
+
+    test("skips reranking for strong matches and labels a semantic selection as matched", async () => {
+        const breadFlour: FoodCandidate = {
+            ...candidate,
+            providerFoodId: "101",
+            name: "bread flour",
+        };
+        let rerankCalls = 0;
+        const semanticResolver: RecipeImportSemanticResolver = {
+            label: "openrouter:openai/gpt-test",
+            normalizeRecipe: async () => [
+                {
+                    rawIndex: 0,
+                    componentIndex: 0,
+                    rawText: "100 g flour dish",
+                    name: "flour dish",
+                    quantity: 100,
+                    unit: "g",
+                    searchQueries: [],
+                    impact: "medium",
+                    confidence: 0.94,
+                },
+            ],
+            chooseCandidates: async (requests) => {
+                rerankCalls += 1;
+                expect(requests).toHaveLength(1);
+                return new Map([
+                    [
+                        requests[0]!.key,
+                        {
+                            candidateId: "usda:100",
+                            confidence: 0.95,
+                            rationale:
+                                "The generic flour candidate is the best fit.",
+                        },
+                    ],
+                ]);
+            },
+        };
+        const draft = await previewRecipeUrl("https://example.com/recipe", {
+            semanticResolver,
+            fetchPage: async (url) => ({
+                submittedUrl: url,
+                finalUrl: url,
+                html: `
+                    <script type="application/ld+json">
+                    {"@type":"Recipe","name":"Flour","recipeYield":"2 servings","recipeIngredient":["100 g flour dish"],"recipeInstructions":"Mix."}
+                    </script>
+                `,
+            }),
+            foodSearch: {
+                search: async () => ({
+                    candidates: [candidate, breadFlour],
+                    failures: [],
+                }),
+            },
+        });
+
+        expect(rerankCalls).toBe(1);
+        expect(draft.ingredient_review[0]?.resolution).toBe("matched");
+        expect(draft.assumptions).toHaveLength(0);
+        expect(draft.recipe.ingredients[0]?.source_snapshot).toMatchObject({
+            candidate_selection_method: "semantic_ai",
+        });
+    });
+
+    test("does not call candidate reranking when the first provider match is exact", async () => {
+        let rerankCalls = 0;
+        const semanticResolver: RecipeImportSemanticResolver = {
+            label: "openrouter:openai/gpt-test",
+            normalizeRecipe: async () => [
+                {
+                    rawIndex: 0,
+                    componentIndex: 0,
+                    rawText: "100 g all purpose flour",
+                    name: "all purpose flour",
+                    quantity: 100,
+                    unit: "g",
+                    searchQueries: ["all purpose flour", "flour"],
+                    impact: "medium",
+                    confidence: 0.99,
+                },
+            ],
+            chooseCandidates: async () => {
+                rerankCalls += 1;
+                return new Map();
+            },
+        };
+        await previewRecipeUrl("https://example.com/recipe", {
+            semanticResolver,
+            fetchPage: async (url) => ({
+                submittedUrl: url,
+                finalUrl: url,
+                html: `
+                    <script type="application/ld+json">
+                    {"@type":"Recipe","name":"Flour","recipeYield":"2 servings","recipeIngredient":["100 g all purpose flour"],"recipeInstructions":"Mix."}
+                    </script>
+                `,
+            }),
+            foodSearch: {
+                search: async () => ({
+                    candidates: [candidate],
+                    failures: [],
+                }),
+            },
+        });
+
+        expect(rerankCalls).toBe(0);
     });
 });
