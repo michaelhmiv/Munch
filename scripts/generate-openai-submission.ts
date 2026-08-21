@@ -95,7 +95,7 @@ function createSubmission(entries: ToolInventoryEntry[]) {
                 file_attachment_urls: null,
                 tools_triggered: "parse_recipe_url, save_recipe",
                 expected_output:
-                    "First returns a preview with source provenance, parsed ingredients, nutrition matches, unresolved-review warnings, and no persisted recipe. After explicit confirmation, saves the reviewed recipe with source_type=imported and ingredient-level provenance.",
+                    "First returns a deterministic preview with source provenance, parsed ingredients, conservative nutrition matches, assumptions, unresolved-review warnings, and no persisted recipe. The connected model interprets recipe language and can use search_foods to resolve candidates without a duplicate backend AI call. After explicit confirmation, saves the reviewed recipe with source_type=imported and ingredient-level provenance.",
                 expected_output_url: null,
             },
             {
