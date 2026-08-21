@@ -22,14 +22,6 @@ on:
                 default: "10000"
                 type: string
 
-    pull_request:
-        paths:
-            - ".github/workflows/openrouter-recipe-smoke.yml"
-            - "scripts/openrouter-recipe-live-smoke.ts"
-            - "src/recipe-import/**"
-            - "package.json"
-            - "bun.lock"
-
 permissions:
     contents: read
 
@@ -45,10 +37,10 @@ jobs:
         env:
             OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
             MUNCH_RECIPE_IMPORT_AI_ENABLED: "true"
-            MUNCH_RECIPE_IMPORT_AI_MODEL: ${{ inputs.model || 'openai/gpt-5.6-luna' }}
-            MUNCH_RECIPE_IMPORT_AI_RESPONSE_FORMAT: ${{ inputs.response_format || 'json_schema' }}
+            MUNCH_RECIPE_IMPORT_AI_MODEL: ${{ inputs.model }}
+            MUNCH_RECIPE_IMPORT_AI_RESPONSE_FORMAT: ${{ inputs.response_format }}
             MUNCH_RECIPE_IMPORT_AI_RESPONSE_HEALING: "true"
-            MUNCH_RECIPE_IMPORT_AI_TIMEOUT_MS: ${{ inputs.timeout_ms || '30000' }}
+            MUNCH_RECIPE_IMPORT_AI_TIMEOUT_MS: ${{ inputs.timeout_ms }}
             MUNCH_RECIPE_IMPORT_AI_MAX_CALLS_PER_IMPORT: "2"
             MUNCH_RECIPE_IMPORT_AI_MAX_TOKENS: "4000"
         steps:
