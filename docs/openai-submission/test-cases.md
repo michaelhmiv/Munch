@@ -34,13 +34,13 @@ Expected tool: `get_nutrition_summary`
 
 Expected behavior: returns bounded totals and a daily breakdown for only the authenticated account, with estimates and missing values represented honestly.
 
-### 4. Look up a barcode
+### 4. Preview and save a recipe URL
 
-Prompt: `Look up the nutrition for barcode 737628064502 and tell me the serving information you found.`
+Prompt: `Import this recipe from https://www.allrecipes.com/recipe/23600/worlds-best-lasagna/. Show me the parsed ingredients, instructions, servings, and nutrition first; after I confirm, save it as World's Best Lasagna.`
 
-Expected tool: `lookup_food_barcode`
+Expected tools: `parse_recipe_url`, then `save_recipe` after explicit confirmation.
 
-Expected behavior: returns provider attribution, serving basis, nutrients, and a clear not-found result if the provider cannot resolve the barcode.
+Expected behavior: the first call returns a preview with source provenance, parsed fields, nutrition matches, unresolved-review warnings, and no persisted recipe. The confirmed save preserves `source_type=imported`, `source_url`, and ingredient-level provenance.
 
 ### 5. Save, reuse, and plan a recipe revision
 

@@ -47,6 +47,10 @@ const recipeCompose = {
     groceryItems: [],
 };
 
+const recipeImport = {
+    draft: null,
+};
+
 const savedFoodManager = {
     options: new Map(),
     foods: [],
@@ -630,10 +634,13 @@ async function renderRecipes() {
     const createButton = canCreate
         ? '<button class="button button-primary button-small" data-action="create-recipe">Create recipe</button>'
         : "";
+    const importButton = canCreate
+        ? '<button class="button button-secondary button-small" data-action="import-recipe-url">Import from URL</button>'
+        : "";
     const composeButton = canCreate
         ? '<button class="button button-secondary button-small" data-action="compose-recipe">Compose + plan</button>'
         : "";
-    content.innerHTML = `<div class="page-heading"><div><h2>Recipe library</h2><p>${data.recipes.length} structured recipe${data.recipes.length === 1 ? "" : "s"}.</p></div><div class="auth-actions">${createButton}${composeButton}<input class="input" id="recipe-filter" type="search" placeholder="Filter recipes" aria-label="Filter recipes" /></div></div><div class="capability-grid" id="recipe-grid">${data.recipes.length ? data.recipes.map((recipe) => `<article class="capability-card" data-recipe-name="${escapeHtml(recipe.name.toLowerCase())}"><span class="source-chip ${recipe.ownership === "household" ? "source-saved" : "source-usda"}">${escapeHtml(recipe.ownership)}</span><h3 class="spacer-top">${escapeHtml(recipe.name)}</h3><p>${number(recipe.servings, 1)} servings · ${escapeHtml(recipe.nutrition_status)}</p><div class="meal-macros"><span class="macro-chip">${number(recipe.nutrition_per_serving?.calories)} kcal</span><span class="macro-chip">P ${number(recipe.nutrition_per_serving?.protein_g, 1)}g</span><span class="macro-chip">C ${number(recipe.nutrition_per_serving?.carbs_g, 1)}g</span><span class="macro-chip">F ${number(recipe.nutrition_per_serving?.fat_g, 1)}g</span></div><p class="tiny spacer-top">Scheduled ${number(recipe.times_scheduled)} times · logged ${number(recipe.times_logged)} times</p><button class="button button-secondary button-small spacer-top" type="button" data-action="view-recipe" data-id="${escapeHtml(recipe.recipe_id)}">View recipe</button></article>`).join("") : `<div class="empty-state"><div><h3>No recipes yet</h3><p>Start with a structured recipe here, or save one from ChatGPT.</p>${canCreate ? '<button class="button button-primary spacer-top" type="button" data-action="create-recipe">Create your first recipe</button>' : ""}</div></div>`}</div>`;
+    content.innerHTML = `<div class="page-heading"><div><h2>Recipe library</h2><p>${data.recipes.length} structured recipe${data.recipes.length === 1 ? "" : "s"}.</p></div><div class="auth-actions">${createButton}${importButton}${composeButton}<input class="input" id="recipe-filter" type="search" placeholder="Filter recipes" aria-label="Filter recipes" /></div></div><div class="capability-grid" id="recipe-grid">${data.recipes.length ? data.recipes.map((recipe) => `<article class="capability-card" data-recipe-name="${escapeHtml(recipe.name.toLowerCase())}"><span class="source-chip ${recipe.ownership === "household" ? "source-saved" : "source-usda"}">${escapeHtml(recipe.ownership)}</span><h3 class="spacer-top">${escapeHtml(recipe.name)}</h3><p>${number(recipe.servings, 1)} servings · ${escapeHtml(recipe.nutrition_status)}</p><div class="meal-macros"><span class="macro-chip">${number(recipe.nutrition_per_serving?.calories)} kcal</span><span class="macro-chip">P ${number(recipe.nutrition_per_serving?.protein_g, 1)}g</span><span class="macro-chip">C ${number(recipe.nutrition_per_serving?.carbs_g, 1)}g</span><span class="macro-chip">F ${number(recipe.nutrition_per_serving?.fat_g, 1)}g</span></div><p class="tiny spacer-top">Scheduled ${number(recipe.times_scheduled)} times · logged ${number(recipe.times_logged)} times</p><button class="button button-secondary button-small spacer-top" type="button" data-action="view-recipe" data-id="${escapeHtml(recipe.recipe_id)}">View recipe</button></article>`).join("") : `<div class="empty-state"><div><h3>No recipes yet</h3><p>Start with a structured recipe here, or save one from ChatGPT.</p>${canCreate ? '<button class="button button-primary spacer-top" type="button" data-action="create-recipe">Create your first recipe</button>' : ""}</div></div>`}</div>`;
 }
 
 function recipeIngredientFromFood(food, portionId) {
@@ -721,8 +728,11 @@ function recipeFormMarkup(mode, recipe = null) {
     const scopeOptions = editing
         ? '<input type="hidden" name="scope" value="personal" />'
         : `<label class="field"><span>Save to</span><select name="scope">${state.bootstrap?.capabilities?.recipeWrite !== false ? '<option value="personal">Personal recipes</option>' : ""}${state.bootstrap?.capabilities?.householdRecipeWrite ? '<option value="household">Household recipes</option>' : ""}</select></label>`;
-    const sourceType = recipe?.source?.type || "user_entered";
-    return `<form id="${formId}" class="auth-form"${editing ? ` data-id="${escapeHtml(recipe.id)}" data-version="${escapeHtml(recipe.version)}"` : ""}><div class="meal-composer-grid"><label class="field"><span>Recipe name</span><input name="name" value="${escapeHtml(recipe?.name || "")}" maxlength="200" required /></label><label class="field"><span>Servings</span><input name="servings" type="number" min="0.01" step="0.01" value="${escapeHtml(recipe?.servings ?? 2)}" required /></label></div>${scopeOptions}<label class="field"><span>Description</span><textarea name="description" rows="2" maxlength="2000" placeholder="What is this recipe for?">${escapeHtml(recipe?.description || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Prep time (minutes)</span><input name="preparation_minutes" type="number" min="0" step="1" value="${escapeHtml(recipe?.preparation_minutes ?? "")}" /></label><label class="field"><span>Cook time (minutes)</span><input name="cooking_minutes" type="number" min="0" step="1" value="${escapeHtml(recipe?.cooking_minutes ?? "")}" /></label></div><section class="recipe-editor-section"><div class="panel-title"><div><h3>Ingredients</h3><span>Search verified foods or add your own.</span></div><button class="button button-secondary button-small" type="button" data-action="add-recipe-ingredient">Add ingredient</button></div><div class="meal-composer-search"><div class="meal-composer-search-row"><input class="input" id="recipe-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><span class="tiny">Food search facts are stored with this revision.</span></div><div id="recipe-food-results" class="meal-food-results"></div></div><div id="recipe-ingredients" class="meal-selected-items"></div></section><label class="field"><span>Instructions</span><textarea name="instructions" rows="6" maxlength="20000" placeholder="One step per line" required>${escapeHtml(recipe?.instructions?.join("\n") || "")}</textarea><small class="tiny">Put each instruction on its own line.</small></label><div class="meal-composer-grid"><label class="field"><span>Source title</span><input name="source_title" maxlength="500" value="${escapeHtml(recipe?.source?.title || "")}" placeholder="Optional cookbook, site, or note" /></label><label class="field"><span>Source type</span><select name="source_type"><option value="user_entered" ${sourceType === "user_entered" ? "selected" : ""}>User entered</option><option value="chatgpt_generated" ${sourceType === "chatgpt_generated" ? "selected" : ""}>ChatGPT generated</option><option value="imported" ${sourceType === "imported" ? "selected" : ""}>Imported</option></select></label></div><label class="field"><span>Source URL</span><input name="source_url" type="url" maxlength="2000" value="${escapeHtml(recipe?.source?.url || "")}" placeholder="https://…" /></label>${composing ? recipeComposeSectionMarkup() : ""}<button class="button button-primary" type="submit">${editing ? "Save new revision" : composing ? "Save, plan, and add groceries" : "Create recipe"}</button></form>`;
+    const sourceType =
+        recipe?.source?.type || recipe?.source_type || "user_entered";
+    const sourceTitle = recipe?.source?.title || recipe?.source_title || "";
+    const sourceUrl = recipe?.source?.url || recipe?.source_url || "";
+    return `<form id="${formId}" class="auth-form"${editing ? ` data-id="${escapeHtml(recipe.id)}" data-version="${escapeHtml(recipe.version)}"` : ""}><div class="meal-composer-grid"><label class="field"><span>Recipe name</span><input name="name" value="${escapeHtml(recipe?.name || "")}" maxlength="200" required /></label><label class="field"><span>Servings</span><input name="servings" type="number" min="0.01" step="0.01" value="${escapeHtml(recipe?.servings ?? 2)}" required /></label></div>${scopeOptions}<label class="field"><span>Description</span><textarea name="description" rows="2" maxlength="2000" placeholder="What is this recipe for?">${escapeHtml(recipe?.description || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Prep time (minutes)</span><input name="preparation_minutes" type="number" min="0" step="1" value="${escapeHtml(recipe?.preparation_minutes ?? "")}" /></label><label class="field"><span>Cook time (minutes)</span><input name="cooking_minutes" type="number" min="0" step="1" value="${escapeHtml(recipe?.cooking_minutes ?? "")}" /></label></div><section class="recipe-editor-section"><div class="panel-title"><div><h3>Ingredients</h3><span>Search verified foods or add your own.</span></div><button class="button button-secondary button-small" type="button" data-action="add-recipe-ingredient">Add ingredient</button></div><div class="meal-composer-search"><div class="meal-composer-search-row"><input class="input" id="recipe-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><span class="tiny">Food search facts are stored with this revision.</span></div><div id="recipe-food-results" class="meal-food-results"></div></div><div id="recipe-ingredients" class="meal-selected-items"></div></section><label class="field"><span>Instructions</span><textarea name="instructions" rows="6" maxlength="20000" placeholder="One step per line" required>${escapeHtml(recipe?.instructions?.join("\n") || "")}</textarea><small class="tiny">Put each instruction on its own line.</small></label><div class="meal-composer-grid"><label class="field"><span>Source title</span><input name="source_title" maxlength="500" value="${escapeHtml(sourceTitle)}" placeholder="Optional cookbook, site, or note" /></label><label class="field"><span>Source type</span><select name="source_type"><option value="user_entered" ${sourceType === "user_entered" ? "selected" : ""}>User entered</option><option value="chatgpt_generated" ${sourceType === "chatgpt_generated" ? "selected" : ""}>ChatGPT generated</option><option value="imported" ${sourceType === "imported" ? "selected" : ""}>Imported</option></select></label></div><label class="field"><span>Source URL</span><input name="source_url" type="url" maxlength="2000" value="${escapeHtml(sourceUrl)}" placeholder="https://…" /></label>${composing ? recipeComposeSectionMarkup() : ""}<button class="button button-primary" type="submit">${editing ? "Save new revision" : composing ? "Save, plan, and add groceries" : "Create recipe"}</button></form>`;
 }
 
 function renderRecipeIngredients() {
@@ -946,6 +956,74 @@ function recipePayloadFromForm(values) {
             source_snapshot: ingredient.sourceSnapshot,
         })),
     };
+}
+
+function recipeImportReviewMarkup(draft) {
+    const review = draft.ingredient_review || [];
+    const unresolved = review.filter((item) => item.resolution !== "matched");
+    const warningMarkup = (draft.warnings || []).length
+        ? `<div class="panel spacer-top"><strong>Review warnings</strong><ul class="food-items spacer-top">${draft.warnings.map((item) => `<li><span>${escapeHtml(item.message)}</span></li>`).join("")}</ul></div>`
+        : "";
+    const unresolvedMarkup = unresolved.length
+        ? `<div class="panel spacer-top"><strong>${unresolved.length} ingredient${unresolved.length === 1 ? "" : "s"} need${unresolved.length === 1 ? "s" : ""} review</strong><ul class="food-items spacer-top">${unresolved.map((item) => `<li><span><strong>${escapeHtml(item.raw_text)}</strong><small>${escapeHtml(item.resolution)} match · use the food search or edit the fields below</small></span></li>`).join("")}</ul></div>`
+        : "";
+    const nutrition = draft.nutrition?.per_serving || {};
+    return `<div class="recipe-detail"><p>Preview only — nothing has been saved. Confirm the ingredients, source, and nutrition before creating the recipe.</p><p class="tiny"><a href="${escapeHtml(draft.source.final_url)}" target="_blank" rel="noreferrer">${escapeHtml(draft.source.final_url)}</a> · ${escapeHtml(draft.parser.strategy)} · ${review.filter((item) => item.resolution === "matched").length}/${review.length} ingredients matched</p><div class="meal-macros spacer-top"><span class="macro-chip">${number(nutrition.calories)} kcal/serving</span><span class="macro-chip">P ${number(nutrition.protein_g, 1)}g</span><span class="macro-chip">C ${number(nutrition.carbs_g, 1)}g</span><span class="macro-chip">F ${number(nutrition.fat_g, 1)}g</span></div>${warningMarkup}${unresolvedMarkup}</div>`;
+}
+
+function recipeFormRecordFromImport(draft) {
+    return {
+        name: draft.recipe.name,
+        servings: draft.recipe.servings,
+        description: draft.recipe.description,
+        instructions: draft.recipe.instructions,
+        preparation_minutes: draft.recipe.preparation_minutes,
+        cooking_minutes: draft.recipe.cooking_minutes,
+        source_type: draft.recipe.source_type,
+        source_title: draft.recipe.source_title,
+        source_url: draft.recipe.source_url,
+    };
+}
+
+function recipeComposerIngredientFromImport(ingredient) {
+    return {
+        name: ingredient.name,
+        quantity: ingredient.quantity,
+        unit: ingredient.unit || "",
+        preparation: ingredient.preparation || "",
+        optional: Boolean(ingredient.optional),
+        gramWeight: ingredient.gram_weight,
+        nutrients: ingredient.nutrients || {},
+        provider: ingredient.provider,
+        providerFoodId: ingredient.provider_food_id,
+        sourceType: ingredient.source_type || "user_supplied",
+        sourceUrl: ingredient.source_url,
+        confidence: ingredient.confidence,
+        sourceSnapshot: ingredient.source_snapshot || {},
+    };
+}
+
+function openRecipeImportReview(draft) {
+    recipeImport.draft = draft;
+    recipeComposer.ingredients = draft.recipe.ingredients.map(
+        recipeComposerIngredientFromImport,
+    );
+    recipeComposer.options.clear();
+    recipeCompose.groceryItems = [];
+    openDialog(
+        "Review imported recipe",
+        `${recipeImportReviewMarkup(draft)}${recipeFormMarkup("create", recipeFormRecordFromImport(draft))}`,
+    );
+    renderRecipeIngredients();
+    searchRecipeFoods("");
+}
+
+function openRecipeImport() {
+    recipeImport.draft = null;
+    openDialog(
+        "Import recipe from URL",
+        `<form id="recipe-import-url-form" class="auth-form"><p>Paste a public HTTPS recipe page. Munch will preview structured ingredients, instructions, servings, timing, and nutrition matches before anything is saved.</p><label class="field"><span>Recipe URL</span><input name="url" type="url" inputmode="url" maxlength="2000" placeholder="https://example.com/recipe" required /></label><button class="button button-primary" type="submit">Preview recipe</button></form>`,
+    );
 }
 
 function openRecipeCreate() {
@@ -2548,6 +2626,7 @@ async function handleAction(button) {
         return renderInsights();
     }
     if (action === "create-recipe") return openRecipeCreate();
+    if (action === "import-recipe-url") return openRecipeImport();
     if (action === "compose-recipe") return openRecipeCompose();
     if (action === "add-recipe-ingredient") {
         syncRecipeComposerFromDom();
@@ -2887,6 +2966,28 @@ document.addEventListener("submit", async (event) => {
         }
         return;
     }
+    if (form.id === "recipe-import-url-form") {
+        event.preventDefault();
+        const submit = form.querySelector("button[type='submit']");
+        submit.disabled = true;
+        try {
+            const values = Object.fromEntries(new FormData(form));
+            const data = await api("/api/app/recipes/import-preview", {
+                method: "POST",
+                body: JSON.stringify({ url: String(values.url || "").trim() }),
+                keepPrevious: true,
+            });
+            openRecipeImportReview(data.draft);
+        } catch (error) {
+            toast(
+                error.message || "The recipe URL could not be imported.",
+                "error",
+            );
+        } finally {
+            submit.disabled = false;
+        }
+        return;
+    }
     if (form.id === "web-import-file-form") {
         event.preventDefault();
         const submit = form.querySelector("button[type='submit']");
@@ -3112,7 +3213,12 @@ document.addEventListener("submit", async (event) => {
                 }),
                 keepPrevious: true,
             });
-            toast("Recipe created.");
+            toast(
+                values.source_type === "imported"
+                    ? "Imported recipe saved."
+                    : "Recipe created.",
+            );
+            recipeImport.draft = null;
         }
         if (form.id === "recipe-compose-form") {
             const result = await api("/api/app/recipes/compose", {

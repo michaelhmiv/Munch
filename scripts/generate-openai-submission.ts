@@ -89,13 +89,13 @@ function createSubmission(entries: ToolInventoryEntry[]) {
             },
             {
                 description:
-                    "Using the provisioned reviewer account, look up a packaged food by barcode using configured food-data providers.",
+                    "Using the provisioned reviewer account, preview a public recipe URL and save it only after the parsed ingredients and nutrition are reviewed.",
                 user_prompt:
-                    "Look up the nutrition for barcode 737628064502 and tell me the serving information you found.",
+                    "Import this recipe from https://www.allrecipes.com/recipe/23600/worlds-best-lasagna/. Show me the parsed ingredients, instructions, servings, and nutrition first; after I confirm, save it as World's Best Lasagna.",
                 file_attachment_urls: null,
-                tools_triggered: "lookup_food_barcode",
+                tools_triggered: "parse_recipe_url, save_recipe",
                 expected_output:
-                    "Returns the matching packaged-food record, serving basis, nutrients, provider attribution, and a clear not-found result when unavailable; no account fixture is required beyond reviewer sign-in.",
+                    "First returns a preview with source provenance, parsed ingredients, nutrition matches, unresolved-review warnings, and no persisted recipe. After explicit confirmation, saves the reviewed recipe with source_type=imported and ingredient-level provenance.",
                 expected_output_url: null,
             },
             {
@@ -180,7 +180,7 @@ const requiredTestTools = [
     "prepare_meal_review",
     "confirm_meal_draft",
     "get_nutrition_summary",
-    "lookup_food_barcode",
+    "parse_recipe_url",
     "save_recipe_and_plan",
 ];
 for (const toolName of requiredTestTools) {

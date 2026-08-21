@@ -441,6 +441,18 @@ export const CAPABILITY_MANIFEST = [
         targetPr: null,
     },
     {
+        id: "recipe.import",
+        mcp: complete(["parse_recipe_url"]),
+        web: complete([
+            "POST /api/app/recipes/import-preview",
+            '[data-action="import-recipe-url"]',
+            "/app/recipes",
+        ]),
+        intentionalChannelException: null,
+        gap: null,
+        targetPr: null,
+    },
+    {
         id: "recipe.read",
         mcp: complete(["get_recipe"]),
         web: complete(["GET /api/app/recipes/:id"]),
@@ -670,6 +682,7 @@ export const MCP_TOOL_CAPABILITY_MAP = {
     lookup_food_barcode: "food.barcode",
     mark_grocery_item_purchased: "grocery.purchase",
     mark_saved_food_used: "food.saved.reuse",
+    parse_recipe_url: "recipe.import",
     prepare_meal_confirmation: "mealDraft.review",
     prepare_meal_review: "mealDraft.create",
     resolve_meal_review: "mealDraft.confirm",

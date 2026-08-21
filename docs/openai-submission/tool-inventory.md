@@ -52,6 +52,7 @@ Generated from the production MCP source. Do not edit manually.
 | `lookup_food_barcode`         | `src/food-tools.ts`              |      true |      false |       false |       true |          true |
 | `mark_grocery_item_purchased` | `src/recipe-planning-tools.ts`   |     false |      false |       false |       true |          true |
 | `mark_saved_food_used`        | `src/saved-food-tools.ts`        |     false |      false |       false |      false |          true |
+| `parse_recipe_url`            | `src/recipe-import-tools.ts`     |      true |      false |       false |       true |          true |
 | `prepare_meal_confirmation`   | `src/meal-draft-tools.ts`        |     false |      false |       false |      false |          true |
 | `prepare_meal_review`         | `src/meal-review-tools.ts`       |     false |      false |       false |       true |          true |
 | `resolve_meal_review`         | `src/meal-review-tools.ts`       |     false |      false |       false |      false |          true |
