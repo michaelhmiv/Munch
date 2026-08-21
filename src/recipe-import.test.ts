@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import type { FoodCandidate } from "./food-providers/types.js";
 import {
     assertSafeRecipeUrl,
@@ -12,6 +14,16 @@ import {
 } from "./recipe-import/parser.js";
 import { previewRecipeUrl } from "./recipe-import/service.js";
 import type { RecipeImportSemanticResolver } from "./recipe-import/types.js";
+
+const COQ_AU_VIN_FIXTURE = readFileSync(
+    fileURLToPath(
+        new URL(
+            "./recipe-import/fixtures/half-baked-harvest-coq-au-vin.html",
+            import.meta.url,
+        ),
+    ),
+    "utf8",
+);
 
 const candidate: FoodCandidate = {
     provider: "usda",
@@ -209,9 +221,20 @@ describe("recipe import enrichment", () => {
             scaling_reason: "gram_weight",
             raw_ingredient: "100 g all purpose flour",
         });
-        expect(draft.ingredient_review[1]?.resolution).toBe("unresolved");
+        expect(draft.ingredient_review[1]?.resolution).toBe("assumed");
+        expect(draft.recipe.ingredients[1]).toMatchObject({
+            source_type: "model_estimate",
+            quantity: 0.25,
+            unit: "tsp",
+            nutrients: {
+                calories: 0,
+                protein_g: 0,
+                carbs_g: 0,
+                fat_g: 0,
+            },
+        });
         expect(draft.status).toBe("partial");
-        expect(draft.nutrition.status).toBe("partial");
+        expect(draft.nutrition.status).toBe("complete");
         expect(draft.nutrition.total.calories).toBe(364);
     });
 
@@ -307,7 +330,366 @@ describe("recipe import enrichment", () => {
         expect(
             draft.warnings.some((item) => item.code === "quantity_range"),
         ).toBe(false);
-        expect(searches).not.toContain("kosher salt and black pepper");
+        expect(searches.some((query) => /salt|pepper/i.test(query))).toBe(true);
+    });
+
+    test("batches uncertain ingredients into assignments and leaves no ordinary item unresolved", async () => {
+        const wine: FoodCandidate = {
+            provider: "usda",
+            providerFoodId: "300",
+            name: "red wine",
+            dataKind: "generic",
+            portions: [
+                {
+                    id: "cup",
+                    amount: 1,
+                    unit: "cup",
+                    label: "1 cup",
+                    gramWeight: 240,
+                    nutrients: {
+                        calories: 125,
+                        protein_g: 0.1,
+                        carbs_g: 3.8,
+                        fat_g: 0,
+                    },
+                },
+            ],
+            attribution: {
+                label: "USDA FoodData Central",
+                url: "https://fdc.nal.usda.gov/food/300",
+            },
+            confidence: 0.72,
+        };
+        const salt: FoodCandidate = {
+            provider: "usda",
+            providerFoodId: "301",
+            name: "table salt",
+            dataKind: "generic",
+            portions: [
+                {
+                    id: "tsp",
+                    amount: 1,
+                    unit: "tsp",
+                    label: "1 teaspoon",
+                    gramWeight: 6,
+                    nutrients: {
+                        calories: 0,
+                        protein_g: 0,
+                        carbs_g: 0,
+                        fat_g: 0,
+                        sodium_mg: 2_325,
+                    },
+                },
+            ],
+            attribution: {
+                label: "USDA FoodData Central",
+                url: "https://fdc.nal.usda.gov/food/301",
+            },
+            confidence: 0.7,
+        };
+        let assignmentCalls = 0;
+        const semanticResolver: RecipeImportSemanticResolver = {
+            label: "openrouter:openai/gpt-test",
+            normalizeRecipe: async () => [
+                {
+                    rawIndex: 0,
+                    componentIndex: 0,
+                    rawText:
+                        "1 1/2 cups dry red wine, such as Cabernet Sauvignon",
+                    name: "dry red wine",
+                    quantity: 1.5,
+                    unit: "cup",
+                    searchQueries: ["red wine"],
+                    impact: "medium",
+                    confidence: 0.62,
+                },
+                {
+                    rawIndex: 1,
+                    componentIndex: 0,
+                    rawText: "kosher salt and black pepper",
+                    name: "kosher salt",
+                    searchQueries: ["salt"],
+                    impact: "low",
+                    confidence: 0.62,
+                },
+            ],
+            resolveUncertainIngredients: async (requests) => {
+                assignmentCalls += 1;
+                expect(requests).toHaveLength(2);
+                expect(requests.map((request) => request.reason)).toEqual([
+                    "ambiguous_candidate",
+                    "missing_quantity",
+                ]);
+                return new Map([
+                    [
+                        "0:0",
+                        {
+                            key: "0:0",
+                            name: "red wine",
+                            quantity: 1.5,
+                            unit: "cup",
+                            candidateId: "usda:300",
+                            decision: "provider_match",
+                            searchQueries: ["red wine"],
+                            confidence: 0.93,
+                            rationale:
+                                "The generic red wine candidate fits the source line.",
+                        },
+                    ],
+                    [
+                        "1:0",
+                        {
+                            key: "1:0",
+                            name: "salt",
+                            quantity: 0.25,
+                            unit: "tsp",
+                            candidateId: "usda:301",
+                            decision: "assumed",
+                            searchQueries: ["salt"],
+                            assumption:
+                                "Estimated a conservative amount for seasoning to taste.",
+                            confidence: 0.9,
+                            rationale:
+                                "Salt remains part of the recipe even though the source did not specify a quantity.",
+                        },
+                    ],
+                ]);
+            },
+        };
+        const draft = await previewRecipeUrl("https://example.com/recipe", {
+            semanticResolver,
+            fetchPage: async (url) => ({
+                submittedUrl: url,
+                finalUrl: url,
+                html: `
+                    <script type="application/ld+json">
+                    {"@type":"Recipe","name":"Wine Potatoes","recipeYield":"6","recipeIngredient":["1 1/2 cups dry red wine, such as Cabernet Sauvignon","kosher salt and black pepper"],"recipeInstructions":"Cook."}
+                    </script>
+                `,
+            }),
+            foodSearch: {
+                search: async (query) => ({
+                    candidates: query.includes("wine") ? [wine] : [salt],
+                    failures: [],
+                }),
+            },
+        });
+
+        expect(assignmentCalls).toBe(1);
+        expect(
+            draft.ingredient_review.map((entry) => entry.resolution),
+        ).toEqual(["matched", "assumed"]);
+        expect(
+            draft.ingredient_review.some(
+                (entry) =>
+                    entry.resolution === "unresolved" ||
+                    entry.resolution === "ambiguous",
+            ),
+        ).toBe(false);
+        expect(draft.recipe.ingredients[1]).toMatchObject({
+            name: "salt",
+            quantity: 0.25,
+            unit: "tsp",
+            source_type: "usda",
+            nutrients: { sodium_mg: 581.25 },
+        });
+        expect(draft.requires_review).toBe(false);
+    });
+
+    test("keeps the import usable when semantic normalization times out", async () => {
+        const cupFlour: FoodCandidate = {
+            ...candidate,
+            providerFoodId: "400",
+            name: "flour",
+            portions: [
+                {
+                    id: "cup",
+                    amount: 1,
+                    unit: "cup",
+                    label: "1 cup",
+                    gramWeight: 120,
+                    nutrients: {
+                        calories: 437,
+                        protein_g: 12.4,
+                        carbs_g: 91.6,
+                        fat_g: 1.2,
+                    },
+                },
+            ],
+            confidence: 0.95,
+        };
+        const semanticResolver: RecipeImportSemanticResolver = {
+            label: "openrouter:openai/gpt-test",
+            normalizeRecipe: async () => {
+                throw new Error("simulated timeout");
+            },
+        };
+        const draft = await previewRecipeUrl("https://example.com/recipe", {
+            semanticResolver,
+            fetchPage: async (url) => ({
+                submittedUrl: url,
+                finalUrl: url,
+                html: `
+                    <script type="application/ld+json">
+                    {"@type":"Recipe","name":"Flour","recipeYield":"2","recipeIngredient":["2 cups flour"],"recipeInstructions":"Mix."}
+                    </script>
+                `,
+            }),
+            foodSearch: {
+                search: async () => ({ candidates: [cupFlour], failures: [] }),
+            },
+        });
+
+        expect(draft.ingredient_review[0]?.resolution).toBe("matched");
+        expect(draft.ingredient_review[0]?.resolution).not.toBe("unresolved");
+        expect(draft.requires_review).toBe(false);
+        expect(
+            draft.warnings.some(
+                (item) => item.code === "semantic_ai_unavailable",
+            ),
+        ).toBe(true);
+        expect(
+            draft.warnings.find(
+                (item) => item.code === "semantic_ai_unavailable",
+            )?.blocking,
+        ).toBe(false);
+    });
+
+    test("golden fixture keeps all 19 Coq au Vin ingredients assigned", async () => {
+        const candidates = new Map<string, FoodCandidate>();
+        let nextProviderId = 500;
+        const candidateFor = (query: string): FoodCandidate => {
+            const key = query.toLowerCase();
+            const existing = candidates.get(key);
+            if (existing) return existing;
+            const food: FoodCandidate = {
+                provider: "usda",
+                providerFoodId: String(nextProviderId++),
+                name: query,
+                dataKind: "generic",
+                portions: [
+                    ...[
+                        ["g", "1 gram"],
+                        ["cup", "1 cup"],
+                        ["tbsp", "1 tablespoon"],
+                        ["tsp", "1 teaspoon"],
+                        ["lb", "1 pound"],
+                        ["piece", "1 piece"],
+                        ["slice", "1 slice"],
+                        ["clove", "1 clove"],
+                        ["head", "1 head"],
+                        ["sprig", "1 sprig"],
+                    ].map(([unit, label]) => ({
+                        id: unit,
+                        amount: 1,
+                        unit,
+                        label,
+                        gramWeight: 100,
+                        nutrients: {
+                            calories: 100,
+                            protein_g: 2,
+                            carbs_g: 10,
+                            fat_g: 4,
+                        },
+                    })),
+                ],
+                attribution: {
+                    label: "USDA FoodData Central",
+                    url: `https://fdc.nal.usda.gov/food/${nextProviderId}`,
+                },
+                confidence: 0.7,
+            };
+            candidates.set(key, food);
+            return food;
+        };
+        const semanticResolver: RecipeImportSemanticResolver = {
+            label: "openrouter:openai/gpt-test",
+            normalizeRecipe: async (recipe) =>
+                recipe.ingredients.map((ingredient, rawIndex) => {
+                    const lowImpact =
+                        /\b(salt|pepper|thyme|parsley|bay leaves?)\b/i.test(
+                            ingredient.rawText,
+                        );
+                    const name = ingredient.name
+                        .replace(
+                            /,?\s+(?:chopped|minced|grated|halved|sliced|shredded|such as)\b[\s\S]*$/i,
+                            "",
+                        )
+                        .split(/\s+(?:or|and|plus)\s+/i)[0]!
+                        .trim();
+                    return {
+                        rawIndex,
+                        componentIndex: 0,
+                        rawText: ingredient.rawText,
+                        name,
+                        quantity: ingredient.quantity ?? (lowImpact ? 0.25 : 1),
+                        unit: ingredient.unit ?? (lowImpact ? "tsp" : "piece"),
+                        searchQueries: [name],
+                        impact: lowImpact ? "low" : "medium",
+                        confidence: 0.9,
+                    };
+                }),
+            resolveUncertainIngredients: async (requests) =>
+                new Map(
+                    requests.map((request) => {
+                        const selected = request.candidates[0]!;
+                        return [
+                            request.key,
+                            {
+                                key: request.key,
+                                name: request.ingredient.name,
+                                quantity: request.ingredient.quantity ?? 0.25,
+                                unit: request.ingredient.unit ?? "tsp",
+                                candidateId: `${selected.provider}:${selected.providerFoodId}`,
+                                decision: "provider_match" as const,
+                                searchQueries: [request.ingredient.name],
+                                confidence: 0.92,
+                                rationale:
+                                    "Selected the best supplied generic candidate.",
+                            },
+                        ];
+                    }),
+                ),
+        };
+        const draft = await previewRecipeUrl(
+            "https://www.halfbakedharvest.com/slow-cooker-coq-au-vin/",
+            {
+                semanticResolver,
+                fetchPage: async (url) => ({
+                    submittedUrl: url,
+                    finalUrl: url,
+                    html: COQ_AU_VIN_FIXTURE,
+                }),
+                foodSearch: {
+                    search: async (query) => ({
+                        candidates: [candidateFor(query)],
+                        failures: [],
+                    }),
+                },
+            },
+        );
+
+        expect(draft.recipe.ingredients).toHaveLength(19);
+        expect(draft.ingredient_review).toHaveLength(19);
+        expect(
+            draft.ingredient_review.every(
+                (entry) =>
+                    entry.resolution !== "unresolved" &&
+                    entry.resolution !== "ambiguous",
+            ),
+        ).toBe(true);
+        expect(
+            draft.recipe.ingredients.every((ingredient) =>
+                Boolean(ingredient.source_snapshot.raw_ingredient),
+            ),
+        ).toBe(true);
+        expect(draft.requires_review).toBe(false);
+        expect(draft.nutrition.status).toBe("complete");
+        expect(draft.recipe.ingredients[2]).toMatchObject({
+            source_type: "usda",
+            quantity: 0.25,
+            unit: "tsp",
+        });
     });
 
     test("skips reranking for strong matches and labels a semantic selection as matched", async () => {

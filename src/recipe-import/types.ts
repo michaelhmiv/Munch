@@ -3,12 +3,14 @@ import type {
     NutrientFacts,
     RecipeIngredientInput,
 } from "../planning/repository.js";
+import type { FoodCandidate } from "../food-providers/types.js";
 
 export const recipeImportWarningSchema = z.object({
     code: z.string().min(1),
     message: z.string().min(1),
     severity: z.enum(["warning", "error"]),
     field: z.string().optional(),
+    blocking: z.boolean().optional(),
 });
 
 export const recipeImportAssumptionSchema = z.object({
@@ -198,6 +200,33 @@ export interface RecipeImportCandidateChoice {
     rationale?: string;
 }
 
+export type RecipeImportIngredientAssignmentDecision =
+    "provider_match" | "assumed" | "model_estimate";
+
+export interface RecipeImportIngredientAssignmentRequest {
+    key: string;
+    ingredient: ParsedRecipeIngredient;
+    candidates: FoodCandidate[];
+    reason:
+        | "ambiguous_candidate"
+        | "no_candidate"
+        | "missing_portion"
+        | "missing_quantity";
+}
+
+export interface RecipeImportIngredientAssignment {
+    key: string;
+    name: string;
+    quantity?: number;
+    unit?: string;
+    candidateId: string | null;
+    decision: RecipeImportIngredientAssignmentDecision;
+    searchQueries: string[];
+    assumption?: string;
+    confidence: number;
+    rationale?: string;
+}
+
 export interface RecipeImportSemanticResolver {
     readonly label?: string;
     normalizeRecipe(
@@ -209,4 +238,7 @@ export interface RecipeImportSemanticResolver {
     chooseCandidates?(
         requests: RecipeImportCandidateChoiceRequest[],
     ): Promise<Map<string, RecipeImportCandidateChoice>>;
+    resolveUncertainIngredients?(
+        requests: RecipeImportIngredientAssignmentRequest[],
+    ): Promise<Map<string, RecipeImportIngredientAssignment>>;
 }

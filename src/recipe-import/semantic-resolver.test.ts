@@ -41,6 +41,8 @@ describe("recipe import website AI configuration", () => {
         ).toMatchObject({
             model: "google/gemini-test",
             maxCallsPerImport: 1,
+            responseFormat: "json_schema",
+            responseHealing: true,
         });
         expect(
             recipeImportAiConfig({
@@ -52,6 +54,16 @@ describe("recipe import website AI configuration", () => {
                 OPENROUTER_API_KEY: "or-test",
             })?.model,
         ).toBe(DEFAULT_RECIPE_IMPORT_AI_MODEL);
+        expect(
+            recipeImportAiConfig({
+                OPENROUTER_API_KEY: "or-test",
+                MUNCH_RECIPE_IMPORT_AI_RESPONSE_FORMAT: "json_object",
+                MUNCH_RECIPE_IMPORT_AI_RESPONSE_HEALING: "false",
+            }),
+        ).toMatchObject({
+            responseFormat: "json_object",
+            responseHealing: false,
+        });
     });
 });
 
@@ -67,6 +79,8 @@ describe("OpenRouter recipe import resolver", () => {
                 timeoutMs: 5_000,
                 maxTokens: 2_000,
                 maxCallsPerImport: 2,
+                responseFormat: "json_schema",
+                responseHealing: true,
             },
             {
                 fetcher: async (input, init) => {
@@ -113,6 +127,8 @@ describe("OpenRouter recipe import resolver", () => {
         );
         expect(requests[0]?.body.model).toBe("openai/gpt-test");
         expect(requests[0]?.body.response_format).toBeDefined();
+        expect(requests[0]?.body.plugins).toEqual([{ id: "response-healing" }]);
+        expect(requests[0]?.body.stream).toBe(false);
         expect(JSON.stringify(requests[0]?.body)).not.toContain(
             "provider_food_id",
         );
@@ -136,6 +152,8 @@ describe("OpenRouter recipe import resolver", () => {
                 timeoutMs: 5_000,
                 maxTokens: 2_000,
                 maxCallsPerImport: 2,
+                responseFormat: "json_schema",
+                responseHealing: true,
             },
             {
                 fetcher: async () =>
@@ -164,5 +182,41 @@ describe("OpenRouter recipe import resolver", () => {
             confidence: 0.88,
             rationale: "The candidate is the generic food identity.",
         });
+    });
+
+    test("classifies a response-body abort as a timeout instead of invalid JSON", async () => {
+        const resolver = new OpenRouterRecipeImportResolver(
+            {
+                apiKey: "or-test",
+                baseUrl: "https://openrouter.example/api/v1",
+                model: "openai/gpt-test",
+                timeoutMs: 5,
+                maxTokens: 2_000,
+                maxCallsPerImport: 2,
+                responseFormat: "json_schema",
+                responseHealing: true,
+            },
+            {
+                fetcher: async () =>
+                    ({
+                        ok: true,
+                        status: 200,
+                        json: async () => {
+                            await new Promise((resolve) =>
+                                setTimeout(resolve, 20),
+                            );
+                            throw new Error("simulated aborted body");
+                        },
+                    }) as Response,
+            },
+        );
+
+        let error: unknown;
+        try {
+            await resolver.normalizeRecipe(recipe);
+        } catch (caught) {
+            error = caught;
+        }
+        expect(error).toMatchObject({ code: "timeout" });
     });
 });

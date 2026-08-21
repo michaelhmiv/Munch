@@ -22,10 +22,11 @@ import type {
     FetchedRecipePage,
     ParsedRecipeIngredient,
     RecipeImportAssumption,
+    RecipeImportIngredientAssignment,
+    RecipeImportIngredientAssignmentRequest,
     RecipeImportCandidateChoice,
     RecipeImportCandidateChoiceRequest,
     RecipeImportDraft,
-    RecipeImportResolution,
     RecipeImportSemanticResolver,
     RecipeImportWarning,
 } from "./types.js";
@@ -37,6 +38,8 @@ const AUTO_MATCH_MIN_SIMILARITY = 0.72;
 const AUTO_MATCH_MIN_MARGIN = 0.08;
 const MAX_CONCURRENT_FOOD_MATCHES = 4;
 const MAX_SEMANTIC_SEARCH_QUERIES = 2;
+const LOW_IMPACT_INGREDIENT_PATTERN =
+    /\b(salt|pepper|thyme|parsley|bay leaves?|oregano|basil|rosemary|sage|cumin|paprika|seasoning|spice|herb)\b/i;
 
 export interface RecipeImportDependencies {
     fetchPage?: (
@@ -59,16 +62,25 @@ type RecipeImportSearchStats = {
     uniqueSearches: number;
     cacheHits: number;
     rerankRequests: number;
+    assignmentRequests: number;
     searchMs: number;
     rerankMs: number;
+    assignmentMs: number;
 };
 
 function warning(
     code: string,
     message: string,
     field?: string,
+    blocking = true,
 ): RecipeImportWarning {
-    return { code, message, severity: "warning", ...(field ? { field } : {}) };
+    return {
+        code,
+        message,
+        severity: "warning",
+        ...(field ? { field } : {}),
+        ...(blocking ? {} : { blocking: false }),
+    };
 }
 
 function safeImportLogValue(value: string | number | boolean): string {
@@ -273,56 +285,6 @@ function selectPortion(
     );
 }
 
-function unresolvedIngredient(
-    ingredient: ParsedRecipeIngredient,
-    sourceUrl: string,
-    candidates: FoodCandidate[],
-    resolution: RecipeImportResolution,
-    semanticLabel?: string,
-): EnrichedIngredient {
-    const warningCode =
-        resolution === "ambiguous"
-            ? "ambiguous_food_match"
-            : "food_match_unresolved";
-    const message =
-        resolution === "ambiguous"
-            ? `Nutrition for “${ingredient.name}” has multiple plausible matches and needs review.`
-            : `No confident nutrition match was found for “${ingredient.name}”.`;
-    return {
-        ingredient: {
-            name: ingredient.name,
-            quantity: ingredient.quantity,
-            unit: ingredient.unit,
-            preparation: ingredient.preparation,
-            optional: ingredient.optional,
-            source_type: "user_supplied",
-            source_url: sourceUrl,
-            source_snapshot: {
-                resolution_layer: "recipe_url",
-                resolution,
-                raw_ingredient: ingredient.rawText,
-                imported_source_url: sourceUrl,
-                ...(semanticLabel
-                    ? {
-                          semantic_resolution_layer: semanticLabel,
-                          semantic_confidence:
-                              ingredient.semanticConfidence ?? null,
-                      }
-                    : {}),
-            },
-        },
-        review: {
-            position: 0,
-            raw_text: ingredient.rawText,
-            resolution,
-            candidates: candidates
-                .slice(0, MATCH_CANDIDATE_LIMIT)
-                .map(summarizeFoodCandidate),
-        },
-        warning: warning(warningCode, message, "ingredients"),
-    };
-}
-
 function candidateKey(candidate: FoodCandidate): string {
     return encodeFoodCandidateId(candidate);
 }
@@ -383,42 +345,85 @@ function ingredientAssumption(
     };
 }
 
+function isLowImpactIngredient(ingredient: ParsedRecipeIngredient): boolean {
+    return (
+        ingredient.impact === "low" ||
+        LOW_IMPACT_INGREDIENT_PATTERN.test(
+            `${ingredient.name} ${ingredient.rawText}`,
+        )
+    );
+}
+
+function lowImpactDefaults(ingredient: ParsedRecipeIngredient): {
+    quantity: number;
+    unit: string;
+} {
+    const text = `${ingredient.name} ${ingredient.rawText}`.toLowerCase();
+    if (text.includes("pepper")) return { quantity: 0.125, unit: "tsp" };
+    if (text.includes("salt")) return { quantity: 0.25, unit: "tsp" };
+    return { quantity: 0.25, unit: "tsp" };
+}
+
+function lowImpactEstimate(ingredient: ParsedRecipeIngredient): NutrientFacts {
+    const text = `${ingredient.name} ${ingredient.rawText}`.toLowerCase();
+    const estimate: NutrientFacts = {
+        calories: 0,
+        protein_g: 0,
+        carbs_g: 0,
+        fat_g: 0,
+    };
+    if (text.includes("salt")) estimate.sodium_mg = 575;
+    if (text.includes("pepper")) {
+        estimate.calories = 1;
+        estimate.carbs_g = 0.2;
+        estimate.protein_g = 0.05;
+    }
+    return estimate;
+}
+
 function lowImpactIngredient(
     ingredient: ParsedRecipeIngredient,
     sourceUrl: string,
     strategy: string,
-    semanticLabel: string,
+    semanticLabel?: string,
 ): EnrichedIngredient {
+    const defaults = lowImpactDefaults(ingredient);
+    const quantity = ingredient.quantity ?? defaults.quantity;
+    const unit = ingredient.unit ?? defaults.unit;
     const assumption = ingredientAssumption(ingredient) ?? {
         position: ingredient.sourcePosition ?? 0,
         raw_text: ingredient.rawText,
-        message:
-            "An unspecified low-impact ingredient was excluded from the nutrition total.",
+        message: `The source did not specify a measurable amount; retained the ingredient and estimated ${quantity} ${unit} for nutrition.`,
         impact: "low" as const,
-        source: "website_ai" as const,
+        source: semanticLabel ? ("website_ai" as const) : ("parser" as const),
     };
     return {
         ingredient: {
             name: ingredient.name,
-            quantity: ingredient.quantity,
-            unit: ingredient.unit,
+            quantity,
+            unit,
             preparation: ingredient.preparation,
             optional: ingredient.optional,
             source_type: "model_estimate",
             source_url: sourceUrl,
             confidence: ingredient.semanticConfidence,
+            nutrients: lowImpactEstimate(ingredient),
             source_snapshot: {
                 resolution_layer: "recipe_url",
                 resolution: "assumed",
                 parser_strategy: strategy,
-                semantic_resolution_layer: semanticLabel,
+                ...(semanticLabel
+                    ? { semantic_resolution_layer: semanticLabel }
+                    : {}),
                 semantic_confidence: ingredient.semanticConfidence ?? null,
                 raw_ingredient: ingredient.rawText,
                 normalized_ingredient: ingredient.name,
                 imported_source_url: sourceUrl,
                 assumption: assumption.message,
                 impact: "low",
-                nutrition_treatment: "excluded_low_impact_unknown_quantity",
+                nutrition_treatment: "low_impact_quantity_estimate",
+                estimated_quantity: quantity,
+                estimated_unit: unit,
             },
         },
         review: {
@@ -431,12 +436,72 @@ function lowImpactIngredient(
     };
 }
 
+function modelEstimatedIngredient(
+    ingredient: ParsedRecipeIngredient,
+    sourceUrl: string,
+    strategy: string,
+    semanticLabel?: string,
+    candidates: FoodCandidate[] = [],
+    reason = "No provider candidate was available after bounded search.",
+): EnrichedIngredient {
+    if (isLowImpactIngredient(ingredient)) {
+        return lowImpactIngredient(
+            ingredient,
+            sourceUrl,
+            strategy,
+            semanticLabel ?? "bounded_fallback",
+        );
+    }
+    const assumption: RecipeImportAssumption = {
+        position: ingredient.sourcePosition ?? 0,
+        raw_text: ingredient.rawText,
+        message: ingredient.assumption ?? reason,
+        impact: ingredient.impact ?? "high",
+        source: ingredient.assumption ? "website_ai" : "provider",
+    };
+    return {
+        ingredient: {
+            name: ingredient.name || ingredient.rawText,
+            quantity: ingredient.quantity,
+            unit: ingredient.unit,
+            preparation: ingredient.preparation,
+            optional: ingredient.optional,
+            source_type: "model_estimate",
+            source_url: sourceUrl,
+            confidence: ingredient.semanticConfidence ?? 0.35,
+            source_snapshot: {
+                resolution_layer: "recipe_url",
+                resolution: "assumed",
+                parser_strategy: strategy,
+                ...(semanticLabel
+                    ? { semantic_resolution_layer: semanticLabel }
+                    : {}),
+                semantic_confidence: ingredient.semanticConfidence ?? null,
+                raw_ingredient: ingredient.rawText,
+                normalized_ingredient: ingredient.name,
+                imported_source_url: sourceUrl,
+                assumption: assumption.message,
+                nutrition_treatment: "provider_unavailable_model_estimate",
+                candidate_count: candidates.length,
+            },
+        },
+        review: {
+            position: 0,
+            raw_text: ingredient.rawText,
+            resolution: "assumed",
+            candidates: candidates
+                .slice(0, MATCH_CANDIDATE_LIMIT)
+                .map(summarizeFoodCandidate),
+        },
+        assumption,
+    };
+}
+
 function isLowImpactUnmeasurable(ingredient: ParsedRecipeIngredient): boolean {
     return (
-        ingredient.impact === "low" &&
+        isLowImpactIngredient(ingredient) &&
         (ingredient.quantity === undefined ||
-            (ingredient.searchQueries?.length ?? 0) === 0 ||
-            /\bto taste\b/i.test(ingredient.rawText))
+            (ingredient.searchQueries?.length ?? 0) === 0)
     );
 }
 
@@ -447,6 +512,7 @@ function enrichIngredient(
     strategy: string,
     semanticLabel: string | undefined,
     choice: RecipeImportCandidateChoice | undefined,
+    assignment: RecipeImportIngredientAssignment | undefined,
     searchUnavailable: boolean,
 ): EnrichedIngredient {
     if (semanticLabel && isLowImpactUnmeasurable(ingredient)) {
@@ -457,48 +523,39 @@ function enrichIngredient(
             semanticLabel,
         );
     }
-    if (!ingredient.name.trim() || /\bto taste\b/i.test(ingredient.rawText)) {
-        const result = unresolvedIngredient(
+    if (!ingredient.name.trim()) {
+        return modelEstimatedIngredient(
             ingredient,
             sourceUrl,
-            candidates,
-            "unresolved",
+            strategy,
             semanticLabel,
+            candidates,
         );
-        result.warning = warning(
-            "food_match_unresolved",
-            `Nutrition for “${ingredient.name}” was left unresolved because the source did not provide a measurable portion.`,
-            "ingredients",
-        );
-        return result;
     }
     if (candidates.length === 0) {
-        const unresolved = unresolvedIngredient(
+        return modelEstimatedIngredient(
             ingredient,
             sourceUrl,
-            [],
-            "unresolved",
+            strategy,
             semanticLabel,
+            [],
+            searchUnavailable
+                ? "Nutrition providers were unavailable after bounded search; the ingredient was retained as a model estimate."
+                : "No provider candidate was available after bounded search; the ingredient was retained as a model estimate.",
         );
-        unresolved.warning = searchUnavailable
-            ? warning(
-                  "food_provider_unavailable",
-                  `Nutrition lookup for “${ingredient.name}” was unavailable; the ingredient can still be reviewed and saved.`,
-                  "ingredients",
-              )
-            : unresolved.warning;
-        return unresolved;
     }
 
     const ranked = rankedCandidates(ingredient, candidates);
     const top = ranked[0]!;
     const second = ranked[1];
-    let selected = choice?.candidateId
+    const requestedCandidateId =
+        assignment?.candidateId ?? choice?.candidateId ?? null;
+    let selected = requestedCandidateId
         ? candidates.find(
-              (candidate) => candidateKey(candidate) === choice.candidateId,
+              (candidate) => candidateKey(candidate) === requestedCandidateId,
           )
         : undefined;
-    let selectedByModel = Boolean(selected && choice);
+    let selectedByModel = Boolean(selected && (choice || assignment));
     if (!selected) {
         selected = top.candidate;
         selectedByModel = false;
@@ -521,26 +578,42 @@ function enrichIngredient(
             : ingredient.semanticConfidence !== undefined &&
               ingredient.semanticConfidence >= 0.8 &&
               selected === top.candidate);
+    const assignedMatch =
+        assignment?.decision === "provider_match" &&
+        assignment.candidateId === candidateKey(selected) &&
+        assignment.confidence >= 0.55;
     const portion = selectPortion(ingredient, selected.portions);
     const scale = portion ? portionScale(ingredient, portion) : null;
-    if (
-        (!deterministicMatch && !semanticMatch) ||
-        !portion ||
-        !scale ||
-        !Number.isFinite(scale.factor)
-    ) {
-        return unresolvedIngredient(
+    if (!portion || !scale || !Number.isFinite(scale.factor)) {
+        return modelEstimatedIngredient(
             ingredient,
             sourceUrl,
-            candidates,
-            candidates.length > 1 ? "ambiguous" : "unresolved",
+            strategy,
             semanticLabel,
+            candidates,
+            "The selected food did not expose a compatible portion; the ingredient was retained as a model estimate.",
         );
     }
     const nutrients = nutrientFacts(portion, scale.factor);
     const provider = selected.provider;
     const providerFoodId = selected.providerFoodId;
-    const assumption = ingredientAssumption(ingredient);
+    const assumption =
+        ingredientAssumption(ingredient) ??
+        ((!deterministicMatch && !semanticMatch && !assignedMatch) ||
+        assignment?.decision === "assumed" ||
+        assignment?.decision === "model_estimate"
+            ? {
+                  position: ingredient.sourcePosition ?? 0,
+                  raw_text: ingredient.rawText,
+                  message:
+                      assignment?.assumption ??
+                      "Selected the highest-confidence available nutrition match after bounded matching.",
+                  impact: ingredient.impact ?? "medium",
+                  source: assignment
+                      ? ("website_ai" as const)
+                      : ("provider" as const),
+              }
+            : undefined);
     const resolution = assumption ? "assumed" : "matched";
     const result: EnrichedIngredient = {
         ingredient: {
@@ -558,6 +631,7 @@ function enrichIngredient(
             confidence: Math.min(
                 selected.confidence,
                 ingredient.semanticConfidence ?? selected.confidence,
+                assignment?.confidence ?? 1,
             ),
             source_snapshot: {
                 resolution_layer: "recipe_url",
@@ -574,12 +648,17 @@ function enrichIngredient(
                           search_queries: ingredient.searchQueries ?? [],
                           candidate_selection_method: selectedByModel
                               ? "semantic_ai"
-                              : "deterministic",
+                              : assignment
+                                ? "semantic_assignment"
+                                : "deterministic",
                       }
                     : {}),
                 ...(assumption ? { assumption: assumption.message } : {}),
                 ...(choice?.rationale
                     ? { candidate_selection_rationale: choice.rationale }
+                    : {}),
+                ...(assignment?.rationale
+                    ? { ingredient_assignment_rationale: assignment.rationale }
                     : {}),
                 candidate_id: candidateKey(selected),
                 selected_portion_id: portion.id,
@@ -608,6 +687,91 @@ interface SearchedIngredient {
     unavailable: boolean;
 }
 
+function assignmentReason(
+    ingredient: ParsedRecipeIngredient,
+    candidates: FoodCandidate[],
+): RecipeImportIngredientAssignmentRequest["reason"] | undefined {
+    if (candidates.length === 0) return "no_candidate";
+    if (ingredient.quantity === undefined) return "missing_quantity";
+    const top = rankedCandidates(ingredient, candidates)[0]?.candidate;
+    if (!top || !selectPortion(ingredient, top.portions)) {
+        return "missing_portion";
+    }
+    return hasStrongDeterministicMatch(ingredient, candidates)
+        ? undefined
+        : "ambiguous_candidate";
+}
+
+function applyIngredientAssignment(
+    ingredient: ParsedRecipeIngredient,
+    assignment: RecipeImportIngredientAssignment,
+): ParsedRecipeIngredient {
+    return {
+        ...ingredient,
+        name: assignment.name || ingredient.name,
+        ...(assignment.quantity === undefined
+            ? {}
+            : { quantity: assignment.quantity }),
+        ...(assignment.unit ? { unit: assignment.unit } : {}),
+        searchQueries:
+            assignment.searchQueries.length > 0
+                ? assignment.searchQueries
+                : (ingredient.searchQueries ?? []),
+        ...(assignment.assumption ? { assumption: assignment.assumption } : {}),
+        impact:
+            assignment.decision === "model_estimate"
+                ? (ingredient.impact ?? "medium")
+                : ingredient.impact,
+        semanticConfidence: assignment.confidence,
+    };
+}
+
+function mergeCandidates(
+    ingredient: ParsedRecipeIngredient,
+    existing: FoodCandidate[],
+    additional: FoodCandidate[],
+): FoodCandidate[] {
+    const unique = [...existing];
+    for (const candidate of additional) {
+        if (
+            !unique.some(
+                (item) => candidateKey(item) === candidateKey(candidate),
+            )
+        ) {
+            unique.push(candidate);
+        }
+    }
+    return rankedCandidates(ingredient, unique)
+        .slice(0, MATCH_CANDIDATE_LIMIT)
+        .map(({ candidate }) => candidate);
+}
+
+function deterministicSearchQueries(
+    ingredient: ParsedRecipeIngredient,
+): string[] {
+    const base = ingredient.name.trim();
+    if (!base) return [];
+    const stripped = base
+        .replace(
+            /,?\s+(?:chopped|diced|minced|grated|halved|sliced|shredded|julienned|cubed|roughly|finely|fresh|dry|dried|divided|melted|softened|such as)\b[\s\S]*$/i,
+            "",
+        )
+        .replace(/\s+/g, " ")
+        .trim();
+    const components = base
+        .split(/\s+(?:or|and|plus)\s+/i)
+        .map((part) =>
+            part
+                .replace(/^\d+(?:[./]\d+)?\s+/i, "")
+                .replace(/,.*$/i, "")
+                .trim(),
+        )
+        .filter((part) => part.length >= 2);
+    return [...components, stripped, base].filter(
+        (query, index, all) => query && all.indexOf(query) === index,
+    );
+}
+
 async function searchIngredientCandidates(
     ingredient: ParsedRecipeIngredient,
     foodSearch: Pick<FoodSearchService, "search">,
@@ -617,10 +781,10 @@ async function searchIngredientCandidates(
     >,
     stats: RecipeImportSearchStats,
 ): Promise<{ candidates: FoodCandidate[]; unavailable: boolean }> {
-    if (isLowImpactUnmeasurable(ingredient)) {
-        return { candidates: [], unavailable: false };
-    }
-    const queries = [ingredient.name, ...(ingredient.searchQueries ?? [])]
+    const queries = [
+        ...(ingredient.searchQueries ?? []),
+        ...deterministicSearchQueries(ingredient),
+    ]
         .map((query) => query.trim())
         .filter(Boolean)
         .filter((query, index, all) => all.indexOf(query) === index)
@@ -679,6 +843,7 @@ async function enrichIngredients(
     foodSearch: Pick<FoodSearchService, "search">,
     strategy: string,
     semanticResolver?: RecipeImportSemanticResolver,
+    allowSemanticAssignment = true,
 ) {
     const searched: SearchedIngredient[] = [];
     const cache = new Map<
@@ -690,8 +855,10 @@ async function enrichIngredients(
         uniqueSearches: 0,
         cacheHits: 0,
         rerankRequests: 0,
+        assignmentRequests: 0,
         searchMs: 0,
         rerankMs: 0,
+        assignmentMs: 0,
     };
     let next = 0;
     const worker = async () => {
@@ -721,56 +888,198 @@ async function enrichIngredients(
     );
     stats.searchMs = Math.max(0, Date.now() - searchStartedAt);
 
-    const rerankRequests: RecipeImportCandidateChoiceRequest[] = searched
-        .filter(
-            (entry) =>
-                Boolean(semanticResolver?.chooseCandidates) &&
-                entry.candidates.length > 1 &&
-                !isLowImpactUnmeasurable(entry.ingredient) &&
-                !hasStrongDeterministicMatch(
-                    entry.ingredient,
-                    entry.candidates,
-                ),
-        )
-        .map((entry) => ({
-            key:
-                entry.ingredient.semanticKey ??
-                `ingredient:${entry.ingredient.sourcePosition ?? 0}`,
-            ingredient: entry.ingredient,
-            candidates: entry.candidates,
-        }));
-    stats.rerankRequests = rerankRequests.length;
+    const assignmentRequests: RecipeImportIngredientAssignmentRequest[] =
+        allowSemanticAssignment && semanticResolver?.resolveUncertainIngredients
+            ? searched.flatMap((entry) => {
+                  const reason = assignmentReason(
+                      entry.ingredient,
+                      entry.candidates,
+                  );
+                  return reason
+                      ? [
+                            {
+                                key:
+                                    entry.ingredient.semanticKey ??
+                                    `ingredient:${entry.ingredient.sourcePosition ?? 0}`,
+                                ingredient: entry.ingredient,
+                                candidates: entry.candidates,
+                                reason,
+                            },
+                        ]
+                      : [];
+              })
+            : [];
+    stats.assignmentRequests = assignmentRequests.length;
     let choices = new Map<string, RecipeImportCandidateChoice>();
+    let assignments = new Map<string, RecipeImportIngredientAssignment>();
     const warnings: RecipeImportWarning[] = [];
-    if (rerankRequests.length > 0 && semanticResolver?.chooseCandidates) {
-        const rerankStartedAt = Date.now();
+    if (
+        assignmentRequests.length > 0 &&
+        semanticResolver?.resolveUncertainIngredients
+    ) {
+        const assignmentStartedAt = Date.now();
         try {
-            choices = await semanticResolver.chooseCandidates(rerankRequests);
+            assignments =
+                await semanticResolver.resolveUncertainIngredients(
+                    assignmentRequests,
+                );
         } catch {
             warnings.push(
                 warning(
-                    "semantic_ai_rerank_unavailable",
-                    "The website AI could not choose among some nutrition matches; conservative matching was used instead.",
+                    "semantic_ai_assignment_unavailable",
+                    "The website AI could not assign every uncertain ingredient; Munch selected the best bounded fallback instead.",
                     "ingredients",
+                    false,
                 ),
             );
         } finally {
-            stats.rerankMs = Math.max(0, Date.now() - rerankStartedAt);
+            stats.assignmentMs = Math.max(0, Date.now() - assignmentStartedAt);
         }
     }
-    const results = searched.map((entry) =>
-        enrichIngredient(
-            entry.ingredient,
-            sourceUrl,
-            entry.candidates,
-            strategy,
-            semanticResolver?.label,
-            choices.get(
-                entry.ingredient.semanticKey ??
+
+    if (
+        allowSemanticAssignment &&
+        assignments.size === 0 &&
+        semanticResolver?.chooseCandidates
+    ) {
+        const rerankRequests: RecipeImportCandidateChoiceRequest[] = searched
+            .filter(
+                (entry) =>
+                    entry.candidates.length > 1 &&
+                    !isLowImpactUnmeasurable(entry.ingredient) &&
+                    !hasStrongDeterministicMatch(
+                        entry.ingredient,
+                        entry.candidates,
+                    ),
+            )
+            .map((entry) => ({
+                key:
+                    entry.ingredient.semanticKey ??
                     `ingredient:${entry.ingredient.sourcePosition ?? 0}`,
+                ingredient: entry.ingredient,
+                candidates: entry.candidates,
+            }));
+        stats.rerankRequests = rerankRequests.length;
+        if (rerankRequests.length > 0) {
+            const rerankStartedAt = Date.now();
+            try {
+                choices =
+                    await semanticResolver.chooseCandidates(rerankRequests);
+            } catch {
+                warnings.push(
+                    warning(
+                        "semantic_ai_rerank_unavailable",
+                        "The website AI could not choose among some nutrition matches; Munch selected the best bounded fallback instead.",
+                        "ingredients",
+                        false,
+                    ),
+                );
+            } finally {
+                stats.rerankMs = Math.max(0, Date.now() - rerankStartedAt);
+            }
+        }
+    }
+
+    if (assignments.size > 0) {
+        type AssignmentRetryTarget = {
+            entry: SearchedIngredient;
+            index: number;
+            ingredient: ParsedRecipeIngredient;
+            skipSearch: boolean;
+        };
+        const retryTargets = searched.flatMap((entry, index) => {
+            const key =
+                entry.ingredient.semanticKey ??
+                `ingredient:${entry.ingredient.sourcePosition ?? 0}`;
+            const assignment = assignments.get(key);
+            if (!assignment) return [];
+            const ingredient = applyIngredientAssignment(
+                entry.ingredient,
+                assignment,
+            );
+            const selectedCandidate = assignment.candidateId
+                ? entry.candidates.find(
+                      (candidate) =>
+                          candidateKey(candidate) === assignment.candidateId,
+                  )
+                : undefined;
+            const shouldRetry =
+                entry.candidates.length === 0 ||
+                !selectedCandidate ||
+                assignment.decision === "model_estimate";
+            return [
+                {
+                    entry,
+                    index,
+                    ingredient,
+                    skipSearch: !shouldRetry,
+                } satisfies AssignmentRetryTarget,
+            ];
+        });
+        let retryNext = 0;
+        const retryWorker = async () => {
+            while (retryNext < retryTargets.length) {
+                const target = retryTargets[retryNext++];
+                if (!target) continue;
+                const assignment = assignments.get(
+                    target.ingredient.semanticKey ??
+                        `ingredient:${target.ingredient.sourcePosition ?? 0}`,
+                );
+                if (!assignment) continue;
+                if (target.skipSearch) {
+                    searched[target.index] = {
+                        ...target.entry,
+                        ingredient: target.ingredient,
+                    };
+                    continue;
+                }
+                const additional = await searchIngredientCandidates(
+                    target.ingredient,
+                    foodSearch,
+                    cache,
+                    stats,
+                );
+                searched[target.index] = {
+                    ingredient: target.ingredient,
+                    candidates: mergeCandidates(
+                        target.ingredient,
+                        target.entry.candidates,
+                        additional.candidates,
+                    ),
+                    unavailable:
+                        target.entry.unavailable || additional.unavailable,
+                };
+            }
+        };
+        await Promise.all(
+            Array.from(
+                {
+                    length: Math.min(
+                        MAX_CONCURRENT_FOOD_MATCHES,
+                        retryTargets.length,
+                    ),
+                },
+                retryWorker,
             ),
-            entry.unavailable,
-        ),
+        );
+    }
+
+    const results = searched.map((entry) =>
+        (() => {
+            const key =
+                entry.ingredient.semanticKey ??
+                `ingredient:${entry.ingredient.sourcePosition ?? 0}`;
+            return enrichIngredient(
+                entry.ingredient,
+                sourceUrl,
+                entry.candidates,
+                strategy,
+                semanticResolver?.label,
+                choices.get(key),
+                assignments.get(key),
+                entry.unavailable,
+            );
+        })(),
     );
     return { results, warnings, stats };
 }
@@ -868,6 +1177,7 @@ export async function previewRecipeUrl(
                 "semantic_ai_unavailable",
                 "The website AI could not interpret the ingredient language, so Munch used conservative database matching instead.",
                 "ingredients",
+                false,
             );
         }
         if (semanticMs === 0) {
@@ -879,19 +1189,14 @@ export async function previewRecipeUrl(
         sourceUrl,
         foodSearch,
         parsed.strategy,
-        semanticWarning ? undefined : options.semanticResolver,
+        options.semanticResolver,
+        !semanticWarning,
     );
     const warnings = [
-        ...(semanticWarning
-            ? parsed.warnings
-            : options.semanticResolver
-              ? parsed.warnings.filter(
-                    (entry) =>
-                        !["quantity_range", "quantity_unparsed"].includes(
-                            entry.code,
-                        ),
-                )
-              : parsed.warnings),
+        ...parsed.warnings.filter(
+            (entry) =>
+                !["quantity_range", "quantity_unparsed"].includes(entry.code),
+        ),
         ...(semanticWarning ? [semanticWarning] : []),
         ...enrichedResult.warnings,
     ];
@@ -933,7 +1238,9 @@ export async function previewRecipeUrl(
     );
     const requiresReview =
         hasBlockingReview ||
-        warnings.length > 0 ||
+        warnings.some(
+            (entry) => entry.severity === "error" || entry.blocking !== false,
+        ) ||
         parsed.instructions.length === 0 ||
         parsed.servings === 1;
     const draft = recipeImportDraftOutputSchema.parse({
@@ -990,10 +1297,12 @@ export async function previewRecipeUrl(
         semantic_ms: semanticMs,
         search_ms: enrichedResult.stats.searchMs,
         rerank_ms: enrichedResult.stats.rerankMs,
+        assignment_ms: enrichedResult.stats.assignmentMs,
         query_attempts: enrichedResult.stats.queryAttempts,
         unique_searches: enrichedResult.stats.uniqueSearches,
         cache_hits: enrichedResult.stats.cacheHits,
         rerank_requests: enrichedResult.stats.rerankRequests,
+        assignment_requests: enrichedResult.stats.assignmentRequests,
         total_ms: Math.max(0, Date.now() - importStartedAt),
     });
     return draft;
