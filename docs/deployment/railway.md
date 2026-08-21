@@ -32,6 +32,22 @@ USDA_FDC_API_KEY=<production-key>
 
 Food-catalog cache behavior may be tuned with the `MUNCH_FOOD_CATALOG_*` variables documented in [`.env.example`](../../.env.example). Keep secrets server-only.
 
+## Optional website recipe AI
+
+The standalone website can use OpenRouter to interpret recipe ingredient language before it searches the configured food providers. These variables are optional; without `OPENROUTER_API_KEY`, website imports fall back to deterministic parsing and provider matching. MCP/ChatGPT imports never use this backend AI path because the connected model performs the semantic interpretation itself.
+
+```text
+OPENROUTER_API_KEY=<server-only-key>
+MUNCH_RECIPE_IMPORT_AI_ENABLED=true
+MUNCH_RECIPE_IMPORT_AI_BASE_URL=https://openrouter.ai/api/v1
+MUNCH_RECIPE_IMPORT_AI_MODEL=openai/gpt-5.6-luna
+MUNCH_RECIPE_IMPORT_AI_TIMEOUT_MS=20000
+MUNCH_RECIPE_IMPORT_AI_MAX_TOKENS=4000
+MUNCH_RECIPE_IMPORT_AI_MAX_CALLS_PER_IMPORT=2
+```
+
+`MUNCH_RECIPE_IMPORT_AI_MODEL` is the model switch; changing it does not require code changes. The resolver is bounded to two calls per import and never accepts model-generated food IDs or nutrition values.
+
 There is no authentication-backend selector, Railway-auth selector, Railway-data selector, custom Munch session secret, or custom login-delivery endpoint.
 
 ## Database baseline

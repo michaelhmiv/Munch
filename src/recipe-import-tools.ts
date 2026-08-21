@@ -29,7 +29,7 @@ export function registerRecipeImportTools(
         {
             title: "Parse Recipe URL",
             description:
-                "Preview a public HTTPS recipe URL by extracting its title, ingredients, servings, timing, instructions, nutrition matches, and source provenance. This tool never saves a recipe or adds groceries. Show the preview and ask for explicit confirmation before using save_recipe or save_recipe_and_plan with the returned recipe fields.",
+                "Preview a public HTTPS recipe URL by extracting its title, ingredients, servings, timing, instructions, nutrition matches, and source provenance. This MCP path intentionally does not call Munch's paid website AI resolver: use your own conversational/web understanding plus search_foods to interpret and resolve ambiguous ingredient language before saving. This tool never saves a recipe or adds groceries. Show the preview and ask for explicit confirmation before using save_recipe or save_recipe_and_plan with the returned recipe fields.",
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -54,6 +54,11 @@ export function registerRecipeImportTools(
                 "parse_recipe_url",
                 async () => {
                     requireRecipeAccess(capabilities, "all", false);
+                    // MCP/ChatGPT already has a conversational model. Keep
+                    // this path deterministic so Munch does not make a
+                    // duplicate paid model call; the client can use the raw
+                    // ingredient lines, instructions, and search_foods to do
+                    // semantic interpretation before saving.
                     const draft = await previewRecipeUrl(url, {
                         rateLimitKey: userId,
                     });

@@ -11,6 +11,14 @@ export const recipeImportWarningSchema = z.object({
     field: z.string().optional(),
 });
 
+export const recipeImportAssumptionSchema = z.object({
+    position: z.number().int().nonnegative(),
+    raw_text: z.string().min(1).max(1_000),
+    message: z.string().min(1).max(500),
+    impact: z.enum(["low", "medium", "high"]),
+    source: z.enum(["website_ai", "parser", "provider"]).optional(),
+});
+
 const nutrientOutputSchema = z.object({
     calories: z.number().nonnegative().optional(),
     protein_g: z.number().nonnegative().optional(),
@@ -65,7 +73,7 @@ const importedIngredientSchema = z.object({
 });
 
 export const recipeImportDraftOutputSchema = z.object({
-    schema_version: z.literal(1),
+    schema_version: z.literal(2),
     status: z.enum(["ready", "partial"]),
     requires_review: z.boolean(),
     parser: z.object({
@@ -101,14 +109,23 @@ export const recipeImportDraftOutputSchema = z.object({
         z.object({
             position: z.number().int().nonnegative(),
             raw_text: z.string().min(1).max(1000),
-            resolution: z.enum(["matched", "ambiguous", "unresolved"]),
+            resolution: z.enum([
+                "matched",
+                "assumed",
+                "ambiguous",
+                "unresolved",
+            ]),
             candidates: z.array(candidateOutputSchema),
         }),
     ),
+    assumptions: z.array(recipeImportAssumptionSchema),
     warnings: z.array(recipeImportWarningSchema),
 });
 
 export type RecipeImportWarning = z.infer<typeof recipeImportWarningSchema>;
+export type RecipeImportAssumption = z.infer<
+    typeof recipeImportAssumptionSchema
+>;
 export type RecipeImportDraft = z.infer<typeof recipeImportDraftOutputSchema>;
 export type RecipeImportResolution =
     RecipeImportDraft["ingredient_review"][number]["resolution"];
@@ -130,6 +147,12 @@ export interface ParsedRecipeIngredient {
     unit?: string;
     preparation?: string;
     optional?: boolean;
+    semanticKey?: string;
+    sourcePosition?: number;
+    searchQueries?: string[];
+    assumption?: string;
+    impact?: "low" | "medium" | "high";
+    semanticConfidence?: number;
 }
 
 export interface ParsedRecipe {
@@ -146,4 +169,44 @@ export interface ParsedRecipe {
     canonicalUrl?: string;
     ingredients: ParsedRecipeIngredient[];
     warnings: RecipeImportWarning[];
+}
+
+export interface RecipeImportIngredientIntent {
+    rawIndex: number;
+    componentIndex: number;
+    rawText: string;
+    name: string;
+    quantity?: number;
+    unit?: string;
+    preparation?: string;
+    optional?: boolean;
+    searchQueries: string[];
+    assumption?: string;
+    impact: "low" | "medium" | "high";
+    confidence: number;
+}
+
+export interface RecipeImportCandidateChoiceRequest {
+    key: string;
+    ingredient: ParsedRecipeIngredient;
+    candidates: import("../food-providers/types.js").FoodCandidate[];
+}
+
+export interface RecipeImportCandidateChoice {
+    candidateId: string | null;
+    confidence: number;
+    rationale?: string;
+}
+
+export interface RecipeImportSemanticResolver {
+    readonly label?: string;
+    normalizeRecipe(
+        recipe: Pick<
+            ParsedRecipe,
+            "name" | "description" | "servings" | "instructions" | "ingredients"
+        >,
+    ): Promise<RecipeImportIngredientIntent[]>;
+    chooseCandidates?(
+        requests: RecipeImportCandidateChoiceRequest[],
+    ): Promise<Map<string, RecipeImportCandidateChoice>>;
 }

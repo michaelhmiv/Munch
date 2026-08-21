@@ -63,6 +63,10 @@ const recipeImportSteps = [
         detail: "Reading ingredients, servings, timing, and instructions.",
     },
     {
+        label: "Interpreting ingredient language",
+        detail: "Applying reasonable defaults to alternatives, ranges, and preparation words.",
+    },
+    {
         label: "Matching ingredients",
         detail: "Comparing ingredients with nutrition sources.",
     },
@@ -1040,7 +1044,7 @@ function updateRecipeImportProgress(index) {
 function startRecipeImportProgress() {
     stopRecipeImportProgress();
     updateRecipeImportProgress(0);
-    const delays = [700, 1100, 1800];
+    const delays = [700, 1100, 1800, 1800];
     const advance = (index) => {
         if (index >= recipeImportSteps.length - 1) return;
         recipeImport.progressTimer = window.setTimeout(() => {
@@ -1073,15 +1077,25 @@ function recipeImportProgressMarkup() {
 
 function recipeImportReviewMarkup(draft) {
     const review = draft.ingredient_review || [];
-    const unresolved = review.filter((item) => item.resolution !== "matched");
+    const unresolved = review.filter(
+        (item) =>
+            item.resolution === "ambiguous" || item.resolution === "unresolved",
+    );
+    const resolved = review.filter(
+        (item) =>
+            item.resolution === "matched" || item.resolution === "assumed",
+    );
     const warningMarkup = (draft.warnings || []).length
         ? `<div class="panel spacer-top"><strong>Review warnings</strong><ul class="food-items spacer-top">${draft.warnings.map((item) => `<li><span>${escapeHtml(item.message)}</span></li>`).join("")}</ul></div>`
+        : "";
+    const assumptionMarkup = (draft.assumptions || []).length
+        ? `<div class="panel spacer-top"><strong>Assumptions applied automatically</strong><p class="tiny spacer-top">You can edit these below, but no ingredient-by-ingredient confirmation is required.</p><ul class="food-items spacer-top">${draft.assumptions.map((item) => `<li><span><strong>${escapeHtml(item.message)}</strong><small>${escapeHtml(item.raw_text)}</small></span></li>`).join("")}</ul></div>`
         : "";
     const unresolvedMarkup = unresolved.length
         ? `<div class="panel spacer-top"><strong>${unresolved.length} ingredient${unresolved.length === 1 ? "" : "s"} need${unresolved.length === 1 ? "s" : ""} review</strong><ul class="food-items spacer-top">${unresolved.map((item) => `<li><span><strong>${escapeHtml(item.raw_text)}</strong><small>${escapeHtml(item.resolution)} match · use the food search or edit the fields below</small></span></li>`).join("")}</ul></div>`
         : "";
     const nutrition = draft.nutrition?.per_serving || {};
-    return `<div class="recipe-detail"><p>Preview only — nothing has been saved. Confirm the ingredients, source, and nutrition before creating the recipe.</p><p class="tiny"><a href="${escapeHtml(draft.source.final_url)}" target="_blank" rel="noreferrer">${escapeHtml(draft.source.final_url)}</a> · ${escapeHtml(draft.parser.strategy)} · ${review.filter((item) => item.resolution === "matched").length}/${review.length} ingredients matched</p><div class="meal-macros spacer-top"><span class="macro-chip">${number(nutrition.calories)} kcal/serving</span><span class="macro-chip">P ${number(nutrition.protein_g, 1)}g</span><span class="macro-chip">C ${number(nutrition.carbs_g, 1)}g</span><span class="macro-chip">F ${number(nutrition.fat_g, 1)}g</span></div>${warningMarkup}${unresolvedMarkup}</div>`;
+    return `<div class="recipe-detail"><p>Preview only — nothing has been saved. Munch resolved what it could, applied reasonable assumptions, and left only materially uncertain ingredients for review.</p><p class="tiny"><a href="${escapeHtml(draft.source.final_url)}" target="_blank" rel="noreferrer">${escapeHtml(draft.source.final_url)}</a> · ${escapeHtml(draft.parser.strategy)} · ${resolved.length}/${review.length} ingredients resolved</p><div class="meal-macros spacer-top"><span class="macro-chip">${number(nutrition.calories)} kcal/serving</span><span class="macro-chip">P ${number(nutrition.protein_g, 1)}g</span><span class="macro-chip">C ${number(nutrition.carbs_g, 1)}g</span><span class="macro-chip">F ${number(nutrition.fat_g, 1)}g</span></div>${warningMarkup}${assumptionMarkup}${unresolvedMarkup}</div>`;
 }
 
 function recipeFormRecordFromImport(draft) {
@@ -1137,7 +1151,7 @@ function openRecipeImport() {
     recipeImport.draft = null;
     openDialog(
         "Import recipe from a website",
-        `<form id="recipe-import-url-form" class="auth-form"><p>Paste a public HTTPS recipe page. Munch will check the page, parse the recipe, match ingredients, and show you an editable review before anything is saved.</p><p class="tiny">This is separate from <strong>Create manually</strong>; you do not need to open the recipe editor first.</p><label class="field"><span>Recipe URL</span><input name="url" type="url" inputmode="url" maxlength="2000" placeholder="https://example.com/recipe" required /></label>${recipeImportProgressMarkup()}<button class="button button-primary" type="submit">Check recipe page</button></form>`,
+        `<form id="recipe-import-url-form" class="auth-form"><p>Paste a public HTTPS recipe page. Munch will check the page, parse the recipe, interpret the ingredient language, match nutrition sources, and show you an editable review before anything is saved.</p><p class="tiny">This is separate from <strong>Create manually</strong>; you do not need to open the recipe editor first.</p><label class="field"><span>Recipe URL</span><input name="url" type="url" inputmode="url" maxlength="2000" placeholder="https://example.com/recipe" required /></label>${recipeImportProgressMarkup()}<button class="button button-primary" type="submit">Check recipe page</button></form>`,
     );
 }
 

@@ -11,6 +11,7 @@ import {
     parseRecipeHtml,
 } from "./recipe-import/parser.js";
 import { previewRecipeUrl } from "./recipe-import/service.js";
+import type { RecipeImportSemanticResolver } from "./recipe-import/types.js";
 
 const candidate: FoodCandidate = {
     provider: "usda",
@@ -212,5 +213,100 @@ describe("recipe import enrichment", () => {
         expect(draft.status).toBe("partial");
         expect(draft.nutrition.status).toBe("partial");
         expect(draft.nutrition.total.calories).toBe(364);
+    });
+
+    test("uses the website semantic resolver to apply assumptions and avoids blocking on low-impact seasonings", async () => {
+        const potato: FoodCandidate = {
+            provider: "usda",
+            providerFoodId: "200",
+            name: "potato",
+            dataKind: "generic",
+            portions: [
+                {
+                    id: "each",
+                    amount: 1,
+                    unit: "each",
+                    label: "1 medium potato",
+                    gramWeight: 150,
+                    nutrients: {
+                        calories: 110,
+                        protein_g: 3,
+                        carbs_g: 26,
+                        fat_g: 0,
+                    },
+                },
+            ],
+            attribution: {
+                label: "USDA FoodData Central",
+                url: "https://fdc.nal.usda.gov/food/200",
+            },
+            confidence: 0.95,
+        };
+        const searches: string[] = [];
+        const semanticResolver: RecipeImportSemanticResolver = {
+            label: "openrouter:openai/gpt-test",
+            normalizeRecipe: async () => [
+                {
+                    rawIndex: 0,
+                    componentIndex: 0,
+                    rawText: "4-5 small Yukon gold potatoes",
+                    name: "Yukon gold potato",
+                    quantity: 4.5,
+                    unit: "piece",
+                    searchQueries: ["Yukon gold potato", "potato"],
+                    assumption: "Used the midpoint of the 4-5 potato range.",
+                    impact: "medium",
+                    confidence: 0.94,
+                },
+                {
+                    rawIndex: 1,
+                    componentIndex: 0,
+                    rawText: "kosher salt and black pepper",
+                    name: "kosher salt and black pepper",
+                    searchQueries: [],
+                    assumption:
+                        "Seasoning amount was not specified; excluded from the nutrition total.",
+                    impact: "low",
+                    confidence: 0.98,
+                },
+            ],
+        };
+        const draft = await previewRecipeUrl("https://example.com/recipe", {
+            semanticResolver,
+            fetchPage: async (url) => ({
+                submittedUrl: url,
+                finalUrl: url,
+                html: `
+                    <script type="application/ld+json">
+                    {"@type":"Recipe","name":"Potatoes","recipeYield":"6 servings","recipeIngredient":["4-5 small Yukon gold potatoes","kosher salt and black pepper"],"recipeInstructions":"Add the potatoes."}
+                    </script>
+                `,
+            }),
+            foodSearch: {
+                search: async (query) => {
+                    searches.push(query);
+                    return { candidates: [potato], failures: [] };
+                },
+            },
+        });
+
+        expect(draft.schema_version).toBe(2);
+        expect(draft.recipe.ingredients).toHaveLength(2);
+        expect(draft.recipe.ingredients[0]).toMatchObject({
+            quantity: 4.5,
+            source_type: "usda",
+        });
+        expect(draft.recipe.ingredients[0]?.source_snapshot).toMatchObject({
+            semantic_resolution_layer: "openrouter:openai/gpt-test",
+            resolution: "assumed",
+        });
+        expect(draft.ingredient_review[0]?.resolution).toBe("assumed");
+        expect(draft.ingredient_review[1]?.resolution).toBe("assumed");
+        expect(draft.recipe.ingredients[1]?.source_type).toBe("model_estimate");
+        expect(draft.assumptions).toHaveLength(2);
+        expect(
+            draft.warnings.some((item) => item.code === "quantity_range"),
+        ).toBe(false);
+        expect(searches).not.toContain("kosher salt and black pepper");
     });
 });

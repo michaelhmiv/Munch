@@ -41,6 +41,7 @@ import {
 import { getFoodSearchService } from "../food-providers/service.js";
 import { RecipeImportError } from "../recipe-import/fetch.js";
 import { previewRecipeUrl } from "../recipe-import/service.js";
+import { getWebsiteRecipeImportSemanticResolver } from "../recipe-import/semantic-resolver.js";
 import {
     assertSavedFoodCapacity,
     deleteSavedFood,
@@ -1161,7 +1162,10 @@ export function createAppRouter(): Hono {
             }
             const draft = await previewRecipeUrl(
                 typeof body.url === "string" ? body.url : "",
-                { rateLimitKey: userId },
+                {
+                    rateLimitKey: userId,
+                    semanticResolver: getWebsiteRecipeImportSemanticResolver(),
+                },
             );
             return privateJson(c, { draft });
         },
