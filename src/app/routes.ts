@@ -39,6 +39,8 @@ import {
     upsertProfile,
 } from "../storage.js";
 import { getFoodSearchService } from "../food-providers/service.js";
+import { RecipeImportError } from "../recipe-import/fetch.js";
+import { previewRecipeUrl } from "../recipe-import/service.js";
 import {
     assertSavedFoodCapacity,
     deleteSavedFood,
@@ -1141,6 +1143,30 @@ export function createAppRouter(): Hono {
         });
     });
 
+    app.post(
+        "/api/app/recipes/import-preview",
+        requireSameOrigin,
+        async (c) => {
+            const userId = c.get("munchUserId");
+            const body = recordValue(
+                await c.req.json(),
+                "Recipe import preview",
+            );
+            const capabilities = await resolveMunchCapabilities(userId);
+            if (
+                !capabilities.personalRecipesRead &&
+                !capabilities.householdRead
+            ) {
+                throw new Error("Recipe capability is unavailable");
+            }
+            const draft = await previewRecipeUrl(
+                typeof body.url === "string" ? body.url : "",
+                { rateLimitKey: userId },
+            );
+            return privateJson(c, { draft });
+        },
+    );
+
     app.post("/api/app/recipes/compose", requireSameOrigin, async (c) => {
         const userId = c.get("munchUserId");
         const body = recordValue(await c.req.json(), "Recipe compose");
@@ -1934,16 +1960,23 @@ export function createAppRouter(): Hono {
 
     app.onError((error, c) => {
         console.error("App route failed", { name: error.name });
+        const recipeImportError =
+            error instanceof RecipeImportError ? error : null;
         const knownMessage =
             error instanceof Error &&
-            /^(Invalid|Connection not found|Date range|Weight|Water|Target weight|Meal item|Meal |Meal$|Meal not found|Food |Nutrition|Add at least|A meal|Structured meal|A structured meal|Draft |Grocery |Import )/.test(
-                error.message,
-            )
+            (recipeImportError !== null ||
+                /^(Invalid|Connection not found|Date range|Weight|Water|Target weight|Meal item|Meal |Meal$|Meal not found|Food |Nutrition|Add at least|A meal|Structured meal|A structured meal|Draft |Grocery |Import |Recipe import|Recipe capability)/.test(
+                    error.message,
+                ))
                 ? error.message
                 : "The request could not be completed.";
-        const status: 400 | 404 = knownMessage.includes("not found")
-            ? 404
-            : 400;
+        const status = recipeImportError
+            ? [400, 413, 415, 429, 502].includes(recipeImportError.status)
+                ? (recipeImportError.status as 400 | 413 | 415 | 429 | 502)
+                : 400
+            : knownMessage.includes("not found")
+              ? 404
+              : 400;
         return c.json(
             { error: "app_request_failed", message: knownMessage },
             status,

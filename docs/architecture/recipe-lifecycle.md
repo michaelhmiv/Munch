@@ -11,6 +11,13 @@ Munch has one reusable-combination abstraction: `recipes`. A saved food remains 
 - Each logged item stores the recipe ID, revision ID, ingredient ID, and original ingredient source snapshot. Later recipe edits cannot recalculate the historical meal.
 - `schedule_recipe` pins a recipe revision to the meal calendar. A plan entry is never treated as consumption.
 
+## URL import and review
+
+- `parse_recipe_url` is a read-only preview operation. It accepts a public HTTPS URL, fetches bounded HTML after SSRF-safe URL and redirect checks, and parses Schema.org JSON-LD first with Recipe microdata fallback.
+- The shared importer normalizes ingredients, instructions, servings, timing, source provenance, and provider-backed nutrition matches. Ambiguous or unresolved ingredients remain visible as review warnings instead of being silently estimated.
+- The website uses the same preview contract at `POST /api/app/recipes/import-preview`, then hands the edited draft to the existing recipe save path. Neither channel persists a recipe or adds groceries until the user explicitly confirms.
+- Imported recipes retain `source_type=imported`, the canonical source URL, and ingredient-level resolution snapshots so later recipe logging remains pinned to the saved revision.
+
 For a one-serving `My Peanut Butter Sandwich Lunch`, logging `0.5` stores two slices as one slice, four tablespoons of peanut butter as two tablespoons, two tablespoons of chia as one tablespoon, and half of the saved nutrition totals. The historical meal remains linked to revision 1 after a later update changes peanut butter to three tablespoons.
 
 Ambiguous photo or free-text meals continue to use the existing meal-review/draft confirmation workflow. A saved recipe is already a resolved structured source, so `log_recipe` asks for the missing serving amount in conversation and writes directly once the amount is explicit.

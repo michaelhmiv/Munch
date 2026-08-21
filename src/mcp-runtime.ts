@@ -11,6 +11,7 @@ import { registerMealDetailTools } from "./meal-detail-tools.js";
 import { registerMealDraftTools } from "./meal-draft-tools.js";
 import { registerMealReviewTools } from "./meal-review-tools.js";
 import { registerRecipePlanningTools } from "./recipe-planning-tools.js";
+import { registerRecipeImportTools } from "./recipe-import-tools.js";
 import { registerSavedFoodTools } from "./saved-food-tools.js";
 import { registerTools } from "./mcp.js";
 import {
@@ -34,6 +35,8 @@ For photos and any meal that still needs approval, use prepare_meal_review. Buil
 Legacy start_meal_draft and granular draft mutation tools remain for compatibility, but prefer prepare_meal_review and resolve_meal_review for new work because they reduce tool round trips while preserving server-enforced confirmation, version checks, RLS, and idempotency.
 
 When the user establishes a complete recipe in conversation, recipe tools persist the factual structure. Do not create tags such as favorite, healthy, high-protein, quick, or family meal. Derive those descriptions from nutrient values, ingredient facts, timing, and observed scheduling or logging frequency when the user's request calls for it.
+
+When the user provides a public recipe URL, call parse_recipe_url first. It returns a preview with the extracted source fields, ingredients, instructions, serving count, nutrition matches, unresolved items, and warnings; it never saves anything. Present the preview and ask for explicit confirmation before calling save_recipe or save_recipe_and_plan with the returned recipe fields. Preserve source_url, source_type=imported, ingredient provenance, and any unresolved-review warnings.
 
 For a request such as "save this as My Peanut Butter Sandwich Lunch", use save_recipe once the individual ingredients, quantities, servings, nutrition facts, and source snapshots are established. Later use search_recipes or get_recipe to identify it. When the user says to log it, ask for servings and meal type if either is missing, then use log_recipe with the exact serving amount; it scales the saved ingredient quantities and logs the selected immutable recipe revision, so do not re-estimate or substitute a generic meal. Use update_recipe for a complete replacement after reading the current recipe; it creates a new revision and never rewrites historical meal logs. Use delete_recipe only after explicit confirmation; it archives the recipe while preserving historical logs. Use schedule_recipe to add a saved recipe revision to a date; planning is not consumption.
 
@@ -110,6 +113,7 @@ async function buildMunchMcpServer(
     registerMealDetailTools(appServer, userId);
     registerMealReviewTools(appServer, userId, widgetsEnabled);
     registerMealDraftTools(appServer, userId);
+    registerRecipeImportTools(appServer, userId, capabilities);
     registerRecipePlanningTools(appServer, userId, capabilities);
     registerConnectionStatusTools(appServer, userId, {
         accountEmail: accountIdentity?.email,

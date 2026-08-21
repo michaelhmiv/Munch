@@ -584,6 +584,18 @@
                 "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
             }
         },
+        "parse_recipe_url": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
         "prepare_meal_confirmation": {
             "annotations": {
                 "readOnlyHint": false,
@@ -899,11 +911,11 @@
             "expected_output_url": null
         },
         {
-            "description": "Using the provisioned reviewer account, look up a packaged food by barcode using configured food-data providers.",
-            "user_prompt": "Look up the nutrition for barcode 737628064502 and tell me the serving information you found.",
+            "description": "Using the provisioned reviewer account, preview a public recipe URL and save it only after the parsed ingredients and nutrition are reviewed.",
+            "user_prompt": "Import this recipe from https://www.allrecipes.com/recipe/23600/worlds-best-lasagna/. Show me the parsed ingredients, instructions, servings, and nutrition first; after I confirm, save it as World's Best Lasagna.",
             "file_attachment_urls": null,
-            "tools_triggered": "lookup_food_barcode",
-            "expected_output": "Returns the matching packaged-food record, serving basis, nutrients, provider attribution, and a clear not-found result when unavailable; no account fixture is required beyond reviewer sign-in.",
+            "tools_triggered": "parse_recipe_url, save_recipe",
+            "expected_output": "First returns a preview with source provenance, parsed ingredients, nutrition matches, unresolved-review warnings, and no persisted recipe. After explicit confirmation, saves the reviewed recipe with source_type=imported and ingredient-level provenance.",
             "expected_output_url": null
         },
         {
