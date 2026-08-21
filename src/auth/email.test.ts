@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { sendBetterAuthMagicLink } from "./email.js";
+import {
+    sendBetterAuthMagicLink,
+    sendBetterAuthPasswordReset,
+    sendBetterAuthVerificationEmail,
+} from "./email.js";
 
 const original = { ...process.env };
 
@@ -100,5 +104,67 @@ describe("Better Auth magic-link delivery", () => {
         await expect(sendBetterAuthMagicLink(input, fetchImpl)).rejects.toThrow(
             "Resend rejected the magic-link email request",
         );
+    });
+});
+
+describe("Better Auth password email delivery", () => {
+    test("sends verification links through the configured Resend sender", async () => {
+        configureDelivery();
+        let requestInit: RequestInit | undefined;
+        const fetchImpl = mock(
+            async (_request: string | URL | Request, init?: RequestInit) => {
+                requestInit = init;
+                return new Response(JSON.stringify({ id: "email_456" }), {
+                    status: 200,
+                });
+            },
+        ) as unknown as typeof fetch;
+
+        await sendBetterAuthVerificationEmail(
+            {
+                email: "person@example.com",
+                verificationUrl:
+                    "https://munch.example/account/password?verified=1&token=secret",
+            },
+            fetchImpl,
+        );
+
+        const body = JSON.parse(String(requestInit?.body)) as Record<
+            string,
+            unknown
+        >;
+        expect(body.subject).toBe("Verify your Munch email");
+        expect(String(body.text)).toContain("token=secret");
+        expect(String(body.html)).toContain("Verify email address");
+    });
+
+    test("sends password-reset links through the configured Resend sender", async () => {
+        configureDelivery();
+        let requestInit: RequestInit | undefined;
+        const fetchImpl = mock(
+            async (_request: string | URL | Request, init?: RequestInit) => {
+                requestInit = init;
+                return new Response(JSON.stringify({ id: "email_789" }), {
+                    status: 200,
+                });
+            },
+        ) as unknown as typeof fetch;
+
+        await sendBetterAuthPasswordReset(
+            {
+                email: "person@example.com",
+                resetUrl:
+                    "https://munch.example/account/password/reset?token=secret",
+            },
+            fetchImpl,
+        );
+
+        const body = JSON.parse(String(requestInit?.body)) as Record<
+            string,
+            unknown
+        >;
+        expect(body.subject).toBe("Reset your Munch password");
+        expect(String(body.text)).toContain("token=secret");
+        expect(String(body.html)).toContain("Reset password");
     });
 });

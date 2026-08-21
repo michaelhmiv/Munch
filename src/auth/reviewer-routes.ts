@@ -20,7 +20,7 @@ function reviewerSignInPage(): string {
 <p>Use the pre-provisioned reviewer credentials supplied with the Munch submission. Public password registration is disabled.</p>
 <p id="reviewer-message" class="message-bar" role="status"></p>
 <form id="reviewer-sign-in" class="auth-form">
-<div class="field"><label for="reviewer-email">Email</label><input id="reviewer-email" name="email" type="email" autocomplete="username" required maxlength="320"></div>
+<div class="field"><label for="reviewer-identifier">Username or email</label><input id="reviewer-identifier" name="identifier" autocomplete="username" required maxlength="320"></div>
 <div class="field"><label for="reviewer-password">Password</label><input id="reviewer-password" name="password" type="password" autocomplete="current-password" required minlength="16" maxlength="128"></div>
 <button class="button button-primary" type="submit">Sign in</button>
 </form>
@@ -30,7 +30,7 @@ function reviewerSignInPage(): string {
 <script>
 const form=document.getElementById('reviewer-sign-in');
 const message=document.getElementById('reviewer-message');
-form.addEventListener('submit',async(event)=>{event.preventDefault();message.textContent='Signing in…';const data=new FormData(form);try{const response=await fetch('/api/auth/sign-in/email',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json','accept':'application/json'},body:JSON.stringify({email:data.get('email'),password:data.get('password'),rememberMe:false,callbackURL:'/account/portal'})});const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.message||result.error||'Sign-in failed');location.href='/account/portal'}catch(error){message.textContent='The supplied reviewer credentials were not accepted.'}});
+form.addEventListener('submit',async(event)=>{event.preventDefault();message.textContent='Signing in…';const data=new FormData(form);const identifier=String(data.get('identifier')||'').trim();const path=identifier.includes('@')?'/api/auth/sign-in/email':'/api/auth/sign-in/username';const body={password:data.get('password'),rememberMe:false,callbackURL:'/account/portal'};body[identifier.includes('@')?'email':'username']=identifier;try{const response=await fetch(path,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json','accept':'application/json'},body:JSON.stringify(body)});const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.message||result.error||'Sign-in failed');location.href='/account/portal'}catch(error){message.textContent='The supplied reviewer credentials were not accepted.'}});
 </script>
 </body>
 </html>`;

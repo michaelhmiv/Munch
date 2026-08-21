@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 const email = process.env.MUNCH_REVIEWER_EMAIL?.trim().toLowerCase();
+const username = process.env.MUNCH_REVIEWER_USERNAME?.trim().toLowerCase();
 const password = process.env.MUNCH_REVIEWER_PASSWORD;
 if (!email || !password || !process.env.DATABASE_URL) {
     throw new Error(
@@ -21,15 +22,25 @@ const { getGroceryList, getMealPlan, searchRecipes } =
 const { closePlatformDatabase } = await import("../src/platform/database.js");
 
 const auth = getMunchBetterAuth();
-const signIn = await auth.api.signInEmail({
-    body: {
-        email,
-        password,
-        rememberMe: false,
-        callbackURL: "/account/portal",
-    },
-    returnHeaders: true,
-});
+const signIn = username
+    ? await auth.api.signInUsername({
+          body: {
+              username,
+              password,
+              rememberMe: false,
+              callbackURL: "/account/portal",
+          },
+          returnHeaders: true,
+      })
+    : await auth.api.signInEmail({
+          body: {
+              email,
+              password,
+              rememberMe: false,
+              callbackURL: "/account/portal",
+          },
+          returnHeaders: true,
+      });
 if (!signIn.headers.get("set-cookie")) {
     throw new Error("Reviewer password sign-in did not issue a session cookie");
 }

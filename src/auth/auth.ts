@@ -1,9 +1,13 @@
 import { oauthProvider } from "@better-auth/oauth-provider";
 import { betterAuth } from "better-auth";
-import { jwt, magicLink } from "better-auth/plugins";
+import { jwt, magicLink, username } from "better-auth/plugins";
 import { Pool } from "pg";
 import { getBetterAuthRuntimeConfig } from "./config.js";
-import { sendBetterAuthMagicLink } from "./email.js";
+import {
+    sendBetterAuthMagicLink,
+    sendBetterAuthPasswordReset,
+    sendBetterAuthVerificationEmail,
+} from "./email.js";
 import { buildScannerSafeMagicLink } from "./magic-link-url.js";
 import {
     MUNCH_DEFAULT_OAUTH_SCOPES,
@@ -14,6 +18,8 @@ import {
 function createMunchBetterAuth() {
     const config = getBetterAuthRuntimeConfig();
     const reviewerSeedMode = process.env.MUNCH_REVIEWER_SEED_MODE === "true";
+    const passwordSignupEnabled =
+        reviewerSeedMode || config.publicPasswordSignup;
     const database = new Pool({
         connectionString: config.databaseUrl,
         max: config.databasePoolSize,
@@ -44,11 +50,29 @@ function createMunchBetterAuth() {
         trustedOrigins: [config.baseUrl],
         emailAndPassword: {
             enabled: true,
-            disableSignUp: !reviewerSeedMode,
+            disableSignUp: !passwordSignupEnabled,
             minPasswordLength: 16,
             maxPasswordLength: 128,
             autoSignIn: false,
-            requireEmailVerification: false,
+            requireEmailVerification:
+                config.publicPasswordSignup && !reviewerSeedMode,
+            revokeSessionsOnPasswordReset: true,
+            sendResetPassword: async ({ user, url }) => {
+                await sendBetterAuthPasswordReset({
+                    email: user.email,
+                    resetUrl: url,
+                });
+            },
+        },
+        emailVerification: {
+            sendOnSignUp: config.publicPasswordSignup && !reviewerSeedMode,
+            autoSignInAfterVerification: false,
+            sendVerificationEmail: async ({ user, url }) => {
+                await sendBetterAuthVerificationEmail({
+                    email: user.email,
+                    verificationUrl: url,
+                });
+            },
         },
         user: {
             modelName: "users",
@@ -150,6 +174,10 @@ function createMunchBetterAuth() {
                     window: 60,
                     max: 5,
                 },
+                "/sign-in/username": {
+                    window: 60,
+                    max: 5,
+                },
                 "/sign-up/email": {
                     window: 60,
                     max: 2,
@@ -203,6 +231,18 @@ function createMunchBetterAuth() {
                         ),
                     });
                 },
+            }),
+            username({
+                schema: {
+                    user: {
+                        fields: {
+                            username: "username",
+                            displayUsername: "display_username",
+                        },
+                    },
+                },
+                minUsernameLength: 3,
+                maxUsernameLength: 40,
             }),
             oauthProvider({
                 loginPage: "/connect/sign-in",

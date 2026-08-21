@@ -93,6 +93,7 @@ const authSurfaces = [
     "public/help-connect.html",
     "src/auth/connect-routes.ts",
     "src/auth/email.ts",
+    "src/auth/password-routes.ts",
 ];
 const forbiddenAuthWords = [
     "subscription",
@@ -135,6 +136,19 @@ for (const route of [
 ]) {
     if (!connectRoutes.includes(route)) {
         throw new Error(`Better Auth connection UI is missing route: ${route}`);
+    }
+}
+const passwordRoutes = await Bun.file("src/auth/password-routes.ts").text();
+for (const route of [
+    'router.get("/account/password"',
+    'router.get("/account/password/reset"',
+    "/api/auth/sign-up/email",
+    "/api/auth/sign-in/username",
+    "/api/auth/request-password-reset",
+    "/api/auth/reset-password",
+]) {
+    if (!passwordRoutes.includes(route)) {
+        throw new Error(`Password authentication surface is missing: ${route}`);
     }
 }
 for (const copy of [

@@ -6,9 +6,9 @@ The stable business identity remains `munch.users.id`. Nutrition rows, Stripe cu
 
 ## Public authentication
 
-- Magic links are the public sign-in mechanism.
+- Magic links are the default public sign-in mechanism.
 - A previously unseen normalized email may create its Munch account through the Better Auth flow.
-- Public password signup is disabled.
+- Username/email-and-password signup is an explicit opt-in controlled by `MUNCH_PUBLIC_PASSWORD_SIGNUP` and requires email verification.
 - Social providers are not enabled at launch.
 - Verification records are short-lived and single use.
 - Magic-link redemption remains scanner-safe.
@@ -33,4 +33,4 @@ Secrets are server-only and must not be returned to browsers or written to appli
 - The one-time `db/legacy-bridge/` path exists only to retire a pre-baseline database while preserving business rows.
 - Better Auth runtime database access uses the restricted `munch_auth` role.
 - Better Auth schema compatibility is checked in CI against the pinned dependency version.
-- Public password signup remains disabled even though provisioned reviewer credentials may use Better Auth's credential account support.
+- Public password signup remains disabled by default even though provisioned reviewer credentials may use Better Auth's credential account support.

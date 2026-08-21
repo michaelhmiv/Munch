@@ -3,6 +3,7 @@
 process.env.MUNCH_REVIEWER_SEED_MODE = "true";
 
 const email = process.env.MUNCH_REVIEWER_EMAIL?.trim().toLowerCase();
+const username = process.env.MUNCH_REVIEWER_USERNAME?.trim().toLowerCase();
 const password = process.env.MUNCH_REVIEWER_PASSWORD;
 const name = process.env.MUNCH_REVIEWER_NAME?.trim() || "Munch reviewer";
 const databaseUrl = process.env.DATABASE_URL?.trim();
@@ -14,6 +15,16 @@ if (!databaseUrl || !email || !password) {
 }
 if (!email.includes("@") || email.length > 320) {
     throw new Error("MUNCH_REVIEWER_EMAIL is invalid");
+}
+if (
+    username &&
+    (username.length < 3 ||
+        username.length > 40 ||
+        !/^[a-z0-9_.]+$/.test(username))
+) {
+    throw new Error(
+        "MUNCH_REVIEWER_USERNAME must be 3 to 40 lowercase letters, numbers, underscores, or dots",
+    );
 }
 if (password.length < 16 || password.length > 128) {
     throw new Error("MUNCH_REVIEWER_PASSWORD must be 16 to 128 characters");
@@ -69,6 +80,7 @@ if (!userId) {
             password,
             name,
             callbackURL: "/account/portal",
+            ...(username ? { username } : {}),
         },
     });
     userId = await findUserId();
@@ -88,6 +100,24 @@ if (!userId) {
             "Reviewer account already exists but the supplied password does not match; use a new reviewer email or the original password",
         );
     }
+}
+
+if (username) {
+    const conflict = await pool.query<{ id: string }>(
+        "select id from munch.users where username = $1 and id <> $2 limit 1",
+        [username, userId],
+    );
+    if (conflict.rows[0]) {
+        throw new Error("MUNCH_REVIEWER_USERNAME is already in use");
+    }
+    await pool.query(
+        `update munch.users
+         set username = $2,
+             display_username = coalesce(display_username, $2),
+             updated_at = now()
+         where id = $1`,
+        [userId, username],
+    );
 }
 
 await pool.query(

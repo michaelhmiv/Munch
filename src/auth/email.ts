@@ -99,3 +99,89 @@ export async function sendBetterAuthMagicLink(
         throw new Error("Resend rejected the magic-link email request");
     }
 }
+
+interface AuthLinkInput {
+    email: string;
+    url: string;
+}
+
+async function sendAuthLinkEmail(
+    input: AuthLinkInput,
+    subject: string,
+    title: string,
+    description: string,
+    buttonLabel: string,
+    failureMessage: string,
+    fetchImpl: typeof fetch,
+): Promise<void> {
+    const url = escapeHtml(input.url);
+    const response = await fetchImpl(RESEND_EMAILS_ENDPOINT, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${required("RESEND_API_KEY")}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            from: required("MUNCH_EMAIL_FROM"),
+            to: [input.email],
+            subject,
+            text: [
+                title,
+                "",
+                description,
+                "",
+                input.url,
+                "",
+                "If you did not request this email, you can ignore it.",
+            ].join("\n"),
+            html: `<!doctype html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta http-equiv="X-UA-Compatible" content="IE=edge"></head>
+<body style="margin:0; padding:32px 16px; background-color:#f4f7f3;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;"><tr><td bgcolor="#ffffff" style="background-color:#ffffff; border-radius:18px; padding:40px 36px; font-family:Arial, Helvetica, sans-serif; color:#405347;">
+<p style="margin:0 0 12px; font-size:15px; line-height:22px; color:#4c6b55; font-weight:700; letter-spacing:0.08em; text-transform:uppercase;">Munch</p>
+<h1 style="margin:0 0 16px; font-size:30px; line-height:38px; color:#173d25;">${escapeHtml(title)}</h1>
+<p style="margin:0 0 28px; font-size:16px; line-height:25px;">${escapeHtml(description)}</p>
+<table cellpadding="0" cellspacing="0" border="0"><tr><td bgcolor="#2f7d4a" style="background-color:#2f7d4a; border-radius:10px;"><a href="${url}" style="display:inline-block; padding:14px 24px; font-size:16px; line-height:20px; color:#ffffff; font-weight:700; text-decoration:none;">${escapeHtml(buttonLabel)}</a></td></tr></table>
+<p style="margin:28px 0 8px; font-size:13px; line-height:20px; color:#68776d;">If the button does not work, copy and paste this address into your browser:</p>
+<p style="margin:0 0 24px; font-size:13px; line-height:20px; color:#2f7d4a; word-break:break-all;">${url}</p>
+<p style="margin:0; font-size:13px; line-height:20px; color:#68776d;">If you did not request this email, you can ignore it.</p>
+</td></tr></table>
+</td></tr></table>
+</body></html>`,
+        }),
+        signal: AbortSignal.timeout(10_000),
+    });
+
+    if (!response.ok) throw new Error(failureMessage);
+}
+
+export async function sendBetterAuthVerificationEmail(
+    input: { email: string; verificationUrl: string },
+    fetchImpl: typeof fetch = fetch,
+): Promise<void> {
+    await sendAuthLinkEmail(
+        { email: input.email, url: input.verificationUrl },
+        "Verify your Munch email",
+        "Verify your email",
+        "Confirm your email address to finish creating your Munch account.",
+        "Verify email address",
+        "Resend rejected the email-verification request",
+        fetchImpl,
+    );
+}
+
+export async function sendBetterAuthPasswordReset(
+    input: { email: string; resetUrl: string },
+    fetchImpl: typeof fetch = fetch,
+): Promise<void> {
+    await sendAuthLinkEmail(
+        { email: input.email, url: input.resetUrl },
+        "Reset your Munch password",
+        "Reset your password",
+        "Use the button below to choose a new password for your Munch account.",
+        "Reset password",
+        "Resend rejected the password-reset request",
+        fetchImpl,
+    );
+}
