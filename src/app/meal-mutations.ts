@@ -6,6 +6,7 @@ import { insertMeal } from "../storage.js";
 import {
     getStructuredMeal,
     insertStructuredMeal,
+    validateStructuredMealItem,
 } from "../structured-meals/repository.js";
 import type { StructuredMealItemInput } from "../structured-meals/types.js";
 
@@ -30,6 +31,7 @@ export interface MealItemPatch {
     quantity?: number;
     portionLabel?: string;
     nutrients?: Partial<Record<NutrientColumn, number | null>>;
+    replacement?: StructuredMealItemInput;
 }
 
 export interface CopyMealInput {
@@ -94,72 +96,117 @@ export async function updateStructuredMealItem(
         const current = rows[0];
         if (!current) throw new Error("Meal item not found");
 
-        const currentQuantity = numberFromRow(current.quantity);
-        const nextQuantity = patch.quantity ?? currentQuantity;
-        const correctedFields = [
-            ...(patch.name !== undefined ? ["name"] : []),
-            ...Object.keys(patch.nutrients ?? {}),
-        ];
-        const explicitCorrection = correctedFields.length > 0;
-        const existingSnapshot =
-            current.source_snapshot &&
-            typeof current.source_snapshot === "object"
-                ? (current.source_snapshot as Record<string, unknown>)
-                : {};
-        const nextSnapshot = explicitCorrection
-            ? {
-                  ...existingSnapshot,
-                  user_correction: {
-                      corrected_at: new Date().toISOString(),
-                      original_source_type: current.source_type ?? null,
-                      original_provider: current.provider ?? null,
-                      changed_fields: correctedFields,
-                  },
-              }
-            : existingSnapshot;
-        const ratio =
-            patch.quantity !== undefined &&
-            currentQuantity !== null &&
-            currentQuantity > 0
-                ? patch.quantity / currentQuantity
-                : null;
+        if (patch.replacement) {
+            const replacement = validateStructuredMealItem(patch.replacement);
+            const replacementSnapshot = {
+                ...replacement.sourceSnapshot,
+                replaced_item: {
+                    replaced_at: new Date().toISOString(),
+                    previous_item_id: itemId,
+                    previous_source_type: current.source_type ?? null,
+                    previous_provider: current.provider ?? null,
+                    previous_provider_food_id: current.provider_food_id ?? null,
+                },
+            };
+            await tx`
+                update munch.meal_items
+                set name = ${replacement.name},
+                    quantity = ${replacement.quantity ?? null},
+                    portion_label = ${replacement.portionLabel ?? null},
+                    gram_weight = ${replacement.gramWeight ?? null},
+                    calories = ${replacement.nutrients.calories ?? null},
+                    protein_g = ${replacement.nutrients.protein_g ?? null},
+                    carbs_g = ${replacement.nutrients.carbs_g ?? null},
+                    fat_g = ${replacement.nutrients.fat_g ?? null},
+                    fiber_g = ${replacement.nutrients.fiber_g ?? null},
+                    sugar_g = ${replacement.nutrients.sugar_g ?? null},
+                    alcohol_g = ${replacement.nutrients.alcohol_g ?? null},
+                    sodium_mg = ${replacement.nutrients.sodium_mg ?? null},
+                    saturated_fat_g = ${replacement.nutrients.saturated_fat_g ?? null},
+                    cholesterol_mg = ${replacement.nutrients.cholesterol_mg ?? null},
+                    potassium_mg = ${replacement.nutrients.potassium_mg ?? null},
+                    source_type = ${replacement.sourceType},
+                    provider = ${replacement.provider ?? null},
+                    provider_food_id = ${replacement.providerFoodId ?? null},
+                    provider_revision = ${replacement.providerRevision ?? null},
+                    source_url = ${replacement.sourceUrl ?? null},
+                    source_updated_at = ${replacement.sourceUpdatedAt ? new Date(replacement.sourceUpdatedAt) : null},
+                    confidence = ${replacement.confidence ?? null},
+                    assumptions = ${replacement.assumptions ?? []}::jsonb,
+                    source_snapshot = ${replacementSnapshot}::jsonb
+                where id = ${itemId}
+                  and meal_id = ${mealId}
+                  and user_id = ${userId}
+            `;
+            await recomputeParentTotals(tx, userId, mealId);
+        } else {
+            const currentQuantity = numberFromRow(current.quantity);
+            const nextQuantity = patch.quantity ?? currentQuantity;
+            const correctedFields = [
+                ...(patch.name !== undefined ? ["name"] : []),
+                ...Object.keys(patch.nutrients ?? {}),
+            ];
+            const explicitCorrection = correctedFields.length > 0;
+            const existingSnapshot =
+                current.source_snapshot &&
+                typeof current.source_snapshot === "object"
+                    ? (current.source_snapshot as Record<string, unknown>)
+                    : {};
+            const nextSnapshot = explicitCorrection
+                ? {
+                      ...existingSnapshot,
+                      user_correction: {
+                          corrected_at: new Date().toISOString(),
+                          original_source_type: current.source_type ?? null,
+                          original_provider: current.provider ?? null,
+                          changed_fields: correctedFields,
+                      },
+                  }
+                : existingSnapshot;
+            const ratio =
+                patch.quantity !== undefined &&
+                currentQuantity !== null &&
+                currentQuantity > 0
+                    ? patch.quantity / currentQuantity
+                    : null;
 
-        const nextNutrients = {} as Record<NutrientColumn, number | null>;
-        for (const column of NUTRIENT_COLUMNS) {
-            const explicit = patch.nutrients?.[column];
-            const currentValue = numberFromRow(current[column]);
-            nextNutrients[column] =
-                explicit !== undefined
-                    ? explicit
-                    : ratio !== null && currentValue !== null
-                      ? currentValue * ratio
-                      : currentValue;
+            const nextNutrients = {} as Record<NutrientColumn, number | null>;
+            for (const column of NUTRIENT_COLUMNS) {
+                const explicit = patch.nutrients?.[column];
+                const currentValue = numberFromRow(current[column]);
+                nextNutrients[column] =
+                    explicit !== undefined
+                        ? explicit
+                        : ratio !== null && currentValue !== null
+                          ? currentValue * ratio
+                          : currentValue;
+            }
+
+            await tx`
+                update munch.meal_items
+                set name = ${patch.name?.trim() || current.name},
+                    quantity = ${nextQuantity},
+                    portion_label = ${patch.portionLabel ?? current.portion_label ?? null},
+                    calories = ${nextNutrients.calories},
+                    protein_g = ${nextNutrients.protein_g},
+                    carbs_g = ${nextNutrients.carbs_g},
+                    fat_g = ${nextNutrients.fat_g},
+                    fiber_g = ${nextNutrients.fiber_g},
+                    sugar_g = ${nextNutrients.sugar_g},
+                    alcohol_g = ${nextNutrients.alcohol_g},
+                    sodium_mg = ${nextNutrients.sodium_mg},
+                    saturated_fat_g = ${nextNutrients.saturated_fat_g},
+                    cholesterol_mg = ${nextNutrients.cholesterol_mg},
+                    potassium_mg = ${nextNutrients.potassium_mg},
+                    source_type = ${explicitCorrection ? "user_supplied" : current.source_type},
+                    provider = ${explicitCorrection ? "user_correction" : current.provider},
+                    source_snapshot = ${nextSnapshot}::jsonb
+                where id = ${itemId}
+                  and meal_id = ${mealId}
+                  and user_id = ${userId}
+            `;
+            await recomputeParentTotals(tx, userId, mealId);
         }
-
-        await tx`
-            update munch.meal_items
-            set name = ${patch.name?.trim() || current.name},
-                quantity = ${nextQuantity},
-                portion_label = ${patch.portionLabel ?? current.portion_label ?? null},
-                calories = ${nextNutrients.calories},
-                protein_g = ${nextNutrients.protein_g},
-                carbs_g = ${nextNutrients.carbs_g},
-                fat_g = ${nextNutrients.fat_g},
-                fiber_g = ${nextNutrients.fiber_g},
-                sugar_g = ${nextNutrients.sugar_g},
-                alcohol_g = ${nextNutrients.alcohol_g},
-                sodium_mg = ${nextNutrients.sodium_mg},
-                saturated_fat_g = ${nextNutrients.saturated_fat_g},
-                cholesterol_mg = ${nextNutrients.cholesterol_mg},
-                potassium_mg = ${nextNutrients.potassium_mg},
-                source_type = ${explicitCorrection ? "user_supplied" : current.source_type},
-                provider = ${explicitCorrection ? "user_correction" : current.provider},
-                source_snapshot = ${nextSnapshot}::jsonb
-            where id = ${itemId}
-              and meal_id = ${mealId}
-              and user_id = ${userId}
-        `;
-        await recomputeParentTotals(tx, userId, mealId);
     });
 
     const meal = await getStructuredMeal(userId, mealId);
