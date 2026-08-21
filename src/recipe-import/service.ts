@@ -240,7 +240,7 @@ function unresolvedIngredient(
         resolution === "ambiguous"
             ? `Nutrition for “${ingredient.name}” has multiple plausible matches and needs review.`
             : `No confident nutrition match was found for “${ingredient.name}”.`;
-    return recipeImportDraftOutputSchema.parse({
+    return {
         ingredient: {
             name: ingredient.name,
             quantity: ingredient.quantity,
@@ -265,7 +265,7 @@ function unresolvedIngredient(
                 .map(summarizeFoodCandidate),
         },
         warning: warning(warningCode, message, "ingredients"),
-    });
+    };
 }
 
 async function enrichIngredient(
