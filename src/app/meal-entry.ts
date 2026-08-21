@@ -6,8 +6,10 @@ import type { FoodCandidate, NutrientValues } from "../food-providers/types.js";
 import type { FoodProviderFailure } from "../food-providers/registry.js";
 import { serializeFoodCandidate } from "../food-tools.js";
 import {
+    getSavedFood,
     listRecentMealItems,
     listSavedFoods,
+    markSavedFoodUsed,
     searchRecentMealItems,
     searchSavedFoods,
     type RecentMealItemMemory,
@@ -46,6 +48,7 @@ const SOURCE_TYPES = [
 
 export interface WebMealItemSelection {
     candidate_id?: unknown;
+    saved_food_id?: unknown;
     portion_id?: unknown;
     name?: unknown;
     quantity?: unknown;
@@ -151,7 +154,7 @@ function serializeFailures(failures: FoodProviderFailure[]) {
     }));
 }
 
-function serializeSavedFood(record: SavedFoodRecord) {
+export function serializeSavedFood(record: SavedFoodRecord) {
     return {
         id: record.id,
         label: record.label,
@@ -261,6 +264,29 @@ function candidateMealItem(
     };
 }
 
+function savedFoodMealItem(
+    saved: SavedFoodRecord,
+    portionId: string | undefined,
+    quantity: number,
+): StructuredMealItemInput {
+    const item = candidateMealItem(
+        saved.food,
+        `saved_food:${saved.id}`,
+        portionId,
+        quantity,
+    );
+    return {
+        ...item,
+        sourceType: "saved_food",
+        sourceSnapshot: {
+            ...item.sourceSnapshot,
+            resolution_layer: "saved_food",
+            saved_food_id: saved.id,
+            saved_food_label: saved.label,
+        },
+    };
+}
+
 function suppliedMealItem(
     input: WebMealItemSelection,
 ): StructuredMealItemInput {
@@ -309,8 +335,21 @@ function suppliedMealItem(
 }
 
 export async function resolveWebMealItem(
+    userId: string,
     input: WebMealItemSelection,
 ): Promise<StructuredMealItemInput> {
+    const savedFoodId = text(input.saved_food_id, "Saved food ID", 100);
+    if (savedFoodId) {
+        const saved = await getSavedFood(userId, savedFoodId);
+        if (!saved) throw new Error("Saved food is no longer available");
+        return savedFoodMealItem(
+            saved,
+            text(input.portion_id, "Food portion ID", 200) ??
+                saved.defaultPortionId ??
+                undefined,
+            positive(input.quantity, "Food quantity"),
+        );
+    }
     const candidateId = text(input.candidate_id, "Food candidate ID", 300);
     if (candidateId) {
         const candidate = await getFoodSearchService().details(candidateId);
@@ -361,8 +400,20 @@ export async function createAppMeal(
     const idempotencyKey =
         text(input.idempotencyKey, "Meal idempotency key", 255) ??
         crypto.randomUUID();
-    const items = await Promise.all(input.items.map(resolveWebMealItem));
-    return insertStructuredMeal(userId, {
+    const items = await Promise.all(
+        input.items.map((item) => resolveWebMealItem(userId, item)),
+    );
+    const savedFoodIds = [
+        ...new Set(
+            input.items
+                .map((item) => item.saved_food_id)
+                .filter(
+                    (value): value is string =>
+                        typeof value === "string" && Boolean(value.trim()),
+                ),
+        ),
+    ];
+    const result = await insertStructuredMeal(userId, {
         description,
         mealType: input.mealType,
         loggedAt,
@@ -370,4 +421,12 @@ export async function createAppMeal(
         idempotencyKey,
         items,
     });
+    if (!result.deduplicated && savedFoodIds.length > 0) {
+        await Promise.allSettled(
+            savedFoodIds.map((savedFoodId) =>
+                markSavedFoodUsed(userId, savedFoodId),
+            ),
+        );
+    }
+    return result;
 }

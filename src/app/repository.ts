@@ -320,9 +320,9 @@ export async function getMealHistoryWorkspace(
 }
 
 /**
- * Legacy compatibility endpoint for saved-food clients. The website no longer
- * exposes a Foods workspace; historical meal items are the primary user-facing
- * food memory. Keep this read contract until cached MCP catalogs have aged out.
+ * Personal saved-food workspace used by the website manager and legacy clients.
+ * The old standalone /app/foods URL still redirects to the Food Log, but the
+ * authenticated API remains the canonical saved-food read model.
  */
 export async function getFoodsWorkspace(userId: string) {
     const capabilities = await resolveMunchCapabilities(userId);

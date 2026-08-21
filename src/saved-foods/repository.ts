@@ -1,4 +1,5 @@
 import type { FoodCandidate } from "../food-providers/types.js";
+import type { MunchCapabilities } from "../billing/capabilities.js";
 import { withUserDatabase } from "../platform/database.js";
 import { escapeLikePattern } from "../search.js";
 
@@ -174,6 +175,42 @@ export async function listSavedFoods(
         `;
         return rows.map(rowToSavedFood);
     });
+}
+
+export async function getSavedFood(
+    userId: string,
+    savedFoodId: string,
+): Promise<SavedFoodRecord | null> {
+    return withUserDatabase(userId, async (tx) => {
+        const rows = await tx<Array<Record<string, unknown>>>`
+            select *
+            from munch.saved_foods
+            where id = ${savedFoodId}
+            limit 1
+        `;
+        return rows[0] ? rowToSavedFood(rows[0]) : null;
+    });
+}
+
+export async function assertSavedFoodCapacity(
+    userId: string,
+    label: string,
+    capabilities: MunchCapabilities,
+): Promise<void> {
+    if (capabilities.savedFoodLimit === null) return;
+    const existing = await listSavedFoods(
+        userId,
+        capabilities.savedFoodLimit + 1,
+    );
+    const normalized = normalizeSavedFoodLabel(label);
+    const updatesExisting = existing.some(
+        (record) => normalizeSavedFoodLabel(record.label) === normalized,
+    );
+    if (!updatesExisting && existing.length >= capabilities.savedFoodLimit) {
+        throw new Error(
+            `Saved food capacity reached (${capabilities.savedFoodLimit}). Existing foods can still be used, updated, or deleted.`,
+        );
+    }
 }
 
 export async function markSavedFoodUsed(

@@ -215,6 +215,8 @@ if (!exportRouterSource.includes('"/api/app/export/meals"')) {
 }
 for (const route of [
     'app.get("/api/app/food-search"',
+    'app.post("/api/app/foods"',
+    '"/api/app/foods/:id"',
     'app.get("/api/app/food-details"',
     'app.get("/api/app/food-barcode"',
     'app.post("/api/app/meals"',
@@ -273,6 +275,10 @@ for (const behavior of [
     "api(`/api/app/weight/${encodeURIComponent",
     'data-action="open-meal-draft"',
     'data-action="start-meal-draft"',
+    'data-action="manage-saved-foods"',
+    'data-action="select-saved-food-candidate"',
+    'data-action="delete-saved-food"',
+    "saved-food-form",
     'data-action="confirm-meal-draft"',
     'data-action="cancel-meal-draft"',
     'data-action="create-recipe"',
