@@ -146,10 +146,7 @@ export function createPasswordRouter(): Hono {
         ),
     );
     router.get("/account/password/reset", (c) =>
-        privateHtml(
-            c,
-            c.req.query("token") ? resetPage() : resetRequestPage(),
-        ),
+        privateHtml(c, c.req.query("token") ? resetPage() : resetRequestPage()),
     );
     return router;
 }
