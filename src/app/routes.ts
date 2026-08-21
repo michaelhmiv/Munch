@@ -651,6 +651,7 @@ export function createAppRouter(): Hono {
                 c.get("munchUserId"),
                 requiredQuery(c.req.query("start"), "start"),
                 requiredQuery(c.req.query("end"), "end"),
+                { query: c.req.query("q") },
             ),
         ),
     );

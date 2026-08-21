@@ -16,6 +16,8 @@ const state = {
     bootstrap: null,
     route: "today",
     date: null,
+    mealHistoryDays: 1,
+    mealHistoryQuery: "",
     insightsDays: 30,
     controller: null,
 };
@@ -293,7 +295,7 @@ function mealItems(items) {
 
 function mealCard(meal) {
     const type = meal.meal_type || "snack";
-    return `<article class="meal-card" data-meal-id="${escapeHtml(meal.id)}"><div class="meal-card-head"><div><h4>${escapeHtml(meal.description || "Untitled meal")}</h4><div class="meal-meta"><span>${escapeHtml(formatTime(meal.logged_at))}</span><span>${escapeHtml(type)}</span>${meal.notes ? `<span>${escapeHtml(meal.notes)}</span>` : ""}</div></div><strong>${meal.calories == null ? "—" : `${number(meal.calories)} kcal`}</strong></div><div class="meal-macros"><span class="macro-chip">Protein ${number(meal.protein_g, 1)}g</span><span class="macro-chip">Carbs ${number(meal.carbs_g, 1)}g</span><span class="macro-chip">Fat ${number(meal.fat_g, 1)}g</span>${meal.fiber_g == null ? "" : `<span class="macro-chip">Fiber ${number(meal.fiber_g, 1)}g</span>`}${meal.sugar_g == null ? "" : `<span class="macro-chip">Sugar ${number(meal.sugar_g, 1)}g</span>`}</div>${mealItems(meal.items)}<div class="auth-actions"><button class="button button-secondary button-small" data-action="edit-meal" data-id="${escapeHtml(meal.id)}">Edit</button><button class="button button-quiet button-small" data-action="duplicate-meal" data-id="${escapeHtml(meal.id)}">Duplicate</button><button class="button button-quiet button-small" data-action="delete-meal" data-id="${escapeHtml(meal.id)}">Delete</button></div></article>`;
+    return `<article class="meal-card" data-meal-id="${escapeHtml(meal.id)}"><div class="meal-card-head"><div><h4>${escapeHtml(meal.description || "Untitled meal")}</h4><div class="meal-meta"><span>${escapeHtml(formatTime(meal.logged_at))}</span><span>${escapeHtml(type)}</span>${meal.notes ? `<span>${escapeHtml(meal.notes)}</span>` : ""}</div></div><strong>${meal.calories == null ? "—" : `${number(meal.calories)} kcal`}</strong></div><div class="meal-macros"><span class="macro-chip">Protein ${number(meal.protein_g, 1)}g</span><span class="macro-chip">Carbs ${number(meal.carbs_g, 1)}g</span><span class="macro-chip">Fat ${number(meal.fat_g, 1)}g</span>${meal.fiber_g == null ? "" : `<span class="macro-chip">Fiber ${number(meal.fiber_g, 1)}g</span>`}${meal.sugar_g == null ? "" : `<span class="macro-chip">Sugar ${number(meal.sugar_g, 1)}g</span>`}</div>${mealItems(meal.items)}<div class="auth-actions"><button class="button button-secondary button-small" data-action="view-meal-details" data-id="${escapeHtml(meal.id)}">View details</button><button class="button button-secondary button-small" data-action="edit-meal" data-id="${escapeHtml(meal.id)}">Edit</button><button class="button button-quiet button-small" data-action="duplicate-meal" data-id="${escapeHtml(meal.id)}">Duplicate</button><button class="button button-quiet button-small" data-action="delete-meal" data-id="${escapeHtml(meal.id)}">Delete</button></div></article>`;
 }
 
 function groupedMeals(meals) {
@@ -340,25 +342,53 @@ async function renderToday() {
     content.innerHTML = `<div class="page-heading"><div><h2>${escapeHtml(formatDate(state.date, { weekday: true }))}</h2><p>Your structured nutrition record for this day.</p></div><div class="auth-actions"><button class="button button-secondary button-small" data-action="date-prev">Previous</button><button class="button button-secondary button-small" data-action="date-today">Today</button><button class="button button-secondary button-small" data-action="date-next">Next</button></div></div><div class="dashboard-grid"><section class="panel panel-span-12"><div class="summary-grid">${metricCard("Calories", data.totals.calories, " kcal", goals.daily_calories, true)}${metricCard("Protein", data.totals.proteinG, "g", goals.daily_protein_g)}${metricCard("Carbohydrates", data.totals.carbsG, "g", goals.daily_carbs_g)}${metricCard("Fat", data.totals.fatG, "g", goals.daily_fat_g)}</div></section><section class="panel panel-span-8"><div class="panel-title"><h3>Meals</h3><span>${data.meals.length} logged</span></div>${groupedMeals(data.meals)}</section><aside class="panel panel-span-4"><div class="panel-title"><h3>Daily details</h3></div><div class="summary-grid" style="grid-template-columns:1fr 1fr">${metricCard("Water", data.water.totalMl, " ml", goals.daily_water_ml)}${metricCard("Weight", latestWeightValue, ` ${weightUnit}`, null)}</div><div class="auth-actions"><button class="button button-secondary button-small" data-action="add-water">Add water</button><button class="button button-secondary button-small" data-action="add-weight">Add weight</button></div>${data.drafts?.length ? `<div class="panel-title spacer-top"><h3>Pending drafts</h3><span>${data.drafts.length}</span></div><div class="meal-groups">${data.drafts.map(pendingDraftCard).join("")}</div>` : ""}${data.plannedMeals?.length ? `<div class="panel-title spacer-top"><h3>Planned today</h3><span>${data.plannedMeals.length}</span></div>${data.plannedMeals.map((meal) => `<div class="food-row"><div><strong>${escapeHtml(meal.recipe_name)}</strong><small>${escapeHtml(meal.meal_slot || "Meal")} · ${number(meal.servings, 1)} servings</small></div><span>${meal.nutrition_per_serving?.calories ? `${number(meal.nutrition_per_serving.calories * meal.servings)} kcal` : ""}</span></div>`).join("")}` : ""}</aside></div>`;
 }
 
+function mealSearchSummary(search) {
+    if (!search) return "";
+    const variations = search.variations || [];
+    return `<section class="panel spacer-top"><div class="panel-title"><div><h3>Recurring variations</h3><span>${number(search.resultCount)} matching entr${search.resultCount === 1 ? "y" : "ies"}</span></div><span class="source-chip source-saved">Search</span></div>${variations.length ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Variation</th><th>Typical nutrition</th><th>Last logged</th></tr></thead><tbody>${variations.map((variation) => `<tr><td><strong>${escapeHtml(variation.label)}</strong><br /><small>${number(variation.count)} logged</small></td><td>${variation.typicalCalories == null ? "—" : `${number(variation.typicalCalories)} kcal · P ${number(variation.typicalProteinG, 1)}g · C ${number(variation.typicalCarbsG, 1)}g · F ${number(variation.typicalFatG, 1)}g`}</td><td>${escapeHtml(formatDate(variation.lastLoggedAt.slice(0, 10), { year: true }))}</td></tr>`).join("")}</tbody></table></div>` : `<div class="empty-state"><div><h3>No matching variations</h3><p>Try a shorter food name or a different keyword.</p></div></div>`}</section>`;
+}
+
 async function renderLog() {
     setLoading("Loading your food history…");
+    const historyDays = [1, 30, 90, 365].includes(state.mealHistoryDays)
+        ? state.mealHistoryDays
+        : 1;
+    const start = shiftDate(state.date, -(historyDays - 1));
+    const query = state.mealHistoryQuery.trim();
+    const search = query ? `&q=${encodeURIComponent(query)}` : "";
     const data = await api(
-        `/api/app/meals?start=${encodeURIComponent(state.date)}&end=${encodeURIComponent(state.date)}`,
+        `/api/app/meals?start=${encodeURIComponent(start)}&end=${encodeURIComponent(state.date)}${search}`,
     );
-    content.innerHTML = `<div class="page-heading"><div><h2>${escapeHtml(formatDate(state.date, { weekday: true }))}</h2><p>Review meals, item-level provenance, notes, and totals.</p></div><div class="auth-actions"><button class="button button-secondary button-small" data-action="date-prev">Previous</button><button class="button button-secondary button-small" data-action="date-today">Today</button><button class="button button-secondary button-small" data-action="date-next">Next</button></div></div><section class="panel"><div class="summary-grid">${metricCard("Calories", data.totals.calories, " kcal", null, true)}${metricCard("Protein", data.totals.proteinG, "g", null)}${metricCard("Carbohydrates", data.totals.carbsG, "g", null)}${metricCard("Fat", data.totals.fatG, "g", null)}</div></section><div class="spacer-top">${groupedMeals(data.meals)}</div>`;
+    const rangeButtons = [1, 30, 90, 365]
+        .map(
+            (range) =>
+                `<button class="button ${range === historyDays ? "button-primary" : "button-secondary"} button-small" data-action="meal-history-range" data-days="${range}" aria-pressed="${range === historyDays}">${range === 1 ? "Day" : `${range} days`}</button>`,
+        )
+        .join("");
+    const heading =
+        historyDays === 1
+            ? formatDate(state.date, { weekday: true })
+            : `Last ${historyDays} days`;
+    const resultText = query
+        ? `${number(data.meals.length)} matching meal${data.meals.length === 1 ? "" : "s"} from ${escapeHtml(formatDate(start))} through ${escapeHtml(formatDate(state.date))}.`
+        : `Review meals, item-level provenance, notes, and totals from ${escapeHtml(formatDate(start))} through ${escapeHtml(formatDate(state.date))}.`;
+    content.innerHTML = `<div class="page-heading"><div><h2>${escapeHtml(heading)}</h2><p>${resultText}</p></div><div class="auth-actions"><button class="button button-secondary button-small" data-action="date-prev">Previous</button><button class="button button-secondary button-small" data-action="date-today">Today</button><button class="button button-secondary button-small" data-action="date-next">Next</button></div></div><section class="panel"><form id="meal-history-search-form" class="meal-composer-search-row"><label class="field" style="flex:1"><span>Search meal history</span><input class="input" id="meal-history-search" name="query" type="search" value="${escapeHtml(query)}" placeholder="Search chicken, peanut butter, restaurant…" autocomplete="off" /></label><div class="auth-actions"><button class="button button-primary button-small" type="submit">Search</button>${query ? '<button class="button button-quiet button-small" type="button" data-action="clear-meal-search">Clear</button>' : ""}</div></form><div class="auth-actions spacer-top">${rangeButtons}</div></section><section class="panel spacer-top"><div class="summary-grid">${metricCard("Calories", data.totals.calories, " kcal", null, true)}${metricCard("Protein", data.totals.proteinG, "g", null)}${metricCard("Carbohydrates", data.totals.carbsG, "g", null)}${metricCard("Fat", data.totals.fatG, "g", null)}</div></section>${mealSearchSummary(data.search)}<div class="spacer-top">${data.meals.length ? groupedMeals(data.meals) : `<div class="empty-state"><div><h3>${query ? "No matching meals" : "No meals logged"}</h3><p>${query ? "Try another keyword or expand the date range." : "Log a meal to build your history."}</p></div></div>`}</div>`;
 }
 
 function barChart(days, key, label, unit = "") {
-    const values = days.map((day) => Number(day.totals[key] || 0));
+    const values = days.map((day) => Number((day.totals || day)[key] || 0));
     const max = Math.max(1, ...values);
     return `<div role="img" aria-label="${escapeHtml(label)} by logged day" style="display:flex;align-items:flex-end;gap:5px;height:190px;padding-top:20px">${days
         .map((day, index) => {
-            const height = Math.max(2, Math.round((values[index] / max) * 150));
-            return `<div style="display:flex;min-width:0;flex:1;flex-direction:column;align-items:center;justify-content:flex-end;height:100%"><span class="tiny">${number(values[index])}</span><div style="width:100%;max-width:24px;height:${height}px;border-radius:7px 7px 2px 2px;background:var(--green-600)"></div><span class="tiny">${escapeHtml(day.date.slice(5))}</span></div>`;
+            const height = values[index]
+                ? Math.max(2, Math.round((values[index] / max) * 150))
+                : 0;
+            const opacity = day.hasLog === false ? 0.25 : 1;
+            return `<div style="display:flex;min-width:0;flex:1;flex-direction:column;align-items:center;justify-content:flex-end;height:100%"><span class="tiny">${number(values[index])}</span><div style="width:100%;max-width:24px;height:${height}px;border-radius:7px 7px 2px 2px;background:var(--green-600);opacity:${opacity}"></div><span class="tiny">${escapeHtml(day.date.slice(5))}</span></div>`;
         })
         .join(
             "",
-        )}</div><p class="tiny">${escapeHtml(label)} is shown for logged days only${unit ? ` in ${escapeHtml(unit)}` : ""}.</p>`;
+        )}</div><p class="tiny">${escapeHtml(label)} is shown for the selected calendar range${unit ? ` in ${escapeHtml(unit)}` : ""}; days without logs are shown as empty columns.</p>`;
 }
 
 async function renderInsights() {
@@ -375,7 +405,28 @@ async function renderInsights() {
                 `<button class="button ${range === days ? "button-primary" : "button-secondary"} button-small" data-action="insight-range" data-days="${range}" aria-pressed="${range === days}">${range} days</button>`,
         )
         .join("");
-    content.innerHTML = `<div class="page-heading"><div><h2>Last ${days} days</h2><p>${data.loggedDays} logged days and ${data.mealCount} meals from ${escapeHtml(formatDate(start))} through ${escapeHtml(formatDate(end))}.</p></div><div class="auth-actions">${rangeButtons}</div></div><div class="dashboard-grid"><section class="panel panel-span-12"><div class="summary-grid">${metricCard("Average calories", data.averages.calories, " kcal", null, true)}${metricCard("Average protein", data.averages.proteinG, "g", null)}${metricCard("Average carbs", data.averages.carbsG, "g", null)}${metricCard("Average fat", data.averages.fatG, "g", null)}</div></section><section class="panel panel-span-8"><div class="panel-title"><h3>Daily calories</h3><span>${data.loggedDays} days</span></div>${data.days.length ? barChart(data.days, "calories", "Daily calories", "kilocalories") : `<div class="empty-state"><div><h3>No logged days</h3><p>Log meals to build a trend.</p></div></div>`}</section><section class="panel panel-span-4"><div class="panel-title"><h3>Coverage</h3></div><div class="summary-grid" style="grid-template-columns:1fr 1fr">${metricCard("Logged days", data.loggedDays, "", null)}${metricCard("Calendar days", data.calendarDays, "", null)}${metricCard("Meals", data.mealCount, "", null)}${metricCard("Meals per logged day", data.loggedDays ? data.mealCount / data.loggedDays : 0, "", null)}</div><p class="tiny spacer-top">Averages exclude days with no meal records. Missing nutrients are not automatically treated as confirmed zero values in source-level records.</p></section></div>`;
+    const trendDays = data.trends?.days || data.days || [];
+    const progress = data.progress || {};
+    const progressGoals = progress.goals || {};
+    const provenance = data.provenance || {};
+    const coverage = provenance.coverage || {};
+    const confidence = provenance.confidence || {};
+    const sourceRows = (provenance.sources || [])
+        .map(
+            (source) =>
+                `<tr><td>${escapeHtml(source.source)}</td><td>${number(source.itemCount)}</td><td>${number(source.percentOfItems, 1)}%</td><td>${number(source.calories, 1)} kcal</td></tr>`,
+        )
+        .join("");
+    const calorieContributors = (provenance.contributors?.calories || [])
+        .slice(0, 5)
+        .map(
+            (item) =>
+                `<li><strong>${escapeHtml(item.name)}</strong> · ${number(item.value, 1)} kcal <span class="tiny">${escapeHtml(item.source)}</span></li>`,
+        )
+        .join("");
+    const narrative = (title, text, open = false) =>
+        `<details class="panel"${open ? " open" : ""}><summary class="panel-title"><h3>${escapeHtml(title)}</h3><span>View analysis</span></summary><pre style="margin:12px 0 0;white-space:pre-wrap;color:var(--ink-600);font:inherit;line-height:1.5">${escapeHtml(text || "No data in range.")}</pre></details>`;
+    content.innerHTML = `<div class="page-heading"><div><h2>Last ${days} days</h2><p>${data.loggedDays} logged days and ${data.mealCount} meals from ${escapeHtml(formatDate(start))} through ${escapeHtml(formatDate(end))}.</p></div><div class="auth-actions">${rangeButtons}</div></div><div class="dashboard-grid"><section class="panel panel-span-12"><div class="panel-title"><div><h3>Average intake</h3><span>Across logged days</span></div></div><div class="summary-grid">${metricCard("Average calories", data.averages.calories, " kcal", null, true)}${metricCard("Average protein", data.averages.proteinG, "g", null)}${metricCard("Average carbs", data.averages.carbsG, "g", null)}${metricCard("Average fat", data.averages.fatG, "g", null)}</div></section><section class="panel panel-span-8"><div class="panel-title"><div><h3>Daily calories</h3><span>${trendDays.length} calendar days</span></div><span class="source-chip source-usda">Trend</span></div>${trendDays.length ? barChart(trendDays, "calories", "Daily calories", "kilocalories") : `<div class="empty-state"><div><h3>No logged days</h3><p>Log meals to build a trend.</p></div></div>`}</section><section class="panel panel-span-4"><div class="panel-title"><div><h3>Selected-day progress</h3><span>${escapeHtml(formatDate(progress.date || end))}</span></div></div><div class="summary-grid" style="grid-template-columns:1fr 1fr">${metricCard("Calories", progress.totals?.calories, " kcal", progressGoals.daily_calories, true)}${metricCard("Protein", progress.totals?.proteinG, "g", progressGoals.daily_protein_g)}${metricCard("Carbohydrates", progress.totals?.carbsG, "g", progressGoals.daily_carbs_g)}${metricCard("Fat", progress.totals?.fatG, "g", progressGoals.daily_fat_g)}${metricCard("Water", progress.totals?.waterMl, " ml", progressGoals.daily_water_ml)}${metricCard("Meals", progress.mealCount, "", null)}</div><p class="tiny spacer-top">Progress is calculated for the selected range end date. Use Today to review a different day.</p></section><section class="panel panel-span-6"><div class="panel-title"><div><h3>Data coverage</h3><span>Where your nutrition came from</span></div></div><div class="summary-grid" style="grid-template-columns:1fr 1fr">${metricCard("Itemized calories", coverage.itemizedCaloriePercent, "%", 100, true)}${metricCard("Food items", coverage.itemCount, "", null)}${metricCard("Structured meals", coverage.structuredMealCount, "", null)}${metricCard("Legacy meals", coverage.legacyMealCount, "", null)}${metricCard("Recorded confidence", confidence.recordedItemCount, " items", null)}${metricCard("Average confidence", confidence.average == null ? null : confidence.average * 100, "%", null)}</div>${sourceRows ? `<div class="data-table-wrap spacer-top"><table class="data-table"><thead><tr><th>Source</th><th>Items</th><th>Share</th><th>Calories</th></tr></thead><tbody>${sourceRows}</tbody></table></div>` : `<p class="tiny spacer-top">No item-level provenance is recorded in this range.</p>`}</section><section class="panel panel-span-6"><div class="panel-title"><div><h3>Largest calorie contributors</h3><span>Top itemized foods</span></div></div>${calorieContributors ? `<ol class="spacer-top">${calorieContributors}</ol>` : `<p class="tiny">No itemized foods are available.</p>`}</section><section class="panel panel-span-12"><div class="panel-title"><div><h3>Weight context</h3><span>Latest standing measurement</span></div></div>${progress.weight ? `<div class="summary-grid" style="grid-template-columns:repeat(3,1fr)">${metricCard("Latest weight", progress.weight.current, ` ${progress.weight.unit}`, progress.weight.target)}${metricCard("Target", progress.weight.target, ` ${progress.weight.unit}`, null)}${metricCard("Meals on selected day", progress.mealCount, "", null)}</div><p class="tiny spacer-top">Last logged ${escapeHtml(progress.weight.loggedOn || "date unavailable")}.</p>` : `<p class="tiny">No weight target or measurement is available yet.</p>`}</section>${narrative("Trend analysis", data.trends?.narrative, false)}${narrative("Meal patterns", data.patterns?.narrative, false)}</div>`;
 }
 
 async function renderFoods() {
@@ -1875,6 +1926,26 @@ async function editMeal(id) {
     );
 }
 
+async function openMealDetails(id) {
+    const data = await api(`/api/app/meals/${encodeURIComponent(id)}`, {
+        keepPrevious: true,
+    });
+    const meal = data.meal;
+    const items = meal.items || [];
+    const itemRows = items.length
+        ? items
+              .map(
+                  (item) =>
+                      `<article class="food-row"><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.portionLabel || "Portion not recorded")}${item.quantity == null ? "" : ` · quantity ${number(item.quantity, 2)}`}</small><div class="demo-source-row">${sourceBadge(item.sourceType)}${confidenceBadge(item.confidence)}</div>${item.assumptions?.length ? `<small>Assumptions: ${escapeHtml(item.assumptions.join("; "))}</small>` : ""}${item.sourceSnapshot && Object.keys(item.sourceSnapshot).length ? `<details class="food-audit"><summary>Source snapshot</summary><pre class="food-audit-body" style="white-space:pre-wrap">${escapeHtml(JSON.stringify(item.sourceSnapshot, null, 2))}</pre></details>` : ""}</div><div style="text-align:right"><strong>${item.nutrients?.calories == null ? "—" : `${number(item.nutrients.calories)} kcal`}</strong><small>${item.nutrients?.protein_g == null ? "" : `P ${number(item.nutrients.protein_g, 1)}g`}${item.nutrients?.carbs_g == null ? "" : ` · C ${number(item.nutrients.carbs_g, 1)}g`}${item.nutrients?.fat_g == null ? "" : ` · F ${number(item.nutrients.fat_g, 1)}g`}</small></div></article>`,
+              )
+              .join("")
+        : `<div class="empty-state"><div><h3>Legacy aggregate meal</h3><p>This meal has totals but no item-level source record.</p></div></div>`;
+    openDialog(
+        "Meal details",
+        `<div class="meal-detail-summary"><h3>${escapeHtml(meal.description || "Untitled meal")}</h3><p>${escapeHtml(formatTime(meal.loggedAt))} · ${escapeHtml(meal.mealType || "snack")}${meal.notes ? ` · ${escapeHtml(meal.notes)}` : ""}</p><div class="meal-macros"><span class="macro-chip">${number(meal.calories)} kcal</span><span class="macro-chip">Protein ${number(meal.proteinG, 1)}g</span><span class="macro-chip">Carbs ${number(meal.carbsG, 1)}g</span><span class="macro-chip">Fat ${number(meal.fatG, 1)}g</span></div></div><section class="food-items spacer-top">${itemRows}</section><div class="auth-actions spacer-top"><button class="button button-secondary button-small" type="button" data-action="edit-meal" data-id="${escapeHtml(id)}">Edit meal</button></div>`,
+    );
+}
+
 async function handleAction(button) {
     const action = button.dataset.action;
     if (!action) return;
@@ -2139,6 +2210,20 @@ async function handleAction(button) {
         return;
     }
     if (action === "edit-meal") return editMeal(button.dataset.id);
+    if (action === "view-meal-details") {
+        await openMealDetails(button.dataset.id);
+        return;
+    }
+    if (action === "meal-history-range") {
+        const days = Number(button.dataset.days);
+        if (![1, 30, 90, 365].includes(days)) return;
+        state.mealHistoryDays = days;
+        return renderLog();
+    }
+    if (action === "clear-meal-search") {
+        state.mealHistoryQuery = "";
+        return renderLog();
+    }
     if (action === "insight-range") {
         const days = Number(button.dataset.days);
         if (![7, 30, 90].includes(days)) return;
@@ -2488,6 +2573,15 @@ document.addEventListener("submit", async (event) => {
         } finally {
             submit.disabled = false;
         }
+        return;
+    }
+    if (form.id === "meal-history-search-form") {
+        event.preventDefault();
+        state.mealHistoryQuery = String(
+            form.elements.query?.value || "",
+        ).trim();
+        if (state.mealHistoryQuery) state.mealHistoryDays = 365;
+        await renderLog();
         return;
     }
     if (
