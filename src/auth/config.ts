@@ -3,6 +3,7 @@ export interface BetterAuthRuntimeConfig {
     databaseUrl: string;
     secret: string;
     production: boolean;
+    publicPasswordSignup: boolean;
     magicLinkExpiresIn: number;
     databasePoolSize: number;
 }
@@ -68,6 +69,8 @@ export function getBetterAuthRuntimeConfig(): BetterAuthRuntimeConfig {
         databaseUrl: required("DATABASE_URL"),
         secret,
         production: process.env.NODE_ENV === "production",
+        publicPasswordSignup:
+            process.env.MUNCH_PUBLIC_PASSWORD_SIGNUP === "true",
         magicLinkExpiresIn,
         databasePoolSize,
     };

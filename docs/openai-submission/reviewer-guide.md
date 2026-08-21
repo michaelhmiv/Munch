@@ -2,7 +2,7 @@
 
 ## Access
 
-Provide the OpenAI reviewer with a dedicated production email and password through the submission portal. Do not commit those credentials.
+Provide the OpenAI reviewer with a dedicated production email, optional username, and password through the submission portal. Do not commit those credentials.
 
 Reviewer sign-in page:
 
@@ -11,7 +11,7 @@ Reviewer sign-in page:
 The reviewer account must:
 
 - Be email-verified before review.
-- Accept the supplied password directly without a magic-link inbox, MFA, SMS, VPN, or private network.
+- Accept the supplied username/email and password directly without a magic-link inbox, MFA, SMS, VPN, or private network.
 - Have a temporary Premium reviewer override so the full intended tool catalog is visible.
 - Have no administrative privileges.
 - Have access only to its own personal data and the seeded reviewer household.
@@ -20,6 +20,8 @@ The reviewer account must:
 ## Seeded state
 
 Run `scripts/provision-reviewer.ts` with securely supplied environment variables. The script creates or refreshes:
+
+Set `MUNCH_REVIEWER_USERNAME` when the submission should use a username instead of the reviewer email.
 
 - A verified reviewer user.
 - A personal workspace and reviewer household.

@@ -4,11 +4,13 @@ import { getMunchBetterAuth } from "./auth.js";
 import { recoverMissingChatGptOAuthClient } from "./chatgpt-client-recovery.js";
 import { createBetterAuthConnectRouter } from "./connect-routes.js";
 import { createOAuthContinuationRouter } from "./oauth-continuation-routes.js";
+import { createPasswordRouter } from "./password-routes.js";
 import { createReviewerRouter } from "./reviewer-routes.js";
 
 export function registerBetterAuthRoutes(app: Hono): void {
     app.route("/", createOAuthContinuationRouter());
     app.route("/", createBetterAuthConnectRouter());
+    app.route("/", createPasswordRouter());
     app.route("/", createReviewerRouter());
     app.route("/", createHouseholdRouter());
     app.get("/api/auth/oauth2/authorize", async (c) => {

@@ -79,11 +79,15 @@ export function createBetterAuthConnectRouter(): Hono {
         });
         if (session?.user && !oauthQuery) return c.redirect(returnTo, 303);
 
+        const passwordParams = new URLSearchParams({ return_to: returnTo });
+        if (oauthQuery) passwordParams.set("oauth_query", oauthQuery);
+        const passwordHref = `/account/password?${passwordParams.toString()}`;
+
         return privateHtml(
             c,
             shell(
                 "Sign in",
-                `<h1>Connect Munch to ChatGPT</h1><p>Use your email to continue. We will send a secure, single-use sign-in link.</p><form class="auth-form" method="post" action="/connect/request"><input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">${oauthQuery ? `<input type="hidden" name="oauth_query" value="${escapeHtml(oauthQuery)}">` : ""}<label class="field" for="email"><span>Email address</span><input id="email" name="email" type="email" inputmode="email" autocomplete="email" required maxlength="320"></label><button class="button button-primary" type="submit">Send sign-in link</button></form><p class="auth-footnote">No password is created or stored.</p>`,
+                `<h1>Connect Munch to ChatGPT</h1><p>Use your email to continue. We will send a secure, single-use sign-in link.</p><form class="auth-form" method="post" action="/connect/request"><input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">${oauthQuery ? `<input type="hidden" name="oauth_query" value="${escapeHtml(oauthQuery)}">` : ""}<label class="field" for="email"><span>Email address</span><input id="email" name="email" type="email" inputmode="email" autocomplete="email" required maxlength="320"></label><button class="button button-primary" type="submit">Send sign-in link</button></form><p class="auth-footnote">No password is created or stored.</p><p class="auth-footnote"><a href="${escapeHtml(passwordHref)}">Use a username and password instead</a></p>`,
                 "Secure connection",
             ),
         );

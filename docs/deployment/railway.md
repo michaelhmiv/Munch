@@ -20,6 +20,7 @@ MUNCH_DB_POOL_SIZE=10
 MUNCH_AUTH_DB_POOL_SIZE=5
 BETTER_AUTH_SECRET=<at-least-32-random-characters>
 MUNCH_MAGIC_LINK_TTL_SECONDS=600
+MUNCH_PUBLIC_PASSWORD_SIGNUP=false
 RESEND_API_KEY=re_...
 MUNCH_EMAIL_FROM=Munch <sign-in@verified-domain>
 STRIPE_SECRET_KEY=sk_...
@@ -67,7 +68,7 @@ Do not manually replay the removed historical migrations into a new database.
 
 ## Better Auth and Resend
 
-Public sign-in uses Better Auth magic links delivered directly through Resend. The sender domain configured by `MUNCH_EMAIL_FROM` must be verified for production delivery.
+Public sign-in uses Better Auth magic links delivered directly through Resend by default. Set `MUNCH_PUBLIC_PASSWORD_SIGNUP=true` only when the username/email-and-password signup flow is intentionally enabled; it requires email verification and uses the same Resend sender for verification and password-reset messages. The sender domain configured by `MUNCH_EMAIL_FROM` must be verified for production delivery.
 
 ChatGPT and other MCP clients use Better Auth OAuth Provider for dynamic registration, authorization, consent, token issuance/refresh, and resource-token validation. A deployment must not expose a second OAuth implementation.
 

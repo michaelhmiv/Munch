@@ -11,6 +11,7 @@ Public password signup is disabled. Normal users continue to use passwordless ma
 Run the provisioning script with production database and Better Auth configuration plus these one-time environment variables:
 
 - `MUNCH_REVIEWER_EMAIL`
+- `MUNCH_REVIEWER_USERNAME` — optional lowercase username, 3 to 40 characters
 - `MUNCH_REVIEWER_PASSWORD` — 16 to 128 characters
 - `MUNCH_REVIEWER_NAME` — optional
 - `MUNCH_REVIEWER_EXPIRES_AT` — optional future ISO timestamp; defaults to 180 days
@@ -21,7 +22,7 @@ Command:
 bun scripts/provision-reviewer.ts
 ```
 
-The script uses Better Auth's email/password signup path only within its own process so Better Auth performs password hashing. The running web service keeps public password signup disabled. Existing reviewer accounts must be provisioned again with the same password or a new reviewer email.
+The script uses Better Auth's username/email-and-password signup path only within its own process so Better Auth performs password hashing. The running web service keeps public password signup disabled. Existing reviewer accounts must be provisioned again with the same password or a new reviewer email.
 
 ## Data and access
 
