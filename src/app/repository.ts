@@ -13,6 +13,7 @@ import {
     buildDailyBuckets,
     computeMealPatterns,
     computeTrends,
+    computeWeightTrend,
 } from "../insights.js";
 import { getNutritionProvenanceAnalysis } from "../nutrition-provenance.js";
 import { withUserDatabase } from "../platform/database.js";
@@ -35,6 +36,7 @@ import {
     searchMeals,
     getWaterByDate,
     getWaterInRange,
+    getWeightInRange,
     getWeightByDate,
     type Meal,
 } from "../storage.js";
@@ -348,12 +350,14 @@ export async function getInsightsWorkspace(
         getNutritionGoals(userId),
     ]);
     const timezone = profile?.timezone ?? "UTC";
-    const [meals, water, latestWeight, weightUnit] = await Promise.all([
-        getMealsInRange(userId, startDate, endDate, timezone),
-        getWaterInRange(userId, startDate, endDate, timezone),
-        getLatestWeight(userId),
-        getPreferredWeightUnit(userId),
-    ]);
+    const [meals, water, weightEntries, latestWeight, weightUnit] =
+        await Promise.all([
+            getMealsInRange(userId, startDate, endDate, timezone),
+            getWaterInRange(userId, startDate, endDate, timezone),
+            getWeightInRange(userId, startDate, endDate, timezone),
+            getLatestWeight(userId),
+            getPreferredWeightUnit(userId),
+        ]);
     const displayMeals = profile?.alcohol_tracking_enabled
         ? meals
         : meals.map((meal) => ({ ...meal, alcohol_g: 0 }));
@@ -397,6 +401,32 @@ export async function getInsightsWorkspace(
         alcohol_g: Math.round((meal.alcohol_g ?? 0) * 10) / 10,
     }));
     const displayUnit = weightUnit ?? "kg";
+    const weightDaysByDate = new Map<
+        string,
+        { total: number; count: number }
+    >();
+    for (const entry of weightEntries) {
+        const date = dateInTz(entry.logged_at, timezone);
+        const current = weightDaysByDate.get(date) ?? { total: 0, count: 0 };
+        current.total += entry.weight_g;
+        current.count += 1;
+        weightDaysByDate.set(date, current);
+    }
+    const weightDays = [...weightDaysByDate.entries()]
+        .map(([date, values]) => ({
+            date,
+            weight: fromGrams(values.total / values.count, displayUnit),
+        }))
+        .sort((left, right) => left.date.localeCompare(right.date));
+    const weightHistory = weightEntries.map((entry) => ({
+        id: entry.id,
+        value: fromGrams(entry.weight_g, displayUnit),
+        unit: displayUnit,
+        loggedAt: entry.logged_at,
+        loggedOn: dateInTz(entry.logged_at, timezone),
+        notes: entry.notes,
+    }));
+    const weightTarget = goals?.target_weight_g ?? null;
     const weight =
         latestWeight || goals?.target_weight_g != null
             ? {
@@ -465,6 +495,36 @@ export async function getInsightsWorkspace(
         },
         patterns: {
             narrative: computeMealPatterns(buckets, timezone),
+        },
+        vitals: {
+            water: {
+                totalMl: water.reduce((sum, entry) => sum + entry.amount_ml, 0),
+                entries: water.map((entry) => ({
+                    id: entry.id,
+                    amountMl: entry.amount_ml,
+                    loggedAt: entry.logged_at,
+                    loggedOn: dateInTz(entry.logged_at, timezone),
+                    notes: entry.notes,
+                })),
+            },
+            weight: {
+                unit: displayUnit,
+                target:
+                    weightTarget == null
+                        ? null
+                        : fromGrams(weightTarget, displayUnit),
+                defaultRange: [7, 14, 30].includes(dayCount) ? dayCount : 30,
+                days: weightDays,
+                entries: weightHistory,
+                narrative: computeWeightTrend(
+                    weightEntries,
+                    startDate,
+                    endDate,
+                    timezone,
+                    weightTarget,
+                    displayUnit,
+                ),
+            },
         },
         provenance: {
             coverage: {

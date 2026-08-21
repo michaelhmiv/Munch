@@ -28,10 +28,13 @@ import {
     deleteMeal,
     deleteWater,
     deleteWeight,
+    getPreferredWeightUnit,
     getNutritionGoals,
     insertWater,
     insertWeight,
     updateMeal,
+    updateWater,
+    updateWeight,
     upsertNutritionGoals,
     upsertProfile,
 } from "../storage.js";
@@ -1547,6 +1550,43 @@ export function createAppRouter(): Hono {
         return privateJson(c, result);
     });
 
+    app.patch("/api/app/water/:id", requireSameOrigin, async (c) => {
+        const body = (await c.req.json()) as Record<string, unknown>;
+        const patch: Parameters<typeof updateWater>[2] = {};
+        if (body.amount_ml !== undefined) {
+            const amountMl = Number(body.amount_ml);
+            if (
+                !Number.isInteger(amountMl) ||
+                amountMl <= 0 ||
+                amountMl > 20_000
+            ) {
+                throw new Error("Invalid water amount");
+            }
+            patch.amount_ml = amountMl;
+        }
+        if (body.logged_at !== undefined) {
+            if (typeof body.logged_at !== "string" || !body.logged_at) {
+                throw new Error("Invalid water timestamp");
+            }
+            patch.logged_at = body.logged_at;
+        }
+        if (body.notes !== undefined) {
+            if (body.notes !== null && typeof body.notes !== "string") {
+                throw new Error("Invalid water notes");
+            }
+            patch.notes = body.notes as string | null;
+        }
+        if (!Object.keys(patch).length) {
+            throw new Error("Water update requires a field");
+        }
+        const entry = await updateWater(
+            c.get("munchUserId"),
+            c.req.param("id")!,
+            patch,
+        );
+        return privateJson(c, { entry });
+    });
+
     app.delete("/api/app/water/:id", requireSameOrigin, async (c) => {
         await deleteWater(c.get("munchUserId"), c.req.param("id")!);
         return privateJson(c, { deleted: true });
@@ -1570,6 +1610,47 @@ export function createAppRouter(): Hono {
             ...(typeof body.notes === "string" ? { notes: body.notes } : {}),
         });
         return privateJson(c, result);
+    });
+
+    app.patch("/api/app/weight/:id", requireSameOrigin, async (c) => {
+        const body = (await c.req.json()) as Record<string, unknown>;
+        const patch: Parameters<typeof updateWeight>[2] = {};
+        if (body.weight !== undefined) {
+            const value = Number(body.weight);
+            if (!Number.isFinite(value) || value <= 0) {
+                throw new Error("Invalid weight");
+            }
+            const unit = isWeightUnit(body.unit)
+                ? body.unit
+                : await getPreferredWeightUnit(c.get("munchUserId"));
+            if (!unit) throw new Error("Weight unit is required");
+            const weightG = toGrams(value, unit);
+            if (!isPlausibleWeightGrams(weightG)) {
+                throw new Error("Weight is outside the supported range");
+            }
+            patch.weight_g = weightG;
+        }
+        if (body.logged_at !== undefined) {
+            if (typeof body.logged_at !== "string" || !body.logged_at) {
+                throw new Error("Invalid weight timestamp");
+            }
+            patch.logged_at = body.logged_at;
+        }
+        if (body.notes !== undefined) {
+            if (body.notes !== null && typeof body.notes !== "string") {
+                throw new Error("Invalid weight notes");
+            }
+            patch.notes = body.notes as string | null;
+        }
+        if (!Object.keys(patch).length) {
+            throw new Error("Weight update requires a field");
+        }
+        const entry = await updateWeight(
+            c.get("munchUserId"),
+            c.req.param("id")!,
+            patch,
+        );
+        return privateJson(c, { entry });
     });
 
     app.delete("/api/app/weight/:id", requireSameOrigin, async (c) => {
@@ -1657,7 +1738,7 @@ export function createAppRouter(): Hono {
         console.error("App route failed", { name: error.name });
         const knownMessage =
             error instanceof Error &&
-            /^(Invalid|Connection not found|Date range|Weight|Target weight|Meal item|Meal |Meal$|Meal not found|Food |Nutrition|Add at least|A meal|Structured meal|A structured meal|Draft |Grocery |Import )/.test(
+            /^(Invalid|Connection not found|Date range|Weight|Water|Target weight|Meal item|Meal |Meal$|Meal not found|Food |Nutrition|Add at least|A meal|Structured meal|A structured meal|Draft |Grocery |Import )/.test(
                 error.message,
             )
                 ? error.message

@@ -125,6 +125,45 @@ export function getWaterInRange(
     );
 }
 
+export async function updateWater(
+    userId: string,
+    id: string,
+    fields: {
+        amount_ml?: number;
+        logged_at?: string;
+        notes?: string | null;
+    },
+): Promise<WaterEntry> {
+    const amountProvided = fields.amount_ml !== undefined;
+    const loggedAtProvided = fields.logged_at !== undefined;
+    const notesProvided = fields.notes !== undefined;
+
+    return withUserDatabase(userId, async (tx) => {
+        const rows = await tx<Array<WaterRow>>`
+            update munch.water_logs
+            set amount_ml = case
+                    when ${amountProvided} then ${fields.amount_ml ?? null}
+                    else amount_ml
+                end,
+                logged_at = case
+                    when ${loggedAtProvided} then ${fields.logged_at ?? null}::timestamptz
+                    else logged_at
+                end,
+                notes = case
+                    when ${notesProvided} then ${fields.notes ?? null}
+                    else notes
+                end
+            where id = ${id}
+              and user_id = ${userId}
+            returning
+                id, user_id, amount_ml, logged_at, notes, created_at,
+                idempotency_key
+        `;
+        if (!rows[0]) throw new Error("Water entry not found");
+        return mapWater(rows[0]);
+    });
+}
+
 export async function deleteWater(userId: string, id: string): Promise<void> {
     await withUserDatabase(userId, async (tx) => {
         await tx`

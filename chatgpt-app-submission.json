@@ -836,6 +836,18 @@
                 "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
             }
         },
+        "update_water": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
         "update_weight": {
             "annotations": {
                 "readOnlyHint": false,
