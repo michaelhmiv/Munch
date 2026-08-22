@@ -67,11 +67,11 @@ export const RECIPE_IMPORT_CORPUS = [
         ],
     },
     {
-        id: "bbc-good-food-thai-green-curry",
-        site: "BBC Good Food",
-        url: "https://www.bbcgoodfood.com/recipes/thai-green-chicken-curry",
-        variety: "Thai curry",
-        patterns: ["metric units", "alternatives", "serving accompaniment"],
+        id: "stay-at-home-chef-frito-pie",
+        site: "The Stay At Home Chef",
+        url: "https://thestayathomechef.com/frito-pie/",
+        variety: "American chili-topped casserole",
+        patterns: ["canned ingredients", "optional garnishes", "serving yield"],
     },
     {
         id: "recipe-tin-eats-moussaka-pilaf",
