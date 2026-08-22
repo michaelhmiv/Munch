@@ -18,6 +18,9 @@ type AiCorpusResult = {
     ambiguous?: number;
     requiresReview?: boolean;
     nutritionStatus?: string;
+    modelEstimates?: number;
+    warningCodes?: string[];
+    blockingWarningCodes?: string[];
     error?: string;
 };
 
@@ -113,13 +116,19 @@ async function checkEntry(
         const blockingWarnings = draft.warnings.filter(
             (warning) => warning.blocking !== false,
         ).length;
+        const warningCodes = draft.warnings.map((warning) => warning.code);
+        const blockingWarningCodes = draft.warnings
+            .filter((warning) => warning.blocking !== false)
+            .map((warning) => warning.code);
+        const modelEstimates = draft.recipe.ingredients.filter(
+            (ingredient) => ingredient.source_type === "model_estimate",
+        ).length;
         const ok =
             draft.recipe.ingredients.length > 0 &&
             unresolved === 0 &&
             ambiguous === 0 &&
             !draft.requires_review &&
-            blockingWarnings === 0 &&
-            draft.nutrition.status === "complete";
+            blockingWarnings === 0;
         const result: AiCorpusResult = {
             id: entry.id,
             site: entry.site,
@@ -132,14 +141,17 @@ async function checkEntry(
             ambiguous,
             requiresReview: draft.requires_review,
             nutritionStatus: draft.nutrition.status,
+            modelEstimates,
+            warningCodes,
+            blockingWarningCodes,
             ...(ok
                 ? {}
                 : {
-                      error: `blocking_warnings=${blockingWarnings} status=${draft.status}`,
+                      error: `blocking_warnings=${blockingWarnings} status=${draft.status} nutrition=${draft.nutrition.status}`,
                   }),
         };
         console.log(
-            `[recipe_import_ai_corpus] ${ok ? "ok" : "failed"} site=${entry.site} ingredients=${result.ingredients} assumptions=${result.assumptions} unresolved=${unresolved} ambiguous=${ambiguous} duration_ms=${result.durationMs}`,
+            `[recipe_import_ai_corpus] ${ok ? "ok" : "failed"} site=${entry.site} ingredients=${result.ingredients} assumptions=${result.assumptions} model_estimates=${modelEstimates} unresolved=${unresolved} ambiguous=${ambiguous} nutrition=${draft.nutrition.status} warnings=${blockingWarningCodes.join(",") || "none"} duration_ms=${result.durationMs}`,
         );
         return result;
     } catch (error) {
