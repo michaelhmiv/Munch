@@ -1,6 +1,11 @@
 name: Manual OpenRouter Recipe Corpus Smoke
 
 on:
+    pull_request:
+        paths:
+            - ".github/workflows/openrouter-recipe-corpus-smoke.yml"
+            - "scripts/openrouter-recipe-corpus-smoke.ts"
+            - "src/recipe-import/**"
     workflow_dispatch:
         inputs:
             model:
