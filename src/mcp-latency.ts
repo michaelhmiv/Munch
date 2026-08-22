@@ -64,10 +64,7 @@ const DIRECT_MODEL_TOOLS = new Set([
     "get_connection_status",
 ]);
 
-const TOOL_REGISTRIES = new WeakMap<
-    McpServer,
-    Map<string, RegisteredTool>
->();
+const TOOL_REGISTRIES = new WeakMap<McpServer, Map<string, RegisteredTool>>();
 
 /**
  * Concise model-facing descriptions for tools where the full implementation
