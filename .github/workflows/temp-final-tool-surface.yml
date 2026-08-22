@@ -1,0 +1,65 @@
+name: Temporary final MCP tool surface
+
+on:
+  push:
+    branches:
+      - perf/mcp-tool-surface-final
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/mcp-tool-surface-final
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - name: Apply conservative surface cut
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          latency = Path('src/mcp-latency.ts')
+          text = latency.read_text()
+          deferred = [
+              'mark_grocery_item_purchased',
+              'get_water_today',
+              'get_weight_by_date_range',
+              'log_recipe',
+              'schedule_recipe',
+              'get_connection_status',
+          ]
+          for tool in deferred:
+              text = text.replace(f'    "{tool}",\n', '', 1)
+          latency.write_text(text)
+
+          tests = Path('src/mcp-latency.test.ts')
+          test_text = tests.read_text()
+          test_text = test_text.replace('expect(directModelToolCount()).toBe(35);', 'expect(directModelToolCount()).toBe(29);')
+          marker = '        expect(isModelPrivateTool("start_meal_draft")).toBe(true);\n'
+          additions = '''        expect(isModelPrivateTool("mark_grocery_item_purchased")).toBe(true);\n        expect(isModelPrivateTool("get_water_today")).toBe(true);\n        expect(isModelPrivateTool("get_weight_by_date_range")).toBe(true);\n        expect(isModelPrivateTool("log_recipe")).toBe(true);\n        expect(isModelPrivateTool("schedule_recipe")).toBe(true);\n        expect(isModelPrivateTool("get_connection_status")).toBe(true);\n'''
+          if additions not in test_text:
+              if marker not in test_text:
+                  raise SystemExit('test insertion marker not found')
+              test_text = test_text.replace(marker, marker + additions, 1)
+          tests.write_text(test_text)
+          PY
+      - run: bunx prettier --write src/mcp-latency.ts src/mcp-latency.test.ts
+      - run: bun test src/mcp-latency.test.ts
+      - name: Commit changes when needed
+        shell: bash
+        run: |
+          if git diff --quiet -- src/mcp-latency.ts src/mcp-latency.test.ts; then
+            echo "Final tool surface already applied."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/mcp-latency.ts src/mcp-latency.test.ts
+          git commit -m "perf: defer six secondary MCP actions"
+          git push origin HEAD:perf/mcp-tool-surface-final
