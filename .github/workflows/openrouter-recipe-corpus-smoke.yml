@@ -1,6 +1,7 @@
 name: Manual OpenRouter Recipe Corpus Smoke
 
 on:
+    pull_request:
     workflow_dispatch:
         inputs:
             model:
