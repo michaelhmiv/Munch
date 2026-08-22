@@ -29,7 +29,6 @@ const KNOWN_MUNCH_TOOLS = new Set(Object.keys(MCP_TOOL_CAPABILITY_MAP));
 const DIRECT_MODEL_TOOLS = new Set([
     "get_grocery_list",
     "add_grocery_items",
-    "mark_grocery_item_purchased",
     "log_meal",
     "get_meals_today",
     "get_meals_by_date_range",
@@ -48,20 +47,15 @@ const DIRECT_MODEL_TOOLS = new Set([
     "get_trends",
     "start_meal_import",
     "log_water",
-    "get_water_today",
     "log_weight",
     "get_weight_today",
-    "get_weight_by_date_range",
     "get_weight_trends",
     "search_recipes",
     "get_recipe",
     "parse_recipe_url",
     "save_recipe",
-    "log_recipe",
-    "schedule_recipe",
     "get_meal_plan",
     "save_recipe_and_plan",
-    "get_connection_status",
 ]);
 
 const TOOL_REGISTRIES = new WeakMap<McpServer, Map<string, RegisteredTool>>();
