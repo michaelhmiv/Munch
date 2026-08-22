@@ -16,11 +16,15 @@ export interface RecipeImportCorpusEntry {
  */
 export const RECIPE_IMPORT_CORPUS = [
     {
-        id: "allrecipes-worlds-best-lasagna",
-        site: "Allrecipes",
-        url: "https://www.allrecipes.com/recipe/23600/worlds-best-lasagna/",
-        variety: "Italian-American layered casserole",
-        patterns: ["large ingredient list", "cans", "mixed units"],
+        id: "101-cookbooks-spicy-cauliflower",
+        site: "101 Cookbooks",
+        url: "https://www.101cookbooks.com/spicy-cauliflower/",
+        variety: "spiced cauliflower skillet",
+        patterns: [
+            "metric/imperial pair",
+            "to taste seasoning",
+            "plant-based main",
+        ],
     },
     {
         id: "food-network-gorgonzola-pasta",
