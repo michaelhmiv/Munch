@@ -37,7 +37,7 @@
         "inspect": "bunx @modelcontextprotocol/inspector",
         "harness": "bun run scripts/widget-harness.ts",
         "format": "bunx prettier --write .",
-        "format:check": "bunx prettier --write src/mcp-latency.ts && git diff -- src/mcp-latency.ts && exit 1",
+        "format:check": "bunx prettier --check .",
         "typecheck": "bun run scripts/typecheck.ts",
         "brand:check": "bun run scripts/brand-check.ts",
         "commerce:check": "bun scripts/commerce-boundary-check.ts",
