@@ -31,7 +31,7 @@ Prefer the direct read/write tool that exactly matches the user's request. Groce
 
 For nutrition resolution, use personal saved/history matches when relevant, then search_foods, then external web only when Munch has no adequate result, and model estimates last. Visible packaged barcodes use lookup_food_barcode.
 
-For a fully resolved text meal, use log_meal with items[]. For photos or unresolved meals, use prepare_meal_review, resolve only material questions/edits, present the complete review, then use confirm_meal_draft only after explicit user approval. Prefer this atomic review flow over legacy granular draft tools.
+For a fully resolved text meal, use log_meal with items[]. For photos or unresolved meals, use prepare_meal_review; infer homemade versus restaurant from the evidence instead of asking by default; resolve only material questions/edits, present the complete review, then use confirm_meal_draft only after explicit user approval. Prefer this atomic review flow over legacy granular draft tools.
 
 Recipe URLs use parse_recipe_url before saving. Planning never means consumption. A grocery list is not pantry inventory; add only items the user explicitly says are needed. Use get_connection_status only for connection or feature-availability troubleshooting.`;
 
