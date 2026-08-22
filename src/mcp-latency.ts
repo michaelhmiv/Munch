@@ -66,6 +66,20 @@ const DIRECT_MODEL_TOOLS = new Set([
 
 const TOOL_REGISTRIES = new WeakMap<McpServer, Map<string, RegisteredTool>>();
 
+const advancedParameterSchema = z.object({
+    name: z.string(),
+    type: z.string(),
+    required: z.boolean(),
+    description: z.string().nullable(),
+});
+
+const advancedActionSchema = z.object({
+    action: z.string(),
+    title: z.string(),
+    description: z.string(),
+    parameters: z.array(advancedParameterSchema),
+});
+
 /**
  * Concise model-facing descriptions for tools where the full implementation
  * contract is intentionally verbose. The server still enforces validation,
@@ -344,6 +358,10 @@ function advancedActionRecord(name: string, tool: RegisteredTool) {
     };
 }
 
+function isDestructive(tool: RegisteredTool): boolean {
+    return tool.config.annotations?.destructiveHint === true;
+}
+
 /**
  * Optimize the model-facing MCP catalog without changing tool handlers or
  * business contracts. Private tool definitions are retained in a per-server
@@ -411,6 +429,9 @@ export function registerAdvancedToolGateway(server: McpServer): void {
             inputSchema: {
                 query: z.string().min(1).max(200),
             },
+            outputSchema: {
+                actions: z.array(advancedActionSchema),
+            },
         },
         async ({ query }) => {
             const ranked = [...registry.entries()]
@@ -467,16 +488,32 @@ export function registerAdvancedToolGateway(server: McpServer): void {
             inputSchema: {
                 action: z.string().min(1).max(120),
                 args: z.record(z.unknown()).default({}),
+                confirm: z
+                    .literal(true)
+                    .optional()
+                    .describe(
+                        "Required only when the selected advanced action is destructive. The user must explicitly confirm before this is set to true.",
+                    ),
             },
         },
-        async ({ action, args }) => {
+        async ({ action, args, confirm }) => {
             const tool = registry.get(action);
             if (!tool) {
                 throw new Error(
                     `Unknown or direct Munch action "${action}". Call find_munch_actions first.`,
                 );
             }
-            const parsed = parseAdvancedArgs(tool.config, args);
+            const destructive = isDestructive(tool);
+            if (destructive && confirm !== true) {
+                throw new Error(
+                    `Advanced action "${action}" is destructive and requires explicit confirmation.`,
+                );
+            }
+            const forwardedArgs =
+                destructive && confirm === true && !("confirm" in args)
+                    ? { ...args, confirm: true }
+                    : args;
+            const parsed = parseAdvancedArgs(tool.config, forwardedArgs);
             return tool.handler(parsed);
         },
     );
