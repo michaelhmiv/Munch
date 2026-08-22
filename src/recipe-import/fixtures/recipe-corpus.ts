@@ -45,7 +45,11 @@ export const RECIPE_IMPORT_CORPUS = [
         site: "The Mediterranean Dish",
         url: "https://www.themediterraneandish.com/mediterranean-vegetable-medley/",
         variety: "Mediterranean vegetable side",
-        patterns: ["metric-friendly units", "garnish", "multi-vegetable recipe"],
+        patterns: [
+            "metric-friendly units",
+            "garnish",
+            "multi-vegetable recipe",
+        ],
     },
     {
         id: "bon-appetit-honey-lemon-chicken",
@@ -91,7 +95,11 @@ export const RECIPE_IMPORT_CORPUS = [
         site: "The Modern Proper",
         url: "https://themodernproper.com/stuffed-pepper-soup",
         variety: "beef and pepper soup",
-        patterns: ["optional toppings", "canned ingredients", "sectioned ingredients"],
+        patterns: [
+            "optional toppings",
+            "canned ingredients",
+            "sectioned ingredients",
+        ],
     },
     {
         id: "pioneer-woman-sheet-pan-chicken",
