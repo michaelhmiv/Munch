@@ -565,6 +565,7 @@ describe("recipe import enrichment", () => {
             },
         });
         expect(draft.nutrition.status).toBe("complete");
+        expect(draft.requires_review).toBe(false);
     });
 
     test("keeps the import usable when semantic normalization times out", async () => {
