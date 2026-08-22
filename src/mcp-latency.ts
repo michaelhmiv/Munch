@@ -136,7 +136,10 @@ function firstSentence(value: string): string {
     return (match?.[0] ?? value.trim()).trim();
 }
 
-export function compactToolDescription(name: string, description: unknown): string {
+export function compactToolDescription(
+    name: string,
+    description: unknown,
+): string {
     const override = FAST_TOOL_DESCRIPTIONS[name];
     if (override) return override;
 
