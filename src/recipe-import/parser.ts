@@ -364,11 +364,14 @@ function parseServings(value: unknown): {
             servings,
             ...(text && !/^\s*\d+(?:\.\d+)?\s*$/.test(text)
                 ? {
-                      warning: warning(
-                          "yield_interpreted",
-                          `The source yield “${text.slice(0, 120)}” was interpreted as ${servings} servings.`,
-                          "servings",
-                      ),
+                      warning: {
+                          ...warning(
+                              "yield_interpreted",
+                              `The source yield “${text.slice(0, 120)}” was interpreted as ${servings} servings.`,
+                              "servings",
+                          ),
+                          blocking: false,
+                      },
                   }
                 : {}),
         };
@@ -555,30 +558,3 @@ function parseMicrodata(html: string): ParsedRecipe | null {
     if (!/itemtype=["'][^"']*schema\.org\/Recipe/i.test(html)) return null;
     const ingredients = itemPropValues(html, "recipeIngredient");
     if (ingredients.length === 0) return null;
-    const recipe: Record<string, unknown> = {
-        name:
-            itemPropValues(html, "name")[0] ??
-            extractMeta(html, "og:title") ??
-            extractTitle(html),
-        description: extractMeta(html, "description"),
-        recipeIngredient: ingredients,
-        recipeInstructions: itemPropValues(html, "recipeInstructions"),
-        recipeYield: itemPropValues(html, "recipeYield")[0],
-        prepTime: itemPropValues(html, "prepTime")[0],
-        cookTime: itemPropValues(html, "cookTime")[0],
-        url: extractMeta(html, "og:url"),
-        author: itemPropValues(html, "author")[0],
-        publisher: itemPropValues(html, "publisher")[0],
-    };
-    return parsedFromObject(recipe, html, "microdata");
-}
-
-export function parseRecipeHtml(html: string): ParsedRecipe {
-    const parsed = parseJsonLd(html) ?? parseMicrodata(html);
-    if (!parsed) {
-        throw new Error(
-            "No supported structured recipe data was found on the page.",
-        );
-    }
-    return parsed;
-}
