@@ -13,7 +13,7 @@ import type {
 
 export const DEFAULT_RECIPE_IMPORT_AI_BASE_URL = "https://openrouter.ai/api/v1";
 export const DEFAULT_RECIPE_IMPORT_AI_MODEL = "openai/gpt-5.6-luna";
-export const DEFAULT_RECIPE_IMPORT_AI_TIMEOUT_MS = 10_000;
+export const DEFAULT_RECIPE_IMPORT_AI_TIMEOUT_MS = 30_000;
 export const DEFAULT_RECIPE_IMPORT_AI_MAX_TOKENS = 4_000;
 export const DEFAULT_RECIPE_IMPORT_AI_MAX_CALLS = 2;
 
