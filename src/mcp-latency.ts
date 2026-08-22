@@ -73,10 +73,8 @@ const FAST_TOOL_DESCRIPTIONS: Record<string, string> = {
         "Delete one reusable saved food after explicit confirmation; historical meal snapshots are unchanged.",
     search_meals:
         "Search past logged meals by short food or restaurant keywords and return recurring variations. Use when prior history is likely to improve the current result.",
-    get_meals_today:
-        "Return all meals logged today.",
-    get_meals_by_date:
-        "Return all meals logged on one date.",
+    get_meals_today: "Return all meals logged today.",
+    get_meals_by_date: "Return all meals logged on one date.",
     get_meals_by_date_range:
         "Return all meals logged across an inclusive date range; prefer this over repeated single-date calls.",
     get_nutrition_summary:
@@ -95,14 +93,10 @@ const FAST_TOOL_DESCRIPTIONS: Record<string, string> = {
         "Open the interactive meal-history importer for an export file; prefer this over repeated log_meal calls.",
     bulk_import_meals:
         "Import up to 50 historical meal rows in one validated batch. Dry-run parsed file or free-text imports before writing.",
-    log_water:
-        "Log a hydration entry in milliliters.",
-    get_water_today:
-        "Return today's water total and entries.",
-    get_water_by_date:
-        "Return water total and entries for one date.",
-    log_weight:
-        "Log a body-weight measurement in the user's stated unit.",
+    log_water: "Log a hydration entry in milliliters.",
+    get_water_today: "Return today's water total and entries.",
+    get_water_by_date: "Return water total and entries for one date.",
+    log_weight: "Log a body-weight measurement in the user's stated unit.",
     get_weight_today:
         "Return today's weight entries in the user's preferred unit.",
     get_weight_by_date:
