@@ -17,6 +17,7 @@ Generated from the production MCP source. Do not edit manually.
 | `delete_water`                | `src/mcp.ts`                     |     false |      false |        true |       true |          true |
 | `delete_weight`               | `src/mcp.ts`                     |     false |      false |        true |       true |          true |
 | `export_meals`                | `src/mcp.ts`                     |     false |      false |       false |      false |          true |
+| `find_munch_actions`          | `src/mcp-latency.ts`             |      true |      false |       false |       true |          true |
 | `get_alcohol_tracking`        | `src/mcp.ts`                     |      true |      false |       false |       true |          true |
 | `get_connection_status`       | `src/connection-status-tools.ts` |      true |      false |       false |       true |          true |
 | `get_food_details`            | `src/food-tools.ts`              |      true |      false |       false |       true |          true |
@@ -56,6 +57,7 @@ Generated from the production MCP source. Do not edit manually.
 | `prepare_meal_confirmation`   | `src/meal-draft-tools.ts`        |     false |      false |       false |      false |          true |
 | `prepare_meal_review`         | `src/meal-review-tools.ts`       |     false |      false |       false |       true |          true |
 | `resolve_meal_review`         | `src/meal-review-tools.ts`       |     false |      false |       false |      false |          true |
+| `run_munch_action`            | `src/mcp-latency.ts`             |     false |      false |        true |      false |         false |
 | `save_food`                   | `src/saved-food-tools.ts`        |     false |      false |       false |       true |          true |
 | `save_recipe`                 | `src/recipe-planning-tools.ts`   |     false |      false |       false |       true |          true |
 | `save_recipe_and_plan`        | `src/recipe-planning-tools.ts`   |     false |      false |       false |       true |          true |
