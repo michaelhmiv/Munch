@@ -236,6 +236,7 @@ describe("recipe import enrichment", () => {
         expect(draft.status).toBe("partial");
         expect(draft.nutrition.status).toBe("complete");
         expect(draft.nutrition.total.calories).toBe(364);
+        expect(draft.requires_review).toBe(false);
     });
 
     test("uses the website semantic resolver to apply assumptions and avoids blocking on low-impact seasonings", async () => {
