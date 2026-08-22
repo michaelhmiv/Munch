@@ -10,6 +10,7 @@ import { withFreshStructuredLogGuard } from "./fresh-log-guard.js";
 import { registerMealDetailTools } from "./meal-detail-tools.js";
 import { registerMealDraftTools } from "./meal-draft-tools.js";
 import { registerMealReviewTools } from "./meal-review-tools.js";
+import { withLatencyOptimizedToolCatalog } from "./mcp-latency.js";
 import { registerRecipePlanningTools } from "./recipe-planning-tools.js";
 import { registerRecipeImportTools } from "./recipe-import-tools.js";
 import { registerSavedFoodTools } from "./saved-food-tools.js";
@@ -24,25 +25,15 @@ import { withCanonicalStructuredLogMeal } from "./structured-log-meal.js";
 import { MUNCH_APP_VERSION } from "./widget-release.js";
 import { withVersionedWidgetResources } from "./widget-resource-versioning.js";
 
-const MUNCH_SERVER_INSTRUCTIONS = `Munch stores and retrieves factual food, serving, macro, meal, hydration, weight, recipe, planning, and grocery data. Nutrition values are estimates and Munch does not provide medical or dietary advice. Do not ask Munch to determine what a user should eat, set a calorie target, diagnose a condition, or judge whether a food is healthy. ChatGPT may reason from the factual data under its own policies.
+const MUNCH_SERVER_INSTRUCTIONS = `Munch stores and retrieves factual meals, nutrition, hydration, weight, foods, recipes, meal plans, and grocery lists. Nutrition values are estimates; Munch does not provide medical or dietary advice.
 
-Resolve nutrition with a fast confidence-driven ladder. When the user says "my usual", refers to something eaten before, or a prior personal match is likely, search_saved_foods first. For every generic or branded food that still needs nutrition, call search_foods before using outside information: search_foods checks Munch's persistent local food catalog first and only falls through to USDA FoodData Central and Open Food Facts when the local catalog does not contain an adequate match. USDA and Open Food Facts are queried concurrently. For a visible packaged-food barcode, call lookup_food_barcode and use verified label values when available. If Munch returns a strong matching database record, use it and do not perform an external web search merely to double-check it. If Munch returns no adequate match, a materially wrong brand/product, or materially incomplete nutrition, then use external web search as the next fallback; prefer manufacturer, restaurant, or retailer nutrition pages. Use a model/generic estimate only after both Munch's database path and an appropriate external lookup fail. Never present an estimate as database data.
+Prefer the direct read/write tool that exactly matches the user's request. Grocery-list requests go straight to get_grocery_list; adding groceries goes straight to add_grocery_items. Today's meals use get_meals_today; date ranges use the matching range tool. Meal plans use get_meal_plan. Saved recipes use search_recipes/get_recipe. Use personal scope by default unless the user explicitly asks for household data.
 
-For a complete text meal whose foods and portions are already known, use log_meal with items[] so each food is stored separately with the exact nutrition values used, source, provider identifiers, confidence, assumptions, and source snapshot. Munch derives the parent meal totals from those items. For external webpage nutrition, use source_type=user_supplied, set a descriptive provider such as manufacturer_web or retailer_web, include source_url, and put resolution_layer=external_web in source_snapshot. For an unavoidable estimate, use source_type=model_estimate and record the assumptions. Aggregate-only log_meal calls for new meals are rejected so stale clients cannot silently create legacy rows; if a client does not expose items[], use the structured meal draft/review workflow instead.
+For nutrition resolution, use personal saved/history matches when relevant, then search_foods, then external web only when Munch has no adequate result, and model estimates last. Visible packaged barcodes use lookup_food_barcode.
 
-For photos and any meal that still needs approval, use prepare_meal_review. Build the complete item list, nutrition estimates, confidence, assumptions, and any materially important unresolved question in one call. For a clear plated photo, infer homemade versus restaurant from the evidence instead of asking by default. No menu, restaurant branding, receipt, takeout packaging, or venue context generally supports a homemade inference. Use visible scale references such as forks, plates, bowls, cups, hands, and packaging. Put low-impact uncertainty into explicit assumptions rather than asking about every ordinary estimate. Ask only the highest-impact question when identity, portion, preparation, or calories would materially change. Use resolve_meal_review to apply the answer or any edits atomically. If the user says to stop asking or accepts the assumptions, resolve with accept_remaining_assumptions. Present the complete review and call confirm_meal_draft only after an explicit yes. Do not use aggregate-only log_meal for photo or ambiguous flows.
+For a fully resolved text meal, use log_meal with items[]. For photos or unresolved meals, use prepare_meal_review; infer homemade versus restaurant from the evidence instead of asking by default. Use visible scale references when estimating portions. Put low-impact uncertainty into explicit assumptions; resolve only material questions/edits, present the complete review, then use confirm_meal_draft only after explicit user approval. Prefer this atomic review flow over legacy granular draft tools.
 
-Legacy start_meal_draft and granular draft mutation tools remain for compatibility, but prefer prepare_meal_review and resolve_meal_review for new work because they reduce tool round trips while preserving server-enforced confirmation, version checks, RLS, and idempotency.
-
-When the user establishes a complete recipe in conversation, recipe tools persist the factual structure. Do not create tags such as favorite, healthy, high-protein, quick, or family meal. Derive those descriptions from nutrient values, ingredient facts, timing, and observed scheduling or logging frequency when the user's request calls for it.
-
-When the user provides a public recipe URL, call parse_recipe_url first. It returns a deterministic preview with the extracted source fields, raw ingredient lines, instructions, serving count, conservative nutrition matches, unresolved items, assumptions, and warnings; it never saves anything and does not make a duplicate backend model call. Use your own conversational/web understanding and search_foods to interpret recipe language, split alternatives, choose reasonable defaults, and resolve candidate foods before saving. Do not ask the user ingredient-by-ingredient when a low-impact assumption is reasonable; ask only about a materially consequential ambiguity. Present the preview and ask for explicit confirmation before calling save_recipe or save_recipe_and_plan with the returned recipe fields. Preserve source_url, source_type=imported, ingredient provenance, assumptions, and any unresolved-review warnings.
-
-For a request such as "save this as My Peanut Butter Sandwich Lunch", use save_recipe once the individual ingredients, quantities, servings, nutrition facts, and source snapshots are established. Later use search_recipes or get_recipe to identify it. When the user says to log it, ask for servings and meal type if either is missing, then use log_recipe with the exact serving amount; it scales the saved ingredient quantities and logs the selected immutable recipe revision, so do not re-estimate or substitute a generic meal. Use update_recipe for a complete replacement after reading the current recipe; it creates a new revision and never rewrites historical meal logs. Use delete_recipe only after explicit confirmation; it archives the recipe while preserving historical logs. Use schedule_recipe to add a saved recipe revision to a date; planning is not consumption.
-
-A planned meal does not mean anyone ate it. A grocery list is not pantry inventory. If the user says they have everything except onions, add onions only. Do not store or infer that every other ingredient is currently owned.
-
-Use search_meals and search_saved_foods for prior variations only when likely to improve the current estimate. Use the interactive importer for history files instead of repeatedly calling log_meal. Munch exposes a stable tool catalog across connected accounts; authorization is evaluated when each action is invoked. If the user asks about the connection or an expected feature is unavailable, call get_connection_status before suggesting account or connection troubleshooting. Do not advertise, describe, or link to unavailable paid capabilities.`;
+Recipe URLs use parse_recipe_url before saving. Planning never means consumption. A grocery list is not pantry inventory; add only items the user explicitly says are needed. Use get_connection_status only for connection or feature-availability troubleshooting.`;
 
 async function buildMunchMcpServer(
     c: Context,
@@ -72,6 +63,9 @@ async function buildMunchMcpServer(
     // registrations are versioned atomically. This prevents clients from
     // holding old widget HTML behind an unchanged ui:// cache key.
     const appServer = withVersionedWidgetResources(server);
+    // Keep the full backend catalog for compatibility, but minimize what the
+    // host model has to read and reason over on every turn.
+    const optimizedServer = withLatencyOptimizedToolCatalog(appServer);
 
     const [profile, capabilityResolution, accountIdentity] = await Promise.all([
         getProfile(userId).catch((error) => {
@@ -96,7 +90,7 @@ async function buildMunchMcpServer(
     const capabilities = capabilityResolution.capabilities;
     const drinkUnit = preferredDrinkUnitFromProfile(profile);
     const widgetsEnabled = widgetsEnabledFromProfile(profile);
-    const guardedLegacyServer = withFreshStructuredLogGuard(appServer);
+    const guardedLegacyServer = withFreshStructuredLogGuard(optimizedServer);
     const structuredLegacyServer = withCanonicalStructuredLogMeal(
         guardedLegacyServer,
         userId,
@@ -108,14 +102,14 @@ async function buildMunchMcpServer(
         alcoholTrackingEnabledFromProfile(profile) ? (drinkUnit ?? "us") : null,
         capabilities,
     );
-    registerFoodTools(withCanonicalFoodSearch(appServer), userId);
-    registerSavedFoodTools(appServer, userId, capabilities);
-    registerMealDetailTools(appServer, userId);
-    registerMealReviewTools(appServer, userId, widgetsEnabled);
-    registerMealDraftTools(appServer, userId);
-    registerRecipeImportTools(appServer, userId, capabilities);
-    registerRecipePlanningTools(appServer, userId, capabilities);
-    registerConnectionStatusTools(appServer, userId, {
+    registerFoodTools(withCanonicalFoodSearch(optimizedServer), userId);
+    registerSavedFoodTools(optimizedServer, userId, capabilities);
+    registerMealDetailTools(optimizedServer, userId);
+    registerMealReviewTools(optimizedServer, userId, widgetsEnabled);
+    registerMealDraftTools(optimizedServer, userId);
+    registerRecipeImportTools(optimizedServer, userId, capabilities);
+    registerRecipePlanningTools(optimizedServer, userId, capabilities);
+    registerConnectionStatusTools(optimizedServer, userId, {
         accountEmail: accountIdentity?.email,
         capabilities,
         capabilityResolution: capabilityResolution.status,
