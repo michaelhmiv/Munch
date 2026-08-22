@@ -32,7 +32,7 @@ describe("MCP latency catalog optimization", () => {
     });
 
     test("keeps only the direct conversational surface model-visible", () => {
-        expect(directModelToolCount()).toBe(35);
+        expect(directModelToolCount()).toBe(29);
         expect(isModelPrivateTool("get_grocery_list")).toBe(false);
         expect(isModelPrivateTool("confirm_meal_draft")).toBe(false);
         expect(isModelPrivateTool("get_meals_by_date_range")).toBe(false);
@@ -42,6 +42,12 @@ describe("MCP latency catalog optimization", () => {
         expect(isModelPrivateTool("update_weight")).toBe(true);
         expect(isModelPrivateTool("mark_saved_food_used")).toBe(true);
         expect(isModelPrivateTool("start_meal_draft")).toBe(true);
+        expect(isModelPrivateTool("mark_grocery_item_purchased")).toBe(true);
+        expect(isModelPrivateTool("get_water_today")).toBe(true);
+        expect(isModelPrivateTool("get_weight_by_date_range")).toBe(true);
+        expect(isModelPrivateTool("log_recipe")).toBe(true);
+        expect(isModelPrivateTool("schedule_recipe")).toBe(true);
+        expect(isModelPrivateTool("get_connection_status")).toBe(true);
 
         // Infrastructure and third-party registrations are not accidentally
         // hidden merely because they are absent from Munch's capability map.
