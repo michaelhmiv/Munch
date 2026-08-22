@@ -18,6 +18,8 @@ type CorpusResult = {
     ingredients?: number;
     instructions?: number;
     warnings?: number;
+    warningCodes?: string[];
+    blockingWarningCodes?: string[];
     error?: string;
     errorCode?: string;
 };
@@ -74,9 +76,13 @@ async function checkEntry(
             ingredients: parsed.ingredients.length,
             instructions: parsed.instructions.length,
             warnings: parsed.warnings.length,
+            warningCodes: parsed.warnings.map((warning) => warning.code),
+            blockingWarningCodes: parsed.warnings
+                .filter((warning) => warning.blocking !== false)
+                .map((warning) => warning.code),
         };
         console.log(
-            `[recipe_import_corpus] ok site=${entry.site} strategy=${parsed.strategy} ingredients=${parsed.ingredients.length} duration_ms=${result.durationMs}`,
+            `[recipe_import_corpus] ok site=${entry.site} strategy=${parsed.strategy} ingredients=${parsed.ingredients.length} warning_codes=${result.warningCodes?.join(",") || "none"} duration_ms=${result.durationMs}`,
         );
         return result;
     } catch (error) {
