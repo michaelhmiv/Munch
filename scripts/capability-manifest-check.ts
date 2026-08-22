@@ -2,6 +2,7 @@ import {
     assertCapabilityManifest,
     MCP_TOOL_CAPABILITY_MAP,
 } from "../src/capability-manifest.js";
+import { MCP_INFRASTRUCTURE_TOOLS } from "../src/mcp-infrastructure.js";
 
 const errors = assertCapabilityManifest();
 const discovered = new Set<string>();
@@ -17,9 +18,12 @@ for await (const path of sourceFiles.scan({ cwd: "." })) {
 }
 
 for (const toolName of discovered) {
-    if (!(toolName in MCP_TOOL_CAPABILITY_MAP)) {
+    if (
+        !(toolName in MCP_TOOL_CAPABILITY_MAP) &&
+        !MCP_INFRASTRUCTURE_TOOLS.has(toolName)
+    ) {
         errors.push(
-            `MCP tool ${toolName} is registered in source but has no capability contract`,
+            `MCP tool ${toolName} is registered in source but has no capability contract or infrastructure declaration`,
         );
     }
 }
@@ -32,6 +36,19 @@ for (const toolName of Object.keys(MCP_TOOL_CAPABILITY_MAP)) {
     }
 }
 
+for (const toolName of MCP_INFRASTRUCTURE_TOOLS) {
+    if (!discovered.has(toolName)) {
+        errors.push(
+            `MCP infrastructure lists ${toolName}, but no source registration was found`,
+        );
+    }
+    if (toolName in MCP_TOOL_CAPABILITY_MAP) {
+        errors.push(
+            `MCP infrastructure tool ${toolName} must not also masquerade as an outcome capability`,
+        );
+    }
+}
+
 if (errors.length > 0) {
     console.error("Cross-surface capability manifest check failed:");
     for (const error of errors) console.error(`- ${error}`);
@@ -39,5 +56,5 @@ if (errors.length > 0) {
 }
 
 console.log(
-    `Cross-surface capability manifest passed: ${discovered.size} MCP tools, ${new Set(Object.values(MCP_TOOL_CAPABILITY_MAP)).size} outcome capabilities.`,
+    `Cross-surface capability manifest passed: ${discovered.size} MCP tools (${MCP_INFRASTRUCTURE_TOOLS.size} infrastructure), ${new Set(Object.values(MCP_TOOL_CAPABILITY_MAP)).size} outcome capabilities.`,
 );
