@@ -1,13 +1,6 @@
 name: Manual Recipe Import Corpus Smoke
 
 on:
-    pull_request:
-        paths:
-            - ".github/workflows/recipe-import-corpus-smoke.yml"
-            - "scripts/recipe-import-corpus-smoke.ts"
-            - "src/recipe-import/fixtures/recipe-corpus.ts"
-            - "src/recipe-import/fetch.ts"
-            - "src/recipe-import/parser.ts"
     workflow_dispatch:
         inputs:
             limit:
