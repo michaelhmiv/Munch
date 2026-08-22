@@ -364,11 +364,14 @@ function parseServings(value: unknown): {
             servings,
             ...(text && !/^\s*\d+(?:\.\d+)?\s*$/.test(text)
                 ? {
-                      warning: warning(
-                          "yield_interpreted",
-                          `The source yield “${text.slice(0, 120)}” was interpreted as ${servings} servings.`,
-                          "servings",
-                      ),
+                      warning: {
+                          ...warning(
+                              "yield_interpreted",
+                              `The source yield “${text.slice(0, 120)}” was interpreted as ${servings} servings.`,
+                              "servings",
+                          ),
+                          blocking: false,
+                      },
                   }
                 : {}),
         };

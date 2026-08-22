@@ -1,0 +1,42 @@
+name: Manual Recipe Import Corpus Smoke
+
+on:
+    workflow_dispatch:
+        inputs:
+            limit:
+                description: "Number of corpus URLs to exercise"
+                required: false
+                default: "20"
+                type: string
+            concurrency:
+                description: "Maximum concurrent third-party fetches"
+                required: false
+                default: "3"
+                type: string
+
+permissions:
+    contents: read
+
+concurrency:
+    group: recipe-import-corpus-smoke
+    cancel-in-progress: true
+
+jobs:
+    parse:
+        name: Parse live recipe corpus without AI or provider credits
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        env:
+            MUNCH_RECIPE_IMPORT_CORPUS_LIMIT: ${{ inputs.limit }}
+            MUNCH_RECIPE_IMPORT_CORPUS_CONCURRENCY: ${{ inputs.concurrency }}
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@v4
+            - name: Set up Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
+            - name: Fetch and parse recipe corpus
+              run: bun scripts/recipe-import-corpus-smoke.ts
