@@ -10,7 +10,10 @@ import { withFreshStructuredLogGuard } from "./fresh-log-guard.js";
 import { registerMealDetailTools } from "./meal-detail-tools.js";
 import { registerMealDraftTools } from "./meal-draft-tools.js";
 import { registerMealReviewTools } from "./meal-review-tools.js";
-import { withLatencyOptimizedToolCatalog } from "./mcp-latency.js";
+import {
+    registerAdvancedToolGateway,
+    withLatencyOptimizedToolCatalog,
+} from "./mcp-latency.js";
 import { registerRecipePlanningTools } from "./recipe-planning-tools.js";
 import { registerRecipeImportTools } from "./recipe-import-tools.js";
 import { registerSavedFoodTools } from "./saved-food-tools.js";
@@ -27,7 +30,7 @@ import { withVersionedWidgetResources } from "./widget-resource-versioning.js";
 
 const MUNCH_SERVER_INSTRUCTIONS = `Munch stores and retrieves factual meals, nutrition, hydration, weight, foods, recipes, meal plans, and grocery lists. Nutrition values are estimates; Munch does not provide medical or dietary advice.
 
-Prefer the direct read/write tool that exactly matches the user's request. Grocery-list requests go straight to get_grocery_list; adding groceries goes straight to add_grocery_items. Today's meals use get_meals_today; date ranges use the matching range tool. Meal plans use get_meal_plan. Saved recipes use search_recipes/get_recipe. Use personal scope by default unless the user explicitly asks for household data.
+Prefer the direct read/write tool that exactly matches the user's request. Grocery-list requests go straight to get_grocery_list; adding groceries goes straight to add_grocery_items. Today's meals use get_meals_today; date ranges use the matching range tool. Meal plans use get_meal_plan. Saved recipes use search_recipes/get_recipe. Use personal scope by default unless the user explicitly asks for household data. If no direct tool covers a low-frequency correction, setting, export, deletion, or management request, call find_munch_actions and then run_munch_action with the returned parameter contract.
 
 For nutrition resolution, use personal saved/history matches when relevant, then search_foods, then external web only when Munch has no adequate result, and model estimates last. Visible packaged barcodes use lookup_food_barcode.
 
@@ -64,7 +67,8 @@ async function buildMunchMcpServer(
     // holding old widget HTML behind an unchanged ui:// cache key.
     const appServer = withVersionedWidgetResources(server);
     // Keep the full backend catalog for compatibility, but minimize what the
-    // host model has to read and reason over on every turn.
+    // host model has to read and reason over on every turn. Low-frequency tools
+    // remain private and are reachable through the on-demand action gateway.
     const optimizedServer = withLatencyOptimizedToolCatalog(appServer);
 
     const [profile, capabilityResolution, accountIdentity] = await Promise.all([
@@ -114,6 +118,7 @@ async function buildMunchMcpServer(
         capabilities,
         capabilityResolution: capabilityResolution.status,
     });
+    registerAdvancedToolGateway(optimizedServer);
     return server;
 }
 
