@@ -1,6 +1,7 @@
 const content = document.getElementById("app-content");
 const title = document.getElementById("page-title");
 let renderToken = 0;
+let provenanceRequest = null;
 
 function escapeHtml(value) {
     return String(value ?? "")
@@ -83,14 +84,15 @@ function provenanceMarkup(data) {
 
 async function loadProvenance() {
     if (!content || !title || title.textContent?.trim() !== "Insights") return;
-    if (document.getElementById("provenance-insights")) return;
+    if (document.getElementById("provenance-insights") || provenanceRequest) return;
     const token = ++renderToken;
+    provenanceRequest = fetch("/api/app/provenance", {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+    });
     try {
-        const response = await fetch("/api/app/provenance", {
-            credentials: "same-origin",
-            headers: { Accept: "application/json" },
-            cache: "no-store",
-        });
+        const response = await provenanceRequest;
         if (!response.ok) return;
         const data = await response.json();
         if (token !== renderToken || title.textContent?.trim() !== "Insights")
@@ -102,6 +104,8 @@ async function loadProvenance() {
         section._provenanceData = data;
     } catch {
         // Insights remains usable if the optional provenance panel cannot load.
+    } finally {
+        provenanceRequest = null;
     }
 }
 
