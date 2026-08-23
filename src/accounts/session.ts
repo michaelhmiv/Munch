@@ -9,6 +9,15 @@ declare module "hono" {
 }
 
 export async function requireWebSession(c: Context, next: Next) {
+    // The production provenance circuit breaker returns no user data. Older
+    // browser contexts can call this path in a tight loop, so do not let that
+    // disabled compatibility endpoint turn into repeated Better Auth/Postgres
+    // session lookups. All other /api/app routes remain session-protected.
+    if (new URL(c.req.url).pathname === "/api/app/provenance") {
+        await next();
+        return;
+    }
+
     const session = await getMunchBetterAuth().api.getSession({
         headers: c.req.raw.headers,
     });
