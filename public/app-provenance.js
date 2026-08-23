@@ -1,7 +1,6 @@
 const content = document.getElementById("app-content");
 const title = document.getElementById("page-title");
-let renderToken = 0;
-let provenanceRequest = null;
+let loadedForInsightsView = false;
 
 function escapeHtml(value) {
     return String(value ?? "")
@@ -82,31 +81,38 @@ function provenanceMarkup(data) {
     return `<section class="panel panel-span-12" id="provenance-insights"><div class="panel-title"><div><h3>Nutrition data quality</h3><p>${escapeHtml(data.startDate)} through ${escapeHtml(data.endDate)} · ${escapeHtml(data.timezone)}</p></div><span>${number(coverage.itemizedCaloriePercent)}% itemized</span></div><div class="summary-grid"><article class="summary-card primary"><span>Itemized calories</span><strong>${number(coverage.itemizedCaloriePercent)}<small>%</small></strong><small>${number(coverage.structuredMealCount, 0)} structured meals</small></article><article class="summary-card"><span>Food items</span><strong>${number(coverage.itemCount, 0)}</strong><small>With retained source snapshots</small></article><article class="summary-card"><span>Estimated items</span><strong>${number(confidence.estimatedItemCount, 0)}</strong><small>Explicit model estimates</small></article><article class="summary-card"><span>Legacy meals</span><strong>${number(coverage.legacyMealCount, 0)}</strong><small>No fabricated item breakdown</small></article></div><div class="dashboard-grid spacer-top"><div class="panel panel-span-4"><div class="panel-title"><h3>Source mix</h3></div>${sourceRows}${confidence.average == null ? "" : `<p class="tiny spacer-top">Average recorded confidence: ${Math.round(confidence.average * 100)}%</p>`}</div><div class="panel panel-span-8"><div class="panel-title"><div><h3>Top nutrient contributors</h3><p>Which foods supplied the largest recorded amounts.</p></div></div><div class="auth-actions" style="flex-wrap:wrap">${nutrientButtons}</div><div class="spacer-top" id="provenance-contributors">${contributorRows(data.contributors?.calories, "calories")}</div></div></div></section>`;
 }
 
-async function loadProvenance() {
+async function loadProvenanceOnce() {
     if (!content || !title || title.textContent?.trim() !== "Insights") return;
-    if (document.getElementById("provenance-insights") || provenanceRequest) return;
-    const token = ++renderToken;
-    provenanceRequest = fetch("/api/app/provenance", {
-        credentials: "same-origin",
-        headers: { Accept: "application/json" },
-        cache: "no-store",
-    });
+    if (loadedForInsightsView || document.getElementById("provenance-insights")) return;
+    const grid = content.querySelector(".dashboard-grid");
+    if (!grid) return;
+
+    // Mark the view before starting network I/O. DOM mutations caused by other
+    // Insights enhancements must never create another provenance request.
+    loadedForInsightsView = true;
     try {
-        const response = await provenanceRequest;
-        if (!response.ok) return;
+        const response = await fetch("/api/app/provenance", {
+            credentials: "same-origin",
+            headers: { Accept: "application/json" },
+            cache: "no-store",
+        });
+        if (!response.ok || title.textContent?.trim() !== "Insights") return;
         const data = await response.json();
-        if (token !== renderToken || title.textContent?.trim() !== "Insights")
-            return;
-        const grid = content.querySelector(".dashboard-grid");
-        if (!grid || document.getElementById("provenance-insights")) return;
+        if (document.getElementById("provenance-insights")) return;
         grid.insertAdjacentHTML("beforeend", provenanceMarkup(data));
         const section = document.getElementById("provenance-insights");
-        section._provenanceData = data;
+        if (section) section._provenanceData = data;
     } catch {
-        // Insights remains usable if the optional provenance panel cannot load.
-    } finally {
-        provenanceRequest = null;
+        // Provenance is optional; never block the core Insights workspace.
     }
+}
+
+function scheduleProvenanceLoad() {
+    if (title?.textContent?.trim() !== "Insights") {
+        loadedForInsightsView = false;
+        return;
+    }
+    if (!loadedForInsightsView) queueMicrotask(loadProvenanceOnce);
 }
 
 document.addEventListener("click", (event) => {
@@ -134,12 +140,9 @@ document.addEventListener("click", (event) => {
 });
 
 if (content) {
-    new MutationObserver(() => queueMicrotask(loadProvenance)).observe(
-        content,
-        {
-            childList: true,
-            subtree: true,
-        },
-    );
+    new MutationObserver(scheduleProvenanceLoad).observe(content, {
+        childList: true,
+        subtree: false,
+    });
 }
-queueMicrotask(loadProvenance);
+queueMicrotask(scheduleProvenanceLoad);
