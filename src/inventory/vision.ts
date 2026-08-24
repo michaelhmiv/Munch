@@ -137,6 +137,7 @@ export async function previewInventoryImage(
                 temperature: 0,
                 max_tokens: 4000,
                 response_format: { type: "json_object" },
+                provider: { data_collection: "deny" },
                 messages: [
                     {
                         role: "system",
