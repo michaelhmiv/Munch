@@ -8,6 +8,8 @@ const {
     createHousehold,
     createHouseholdInvitation,
 } = await import("../src/households/repository.js");
+const { reconcilePantry, setPantryPreference } =
+    await import("../src/inventory/repository.js");
 const { saveRecipeAndPlan } = await import("../src/planning/repository.js");
 const { closePlatformDatabase } = await import("../src/platform/database.js");
 const { consumeExportFile } =
@@ -72,6 +74,24 @@ await saveRecipeAndPlan({
     idempotencyKey: `export:${crypto.randomUUID()}`,
 });
 
+await setPantryPreference({ userId: owner.userId, enabled: true });
+await setPantryPreference({ userId: member.userId, enabled: true });
+await reconcilePantry({
+    userId: owner.userId,
+    scope: { type: "household", householdId: household.householdId },
+    sourceType: "manual",
+    idempotencyKey: "export-pantry",
+    operations: [
+        {
+            action: "acquire",
+            name: "Cottage cheese",
+            quantity: 24,
+            unit: "oz",
+            location: "fridge",
+        },
+    ],
+});
+
 const exported = await exportAccountData(member.userId);
 const token = new URL(exported.url).searchParams.get("token");
 if (!token) throw new Error("Account export returned no download token");
@@ -98,11 +118,23 @@ if (!serialized.includes('"name":"Spaghetti"')) {
 if (!serialized.includes('"name":"Yellow onion"')) {
     throw new Error("Account export omitted accessible household groceries");
 }
-if (exported.recordCount < 5) {
+if (!serialized.includes('"name":"Cottage cheese"')) {
+    throw new Error("Account export omitted accessible shared Pantry inventory");
+}
+if (!serialized.includes('"inventory_events"')) {
+    throw new Error("Account export omitted Pantry event history");
+}
+if (serialized.includes('"actor_user_id"')) {
+    throw new Error("Account export leaked Pantry actor user IDs");
+}
+if (document.schema_version !== 2) {
+    throw new Error("Account export schema version was not advanced for Pantry");
+}
+if (exported.recordCount < 7) {
     throw new Error(
         "Account export did not include the expected shared records",
     );
 }
 
 await closePlatformDatabase();
-console.log("Munch complete account export privacy smoke test passed.");
+console.log("Munch complete account export and Pantry privacy smoke test passed.");
