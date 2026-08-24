@@ -39,6 +39,7 @@ jobs:
               echo "== prettier write =="
               bunx prettier --write \
                 .github/workflows/ci.yml \
+                .github/workflows/pantry-surface-fixup.yml \
                 public/app.html \
                 public/styles.css \
                 public/pantry.css \
@@ -125,7 +126,7 @@ jobs:
             git reset scripts/pantry-surface-fixup.py .github/workflows/pantry-surface-fixup.yml .github/pantry-surface-result.txt
             git commit -m "feat: expose Pantry in app navigation and privacy policy"
           else
-            git restore public scripts src .github/workflows/ci.yml
+            git restore public scripts src .github/workflows/ci.yml .github/workflows/pantry-surface-fixup.yml
             git add .github/pantry-surface-result.txt
             git commit -m "ci: capture Pantry surface verification failure"
           fi
