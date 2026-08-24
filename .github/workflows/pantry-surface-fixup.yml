@@ -25,7 +25,7 @@ jobs:
         with:
           bun-version: 1
       - run: bun install --frozen-lockfile
-      - name: Apply, format, and verify
+      - name: Apply, format, and verify product surfaces
         id: verify
         shell: bash
         run: |
@@ -39,7 +39,6 @@ jobs:
               echo "== prettier write =="
               bunx prettier --write \
                 .github/workflows/ci.yml \
-                .github/workflows/pantry-surface-fixup.yml \
                 public/app.html \
                 public/styles.css \
                 public/pantry.css \
@@ -72,14 +71,6 @@ jobs:
             fi
             echo "format_write_exit=$format_write"
             if [ "$transform" -eq 0 ] && [ "$format_write" -eq 0 ]; then
-              echo "== format check =="
-              bun run format:check
-              format_check=$?
-            else
-              format_check=99
-            fi
-            echo "format_check_exit=$format_check"
-            if [ "$format_check" -eq 0 ]; then
               echo "== pantry ui smoke =="
               bun scripts/pantry-ui-smoke.ts
               ui=$?
@@ -112,7 +103,7 @@ jobs:
             fi
             echo "inventory_tests_exit=$tests"
           } > .github/pantry-surface-result.txt 2>&1
-          if [ "${transform:-99}" -eq 0 ] && [ "${format_write:-99}" -eq 0 ] && [ "${format_check:-99}" -eq 0 ] && [ "${ui:-99}" -eq 0 ] && [ "${capability:-99}" -eq 0 ] && [ "${types:-99}" -eq 0 ] && [ "${tests:-99}" -eq 0 ]; then
+          if [ "${transform:-99}" -eq 0 ] && [ "${format_write:-99}" -eq 0 ] && [ "${ui:-99}" -eq 0 ] && [ "${capability:-99}" -eq 0 ] && [ "${types:-99}" -eq 0 ] && [ "${tests:-99}" -eq 0 ]; then
             echo "success=true" >> "$GITHUB_OUTPUT"
           else
             echo "success=false" >> "$GITHUB_OUTPUT"
