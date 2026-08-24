@@ -9,8 +9,17 @@ const config = {
 };
 
 describe("inventory vision", () => {
-    test("is disabled without an API key", () => {
+    test("requires both an API key and explicit feature enablement", () => {
         expect(inventoryVisionConfig({})).toBeNull();
+        expect(
+            inventoryVisionConfig({ OPENROUTER_API_KEY: "test" }),
+        ).toBeNull();
+        expect(
+            inventoryVisionConfig({
+                OPENROUTER_API_KEY: "test",
+                MUNCH_PANTRY_VISION_ENABLED: "true",
+            })?.apiKey,
+        ).toBe("test");
     });
 
     test("parses a receipt preview without persisting raw media", async () => {
