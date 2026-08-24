@@ -1,0 +1,77 @@
+name: Pantry surface fixup
+
+on:
+  push:
+    branches:
+      - feat/pantry-inventory-reconciliation
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pantry-surface-fixup-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fix-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/pantry-inventory-reconciliation
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - name: Apply reviewed surface transformations
+        run: python3 scripts/pantry-surface-fixup.py
+      - name: Format all Pantry PR files
+        run: |
+          bunx prettier --write \
+            .github/workflows/ci.yml \
+            public/app.html \
+            public/styles.css \
+            public/pantry.css \
+            public/pantry.html \
+            public/pantry.js \
+            public/privacy.html \
+            scripts/account-export-smoke.ts \
+            scripts/capability-manifest-check.ts \
+            scripts/pantry-account-deletion-smoke.ts \
+            scripts/pantry-platform-smoke.ts \
+            scripts/pantry-ui-smoke.ts \
+            src/account-export.ts \
+            src/index.ts \
+            src/inventory/capabilities.ts \
+            src/inventory/matching.test.ts \
+            src/inventory/matching.ts \
+            src/inventory/repository.ts \
+            src/inventory/routes.ts \
+            src/inventory/tools.test.ts \
+            src/inventory/tools.ts \
+            src/inventory/vision.test.ts \
+            src/inventory/vision.ts \
+            src/mcp-runtime.ts \
+            src/nutrition-platform/index.ts \
+            src/nutrition-platform/profiles.ts \
+            src/nutrition-platform/types.ts
+      - name: Check repository formatting
+        run: bun run format:check
+      - name: Verify Pantry web surface
+        run: bun scripts/pantry-ui-smoke.ts
+      - name: Verify capability contracts
+        run: bun scripts/capability-manifest-check.ts
+      - name: Typecheck
+        run: bun run typecheck
+      - name: Run inventory unit tests
+        run: bun test src/inventory
+      - name: Commit verified surface changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git reset scripts/pantry-surface-fixup.py .github/workflows/pantry-surface-fixup.yml
+          git commit -m "feat: expose Pantry in app navigation and privacy policy"
+          git push origin HEAD:feat/pantry-inventory-reconciliation
