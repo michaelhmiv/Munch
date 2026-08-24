@@ -1,41 +1,54 @@
 == surface transform ==
 transform_exit=0
 == prettier write ==
-[90mpublic/app.html[39m 169ms (unchanged)
-[90mpublic/styles.css[39m 252ms (unchanged)
+.github/workflows/pantry-surface-fixup.yml 19ms
+[90mpublic/app.html[39m 157ms (unchanged)
+[90mpublic/styles.css[39m 255ms (unchanged)
 [90mpublic/pantry.css[39m 24ms (unchanged)
-[90mpublic/pantry.html[39m 25ms (unchanged)
-[90mpublic/pantry.js[39m 66ms (unchanged)
+[90mpublic/pantry.html[39m 26ms (unchanged)
+[90mpublic/pantry.js[39m 61ms (unchanged)
 public/privacy.html 25ms
-[90mscripts/account-export-smoke.ts[39m 71ms (unchanged)
-[90mscripts/capability-manifest-check.ts[39m 22ms (unchanged)
+[90mscripts/account-export-smoke.ts[39m 66ms (unchanged)
+[90mscripts/capability-manifest-check.ts[39m 17ms (unchanged)
 scripts/pantry-account-deletion-smoke.ts 16ms
-[90mscripts/pantry-platform-smoke.ts[39m 57ms (unchanged)
-[90mscripts/pantry-ui-smoke.ts[39m 13ms (unchanged)
-[90msrc/account-export.ts[39m 30ms (unchanged)
-[90msrc/index.ts[39m 55ms (unchanged)
+[90mscripts/pantry-platform-smoke.ts[39m 50ms (unchanged)
+[90mscripts/pantry-ui-smoke.ts[39m 11ms (unchanged)
+[90msrc/account-export.ts[39m 25ms (unchanged)
+[90msrc/index.ts[39m 43ms (unchanged)
 [90msrc/inventory/capabilities.ts[39m 3ms (unchanged)
-[90msrc/inventory/matching.test.ts[39m 9ms (unchanged)
-[90msrc/inventory/matching.ts[39m 38ms (unchanged)
-[90msrc/inventory/repository.ts[39m 116ms (unchanged)
-[90msrc/inventory/routes.ts[39m 39ms (unchanged)
-[90msrc/inventory/tools.test.ts[39m 9ms (unchanged)
-[90msrc/inventory/tools.ts[39m 38ms (unchanged)
-[90msrc/inventory/vision.test.ts[39m 7ms (unchanged)
-[90msrc/inventory/vision.ts[39m 20ms (unchanged)
-[90msrc/mcp-runtime.ts[39m 10ms (unchanged)
+[90msrc/inventory/matching.test.ts[39m 10ms (unchanged)
+[90msrc/inventory/matching.ts[39m 25ms (unchanged)
+[90msrc/inventory/repository.ts[39m 92ms (unchanged)
+[90msrc/inventory/routes.ts[39m 40ms (unchanged)
+[90msrc/inventory/tools.test.ts[39m 8ms (unchanged)
+[90msrc/inventory/tools.ts[39m 41ms (unchanged)
+[90msrc/inventory/vision.test.ts[39m 5ms (unchanged)
+[90msrc/inventory/vision.ts[39m 23ms (unchanged)
+[90msrc/mcp-runtime.ts[39m 9ms (unchanged)
 [90msrc/nutrition-platform/index.ts[39m 3ms (unchanged)
-[90msrc/nutrition-platform/profiles.ts[39m 17ms (unchanged)
-[90msrc/nutrition-platform/types.ts[39m 6ms (unchanged)
+[90msrc/nutrition-platform/profiles.ts[39m 10ms (unchanged)
+[90msrc/nutrition-platform/types.ts[39m 9ms (unchanged)
 format_write_exit=0
 == format check ==
 $ bunx prettier --check .
 Checking formatting...
-[[33mwarn[39m] .github/workflows/pantry-surface-fixup.yml
-[[33mwarn[39m] Code style issues found in the above file. Run Prettier with --write to fix.
-error: script "format:check" exited with code 1
-format_check_exit=1
-ui_exit=99
+All matched files use Prettier code style!
+format_check_exit=0
+== pantry ui smoke ==
+59 |     throw new Error(
+60 |         "Global request limit does not admit bounded Pantry image uploads",
+61 |     );
+62 | }
+63 | if (!css.includes("@media(max-width:760px)")) {
+64 |     throw new Error(
+                   ^
+error: Pantry workspace is missing its mobile responsive treatment
+      at /home/runner/work/Munch/Munch/scripts/pantry-ui-smoke.ts:64:15
+
+::error file=scripts/pantry-ui-smoke.ts,line=64,col=15,title=error: Pantry workspace is missing its mobile responsive treatment::%0A      at /home/runner/work/Munch/Munch/scripts/pantry-ui-smoke.ts:64:15
+
+Bun v1.4.0 (Linux x64)
+ui_exit=1
 capability_exit=99
 typecheck_exit=99
 inventory_tests_exit=99
