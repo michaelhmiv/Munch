@@ -1,0 +1,84 @@
+name: Pantry auth boundary fixup
+
+on:
+    push:
+        branches:
+            - fix/pantry-web-auth-boundary
+
+permissions:
+    contents: write
+
+jobs:
+    fix-and-verify:
+        if: github.actor != 'github-actions[bot]'
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  ref: fix/pantry-web-auth-boundary
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - run: bun install --frozen-lockfile
+            - name: Apply auth-boundary patch
+              run: |
+                  python3 - <<'PY'
+                  from pathlib import Path
+
+                  routes = Path("src/inventory/routes.ts")
+                  text = routes.read_text()
+                  old = '''    app.use("/api/app/pantry*", requireWebSession);
+                      app.use("/api/app/purchases*", requireWebSession);'''
+                  new = '''    app.use("/api/app/pantry", requireWebSession);
+                      app.use("/api/app/pantry/*", requireWebSession);
+                      app.use("/api/app/purchases/*", requireWebSession);'''
+                  if old not in text:
+                      raise SystemExit("Pantry auth middleware marker missing")
+                  routes.write_text(text.replace(old, new, 1))
+
+                  smoke = Path("scripts/pantry-ui-smoke.ts")
+                  text = smoke.read_text()
+                  marker = '''if (
+                      !routes.includes("requireWebSession") ||
+                      !routes.includes("requireSameOrigin")
+                  ) {
+                      throw new Error("Pantry web writes are missing session/CSRF enforcement");
+                  }
+                  '''
+                  addition = marker + '''const requiredSessionBoundaries = [
+                      'app.use("/api/app/pantry", requireWebSession)',
+                      'app.use("/api/app/pantry/*", requireWebSession)',
+                      'app.use("/api/app/purchases/*", requireWebSession)',
+                  ];
+                  for (const boundary of requiredSessionBoundaries) {
+                      if (!routes.includes(boundary)) {
+                          throw new Error(`Pantry web auth boundary is missing: ${boundary}`);
+                      }
+                  }
+                  if (
+                      routes.includes('app.use("/api/app/pantry*", requireWebSession)') ||
+                      routes.includes('app.use("/api/app/purchases*", requireWebSession)')
+                  ) {
+                      throw new Error(
+                          "Pantry web auth must use explicit base and slash-wildcard route patterns",
+                      );
+                  }
+                  '''
+                  if marker not in text:
+                      raise SystemExit("Pantry UI smoke auth marker missing")
+                  smoke.write_text(text.replace(marker, addition, 1))
+                  PY
+            - name: Format and verify
+              run: |
+                  bunx prettier --write src/inventory/routes.ts scripts/pantry-ui-smoke.ts
+                  bun scripts/pantry-ui-smoke.ts
+                  bun run typecheck
+                  bun test src/inventory
+            - name: Commit verified hotfix
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                  git add src/inventory/routes.ts scripts/pantry-ui-smoke.ts
+                  git commit -m "fix: enforce Pantry web session boundaries"
+                  git push origin HEAD:fix/pantry-web-auth-boundary
