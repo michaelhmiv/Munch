@@ -82,6 +82,55 @@ describe("inventory vision", () => {
         expect(provider).toEqual({ data_collection: "deny" });
     });
 
+    test("normalizes common provider location synonyms", async () => {
+        const preview = await previewInventoryImage(
+            {
+                mode: "pantry_photo",
+                mimeType: "image/png",
+                bytes: new Uint8Array([1]),
+            },
+            config,
+            {
+                fetcher: async () =>
+                    new Response(
+                        JSON.stringify({
+                            choices: [
+                                {
+                                    message: {
+                                        content: JSON.stringify({
+                                            lines: [
+                                                {
+                                                    raw_label: "COTTAGE CHEESE",
+                                                    name: "Cottage cheese",
+                                                    quantity: null,
+                                                    unit: null,
+                                                    is_food: true,
+                                                    confidence: 0.96,
+                                                    location: "refrigerator",
+                                                },
+                                                {
+                                                    raw_label: "FROZEN PEAS",
+                                                    name: "Frozen peas",
+                                                    quantity: null,
+                                                    unit: null,
+                                                    is_food: true,
+                                                    confidence: 0.94,
+                                                    location: "frozen storage",
+                                                },
+                                            ],
+                                            notes: [],
+                                        }),
+                                    },
+                                },
+                            ],
+                        }),
+                    ),
+            },
+        );
+        expect(preview.lines[0]?.location).toBe("fridge");
+        expect(preview.lines[1]?.location).toBe("freezer");
+    });
+
     test("rejects unsupported media before provider calls", async () => {
         await expect(
             previewInventoryImage(
