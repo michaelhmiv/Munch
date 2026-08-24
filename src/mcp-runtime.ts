@@ -7,6 +7,7 @@ import { getAccountIdentity } from "./accounts/repository.js";
 import { registerConnectionStatusTools } from "./connection-status-tools.js";
 import { registerFoodTools } from "./food-tools.js";
 import { withFreshStructuredLogGuard } from "./fresh-log-guard.js";
+import { registerInventoryTools } from "./inventory/tools.js";
 import { registerMealDetailTools } from "./meal-detail-tools.js";
 import { registerMealDraftTools } from "./meal-draft-tools.js";
 import { registerMealReviewTools } from "./meal-review-tools.js";
@@ -21,6 +22,7 @@ import { registerTools } from "./mcp.js";
 import {
     alcoholTrackingEnabledFromProfile,
     getProfile,
+    pantryEnabledFromProfile,
     preferredDrinkUnitFromProfile,
     widgetsEnabledFromProfile,
 } from "./storage.js";
@@ -28,7 +30,7 @@ import { withCanonicalStructuredLogMeal } from "./structured-log-meal.js";
 import { MUNCH_APP_VERSION } from "./widget-release.js";
 import { withVersionedWidgetResources } from "./widget-resource-versioning.js";
 
-const MUNCH_SERVER_INSTRUCTIONS = `Munch stores and retrieves factual meals, nutrition, hydration, weight, foods, recipes, meal plans, and grocery lists. Nutrition values are estimates; Munch does not provide medical or dietary advice.
+const MUNCH_SERVER_INSTRUCTIONS = `Munch stores and retrieves factual meals, nutrition, hydration, weight, foods, recipes, meal plans, grocery lists, and—when the paid user explicitly enables it—Pantry inventory. Nutrition values are estimates; Munch does not provide medical or dietary advice.
 
 Prefer the direct read/write tool that exactly matches the user's request. Grocery-list requests go straight to get_grocery_list; adding groceries goes straight to add_grocery_items. Today's meals use get_meals_today; date ranges use the matching range tool. Meal plans use get_meal_plan. Saved recipes use search_recipes/get_recipe. Use personal scope by default unless the user explicitly asks for household data. If no direct tool covers a low-frequency correction, setting, export, deletion, or management request, call find_munch_actions and then run_munch_action with the returned parameter contract.
 
@@ -36,7 +38,7 @@ For nutrition resolution, use personal saved/history matches when relevant, then
 
 For a fully resolved text meal, use log_meal with items[]. For photos or unresolved meals, use prepare_meal_review; infer homemade versus restaurant from the evidence instead of asking by default. Use visible scale references when estimating portions. Put low-impact uncertainty into explicit assumptions; resolve only material questions/edits, present the complete review, then use confirm_meal_draft only after explicit user approval. Prefer this atomic review flow over legacy granular draft tools.
 
-Recipe URLs use parse_recipe_url before saving. Planning never means consumption. A grocery list is not pantry inventory; add only items the user explicitly says are needed. Use get_connection_status only for connection or feature-availability troubleshooting.`;
+Recipe URLs use parse_recipe_url before saving. Planning never means consumption. A grocery list is not pantry inventory. If Pantry tools are present, Pantry is enabled for this premium user: after a plausibly home-prepared meal is logged, use get_pantry with only the meal's candidate ingredient names to identify likely Pantry overlap, then ask a targeted clarification. Never silently subtract inferred consumption. If the user explicitly says what was used, finished, discarded, moved, or corrected, apply it with reconcile_pantry. Receipt or explicit shopping purchases are acquisition evidence: use reconcile_purchase to atomically match Grocery items and add purchased foods to Pantry; low-confidence lines are left for review. Do not ask Pantry questions for obvious restaurant/takeout meals or leftovers unless the user indicates Pantry ingredients were used. Use get_connection_status only for connection or feature-availability troubleshooting.`;
 
 async function buildMunchMcpServer(
     c: Context,
@@ -62,13 +64,7 @@ async function buildMunchMcpServer(
             instructions: MUNCH_SERVER_INSTRUCTIONS,
         },
     );
-    // Every registrar uses the same proxy so UI resource links and resource
-    // registrations are versioned atomically. This prevents clients from
-    // holding old widget HTML behind an unchanged ui:// cache key.
     const appServer = withVersionedWidgetResources(server);
-    // Keep the full backend catalog for compatibility, but minimize what the
-    // host model has to read and reason over on every turn. Low-frequency tools
-    // remain private and are reachable through the on-demand action gateway.
     const optimizedServer = withLatencyOptimizedToolCatalog(appServer);
 
     const [profile, capabilityResolution, accountIdentity] = await Promise.all([
@@ -113,6 +109,9 @@ async function buildMunchMcpServer(
     registerMealDraftTools(optimizedServer, userId);
     registerRecipeImportTools(optimizedServer, userId, capabilities);
     registerRecipePlanningTools(optimizedServer, userId, capabilities);
+    if (capabilities.tier === "premium" && pantryEnabledFromProfile(profile)) {
+        registerInventoryTools(optimizedServer, userId, capabilities);
+    }
     registerConnectionStatusTools(optimizedServer, userId, {
         accountEmail: accountIdentity?.email,
         capabilities,
