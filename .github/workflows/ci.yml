@@ -36,6 +36,8 @@ jobs:
         run: bun run submission:check
       - name: Verify responsive UI surfaces
         run: bun scripts/ui-surface-smoke.ts
+      - name: Verify premium Pantry web surface
+        run: bun scripts/pantry-ui-smoke.ts
       - name: Verify ChatGPT widget contracts
         run: bun scripts/widget-contract-smoke.ts
       - name: Typecheck server
@@ -111,6 +113,8 @@ jobs:
         run: bun scripts/household-lifecycle-smoke.ts
       - name: Exercise recipes, planning, groceries, idempotency, and RLS
         run: bun scripts/recipe-planning-smoke.ts
+      - name: Exercise Pantry inventory, receipt reconciliation, and RLS
+        run: bun scripts/pantry-platform-smoke.ts
       - name: Exercise complete account export and household privacy
         run: bun scripts/account-export-smoke.ts
       - name: Exercise meal draft state, confirmation, idempotency, and RLS
@@ -123,6 +127,8 @@ jobs:
         run: bun scripts/meal-review-benchmark.ts
       - name: Exercise Better Auth account deletion and cascade cleanup
         run: bun scripts/account-deletion-smoke.ts
+      - name: Exercise shared Pantry retention after member account deletion
+        run: bun scripts/pantry-account-deletion-smoke.ts
       - name: Exercise readiness endpoints and maintenance
         run: bun scripts/operations-smoke.ts
 

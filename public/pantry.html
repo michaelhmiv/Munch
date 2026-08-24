@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <title>Pantry · Munch</title>
+        <link rel="icon" href="/favicon.ico" />
+        <link rel="stylesheet" href="/pantry.css" />
+    </head>
+    <body>
+        <header class="topbar">
+            <a class="brand" href="/app">Munch</a>
+            <nav>
+                <a href="/app">Today</a><a href="/app/recipes">Recipes</a
+                ><a href="/app/plan">Planning</a>
+            </nav>
+        </header>
+
+        <main class="shell">
+            <section class="hero">
+                <div>
+                    <p class="eyebrow">Premium</p>
+                    <h1>Pantry</h1>
+                    <p class="lede">
+                        Keep an approximate picture of what is in your pantry,
+                        fridge, and freezer. Grocery purchases can replenish it;
+                        meal conversations can reconcile what you actually used.
+                    </p>
+                </div>
+                <label class="switch-row"
+                    ><input id="pantry-enabled" type="checkbox" />
+                    <span>Use Pantry</span></label
+                >
+            </section>
+
+            <div id="premium-message" class="notice hidden">
+                Pantry is available with Munch Premium.
+            </div>
+            <div id="status" class="status" aria-live="polite"></div>
+
+            <div id="workspace" class="hidden">
+                <section class="toolbar card">
+                    <select id="scope">
+                        <option value="personal">Personal Pantry</option>
+                    </select>
+                    <input
+                        id="search"
+                        type="search"
+                        placeholder="Search Pantry"
+                    />
+                    <select id="location-filter">
+                        <option value="">All locations</option>
+                        <option value="pantry">Pantry</option>
+                        <option value="fridge">Fridge</option>
+                        <option value="freezer">Freezer</option>
+                        <option value="unspecified">Unsorted</option>
+                    </select>
+                    <button id="refresh" type="button">Refresh</button>
+                </section>
+
+                <section class="grid-two">
+                    <form id="manual-add" class="card stack">
+                        <div>
+                            <p class="eyebrow">Quick add</p>
+                            <h2>Add something</h2>
+                        </div>
+                        <label
+                            >Name
+                            <input
+                                name="name"
+                                required
+                                maxlength="300"
+                                placeholder="Cottage cheese"
+                        /></label>
+                        <div class="fields">
+                            <label
+                                >Quantity
+                                <input
+                                    name="quantity"
+                                    inputmode="decimal"
+                                    type="number"
+                                    min="0"
+                                    step="any" /></label
+                            ><label
+                                >Unit
+                                <input
+                                    name="unit"
+                                    maxlength="80"
+                                    placeholder="oz"
+                            /></label>
+                        </div>
+                        <label
+                            >Location
+                            <select name="location">
+                                <option value="unspecified">Unsorted</option>
+                                <option value="pantry">Pantry</option>
+                                <option value="fridge">Fridge</option>
+                                <option value="freezer">Freezer</option>
+                            </select></label
+                        >
+                        <button type="submit">Add to Pantry</button>
+                    </form>
+
+                    <section class="card stack">
+                        <div>
+                            <p class="eyebrow">Camera</p>
+                            <h2>Scan what you have</h2>
+                        </div>
+                        <p class="muted">
+                            Upload a pantry, fridge, or freezer photo. Munch
+                            processes the image transiently and stores only the
+                            items you confirm.
+                        </p>
+                        <input
+                            id="pantry-photo"
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                        />
+                        <button id="scan-pantry" type="button">
+                            Review photo
+                        </button>
+                    </section>
+
+                    <section class="card stack">
+                        <div>
+                            <p class="eyebrow">Shopping</p>
+                            <h2>Scan a receipt</h2>
+                        </div>
+                        <p class="muted">
+                            Munch can match purchased foods to your Grocery list
+                            and add the rest to Pantry. Non-food lines are
+                            ignored.
+                        </p>
+                        <input
+                            id="receipt-photo"
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                        />
+                        <button id="scan-receipt" type="button">
+                            Review receipt
+                        </button>
+                    </section>
+
+                    <section class="card stack">
+                        <div>
+                            <p class="eyebrow">How it works</p>
+                            <h2>Approximate by design</h2>
+                        </div>
+                        <p class="muted">
+                            Pantry can track exact amounts, rough amounts, or
+                            simply that an item is on hand. Meal logging stays
+                            separate; Munch only deducts food after you clarify
+                            what was actually used.
+                        </p>
+                    </section>
+                </section>
+
+                <section id="review" class="card hidden">
+                    <div class="review-head">
+                        <div>
+                            <p class="eyebrow">Review</p>
+                            <h2 id="review-title">Detected items</h2>
+                        </div>
+                        <button id="apply-review" type="button">
+                            Apply confirmed items
+                        </button>
+                    </div>
+                    <div id="review-lines" class="review-lines"></div>
+                </section>
+
+                <section class="card inventory-section">
+                    <div class="inventory-head">
+                        <div>
+                            <p class="eyebrow">On hand</p>
+                            <h2>Your inventory</h2>
+                        </div>
+                        <span id="item-count" class="pill"></span>
+                    </div>
+                    <div id="inventory" class="inventory-list"></div>
+                    <div id="empty" class="empty hidden">
+                        Nothing matches this view yet.
+                    </div>
+                </section>
+            </div>
+        </main>
+        <script src="/pantry.js" defer></script>
+    </body>
+</html>

@@ -33,6 +33,7 @@ Generated from the production MCP source. Do not edit manually.
 | `get_nutrition_goals`         | `src/mcp.ts`                     |      true |      false |       false |       true |          true |
 | `get_nutrition_provenance`    | `src/meal-detail-tools.ts`       |      true |      false |       false |       true |          true |
 | `get_nutrition_summary`       | `src/mcp.ts`                     |      true |      false |       false |       true |          true |
+| `get_pantry`                  | `src/inventory/tools.ts`         |      true |      false |       false |       true |          true |
 | `get_recipe`                  | `src/recipe-planning-tools.ts`   |      true |      false |       false |       true |          true |
 | `get_timezone`                | `src/mcp.ts`                     |      true |      false |       false |       true |          true |
 | `get_trends`                  | `src/mcp.ts`                     |      true |      false |       false |       true |          true |
@@ -56,6 +57,8 @@ Generated from the production MCP source. Do not edit manually.
 | `parse_recipe_url`            | `src/recipe-import-tools.ts`     |      true |      false |       false |       true |          true |
 | `prepare_meal_confirmation`   | `src/meal-draft-tools.ts`        |     false |      false |       false |      false |          true |
 | `prepare_meal_review`         | `src/meal-review-tools.ts`       |     false |      false |       false |       true |          true |
+| `reconcile_pantry`            | `src/inventory/tools.ts`         |     false |      false |        true |       true |          true |
+| `reconcile_purchase`          | `src/inventory/tools.ts`         |     false |      false |       false |       true |          true |
 | `resolve_meal_review`         | `src/meal-review-tools.ts`       |     false |      false |       false |      false |          true |
 | `run_munch_action`            | `src/mcp-latency.ts`             |     false |      false |        true |      false |         false |
 | `save_food`                   | `src/saved-food-tools.ts`        |     false |      false |       false |       true |          true |

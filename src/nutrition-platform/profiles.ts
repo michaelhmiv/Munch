@@ -11,6 +11,7 @@ interface ProfileRow {
     widgets_enabled: boolean;
     alcohol_tracking_enabled: boolean;
     preferred_drink_unit: string | null;
+    pantry_enabled: boolean;
     created_at: Date | string;
     updated_at: Date | string;
 }
@@ -28,6 +29,7 @@ function mapProfile(row: ProfileRow): Profile {
             false,
         ),
         preferred_drink_unit: isDrinkUnit(drinkUnit) ? drinkUnit : null,
+        pantry_enabled: booleanValue(row.pantry_enabled, false),
         created_at: isoTimestamp(row.created_at),
         updated_at: isoTimestamp(row.updated_at),
     };
@@ -43,6 +45,7 @@ export async function getProfile(userId: string): Promise<Profile | null> {
                 widgets_enabled,
                 alcohol_tracking_enabled,
                 preferred_drink_unit,
+                pantry_enabled,
                 created_at,
                 updated_at
             from munch.account_preferences
@@ -84,6 +87,16 @@ export async function getAlcoholTrackingEnabled(
     return alcoholTrackingEnabledFromProfile(await getProfile(userId));
 }
 
+export function pantryEnabledFromProfile(
+    profile: Profile | null | undefined,
+): boolean {
+    return profile?.pantry_enabled ?? false;
+}
+
+export async function getPantryEnabled(userId: string): Promise<boolean> {
+    return pantryEnabledFromProfile(await getProfile(userId));
+}
+
 export function preferredDrinkUnitFromProfile(
     profile: Profile | null | undefined,
 ): DrinkUnit | null {
@@ -106,6 +119,7 @@ export async function upsertProfile(
     const widgetsProvided = patch.widgets_enabled !== undefined;
     const alcoholProvided = patch.alcohol_tracking_enabled !== undefined;
     const drinkUnitProvided = patch.preferred_drink_unit !== undefined;
+    const pantryProvided = patch.pantry_enabled !== undefined;
 
     return withUserDatabase(userId, async (tx) => {
         const rows = await tx<Array<ProfileRow>>`
@@ -115,14 +129,16 @@ export async function upsertProfile(
                 preferred_weight_unit,
                 widgets_enabled,
                 alcohol_tracking_enabled,
-                preferred_drink_unit
+                preferred_drink_unit,
+                pantry_enabled
             ) values (
                 ${userId},
                 ${patch.timezone ?? "UTC"},
                 ${patch.preferred_weight_unit ?? null},
                 ${patch.widgets_enabled ?? true},
                 ${patch.alcohol_tracking_enabled ?? false},
-                ${patch.preferred_drink_unit ?? null}
+                ${patch.preferred_drink_unit ?? null},
+                ${patch.pantry_enabled ?? false}
             )
             on conflict (user_id) do update
             set timezone = case
@@ -145,6 +161,10 @@ export async function upsertProfile(
                     when ${drinkUnitProvided} then ${patch.preferred_drink_unit ?? null}
                     else munch.account_preferences.preferred_drink_unit
                 end,
+                pantry_enabled = case
+                    when ${pantryProvided} then ${patch.pantry_enabled ?? false}
+                    else munch.account_preferences.pantry_enabled
+                end,
                 updated_at = now()
             returning
                 user_id,
@@ -153,6 +173,7 @@ export async function upsertProfile(
                 widgets_enabled,
                 alcohol_tracking_enabled,
                 preferred_drink_unit,
+                pantry_enabled,
                 created_at,
                 updated_at
         `;
