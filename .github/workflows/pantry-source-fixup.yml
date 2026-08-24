@@ -1,0 +1,66 @@
+name: Pantry source fixup
+
+on:
+  push:
+    branches:
+      - feat/pantry-inventory-reconciliation
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pantry-source-fixup-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fix-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: munch_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d munch_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/munch_test
+      MUNCH_APP_BASE_URL: https://munch.example
+      BETTER_AUTH_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      RESEND_API_KEY: re_test_schema
+      MUNCH_EMAIL_FROM: Munch <support@munch.example>
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/pantry-inventory-reconciliation
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - name: Apply reviewed source transformations
+        run: python3 scripts/pantry-source-fixup.py
+      - name: Format changed product files
+        run: bunx prettier --write src/inventory/repository.ts scripts/pantry-platform-smoke.ts
+      - name: Install schema
+        run: bun run db:migrate
+      - name: Exercise Pantry database workflow
+        run: bun scripts/pantry-platform-smoke.ts
+      - name: Typecheck
+        run: bun run typecheck
+      - name: Run inventory unit tests
+        run: bun test src/inventory
+      - name: Commit verified source changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/inventory/repository.ts scripts/pantry-platform-smoke.ts
+          git commit -m "fix: harden Pantry purchase reconciliation"
+          git push origin HEAD:feat/pantry-inventory-reconciliation
