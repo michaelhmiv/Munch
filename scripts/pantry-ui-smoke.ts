@@ -47,6 +47,24 @@ if (
 ) {
     throw new Error("Pantry web writes are missing session/CSRF enforcement");
 }
+const requiredSessionBoundaries = [
+    'app.use("/api/app/pantry", requireWebSession)',
+    'app.use("/api/app/pantry/*", requireWebSession)',
+    'app.use("/api/app/purchases/*", requireWebSession)',
+];
+for (const boundary of requiredSessionBoundaries) {
+    if (!routes.includes(boundary)) {
+        throw new Error(`Pantry web auth boundary is missing: ${boundary}`);
+    }
+}
+if (
+    routes.includes('app.use("/api/app/pantry*", requireWebSession)') ||
+    routes.includes('app.use("/api/app/purchases*", requireWebSession)')
+) {
+    throw new Error(
+        "Pantry web auth must use explicit base and slash-wildcard route patterns",
+    );
+}
 if (!routes.includes('capabilities.tier !== "premium"')) {
     throw new Error(
         "Pantry web surface is missing premium entitlement enforcement",
