@@ -189,6 +189,21 @@ if old_header in text:
 elif "appHtml, appStyles, privacy" not in text:
     raise SystemExit("Pantry UI smoke header marker missing")
 
+old_media_assertion = '''if (!css.includes("@media(max-width:760px)")) {
+    throw new Error(
+        "Pantry workspace is missing its mobile responsive treatment",
+    );
+}'''
+new_media_assertion = '''if (!/@media\\s*\\(\\s*max-width:\\s*760px\\s*\\)/.test(css)) {
+    throw new Error(
+        "Pantry workspace is missing its mobile responsive treatment",
+    );
+}'''
+if old_media_assertion in text:
+    text = text.replace(old_media_assertion, new_media_assertion, 1)
+elif "max-width:\\s*760px" not in text:
+    raise SystemExit("Pantry responsive smoke marker missing")
+
 footer_marker = '''if (/receipt_image|raw_image|image_bytes/.test(routes)) {
     throw new Error(
         "Pantry route source suggests raw receipt media persistence",
