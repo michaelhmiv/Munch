@@ -30,21 +30,23 @@ apply update 0025_inventory.sql
 apply update 0026_inventory_actor_retention.sql
 Database schema is current.
 migrate_exit=0
-== pantry smoke ==
-PostgresError: malformed array literal: ""
-    errno: "22P02",
-   detail: "Array value must start with \"{\" or dimension information.",
- severity: "ERROR",
-    where: "unnamed portal parameter $8 = ''",
-     file: "arrayfuncs.c",
-  routine: "array_in",
-     code: "ERR_POSTGRES_SERVER_ERROR"
+== sql probe ==
+1 | import { createSmokeIdentity } from `${process.cwd()}/scripts/support/smoke-user.js`;
+                                        ^
+error: Expected string but found "`${"
+    at /tmp/pantry-diag.ts:1:37
 
-      at wrapPostgresError (internal:sql/postgres:176:27)
-      at onRejectPostgresQuery (internal:sql/postgres:204:33)
+1 | import { createSmokeIdentity } from `${process.cwd()}/scripts/support/smoke-user.js`;
+                                           ^
+error: Expected ";" but found "process"
+    at /tmp/pantry-diag.ts:1:40
 
-::error file=internal%3Asql/postgres,line=176,col=27,title=PostgresError: malformed array literal%3A ""::%0A      at wrapPostgresError (internal:sql/postgres:176:27)%0A      at onRejectPostgresQuery (internal:sql/postgres:204:33)
+1 | import { createSmokeIdentity } from `${process.cwd()}/scripts/support/smoke-user.js`;
+                                                  ^
+error: Unexpected .
+    at /tmp/pantry-diag.ts:1:47
 
 Bun v1.4.0 (Linux x64)
-pantry_smoke_exit=1
+probe_exit=1
+pantry_smoke_exit=99
 typecheck_exit=99
