@@ -188,6 +188,43 @@ if (replenishedSugar?.quantity !== 4.5) {
     );
 }
 
+// If the user checks Grocery first and uploads the receipt second, the receipt
+// corrects the original acquisition instead of creating a duplicate purchase.
+const checkedThenReceipted = await reconcilePurchase({
+    userId: owner.userId,
+    scope: personalScope,
+    idempotencyKey: "pantry-smoke-checked-then-receipt",
+    sourceLabel: "Synthetic Market receipt after Grocery checkoff",
+    lines: [
+        {
+            rawLabel: "SUGAR 5 LB",
+            name: "Granulated sugar",
+            quantity: 5,
+            unit: "lb",
+            confidence: 0.99,
+            isFood: true,
+            location: "pantry",
+        },
+    ],
+});
+if (
+    checkedThenReceipted.summary.groceryMatched !== 1 ||
+    checkedThenReceipted.summary.inventoryAdded !== 0
+) {
+    throw new Error(
+        `Checked Grocery receipt did not reconcile in place: ${JSON.stringify(checkedThenReceipted.summary)}`,
+    );
+}
+pantry = await getPantry({ userId: owner.userId, scope: personalScope });
+const correctedSugar = pantry.items.find(
+    (item) => item.normalized_name === "granulated sugar",
+);
+if (correctedSugar?.quantity !== 5.5) {
+    throw new Error(
+        `Receipt correction double-counted or missed the checked Grocery purchase (got ${correctedSugar?.quantity})`,
+    );
+}
+
 // Receipt: one Grocery match, one new food, one non-food, one uncertain line.
 const receiptGroceries = await addGroceryItems({
     userId: owner.userId,
@@ -209,9 +246,9 @@ const receipt = await reconcilePurchase({
     sourceLabel: "Synthetic Market receipt",
     lines: [
         {
-            rawLabel: "AVOCADO 2",
+            rawLabel: "AVOCADO 3",
             name: "Avocados",
-            quantity: 2,
+            quantity: 3,
             unit: "count",
             confidence: 0.99,
             isFood: true,
@@ -273,6 +310,11 @@ const avocadoGrocery = groceryAfterReceipt.items.find(
 );
 if (!avocadoGrocery?.purchased_at) {
     throw new Error("Receipt did not mark matching Grocery item purchased");
+}
+if (avocadoGrocery.quantity !== 3) {
+    throw new Error(
+        `Receipt did not preserve the actual purchased Grocery quantity (got ${avocadoGrocery.quantity})`,
+    );
 }
 pantry = await getPantry({ userId: owner.userId, scope: personalScope });
 if (!pantry.items.some((item) => item.normalized_name === "greek yogurt")) {

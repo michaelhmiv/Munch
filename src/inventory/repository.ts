@@ -2,6 +2,7 @@ import type { DatabaseTransaction } from "../platform/database.js";
 import { withUserDatabase } from "../platform/database.js";
 import {
     canonicalInventoryUnit,
+    convertInventoryQuantity,
     normalizeInventoryName,
     type InventoryQuantityMode,
     type InventoryStockState,
@@ -275,7 +276,7 @@ async function insertEvent(
             ${canonicalInventoryUnit(input.unit)}, ${input.sourceType},
             ${input.sourceEntityId ?? null}, ${input.sourceKey},
             ${validateConfidence(input.confidence)}, ${input.userId},
-            ${JSON.stringify(input.metadata ?? {})}::jsonb
+            jsonb_build_object()
         )
         on conflict (inventory_space_id, source_key) where source_key is not null
         do nothing
@@ -461,25 +462,36 @@ export async function getPantry(input: {
             200,
             Math.max(1, input.limit ?? (candidates.length ? 40 : 150)),
         );
-        const rows = await tx<Array<Record<string, unknown>>>`
-            select * from munch.inventory_items
-            where inventory_space_id = ${spaceId}
-              and deleted_at is null
-              and (${input.includeDepleted ?? false} or stock_state <> 'depleted')
-              and (${input.location ?? null}::text is null or location = ${input.location ?? null})
-              and (${query} = '' or normalized_name like ${`%${query}%`})
-              and (
-                ${candidates.length === 0}
-                or normalized_name = any(${candidates}::text[])
-                or exists (
-                    select 1 from unnest(${candidates}::text[]) c(name)
-                    where normalized_name like '%' || c.name || '%'
-                       or c.name like '%' || normalized_name || '%'
-                )
-              )
-            order by case stock_state when 'low' then 0 else 1 end, updated_at desc
-            limit ${max}
-        `;
+        const rows =
+            candidates.length === 0
+                ? await tx<Array<Record<string, unknown>>>`
+                      select * from munch.inventory_items
+                      where inventory_space_id = ${spaceId}
+                        and deleted_at is null
+                        and (${input.includeDepleted ?? false} or stock_state <> 'depleted')
+                        and (${input.location ?? null}::text is null or location = ${input.location ?? null})
+                        and (${query} = '' or normalized_name like ${`%${query}%`})
+                      order by case stock_state when 'low' then 0 else 1 end, updated_at desc
+                      limit ${max}
+                  `
+                : await tx<Array<Record<string, unknown>>>`
+                      select * from munch.inventory_items
+                      where inventory_space_id = ${spaceId}
+                        and deleted_at is null
+                        and (${input.includeDepleted ?? false} or stock_state <> 'depleted')
+                        and (${input.location ?? null}::text is null or location = ${input.location ?? null})
+                        and (${query} = '' or normalized_name like ${`%${query}%`})
+                        and (
+                            normalized_name = any(${candidates}::text[])
+                            or exists (
+                                select 1 from unnest(${candidates}::text[]) c(name)
+                                where normalized_name like '%' || c.name || '%'
+                                   or c.name like '%' || normalized_name || '%'
+                            )
+                        )
+                      order by case stock_state when 'low' then 0 else 1 end, updated_at desc
+                      limit ${max}
+                  `;
         return {
             enabled: true,
             inventorySpaceId: spaceId,
@@ -726,6 +738,10 @@ export async function reconcilePurchase(input: {
             `;
             return summarizePurchase(String(existing[0].id), true, lines);
         }
+        const purchasedAt = input.purchasedAt ?? new Date().toISOString();
+        if (Number.isNaN(new Date(purchasedAt).getTime())) {
+            throw new Error("Purchase timestamp is invalid");
+        }
         const batchRows = await tx<Array<{ id: string }>>`
             insert into munch.purchase_reconciliations (
                 inventory_space_id, idempotency_key, source_type, source_label,
@@ -733,7 +749,7 @@ export async function reconcilePurchase(input: {
             ) values (
                 ${spaceId}, ${input.idempotencyKey}, 'receipt',
                 ${input.sourceLabel?.trim().slice(0, 300) || null},
-                ${input.purchasedAt ?? new Date().toISOString()}, 'applied', ${input.userId}
+                ${purchasedAt}, 'applied', ${input.userId}
             ) returning id
         `;
         const batchId = String(batchRows[0]!.id);
@@ -772,48 +788,200 @@ export async function reconcilePurchase(input: {
                     const groceryRows = await tx<
                         Array<Record<string, unknown>>
                     >`
-                        select id, version from munch.grocery_items
+                        select id, version, purchased_at, quantity, unit,
+                               food_provider, provider_food_id, normalized_name
+                        from munch.grocery_items
                         where grocery_list_id = ${groceryListId}
-                          and deleted_at is null and purchased_at is null
+                          and deleted_at is null
                           and (
-                            (${providerId}::text is not null and provider_food_id = ${providerId} and food_provider is not distinct from ${provider})
-                            or normalized_name = ${normalized}
+                            purchased_at is null
+                            or purchased_at between
+                                ${purchasedAt}::timestamptz - interval '7 days'
+                                and ${purchasedAt}::timestamptz + interval '12 hours'
                           )
-                        order by case when provider_food_id = ${providerId} then 0 else 1 end, created_at
+                          and (
+                            (${providerId}::text is not null
+                                and provider_food_id = ${providerId}
+                                and food_provider is not distinct from ${provider})
+                            or normalized_name = ${normalized}
+                            or normalized_name like ${`%${normalized}%`}
+                            or ${normalized} like '%' || normalized_name || '%'
+                          )
+                        order by
+                            case when purchased_at is null then 0 else 1 end,
+                            case when provider_food_id = ${providerId} then 0 else 1 end,
+                            purchased_at desc nulls first,
+                            created_at desc
                         limit 1 for update
                     `;
                     grocery = groceryRows[0];
                 }
                 if (grocery) {
-                    const purchased = await tx<Array<{ id: string }>>`
-                        update munch.grocery_items
-                        set purchased_at = ${input.purchasedAt ?? new Date().toISOString()},
-                            purchased_by_user_id = ${input.userId},
-                            updated_by_user_id = ${input.userId}, updated_at = now(),
-                            version = version + 1
-                        where id = ${String(grocery.id)} and version = ${Number(grocery.version)}
-                        returning id
-                    `;
-                    if (!purchased[0])
-                        throw new Error(
-                            "Grocery item changed during purchase reconciliation",
-                        );
-                    groceryItemId = String(purchased[0].id);
-                    const matchedInventory = await findInventoryItem(
-                        tx,
-                        spaceId,
-                        {
-                            name,
-                            unit: line.unit,
-                            foodProvider: line.foodProvider,
-                            providerFoodId: line.providerFoodId,
-                            location: line.location,
-                        },
+                    groceryItemId = String(grocery.id);
+                    const receiptUnit = canonicalInventoryUnit(
+                        line.unit ??
+                            (grocery.unit == null
+                                ? null
+                                : String(grocery.unit)),
                     );
-                    inventoryItemId = matchedInventory
-                        ? String(matchedInventory.id)
-                        : null;
-                    action = "grocery_matched";
+                    if (grocery.purchased_at == null) {
+                        const purchased = await tx<Array<{ id: string }>>`
+                            update munch.grocery_items
+                            set quantity = coalesce(${line.quantity ?? null}, quantity),
+                                unit = coalesce(${receiptUnit}, unit),
+                                food_provider = coalesce(${line.foodProvider ?? null}, food_provider),
+                                provider_food_id = coalesce(${line.providerFoodId ?? null}, provider_food_id),
+                                purchased_at = ${purchasedAt},
+                                purchased_by_user_id = ${input.userId},
+                                updated_by_user_id = ${input.userId},
+                                updated_at = now(),
+                                version = version + 1
+                            where id = ${groceryItemId}
+                              and version = ${Number(grocery.version)}
+                            returning id
+                        `;
+                        if (!purchased[0]) {
+                            throw new Error(
+                                "Grocery item changed during purchase reconciliation",
+                            );
+                        }
+                        const eventRows = await tx<
+                            Array<{ inventory_item_id: string }>
+                        >`
+                            select inventory_item_id
+                            from munch.inventory_events
+                            where inventory_space_id = ${spaceId}
+                              and source_type = 'grocery_purchase'
+                              and source_entity_id = ${groceryItemId}
+                            order by created_at desc
+                            limit 1
+                        `;
+                        inventoryItemId = eventRows[0]
+                            ? String(eventRows[0].inventory_item_id)
+                            : null;
+                        action = "grocery_matched";
+                    } else {
+                        const priorRows = await tx<
+                            Array<Record<string, unknown>>
+                        >`
+                            select event.inventory_item_id,
+                                   event.delta_quantity,
+                                   event.unit,
+                                   item.quantity as item_quantity,
+                                   item.quantity_mode
+                            from munch.inventory_events event
+                            join munch.inventory_items item
+                              on item.id = event.inventory_item_id
+                            where event.inventory_space_id = ${spaceId}
+                              and event.source_type = 'grocery_purchase'
+                              and event.source_entity_id = ${groceryItemId}
+                            order by event.created_at desc
+                            limit 1
+                            for update of item
+                        `;
+                        const prior = priorRows[0];
+                        if (prior) {
+                            inventoryItemId = String(prior.inventory_item_id);
+                            action = "grocery_matched";
+                            if (
+                                line.quantity != null &&
+                                prior.delta_quantity != null
+                            ) {
+                                const actualQuantity = convertInventoryQuantity(
+                                    line.quantity,
+                                    receiptUnit,
+                                    prior.unit == null
+                                        ? null
+                                        : String(prior.unit),
+                                );
+                                if (actualQuantity == null) {
+                                    action = "needs_review";
+                                    needsReview = true;
+                                } else {
+                                    const delta =
+                                        actualQuantity -
+                                        Number(prior.delta_quantity);
+                                    const currentQuantity =
+                                        prior.item_quantity == null
+                                            ? null
+                                            : Number(prior.item_quantity);
+                                    if (
+                                        currentQuantity != null &&
+                                        Math.abs(delta) > 0.0005
+                                    ) {
+                                        const nextQuantity = Math.max(
+                                            0,
+                                            currentQuantity + delta,
+                                        );
+                                        await tx`
+                                            update munch.inventory_items
+                                            set quantity = ${nextQuantity},
+                                                quantity_mode = case
+                                                    when quantity_mode = 'presence_only'
+                                                        then 'approximate'
+                                                    else quantity_mode
+                                                end,
+                                                stock_state = case
+                                                    when ${nextQuantity} <= 0
+                                                        then 'depleted'
+                                                    else 'available'
+                                                end,
+                                                updated_by_user_id = ${input.userId},
+                                                updated_at = now(),
+                                                version = version + 1
+                                            where id = ${inventoryItemId}
+                                        `;
+                                        await insertEvent(tx, {
+                                            spaceId,
+                                            itemId: inventoryItemId,
+                                            eventType: "correct",
+                                            deltaQuantity: delta,
+                                            quantityAfter: nextQuantity,
+                                            unit:
+                                                prior.unit == null
+                                                    ? null
+                                                    : String(prior.unit),
+                                            sourceType: "receipt",
+                                            sourceEntityId: batchId,
+                                            sourceKey: `receipt:${batchId}:${index}:grocery-correction`,
+                                            confidence: line.confidence,
+                                            userId: input.userId,
+                                        });
+                                    }
+                                }
+                            }
+                            if (action === "grocery_matched") {
+                                await tx`
+                                    update munch.grocery_items
+                                    set quantity = coalesce(${line.quantity ?? null}, quantity),
+                                        unit = coalesce(${receiptUnit}, unit),
+                                        food_provider = coalesce(${line.foodProvider ?? null}, food_provider),
+                                        provider_food_id = coalesce(${line.providerFoodId ?? null}, provider_food_id),
+                                        updated_by_user_id = ${input.userId},
+                                        updated_at = now(),
+                                        version = version + 1
+                                    where id = ${groceryItemId}
+                                `;
+                            }
+                        } else {
+                            const acquired = await acquireInTransaction(tx, {
+                                userId: input.userId,
+                                spaceId,
+                                sourceType: "receipt",
+                                sourceEntityId: batchId,
+                                sourceKey: `receipt:${batchId}:${index}:purchased-grocery`,
+                                name,
+                                quantity: line.quantity,
+                                unit: line.unit,
+                                location: line.location,
+                                foodProvider: line.foodProvider,
+                                providerFoodId: line.providerFoodId,
+                                confidence: line.confidence,
+                            });
+                            inventoryItemId = acquired.item.id;
+                            action = "grocery_matched";
+                        }
+                    }
                 } else {
                     const acquired = await acquireInTransaction(tx, {
                         userId: input.userId,
