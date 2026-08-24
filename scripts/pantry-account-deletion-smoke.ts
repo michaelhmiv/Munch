@@ -2,17 +2,15 @@
 
 import { createSmokeIdentity } from "./support/smoke-user.js";
 
-const { deleteAllUserData } = await import("../src/nutrition-platform/account.js");
+const { deleteAllUserData } =
+    await import("../src/nutrition-platform/account.js");
 const {
     acceptHouseholdInvitation,
     createHousehold,
     createHouseholdInvitation,
 } = await import("../src/households/repository.js");
-const {
-    getPantry,
-    reconcilePantry,
-    setPantryPreference,
-} = await import("../src/inventory/repository.js");
+const { getPantry, reconcilePantry, setPantryPreference } =
+    await import("../src/inventory/repository.js");
 const { closePlatformDatabase, withUserDatabase } =
     await import("../src/platform/database.js");
 

@@ -1,12 +1,16 @@
 #!/usr/bin/env bun
 
-const [html, js, css, routes, index] = await Promise.all([
-    Bun.file("public/pantry.html").text(),
-    Bun.file("public/pantry.js").text(),
-    Bun.file("public/pantry.css").text(),
-    Bun.file("src/inventory/routes.ts").text(),
-    Bun.file("src/index.ts").text(),
-]);
+const [html, js, css, routes, index, appHtml, appStyles, privacy] =
+    await Promise.all([
+        Bun.file("public/pantry.html").text(),
+        Bun.file("public/pantry.js").text(),
+        Bun.file("public/pantry.css").text(),
+        Bun.file("src/inventory/routes.ts").text(),
+        Bun.file("src/index.ts").text(),
+        Bun.file("public/app.html").text(),
+        Bun.file("public/styles.css").text(),
+        Bun.file("public/privacy.html").text(),
+    ]);
 
 const requiredHtml = [
     'id="pantry-enabled"',
@@ -56,7 +60,7 @@ if (!index.includes("10 * 1024 * 1024")) {
         "Global request limit does not admit bounded Pantry image uploads",
     );
 }
-if (!css.includes("@media(max-width:760px)")) {
+if (!/@media\s*\(\s*max-width:\s*760px\s*\)/.test(css)) {
     throw new Error(
         "Pantry workspace is missing its mobile responsive treatment",
     );
@@ -70,6 +74,22 @@ if (/receipt_image|raw_image|image_bytes/.test(routes)) {
     throw new Error(
         "Pantry route source suggests raw receipt media persistence",
     );
+}
+const pantryLinks = appHtml.match(/href="\/app\/pantry"/g) ?? [];
+if (pantryLinks.length < 2) {
+    throw new Error(
+        "Pantry is not discoverable from both desktop and mobile app navigation",
+    );
+}
+if (!appStyles.includes("grid-template-columns: repeat(6, 1fr)")) {
+    throw new Error("Mobile app navigation was not sized for the Pantry entry");
+}
+if (
+    !privacy.includes("Pantry and receipt images") ||
+    !privacy.includes("<strong>OpenRouter</strong>") ||
+    !privacy.includes("not a promise of zero retention")
+) {
+    throw new Error("Pantry image-processing privacy disclosure is incomplete");
 }
 
 console.log("Munch premium Pantry web surface static smoke test passed.");

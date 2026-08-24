@@ -6,7 +6,7 @@
         <title>Privacy Policy — Munch</title>
         <meta
             name="description"
-            content="How Munch stores nutrition, recipe, planning, grocery, and household records; works with ChatGPT; and supports export and deletion."
+            content="How Munch stores nutrition, recipe, planning, grocery, Pantry, and household records; works with ChatGPT; and supports export and deletion."
         />
         <meta name="theme-color" content="#0B8F4D" />
         <link rel="canonical" href="https://munch.business/privacy" />
@@ -35,11 +35,11 @@
                     <p class="section-kicker">Privacy without vague promises</p>
                     <h1>Privacy Policy</h1>
                     <p class="section-copy">
-                        Munch is a consumer nutrition, recipe, and meal-planning
-                        service designed to work through ChatGPT and compatible
-                        MCP clients.
+                        Munch is a consumer nutrition, recipe, meal-planning,
+                        and Pantry inventory service designed to work through
+                        ChatGPT and compatible MCP clients.
                     </p>
-                    <p class="tiny spacer-top">Last updated: August 11, 2026</p>
+                    <p class="tiny spacer-top">Last updated: August 24, 2026</p>
                 </div>
             </section>
             <div class="container legal-layout">
@@ -97,6 +97,14 @@
                                 grocery-list items.
                             </li>
                             <li>
+                                Optional Premium Pantry inventory, exact or
+                                approximate quantities, storage locations,
+                                inventory-event history, and structured purchase
+                                or receipt reconciliation results. Munch does
+                                not retain raw Pantry or receipt images after
+                                the website extraction request is processed.
+                            </li>
+                            <li>
                                 Household names, display names, membership
                                 roles, invitations, and factual attribution
                                 showing who created or changed shared records.
@@ -120,9 +128,25 @@
                             tool arguments needed to perform that request. Those
                             arguments can include food descriptions, quantities,
                             dates, nutrition values, water, weight, goals,
-                            recipes, meal-plan instructions, grocery items, or
-                            account instructions. Munch does not automatically
-                            receive unrelated parts of your conversation.
+                            recipes, meal-plan instructions, grocery items,
+                            Pantry inventory changes, or account instructions.
+                            Munch does not automatically receive unrelated parts
+                            of your conversation.
+                        </p>
+                        <h3>Pantry and receipt images</h3>
+                        <p>
+                            When an eligible Premium user uploads a Pantry,
+                            refrigerator, freezer, or grocery-receipt image
+                            through the Munch website, Munch sends that image
+                            transiently to its configured AI processor to
+                            extract structured food or purchase candidates. The
+                            raw image is not written to the Munch PostgreSQL
+                            database or account export. Uncertain detections are
+                            presented for review before they can change Pantry
+                            inventory. Images uploaded directly to ChatGPT are
+                            handled by ChatGPT under OpenAI's policies; Munch
+                            receives only the structured tool arguments ChatGPT
+                            sends to the connected Munch app.
                         </p>
                         <h3>Why it is stored</h3>
                         <p>
@@ -139,10 +163,11 @@
                         <p>
                             A household is a shared workspace. Active household
                             members can see household recipes, planned meals,
-                            grocery lists, household display names, roles, and
-                            factual activity attribution. Owners and members can
-                            edit shared records when the household has
-                            applicable access; viewers are read-only.
+                            grocery lists, shared Pantry inventory, household
+                            display names, roles, and factual activity
+                            attribution. Owners and members can edit shared
+                            records when the household has applicable access;
+                            viewers are read-only.
                         </p>
                         <p>
                             Personal meal history, water logs, weight logs,
@@ -213,6 +238,17 @@
                                 <strong>Open Food Facts</strong> receives food
                                 or barcode lookup requests when that source is
                                 used.
+                            </li>
+                            <li>
+                                <strong>OpenRouter</strong> receives Pantry or
+                                receipt images uploaded through the Munch
+                                website when AI-assisted extraction is enabled.
+                                Munch requests routing with provider data
+                                collection disabled. That routing preference is
+                                not a promise of zero retention, and the
+                                processors selected through OpenRouter remain
+                                subject to their applicable privacy and
+                                retention practices.
                             </li>
                             <li>
                                 <strong>OpenAI/ChatGPT</strong> processes the
