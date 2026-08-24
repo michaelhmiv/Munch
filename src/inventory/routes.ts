@@ -258,8 +258,9 @@ export function createInventoryRouter(): Hono {
         }),
     );
 
-    app.use("/api/app/pantry*", requireWebSession);
-    app.use("/api/app/purchases*", requireWebSession);
+    app.use("/api/app/pantry", requireWebSession);
+    app.use("/api/app/pantry/*", requireWebSession);
+    app.use("/api/app/purchases/*", requireWebSession);
 
     app.get("/api/app/pantry/settings", async (c) => {
         const context = await premiumContext(c);
