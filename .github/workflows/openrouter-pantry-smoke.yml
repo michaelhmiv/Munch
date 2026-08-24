@@ -1,13 +1,6 @@
 name: OpenRouter Pantry Vision Smoke
 
 on:
-    pull_request:
-        branches:
-            - main
-        paths:
-            - "src/inventory/vision.ts"
-            - "scripts/openrouter-pantry-live-smoke.ts"
-            - ".github/workflows/openrouter-pantry-smoke.yml"
     workflow_dispatch:
         inputs:
             model:
@@ -20,7 +13,7 @@ permissions:
     contents: read
 
 concurrency:
-    group: openrouter-pantry-smoke-${{ github.ref }}
+    group: openrouter-pantry-smoke
     cancel-in-progress: true
 
 jobs:
@@ -31,7 +24,7 @@ jobs:
         env:
             OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
             MUNCH_PANTRY_VISION_ENABLED: "true"
-            MUNCH_PANTRY_VISION_MODEL: ${{ inputs.model || 'openai/gpt-5.6-luna' }}
+            MUNCH_PANTRY_VISION_MODEL: ${{ inputs.model }}
             MUNCH_PANTRY_VISION_TIMEOUT_MS: "30000"
             MUNCH_APP_BASE_URL: "https://munch.business"
         steps:
