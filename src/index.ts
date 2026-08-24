@@ -8,6 +8,7 @@ import { registerBetterAuthRoutes } from "./auth/routes.js";
 import { createBillingRouter } from "./billing/routes.js";
 import { registerDiscoveryRoutes } from "./discovery.js";
 import { startExportCleanup } from "./export.js";
+import { createInventoryRouter } from "./inventory/routes.js";
 import { handleMcp } from "./mcp-runtime.js";
 import {
     authenticateBearer,
@@ -50,7 +51,9 @@ app.use("*", async (c, next) => {
 app.use(
     "*",
     bodyLimit({
-        maxSize: 1024 * 1024,
+        // Receipt/Pantry images are accepted transiently by premium endpoints.
+        // Individual handlers enforce stricter 8 MB image limits.
+        maxSize: 10 * 1024 * 1024,
         onError: (c) => c.json({ error: "payload_too_large" }, 413),
     }),
 );
@@ -96,6 +99,9 @@ registerDiscoveryRoutes(app);
 registerBetterAuthRoutes(app);
 app.route("/", createAccountRouter());
 app.route("/", createBillingRouter());
+// Pantry is mounted before the catch-all /app/* shell so /app/pantry can use a
+// purpose-built premium inventory UI without changing the existing SPA bundle.
+app.route("/", createInventoryRouter());
 app.route("/", createAppRouter());
 app.route("/", createProvenanceRouter());
 app.all(
