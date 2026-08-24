@@ -1,20 +1,36 @@
 import { z } from "zod";
 
-const locationSchema = z.preprocess((value) => {
-    if (typeof value !== "string") return value;
-    const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
-    if (["refrigerator", "refrigerated", "refrigeration"].includes(normalized)) {
-        return "fridge";
-    }
-    if (["cupboard", "cabinet", "dry_storage", "shelf"].includes(normalized)) {
-        return "pantry";
-    }
-    if (["frozen", "frozen_storage"].includes(normalized)) return "freezer";
-    if (["unknown", "none", "not_sure", "not_applicable"].includes(normalized)) {
-        return "unspecified";
-    }
-    return normalized;
-}, z.enum(["pantry", "fridge", "freezer", "unspecified"]));
+const locationSchema = z.preprocess(
+    (value) => {
+        if (typeof value !== "string") return value;
+        const normalized = value
+            .trim()
+            .toLowerCase()
+            .replace(/[\s-]+/g, "_");
+        if (
+            ["refrigerator", "refrigerated", "refrigeration"].includes(
+                normalized,
+            )
+        ) {
+            return "fridge";
+        }
+        if (
+            ["cupboard", "cabinet", "dry_storage", "shelf"].includes(normalized)
+        ) {
+            return "pantry";
+        }
+        if (["frozen", "frozen_storage"].includes(normalized)) return "freezer";
+        if (
+            ["unknown", "none", "not_sure", "not_applicable"].includes(
+                normalized,
+            )
+        ) {
+            return "unspecified";
+        }
+        return normalized;
+    },
+    z.enum(["pantry", "fridge", "freezer", "unspecified"]),
+);
 
 const previewLineSchema = z
     .object({

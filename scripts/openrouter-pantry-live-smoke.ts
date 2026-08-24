@@ -6,7 +6,10 @@ import {
     type InventoryVisionPreview,
 } from "../src/inventory/vision.js";
 
-function requireCondition(condition: unknown, message: string): asserts condition {
+function requireCondition(
+    condition: unknown,
+    message: string,
+): asserts condition {
     if (!condition) throw new Error(message);
 }
 
@@ -15,16 +18,22 @@ function normalizedNames(preview: InventoryVisionPreview): string[] {
 }
 
 function hasAnyName(names: string[], fragments: string[]): boolean {
-    return names.some((name) => fragments.some((fragment) => name.includes(fragment)));
+    return names.some((name) =>
+        fragments.some((fragment) => name.includes(fragment)),
+    );
 }
 
 const receiptPath =
-    process.env.MUNCH_PANTRY_SMOKE_RECEIPT_PATH ?? "/tmp/munch-pantry-receipt.png";
+    process.env.MUNCH_PANTRY_SMOKE_RECEIPT_PATH ??
+    "/tmp/munch-pantry-receipt.png";
 const pantryPath =
     process.env.MUNCH_PANTRY_SMOKE_PANTRY_PATH ?? "/tmp/munch-pantry-scan.png";
 const config = inventoryVisionConfig();
 
-requireCondition(config, "Pantry vision smoke requires configured OpenRouter vision");
+requireCondition(
+    config,
+    "Pantry vision smoke requires configured OpenRouter vision",
+);
 
 const receiptBytes = new Uint8Array(await Bun.file(receiptPath).arrayBuffer());
 const pantryBytes = new Uint8Array(await Bun.file(pantryPath).arrayBuffer());
@@ -38,8 +47,14 @@ const receiptNames = normalizedNames(receipt);
 const receiptFood = receipt.lines.filter((line) => line.is_food);
 const receiptNonFood = receipt.lines.filter((line) => !line.is_food);
 
-requireCondition(receipt.lines.length >= 3, "Receipt smoke returned too few line items");
-requireCondition(receiptFood.length >= 2, "Receipt smoke missed the food purchases");
+requireCondition(
+    receipt.lines.length >= 3,
+    "Receipt smoke returned too few line items",
+);
+requireCondition(
+    receiptFood.length >= 2,
+    "Receipt smoke missed the food purchases",
+);
 requireCondition(
     receiptNonFood.length >= 1,
     "Receipt smoke did not classify the household item as non-food",
@@ -49,7 +64,9 @@ requireCondition(
     `Receipt smoke missed all expected food identities: ${receiptNames.join(", ")}`,
 );
 requireCondition(
-    !receiptNames.some((name) => /\b(subtotal|total|tax|tender|payment)\b/.test(name)),
+    !receiptNames.some((name) =>
+        /\b(subtotal|total|tax|tender|payment)\b/.test(name),
+    ),
     `Receipt smoke incorrectly returned payment/summary rows: ${receiptNames.join(", ")}`,
 );
 
