@@ -1,5 +1,21 @@
 import { z } from "zod";
 
+const locationSchema = z.preprocess((value) => {
+    if (typeof value !== "string") return value;
+    const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+    if (["refrigerator", "refrigerated", "refrigeration"].includes(normalized)) {
+        return "fridge";
+    }
+    if (["cupboard", "cabinet", "dry_storage", "shelf"].includes(normalized)) {
+        return "pantry";
+    }
+    if (["frozen", "frozen_storage"].includes(normalized)) return "freezer";
+    if (["unknown", "none", "not_sure", "not_applicable"].includes(normalized)) {
+        return "unspecified";
+    }
+    return normalized;
+}, z.enum(["pantry", "fridge", "freezer", "unspecified"]));
+
 const previewLineSchema = z
     .object({
         raw_label: z.string().max(300).nullable(),
@@ -8,7 +24,7 @@ const previewLineSchema = z
         unit: z.string().max(80).nullable(),
         is_food: z.boolean(),
         confidence: z.number().min(0).max(1),
-        location: z.enum(["pantry", "fridge", "freezer", "unspecified"]),
+        location: locationSchema,
     })
     .strict();
 
@@ -82,9 +98,9 @@ export function inventoryVisionConfig(
 
 function prompt(mode: InventoryVisionMode): string {
     if (mode === "receipt") {
-        return `Extract purchased line items from this grocery receipt. Return only JSON. Ignore subtotal, total, tax, tender/payment, loyalty savings, coupons, bottle deposits, and repeated headers. Expand obvious receipt abbreviations into a concise product name when reasonably confident, but do not invent brands. Mark household/non-food products is_food=false. Preserve weighted/count quantities when visible. Use location=fridge/freezer/pantry only when strongly implied by the food; otherwise unspecified. Low-confidence ambiguous lines must have confidence below 0.85 so Munch can ask for review.`;
+        return `Extract purchased line items from this grocery receipt. Return only JSON. Ignore subtotal, total, tax, tender/payment, loyalty savings, coupons, bottle deposits, and repeated headers. Expand obvious receipt abbreviations into a concise product name when reasonably confident, but do not invent brands. Mark household/non-food products is_food=false. Preserve weighted/count quantities when visible. The location value must be exactly one of pantry, fridge, freezer, or unspecified. Use fridge/freezer/pantry only when strongly implied by the food; otherwise unspecified. Low-confidence ambiguous lines must have confidence below 0.85 so Munch can ask for review.`;
     }
-    return `Identify edible foods and ingredients visibly present in this pantry, refrigerator, or freezer photo. Return only JSON. Do not invent hidden quantities or products. Count discrete packages/items only when visible; otherwise quantity=null. Mark anything non-food is_food=false. Use the most plausible storage location from the image context. Low-confidence or partially obscured identifications must have confidence below 0.85 so Munch can ask for review.`;
+    return `Identify edible foods and ingredients visibly present in this pantry, refrigerator, or freezer photo. Return only JSON. Do not invent hidden quantities or products. Count discrete packages/items only when visible; otherwise quantity=null. Mark anything non-food is_food=false. The location value must be exactly one of pantry, fridge, freezer, or unspecified. Use the most plausible storage location from the image context. Low-confidence or partially obscured identifications must have confidence below 0.85 so Munch can ask for review.`;
 }
 
 function responseText(value: unknown): string | undefined {
@@ -147,7 +163,7 @@ export async function previewInventoryImage(
                     {
                         role: "system",
                         content:
-                            "You are a precise grocery and kitchen inventory extractor. Output an object with keys lines and notes. Each line has raw_label, name, quantity, unit, is_food, confidence, location. Do not include payment data or personal information.",
+                            "You are a precise grocery and kitchen inventory extractor. Output an object with keys lines and notes. Each line has raw_label, name, quantity, unit, is_food, confidence, location. location must be exactly pantry, fridge, freezer, or unspecified. Do not include payment data or personal information.",
                     },
                     {
                         role: "user",
