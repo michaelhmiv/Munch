@@ -1,0 +1,47 @@
+name: Pantry production HTTP smoke
+
+on:
+    push:
+        branches:
+            - feat/pantry-inventory-reconciliation
+        paths:
+            - ".github/workflows/pantry-production-http-smoke.yml"
+
+permissions:
+    contents: read
+
+jobs:
+    smoke:
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        steps:
+            - name: Verify production HTTP surfaces
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  base="https://munch.business"
+
+                  ready_status=$(curl -sS -o /tmp/ready.body -w '%{http_code}' "$base/health/ready")
+                  test "$ready_status" = "200"
+                  grep -Eq 'ready|ok|healthy' /tmp/ready.body
+
+                  pantry_status=$(curl -sS -o /tmp/pantry.html -w '%{http_code}' "$base/app/pantry")
+                  test "$pantry_status" = "200"
+                  grep -q 'id="pantry-enabled"' /tmp/pantry.html
+                  grep -q 'id="pantry-photo"' /tmp/pantry.html
+                  grep -q 'id="receipt-photo"' /tmp/pantry.html
+
+                  privacy_status=$(curl -sS -o /tmp/privacy.html -w '%{http_code}' "$base/privacy")
+                  test "$privacy_status" = "200"
+                  grep -q 'Pantry and receipt images' /tmp/privacy.html
+                  grep -q '<strong>OpenRouter</strong>' /tmp/privacy.html
+                  grep -q 'not a promise of zero retention' /tmp/privacy.html
+
+                  api_status=$(curl -sS -o /tmp/api.body -w '%{http_code}' "$base/api/app/pantry/settings")
+                  case "$api_status" in
+                    401|403) ;;
+                    *) echo "Expected unauthenticated Pantry settings to reject access, got HTTP $api_status" >&2; cat /tmp/api.body >&2; exit 1 ;;
+                  esac
+
+                  echo "readiness=$ready_status pantry_page=$pantry_status privacy=$privacy_status unauth_pantry_api=$api_status"
+                  echo "Production Pantry HTTP smoke passed."
