@@ -49,12 +49,17 @@ function boundedInteger(
         : fallback;
 }
 
+function enabledFlag(value: string | undefined): boolean {
+    return ["true", "1", "on", "yes"].includes(
+        value?.trim().toLowerCase() ?? "",
+    );
+}
+
 export function inventoryVisionConfig(
     env: Record<string, string | undefined> = process.env,
 ): InventoryVisionConfig | null {
     const apiKey = env.OPENROUTER_API_KEY?.trim();
-    const enabled = env.MUNCH_PANTRY_VISION_ENABLED?.trim().toLowerCase();
-    if (!apiKey || enabled === "false" || enabled === "0") return null;
+    if (!apiKey || !enabledFlag(env.MUNCH_PANTRY_VISION_ENABLED)) return null;
     return {
         apiKey,
         model:
