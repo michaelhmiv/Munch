@@ -71,6 +71,45 @@ jobs:
             migrate=$?
             echo "migrate_exit=$migrate"
             if [ "$migrate" -eq 0 ]; then
+              cat > /tmp/pantry-diag.ts <<'TS'
+          import { createSmokeIdentity } from `${process.cwd()}/scripts/support/smoke-user.js`;
+          const { setPantryPreference, reconcilePantry } = await import(`${process.cwd()}/src/inventory/repository.js`);
+          const { closePlatformDatabase } = await import(`${process.cwd()}/src/platform/database.js`);
+          const identity = await createSmokeIdentity("pantry-sql-diag");
+          await setPantryPreference({ userId: identity.userId, enabled: true });
+          const scope = { type: "personal" as const };
+          async function probe(label: string, operation: any) {
+              console.log(`probe_start=${label}`);
+              try {
+                  const result = await reconcilePantry({
+                      userId: identity.userId,
+                      scope,
+                      sourceType: "manual",
+                      idempotencyKey: `diag-${label}`,
+                      operations: [operation],
+                  });
+                  console.log(`probe_ok=${label} count=${result.operations.length}`);
+              } catch (error) {
+                  console.error(`probe_fail=${label}`);
+                  console.error(error);
+                  if (error && typeof error === "object") {
+                      console.error(JSON.stringify(Object.fromEntries(Object.getOwnPropertyNames(error).map((key) => [key, (error as any)[key]])), null, 2));
+                  }
+                  throw error;
+              }
+          }
+          await probe("sugar", { action: "acquire", name: "Granulated sugar", quantity: 1, unit: "lb", location: "pantry" });
+          await probe("spinach", { action: "acquire", name: "Spinach", quantityMode: "presence_only", location: "fridge" });
+          await closePlatformDatabase();
+          TS
+              echo "== sql probe =="
+              bun /tmp/pantry-diag.ts
+              probe=$?
+            else
+              probe=99
+            fi
+            echo "probe_exit=$probe"
+            if [ "$migrate" -eq 0 ] && [ "$probe" -eq 0 ]; then
               echo "== pantry smoke =="
               bun scripts/pantry-platform-smoke.ts
               smoke=$?
@@ -78,7 +117,7 @@ jobs:
               smoke=99
             fi
             echo "pantry_smoke_exit=$smoke"
-            if [ "$migrate" -eq 0 ] && [ "$smoke" -eq 0 ]; then
+            if [ "$migrate" -eq 0 ] && [ "$probe" -eq 0 ] && [ "$smoke" -eq 0 ]; then
               echo "== typecheck =="
               bun run typecheck
               types=$?
@@ -87,7 +126,7 @@ jobs:
             fi
             echo "typecheck_exit=$types"
           } > .github/pantry-worker-result.txt 2>&1
-          if [ "${migrate:-99}" -eq 0 ] && [ "${smoke:-99}" -eq 0 ] && [ "${types:-99}" -eq 0 ]; then
+          if [ "${migrate:-99}" -eq 0 ] && [ "${probe:-99}" -eq 0 ] && [ "${smoke:-99}" -eq 0 ] && [ "${types:-99}" -eq 0 ]; then
             echo "success=true" >> "$GITHUB_OUTPUT"
           else
             echo "success=false" >> "$GITHUB_OUTPUT"
@@ -102,6 +141,6 @@ jobs:
             git add src/inventory/repository.ts
             git commit -m "fix: store Pantry event metadata as JSON objects"
           else
-            git commit -m "ci: capture Pantry worker failure"
+            git commit -m "ci: localize Pantry SQL failure"
           fi
           git push origin HEAD:feat/pantry-inventory-reconciliation
