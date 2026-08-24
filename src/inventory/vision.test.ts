@@ -69,6 +69,8 @@ describe("inventory vision", () => {
         expect(preview.lines[0]?.name).toBe("Granulated sugar");
         expect(preview.lines[1]?.is_food).toBe(false);
         expect(requestBody).toContain("data:image/jpeg;base64,AQID");
+        const provider = JSON.parse(requestBody).provider;
+        expect(provider).toEqual({ data_collection: "deny" });
     });
 
     test("rejects unsupported media before provider calls", async () => {
