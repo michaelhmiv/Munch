@@ -1,0 +1,50 @@
+== migrate ==
+$ bun scripts/migrate.ts
+install canonical Munch schema 2026-08-18
+  schema 0001_foundation.sql
+  schema 0002_nutrition_core.sql
+  schema 0003_account_deletion_privileges.sql
+  schema 0004_service_facilities.sql
+  schema 0005_structured_meal_items.sql
+  schema 0006_saved_foods.sql
+  schema 0007_meal_drafts.sql
+  schema 0008_meal_draft_confirmation_deletion.sql
+  schema 0009_tool_events_read_grant.sql
+  schema 0010_better_auth.sql
+  schema 0011_household_foundation.sql
+  schema 0012_household_owner_bootstrap.sql
+  schema 0013_recipe_book.sql
+  schema 0014_meal_calendar.sql
+  schema 0015_grocery_lists.sql
+  schema 0016_recipe_usage_links.sql
+  schema 0017_shared_attribution_lifecycle.sql
+  schema 0018_shared_attribution_triggers.sql
+  schema 0019_persistent_food_catalog.sql
+  schema 0020_atomic_meal_review.sql
+  schema 0021_paid_household_seats.sql
+  schema 0022_recipe_revision_idempotency.sql
+  schema 0023_inventory.sql
+  schema 0024_inventory_actor_retention.sql
+apply update 0024_username_credentials.sql
+apply update 0025_inventory.sql
+apply update 0026_inventory_actor_retention.sql
+Database schema is current.
+migrate_exit=0
+== pantry smoke ==
+PostgresError: malformed array literal: ""
+    errno: "22P02",
+   detail: "Array value must start with \"{\" or dimension information.",
+ severity: "ERROR",
+    where: "unnamed portal parameter $8 = ''",
+     file: "arrayfuncs.c",
+  routine: "array_in",
+     code: "ERR_POSTGRES_SERVER_ERROR"
+
+      at wrapPostgresError (internal:sql/postgres:176:27)
+      at onRejectPostgresQuery (internal:sql/postgres:204:33)
+
+::error file=internal%3Asql/postgres,line=176,col=27,title=PostgresError: malformed array literal%3A ""::%0A      at wrapPostgresError (internal:sql/postgres:176:27)%0A      at onRejectPostgresQuery (internal:sql/postgres:204:33)
+
+Bun v1.4.0 (Linux x64)
+pantry_smoke_exit=1
+typecheck_exit=99
