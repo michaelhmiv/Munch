@@ -4,7 +4,7 @@
     "app_info": {
         "display_name": "Munch",
         "subtitle": "Track meals and nutrition",
-        "description": "Munch helps users look up foods, review and confirm meals, preserve nutrition history, reuse saved foods, inspect goals and trends, and manage recipes, meal plans, groceries, and household nutrition records through ChatGPT.",
+        "description": "Munch helps users look up foods, review and confirm meals, preserve nutrition history, reuse saved foods, inspect goals and trends, and manage recipes, meal plans, groceries, optional Premium Pantry inventory, and household nutrition records through ChatGPT.",
         "category": "FOOD"
     },
     "tools": {
@@ -356,6 +356,18 @@
                 "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
             }
         },
+        "get_pantry": {
+            "annotations": {
+                "readOnlyHint": true,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Retrieves or computes information without changing the user's Munch records.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
         "get_recipe": {
             "annotations": {
                 "readOnlyHint": true,
@@ -621,6 +633,30 @@
             }
         },
         "prepare_meal_review": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": false
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Does not permanently delete, revoke, or perform another irreversible action."
+            }
+        },
+        "reconcile_pantry": {
+            "annotations": {
+                "readOnlyHint": false,
+                "openWorldHint": false,
+                "destructiveHint": true
+            },
+            "justifications": {
+                "read_only_justification": "Creates or updates records inside the authenticated user's private Munch account or household workspace.",
+                "open_world_justification": "Does not publish content or change publicly visible internet state or third-party systems.",
+                "destructive_justification": "Can permanently delete, revoke, or cancel selected private Munch data after the tool's confirmation safeguard is satisfied."
+            }
+        },
+        "reconcile_purchase": {
             "annotations": {
                 "readOnlyHint": false,
                 "openWorldHint": false,

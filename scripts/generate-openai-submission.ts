@@ -49,7 +49,7 @@ function createSubmission(entries: ToolInventoryEntry[]) {
             display_name: "Munch",
             subtitle: "Track meals and nutrition",
             description:
-                "Munch helps users look up foods, review and confirm meals, preserve nutrition history, reuse saved foods, inspect goals and trends, and manage recipes, meal plans, groceries, and household nutrition records through ChatGPT.",
+                "Munch helps users look up foods, review and confirm meals, preserve nutrition history, reuse saved foods, inspect goals and trends, and manage recipes, meal plans, groceries, optional Premium Pantry inventory, and household nutrition records through ChatGPT.",
             category: "FOOD",
         },
         tools,

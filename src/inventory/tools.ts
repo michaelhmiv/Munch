@@ -228,7 +228,7 @@ export function registerInventoryTools(
         {
             title: "Reconcile Pantry",
             description:
-                "Apply a batch Pantry update only from explicit user facts: what they bought, used, finished, discarded, moved, or corrected. Never infer meal consumption and silently subtract it. It is fine to propose likely matches first with get_pantry, then reconcile only after the user clarifies.",
+                "Apply a batch Pantry update only from explicit user facts: what they bought, used, finished, discarded, moved, or corrected. Never infer meal consumption and silently subtract it. It is fine to propose likely matches first with get_pantry, then reconcile only after the user clarifies. Because this tool can consume, discard, or deplete inventory, set confirmation=true only when the user's current instruction explicitly authorizes the Pantry changes being applied.",
             annotations: {
                 readOnlyHint: false,
                 destructiveHint: true,
@@ -246,6 +246,11 @@ export function registerInventoryTools(
                 ]),
                 source_entity_id: z.string().uuid().optional(),
                 idempotency_key: z.string().min(1).max(255),
+                confirmation: z
+                    .literal(true)
+                    .describe(
+                        "Required. Set true only after the user's current instruction explicitly confirms the Pantry changes in this batch, including any consumption, discard, or depletion.",
+                    ),
                 operations: z.array(operationSchema).min(1).max(100),
             },
             outputSchema: {
