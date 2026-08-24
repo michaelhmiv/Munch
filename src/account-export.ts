@@ -26,6 +26,7 @@ function stripInternalFields(records: JsonRecord[]): JsonRecord[] {
         delete copy.added_by_user_id;
         delete copy.purchased_by_user_id;
         delete copy.invited_by_user_id;
+        delete copy.actor_user_id;
         delete copy.token_hash;
         return copy;
     });
@@ -57,6 +58,11 @@ export async function exportAccountData(
             plannedMeals,
             groceryLists,
             groceryItems,
+            inventorySpaces,
+            inventoryItems,
+            inventoryEvents,
+            purchaseReconciliations,
+            purchaseReconciliationLines,
         ] = await Promise.all([
             tx<JsonRecord[]>`
                 select id, email, email_verified_at, status, created_at, updated_at
@@ -65,7 +71,7 @@ export async function exportAccountData(
             tx<JsonRecord[]>`
                 select timezone, preferred_weight_unit, widgets_enabled,
                        alcohol_tracking_enabled, preferred_drink_unit,
-                       created_at, updated_at
+                       pantry_enabled, created_at, updated_at
                 from munch.account_preferences where user_id = ${userId}
             `,
             tx<JsonRecord[]>`
@@ -199,10 +205,81 @@ export async function exportAccountData(
                    )
                 order by item.grocery_list_id, item.created_at, item.id
             `,
+            tx<JsonRecord[]>`
+                select space.*
+                from munch.inventory_spaces space
+                where space.personal_owner_user_id = ${userId}
+                   or space.household_id in (
+                       select membership.household_id
+                       from munch.household_memberships membership
+                       where membership.user_id = ${userId}
+                         and membership.status = 'active'
+                   )
+                order by space.created_at, space.id
+            `,
+            tx<JsonRecord[]>`
+                select item.*
+                from munch.inventory_items item
+                join munch.inventory_spaces space
+                  on space.id = item.inventory_space_id
+                where space.personal_owner_user_id = ${userId}
+                   or space.household_id in (
+                       select membership.household_id
+                       from munch.household_memberships membership
+                       where membership.user_id = ${userId}
+                         and membership.status = 'active'
+                   )
+                order by item.inventory_space_id, item.created_at, item.id
+            `,
+            tx<JsonRecord[]>`
+                select event.*
+                from munch.inventory_events event
+                join munch.inventory_spaces space
+                  on space.id = event.inventory_space_id
+                where space.personal_owner_user_id = ${userId}
+                   or space.household_id in (
+                       select membership.household_id
+                       from munch.household_memberships membership
+                       where membership.user_id = ${userId}
+                         and membership.status = 'active'
+                   )
+                order by event.inventory_space_id, event.created_at, event.id
+            `,
+            tx<JsonRecord[]>`
+                select purchase.*
+                from munch.purchase_reconciliations purchase
+                join munch.inventory_spaces space
+                  on space.id = purchase.inventory_space_id
+                where space.personal_owner_user_id = ${userId}
+                   or space.household_id in (
+                       select membership.household_id
+                       from munch.household_memberships membership
+                       where membership.user_id = ${userId}
+                         and membership.status = 'active'
+                   )
+                order by purchase.inventory_space_id, purchase.created_at,
+                         purchase.id
+            `,
+            tx<JsonRecord[]>`
+                select line.*
+                from munch.purchase_reconciliation_lines line
+                join munch.purchase_reconciliations purchase
+                  on purchase.id = line.purchase_reconciliation_id
+                join munch.inventory_spaces space
+                  on space.id = purchase.inventory_space_id
+                where space.personal_owner_user_id = ${userId}
+                   or space.household_id in (
+                       select membership.household_id
+                       from munch.household_memberships membership
+                       where membership.user_id = ${userId}
+                         and membership.status = 'active'
+                   )
+                order by line.purchase_reconciliation_id, line.position
+            `,
         ]);
 
         return {
-            schema_version: 1,
+            schema_version: 2,
             exported_at: new Date().toISOString(),
             account: account[0] ?? null,
             preferences: preferences[0] ?? null,
@@ -220,6 +297,15 @@ export async function exportAccountData(
             planned_meals: stripInternalFields(plannedMeals),
             grocery_lists: stripInternalFields(groceryLists),
             grocery_items: stripInternalFields(groceryItems),
+            inventory_spaces: stripInternalFields(inventorySpaces),
+            inventory_items: stripInternalFields(inventoryItems),
+            inventory_events: stripInternalFields(inventoryEvents),
+            purchase_reconciliations: stripInternalFields(
+                purchaseReconciliations,
+            ),
+            purchase_reconciliation_lines: stripInternalFields(
+                purchaseReconciliationLines,
+            ),
         };
     });
 
