@@ -127,6 +127,8 @@ jobs:
         run: bun scripts/meal-review-benchmark.ts
       - name: Exercise Better Auth account deletion and cascade cleanup
         run: bun scripts/account-deletion-smoke.ts
+      - name: Exercise shared Pantry retention after member account deletion
+        run: bun scripts/pantry-account-deletion-smoke.ts
       - name: Exercise readiness endpoints and maintenance
         run: bun scripts/operations-smoke.ts
 
