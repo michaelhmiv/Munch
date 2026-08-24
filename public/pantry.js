@@ -1,0 +1,305 @@
+const $ = (selector) => document.querySelector(selector);
+const enabledToggle = $("#pantry-enabled");
+const workspace = $("#workspace");
+const premiumMessage = $("#premium-message");
+const statusEl = $("#status");
+const inventoryEl = $("#inventory");
+const emptyEl = $("#empty");
+const itemCountEl = $("#item-count");
+const scopeEl = $("#scope");
+const searchEl = $("#search");
+const locationEl = $("#location-filter");
+const reviewEl = $("#review");
+const reviewLinesEl = $("#review-lines");
+const reviewTitleEl = $("#review-title");
+const applyReviewEl = $("#apply-review");
+
+let premium = false;
+let reviewState = null;
+
+function status(message, error = false) {
+  statusEl.textContent = message || "";
+  statusEl.style.color = error ? "#9b2c2c" : "#555";
+}
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: {
+      ...(options.body instanceof FormData ? {} : { "content-type": "application/json" }),
+      ...(options.headers || {}),
+    },
+  });
+  const text = await response.text();
+  let payload = {};
+  try { payload = text ? JSON.parse(text) : {}; } catch { payload = { error: text || "request_failed" }; }
+  if (!response.ok) {
+    const error = new Error(payload.error || payload.message || `Request failed (${response.status})`);
+    error.status = response.status;
+    throw error;
+  }
+  return payload;
+}
+
+function currentScope() { return scopeEl.value || "personal"; }
+
+async function loadSettings() {
+  try {
+    const settings = await api("/api/app/pantry/settings");
+    premium = settings.premium === true;
+    enabledToggle.checked = settings.enabled === true;
+    if (settings.household_available && !scopeEl.querySelector('option[value="household"]')) {
+      const option = document.createElement("option");
+      option.value = "household";
+      option.textContent = "Household Pantry";
+      scopeEl.append(option);
+    }
+    premiumMessage.classList.toggle("hidden", premium);
+    workspace.classList.toggle("hidden", !premium || !settings.enabled);
+    if (settings.enabled) await loadPantry();
+  } catch (error) {
+    if (error.status === 403) {
+      premium = false;
+      premiumMessage.classList.remove("hidden");
+      enabledToggle.disabled = true;
+      workspace.classList.add("hidden");
+      return;
+    }
+    status(error.message, true);
+  }
+}
+
+async function setEnabled(enabled) {
+  try {
+    status(enabled ? "Enabling Pantry…" : "Disabling Pantry…");
+    const result = await api("/api/app/pantry/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
+    });
+    enabledToggle.checked = result.enabled;
+    workspace.classList.toggle("hidden", !result.enabled);
+    status(result.enabled ? "Pantry enabled. ChatGPT will expose Pantry tools on the next app refresh." : "Pantry disabled. Existing inventory is preserved.");
+    if (result.enabled) await loadPantry();
+  } catch (error) {
+    enabledToggle.checked = !enabled;
+    status(error.message, true);
+  }
+}
+
+enabledToggle.addEventListener("change", () => setEnabled(enabledToggle.checked));
+
+function quantityLabel(item) {
+  if (item.quantity == null) return item.stock_state === "low" ? "Low" : "On hand";
+  const prefix = item.quantity_mode === "approximate" ? "≈ " : "";
+  return `${prefix}${Number(item.quantity).toLocaleString()}${item.unit ? ` ${item.unit}` : ""}`;
+}
+
+function renderInventory(items) {
+  inventoryEl.replaceChildren();
+  itemCountEl.textContent = `${items.length} item${items.length === 1 ? "" : "s"}`;
+  emptyEl.classList.toggle("hidden", items.length !== 0);
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = `inventory-row stock-${item.stock_state}`;
+    const name = document.createElement("div");
+    name.innerHTML = `<strong></strong><small></small>`;
+    name.querySelector("strong").textContent = item.name;
+    name.querySelector("small").textContent = item.food_provider && item.provider_food_id ? `${item.food_provider} · verified identity` : item.quantity_mode.replaceAll("_", " ");
+    const quantity = document.createElement("div");
+    quantity.textContent = quantityLabel(item);
+    const unit = document.createElement("div");
+    unit.className = "inventory-unit";
+    unit.textContent = item.unit || "—";
+    const location = document.createElement("div");
+    location.className = "inventory-location";
+    location.textContent = item.location;
+    const actions = document.createElement("div");
+    const finished = document.createElement("button");
+    finished.type = "button";
+    finished.className = "secondary";
+    finished.textContent = item.stock_state === "depleted" ? "Depleted" : "Finished";
+    finished.disabled = item.stock_state === "depleted";
+    finished.addEventListener("click", () => reconcileOperations([
+      { action: "consume_all", inventory_item_id: item.id },
+    ], "correction"));
+    actions.append(finished);
+    row.append(name, quantity, unit, location, actions);
+    inventoryEl.append(row);
+  }
+}
+
+async function loadPantry() {
+  if (!premium || !enabledToggle.checked) return;
+  try {
+    status("Loading Pantry…");
+    const query = new URLSearchParams({ scope: currentScope() });
+    if (searchEl.value.trim()) query.set("q", searchEl.value.trim());
+    if (locationEl.value) query.set("location", locationEl.value);
+    const pantry = await api(`/api/app/pantry?${query}`);
+    renderInventory(pantry.items || []);
+    status("");
+  } catch (error) {
+    status(error.message, true);
+  }
+}
+
+$("#refresh").addEventListener("click", loadPantry);
+scopeEl.addEventListener("change", loadPantry);
+locationEl.addEventListener("change", loadPantry);
+let searchTimer;
+searchEl.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(loadPantry, 250);
+});
+
+async function reconcileOperations(operations, sourceType = "manual") {
+  try {
+    status("Updating Pantry…");
+    await api("/api/app/pantry/reconcile", {
+      method: "POST",
+      body: JSON.stringify({
+        scope: currentScope(),
+        source_type: sourceType,
+        idempotency_key: `web-pantry:${crypto.randomUUID()}`,
+        operations,
+      }),
+    });
+    await loadPantry();
+  } catch (error) {
+    status(error.message, true);
+  }
+}
+
+$("#manual-add").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const quantity = form.get("quantity");
+  const operation = {
+    action: "acquire",
+    name: String(form.get("name") || "").trim(),
+    location: String(form.get("location") || "unspecified"),
+  };
+  if (quantity !== "") operation.quantity = Number(quantity);
+  if (form.get("unit")) operation.unit = String(form.get("unit"));
+  await reconcileOperations([operation]);
+  event.currentTarget.reset();
+});
+
+function renderReview(mode, preview, sourceLabel) {
+  reviewState = {
+    mode,
+    lines: preview.lines || [],
+    sourceLabel,
+    idempotencyKey: `${mode}:${crypto.randomUUID()}`,
+  };
+  reviewTitleEl.textContent = mode === "receipt" ? "Receipt items" : "Detected Pantry items";
+  reviewLinesEl.replaceChildren();
+  reviewState.lines.forEach((line, index) => {
+    const row = document.createElement("label");
+    row.className = "review-row";
+    const check = document.createElement("input");
+    check.type = "checkbox";
+    check.dataset.index = String(index);
+    check.checked = line.is_food && line.confidence >= 0.85;
+    check.disabled = !line.is_food;
+    const name = document.createElement("span");
+    name.textContent = line.name;
+    const quantity = document.createElement("span");
+    quantity.textContent = line.quantity == null ? "—" : String(line.quantity);
+    const unit = document.createElement("span");
+    unit.className = "review-unit";
+    unit.textContent = line.unit || "";
+    const confidence = document.createElement("span");
+    confidence.className = "confidence";
+    confidence.textContent = line.is_food ? `${Math.round(line.confidence * 100)}% confidence` : "non-food";
+    row.append(check, name, quantity, unit, confidence);
+    reviewLinesEl.append(row);
+  });
+  reviewEl.classList.remove("hidden");
+  reviewEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+async function previewImage(input, endpoint, mode) {
+  const file = input.files?.[0];
+  if (!file) return status("Choose an image first.", true);
+  if (file.size > 8 * 1024 * 1024) return status("Image exceeds the 8 MB Pantry limit.", true);
+  const form = new FormData();
+  form.append("file", file);
+  try {
+    status("Analyzing image…");
+    const result = await api(endpoint, { method: "POST", body: form });
+    renderReview(mode, result.preview, file.name);
+    status("Review the detected items before applying them.");
+  } catch (error) {
+    status(error.message, true);
+  }
+}
+
+$("#scan-pantry").addEventListener("click", () =>
+  previewImage($("#pantry-photo"), "/api/app/pantry/scan-preview", "pantry"),
+);
+$("#scan-receipt").addEventListener("click", () =>
+  previewImage($("#receipt-photo"), "/api/app/purchases/receipt-preview", "receipt"),
+);
+
+applyReviewEl.addEventListener("click", async () => {
+  if (!reviewState) return;
+  const checked = new Set(
+    [...reviewLinesEl.querySelectorAll('input[type="checkbox"]:checked')].map((input) => Number(input.dataset.index)),
+  );
+  try {
+    if (reviewState.mode === "pantry") {
+      const operations = reviewState.lines
+        .map((line, index) => ({ line, index }))
+        .filter(({ line, index }) => line.is_food && checked.has(index))
+        .map(({ line }) => ({
+          action: "acquire",
+          name: line.name,
+          ...(line.quantity == null ? {} : { quantity: line.quantity }),
+          ...(line.unit ? { unit: line.unit } : {}),
+          location: line.location,
+          confidence: line.confidence,
+          quantity_mode: line.quantity == null ? "presence_only" : line.confidence >= 0.95 ? "exact" : "approximate",
+        }));
+      if (!operations.length) return status("Select at least one detected food.", true);
+      await api("/api/app/pantry/reconcile", {
+        method: "POST",
+        body: JSON.stringify({
+          scope: currentScope(),
+          source_type: "pantry_scan",
+          idempotency_key: reviewState.idempotencyKey,
+          operations,
+        }),
+      });
+      status(`${operations.length} detected item${operations.length === 1 ? "" : "s"} added to Pantry.`);
+    } else {
+      const lines = reviewState.lines.map((line, index) => ({
+        raw_label: line.raw_label,
+        name: line.name,
+        quantity: line.quantity,
+        unit: line.unit,
+        confidence: line.confidence,
+        is_food: line.is_food,
+        confirmed: checked.has(index),
+        location: line.location,
+      }));
+      const result = await api("/api/app/purchases/reconcile", {
+        method: "POST",
+        body: JSON.stringify({
+          scope: currentScope(),
+          idempotency_key: reviewState.idempotencyKey,
+          source_label: reviewState.sourceLabel,
+          lines,
+        }),
+      });
+      status(`Receipt reconciled: ${result.summary.groceryMatched} Grocery match${result.summary.groceryMatched === 1 ? "" : "es"}, ${result.summary.inventoryAdded} new Pantry acquisition${result.summary.inventoryAdded === 1 ? "" : "s"}${result.summary.needsReview ? `, ${result.summary.needsReview} left unresolved` : ""}.`);
+    }
+    reviewState = null;
+    reviewEl.classList.add("hidden");
+    await loadPantry();
+  } catch (error) {
+    status(error.message, true);
+  }
+});
+
+loadSettings();
