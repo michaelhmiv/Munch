@@ -25,8 +25,8 @@ jobs:
                   test "$ready_status" = "200"
                   grep -Eq 'ready|ok|healthy' /tmp/ready.body
 
-                  pantry_status=$(curl -sS -o /tmp/pantry.html -w '%{http_code}' "$base/app/pantry")
-                  test "$pantry_status" = "200"
+                  pantry_page_status=$(curl -sS -o /tmp/pantry.html -w '%{http_code}' "$base/app/pantry")
+                  test "$pantry_page_status" = "200"
                   grep -q 'id="pantry-enabled"' /tmp/pantry.html
                   grep -q 'id="pantry-photo"' /tmp/pantry.html
                   grep -q 'id="receipt-photo"' /tmp/pantry.html
@@ -37,11 +37,23 @@ jobs:
                   grep -q '<strong>OpenRouter</strong>' /tmp/privacy.html
                   grep -q 'not a promise of zero retention' /tmp/privacy.html
 
-                  api_status=$(curl -sS -o /tmp/api.body -w '%{http_code}' "$base/api/app/pantry/settings")
-                  case "$api_status" in
-                    401|403) ;;
-                    *) echo "Expected unauthenticated Pantry settings to reject access, got HTTP $api_status" >&2; cat /tmp/api.body >&2; exit 1 ;;
-                  esac
+                  assert_unauth() {
+                    method="$1"
+                    path="$2"
+                    output="$3"
+                    status=$(curl -sS -X "$method" -o "$output" -w '%{http_code}' "$base$path")
+                    if [ "$status" != "401" ]; then
+                      echo "Expected unauthenticated $method $path to return 401, got HTTP $status" >&2
+                      cat "$output" >&2
+                      exit 1
+                    fi
+                    printf '%s' "$status"
+                  }
 
-                  echo "readiness=$ready_status pantry_page=$pantry_status privacy=$privacy_status unauth_pantry_api=$api_status"
+                  settings_status=$(assert_unauth GET /api/app/pantry/settings /tmp/settings.body)
+                  pantry_api_status=$(assert_unauth GET /api/app/pantry /tmp/pantry-api.body)
+                  reconcile_status=$(assert_unauth POST /api/app/pantry/reconcile /tmp/reconcile.body)
+                  purchase_status=$(assert_unauth POST /api/app/purchases/reconcile /tmp/purchase.body)
+
+                  echo "readiness=$ready_status pantry_page=$pantry_page_status privacy=$privacy_status pantry_settings=$settings_status pantry_api=$pantry_api_status pantry_reconcile=$reconcile_status purchase_reconcile=$purchase_status"
                   echo "Production Pantry HTTP smoke passed."
