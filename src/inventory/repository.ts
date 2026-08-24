@@ -8,8 +8,7 @@ import {
 } from "./matching.js";
 
 export type InventoryScope =
-    | { type: "personal" }
-    | { type: "household"; householdId: string };
+    { type: "personal" } | { type: "household"; householdId: string };
 export type InventoryLocation = "pantry" | "fridge" | "freezer" | "unspecified";
 export type InventorySourceType =
     | "manual"
@@ -154,7 +153,8 @@ async function getOrCreateSpace(
             ${owner.personalOwnerUserId}, ${owner.householdId}, ${userId}
         ) returning id
     `;
-    if (!inserted[0]) throw new Error("Inventory space creation returned no row");
+    if (!inserted[0])
+        throw new Error("Inventory space creation returned no row");
     return String(inserted[0].id);
 }
 
@@ -183,7 +183,8 @@ function serializeItem(row: Record<string, unknown>): PantryItem {
         quantity_mode: String(row.quantity_mode) as InventoryQuantityMode,
         stock_state: String(row.stock_state) as InventoryStockState,
         location: String(row.location) as InventoryLocation,
-        food_provider: row.food_provider == null ? null : String(row.food_provider),
+        food_provider:
+            row.food_provider == null ? null : String(row.food_provider),
         provider_food_id:
             row.provider_food_id == null ? null : String(row.provider_food_id),
         barcode: row.barcode == null ? null : String(row.barcode),
@@ -312,13 +313,15 @@ async function acquireInTransaction(
         const itemRows = await tx<Array<Record<string, unknown>>>`
             select * from munch.inventory_items where id = ${already[0].inventory_item_id}
         `;
-        if (!itemRows[0]) throw new Error("Idempotent Pantry event lost its item");
+        if (!itemRows[0])
+            throw new Error("Idempotent Pantry event lost its item");
         return { item: serializeItem(itemRows[0]), deduplicated: true };
     }
 
     const name = input.name.trim();
     const normalized = normalizeInventoryName(name);
-    if (!name || !normalized || name.length > 300) throw new Error("Pantry item name is invalid");
+    if (!name || !normalized || name.length > 300)
+        throw new Error("Pantry item name is invalid");
     const quantity = validateQuantity(input.quantity) ?? null;
     const unit = canonicalInventoryUnit(input.unit);
     const location = normalizeLocation(input.location);
@@ -347,7 +350,8 @@ async function acquireInTransaction(
         `;
         row = inserted[0] ?? null;
     } else {
-        const currentQuantity = row.quantity == null ? null : Number(row.quantity);
+        const currentQuantity =
+            row.quantity == null ? null : Number(row.quantity);
         const currentMode = String(row.quantity_mode) as InventoryQuantityMode;
         const nextQuantity =
             quantity == null
@@ -435,15 +439,28 @@ export async function getPantry(input: {
             select pantry_enabled from munch.account_preferences where user_id = ${input.userId}
         `;
         const enabled = preference[0]?.pantry_enabled === true;
-        if (!enabled) return { enabled: false, inventorySpaceId: null, items: [] as PantryItem[] };
+        if (!enabled)
+            return {
+                enabled: false,
+                inventorySpaceId: null,
+                items: [] as PantryItem[],
+            };
         const spaceId = await existingSpace(tx, input.userId, input.scope);
-        if (!spaceId) return { enabled: true, inventorySpaceId: null, items: [] as PantryItem[] };
+        if (!spaceId)
+            return {
+                enabled: true,
+                inventorySpaceId: null,
+                items: [] as PantryItem[],
+            };
         const query = normalizeInventoryName(input.query ?? "");
         const candidates = (input.candidateNames ?? [])
             .map(normalizeInventoryName)
             .filter(Boolean)
             .slice(0, 30);
-        const max = Math.min(200, Math.max(1, input.limit ?? (candidates.length ? 40 : 150)));
+        const max = Math.min(
+            200,
+            Math.max(1, input.limit ?? (candidates.length ? 40 : 150)),
+        );
         const rows = await tx<Array<Record<string, unknown>>>`
             select * from munch.inventory_items
             where inventory_space_id = ${spaceId}
@@ -463,7 +480,11 @@ export async function getPantry(input: {
             order by case stock_state when 'low' then 0 else 1 end, updated_at desc
             limit ${max}
         `;
-        return { enabled: true, inventorySpaceId: spaceId, items: rows.map(serializeItem) };
+        return {
+            enabled: true,
+            inventorySpaceId: spaceId,
+            items: rows.map(serializeItem),
+        };
     });
 }
 
@@ -485,9 +506,14 @@ export async function reconcilePantry(input: {
         const enabledRows = await tx<Array<{ pantry_enabled: boolean }>>`
             select pantry_enabled from munch.account_preferences where user_id = ${input.userId}
         `;
-        if (enabledRows[0]?.pantry_enabled !== true) throw new Error("Pantry is not enabled");
+        if (enabledRows[0]?.pantry_enabled !== true)
+            throw new Error("Pantry is not enabled");
         const spaceId = await getOrCreateSpace(tx, input.userId, input.scope);
-        const results: Array<{ action: string; item: PantryItem; deduplicated: boolean }> = [];
+        const results: Array<{
+            action: string;
+            item: PantryItem;
+            deduplicated: boolean;
+        }> = [];
 
         for (let index = 0; index < input.operations.length; index += 1) {
             const op = input.operations[index]!;
@@ -520,24 +546,51 @@ export async function reconcilePantry(input: {
                 limit 1
             `;
             if (priorEvent[0]) {
-                const priorItem = await readItemForUpdate(tx, spaceId, priorEvent[0].inventory_item_id);
-                results.push({ action: op.action, item: serializeItem(priorItem), deduplicated: true });
+                const priorItem = await readItemForUpdate(
+                    tx,
+                    spaceId,
+                    priorEvent[0].inventory_item_id,
+                );
+                results.push({
+                    action: op.action,
+                    item: serializeItem(priorItem),
+                    deduplicated: true,
+                });
                 continue;
             }
 
-            const row = await readItemForUpdate(tx, spaceId, op.inventoryItemId);
-            const currentQuantity = row.quantity == null ? null : Number(row.quantity);
+            const row = await readItemForUpdate(
+                tx,
+                spaceId,
+                op.inventoryItemId,
+            );
+            const currentQuantity =
+                row.quantity == null ? null : Number(row.quantity);
             let updated: Record<string, unknown> | undefined;
             let delta: number | null = null;
 
             if (op.action === "consume") {
-                if (!Number.isFinite(op.quantity) || op.quantity <= 0) throw new Error("Consumption quantity must be positive");
-                const currentUnit = canonicalInventoryUnit(row.unit == null ? null : String(row.unit));
-                const requestedUnit = canonicalInventoryUnit(op.unit ?? currentUnit);
-                if (currentUnit && requestedUnit && currentUnit !== requestedUnit) {
-                    throw new Error("Consumption unit must match the Pantry item unit");
+                if (!Number.isFinite(op.quantity) || op.quantity <= 0)
+                    throw new Error("Consumption quantity must be positive");
+                const currentUnit = canonicalInventoryUnit(
+                    row.unit == null ? null : String(row.unit),
+                );
+                const requestedUnit = canonicalInventoryUnit(
+                    op.unit ?? currentUnit,
+                );
+                if (
+                    currentUnit &&
+                    requestedUnit &&
+                    currentUnit !== requestedUnit
+                ) {
+                    throw new Error(
+                        "Consumption unit must match the Pantry item unit",
+                    );
                 }
-                const next = currentQuantity == null ? null : Math.max(0, currentQuantity - op.quantity);
+                const next =
+                    currentQuantity == null
+                        ? null
+                        : Math.max(0, currentQuantity - op.quantity);
                 delta = -op.quantity;
                 const rows = await tx<Array<Record<string, unknown>>>`
                     update munch.inventory_items
@@ -548,7 +601,11 @@ export async function reconcilePantry(input: {
                     where id = ${op.inventoryItemId} returning *
                 `;
                 updated = rows[0];
-            } else if (op.action === "consume_all" || op.action === "mark_depleted" || op.action === "discard") {
+            } else if (
+                op.action === "consume_all" ||
+                op.action === "mark_depleted" ||
+                op.action === "discard"
+            ) {
                 delta = currentQuantity == null ? null : -currentQuantity;
                 const rows = await tx<Array<Record<string, unknown>>>`
                     update munch.inventory_items
@@ -576,8 +633,13 @@ export async function reconcilePantry(input: {
                 updated = rows[0];
             } else if (op.action === "correct") {
                 const quantity = validateQuantity(op.quantity);
-                const nextQuantity = quantity === undefined ? currentQuantity : quantity;
-                const nextState = op.stockState ?? (nextQuantity === 0 ? "depleted" : String(row.stock_state) as InventoryStockState);
+                const nextQuantity =
+                    quantity === undefined ? currentQuantity : quantity;
+                const nextState =
+                    op.stockState ??
+                    (nextQuantity === 0
+                        ? "depleted"
+                        : (String(row.stock_state) as InventoryStockState));
                 const rows = await tx<Array<Record<string, unknown>>>`
                     update munch.inventory_items
                     set quantity = ${nextQuantity},
@@ -590,7 +652,8 @@ export async function reconcilePantry(input: {
                 `;
                 updated = rows[0];
             }
-            if (!updated) throw new Error("Pantry reconciliation produced no item");
+            if (!updated)
+                throw new Error("Pantry reconciliation produced no item");
             const item = serializeItem(updated);
             await insertEvent(tx, {
                 spaceId,
@@ -607,7 +670,11 @@ export async function reconcilePantry(input: {
             });
             results.push({ action: op.action, item, deduplicated: false });
         }
-        return { enabled: true, inventorySpaceId: spaceId, operations: results };
+        return {
+            enabled: true,
+            inventorySpaceId: spaceId,
+            operations: results,
+        };
     });
 }
 
@@ -635,13 +702,16 @@ export async function reconcilePurchase(input: {
     purchasedAt?: string;
     lines: PurchaseLineInput[];
 }) {
-    if (!input.idempotencyKey.trim() || input.idempotencyKey.length > 255) throw new Error("Purchase idempotency key is required");
-    if (input.lines.length < 1 || input.lines.length > 200) throw new Error("Reconcile 1 to 200 purchase lines at a time");
+    if (!input.idempotencyKey.trim() || input.idempotencyKey.length > 255)
+        throw new Error("Purchase idempotency key is required");
+    if (input.lines.length < 1 || input.lines.length > 200)
+        throw new Error("Reconcile 1 to 200 purchase lines at a time");
     return withUserDatabase(input.userId, async (tx) => {
         const enabledRows = await tx<Array<{ pantry_enabled: boolean }>>`
             select pantry_enabled from munch.account_preferences where user_id = ${input.userId}
         `;
-        if (enabledRows[0]?.pantry_enabled !== true) throw new Error("Pantry is not enabled");
+        if (enabledRows[0]?.pantry_enabled !== true)
+            throw new Error("Pantry is not enabled");
         const spaceId = await getOrCreateSpace(tx, input.userId, input.scope);
         const existing = await tx<Array<{ id: string; status: string }>>`
             select id, status from munch.purchase_reconciliations
@@ -667,17 +737,26 @@ export async function reconcilePurchase(input: {
             ) returning id
         `;
         const batchId = String(batchRows[0]!.id);
-        const groceryListId = await activeGroceryListId(tx, input.userId, input.scope);
+        const groceryListId = await activeGroceryListId(
+            tx,
+            input.userId,
+            input.scope,
+        );
         let needsReview = false;
 
         for (let index = 0; index < input.lines.length; index += 1) {
             const line = input.lines[index]!;
             const name = line.name.trim().slice(0, 300);
             const normalized = normalizeInventoryName(name);
-            if (!name || !normalized) throw new Error("Purchase line name is invalid");
+            if (!name || !normalized)
+                throw new Error("Purchase line name is invalid");
             const confidence = validateConfidence(line.confidence);
             const isFood = line.isFood !== false;
-            const actionable = isFood && (line.confirmed === true || confidence == null || confidence >= 0.85);
+            const actionable =
+                isFood &&
+                (line.confirmed === true ||
+                    confidence == null ||
+                    confidence >= 0.85);
             let action = "ignored_non_food";
             let groceryItemId: string | null = null;
             let inventoryItemId: string | null = null;
@@ -690,7 +769,9 @@ export async function reconcilePurchase(input: {
                 if (groceryListId) {
                     const providerId = line.providerFoodId ?? null;
                     const provider = line.foodProvider ?? null;
-                    const groceryRows = await tx<Array<Record<string, unknown>>>`
+                    const groceryRows = await tx<
+                        Array<Record<string, unknown>>
+                    >`
                         select id, version from munch.grocery_items
                         where grocery_list_id = ${groceryListId}
                           and deleted_at is null and purchased_at is null
@@ -713,16 +794,25 @@ export async function reconcilePurchase(input: {
                         where id = ${String(grocery.id)} and version = ${Number(grocery.version)}
                         returning id
                     `;
-                    if (!purchased[0]) throw new Error("Grocery item changed during purchase reconciliation");
+                    if (!purchased[0])
+                        throw new Error(
+                            "Grocery item changed during purchase reconciliation",
+                        );
                     groceryItemId = String(purchased[0].id);
-                    const matchedInventory = await findInventoryItem(tx, spaceId, {
-                        name,
-                        unit: line.unit,
-                        foodProvider: line.foodProvider,
-                        providerFoodId: line.providerFoodId,
-                        location: line.location,
-                    });
-                    inventoryItemId = matchedInventory ? String(matchedInventory.id) : null;
+                    const matchedInventory = await findInventoryItem(
+                        tx,
+                        spaceId,
+                        {
+                            name,
+                            unit: line.unit,
+                            foodProvider: line.foodProvider,
+                            providerFoodId: line.providerFoodId,
+                            location: line.location,
+                        },
+                    );
+                    inventoryItemId = matchedInventory
+                        ? String(matchedInventory.id)
+                        : null;
                     action = "grocery_matched";
                 } else {
                     const acquired = await acquireInTransaction(tx, {
@@ -770,7 +860,11 @@ export async function reconcilePurchase(input: {
     });
 }
 
-function summarizePurchase(batchId: string, deduplicated: boolean, rows: Array<Record<string, unknown>>) {
+function summarizePurchase(
+    batchId: string,
+    deduplicated: boolean,
+    rows: Array<Record<string, unknown>>,
+) {
     const lines = rows.map((row) => ({
         position: Number(row.position),
         name: String(row.resolved_name),
@@ -778,18 +872,29 @@ function summarizePurchase(batchId: string, deduplicated: boolean, rows: Array<R
         unit: row.unit == null ? null : String(row.unit),
         confidence: row.confidence == null ? null : Number(row.confidence),
         action: String(row.action),
-        grocery_item_id: row.grocery_item_id == null ? null : String(row.grocery_item_id),
-        inventory_item_id: row.inventory_item_id == null ? null : String(row.inventory_item_id),
+        grocery_item_id:
+            row.grocery_item_id == null ? null : String(row.grocery_item_id),
+        inventory_item_id:
+            row.inventory_item_id == null
+                ? null
+                : String(row.inventory_item_id),
     }));
     return {
         purchaseReconciliationId: batchId,
         deduplicated,
         lines,
         summary: {
-            groceryMatched: lines.filter((line) => line.action === "grocery_matched").length,
-            inventoryAdded: lines.filter((line) => line.action === "inventory_added").length,
-            ignoredNonFood: lines.filter((line) => line.action === "ignored_non_food").length,
-            needsReview: lines.filter((line) => line.action === "needs_review").length,
+            groceryMatched: lines.filter(
+                (line) => line.action === "grocery_matched",
+            ).length,
+            inventoryAdded: lines.filter(
+                (line) => line.action === "inventory_added",
+            ).length,
+            ignoredNonFood: lines.filter(
+                (line) => line.action === "ignored_non_food",
+            ).length,
+            needsReview: lines.filter((line) => line.action === "needs_review")
+                .length,
         },
     };
 }

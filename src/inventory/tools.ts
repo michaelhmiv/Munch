@@ -89,7 +89,10 @@ function inventoryScope(
     }
     if (requested === "personal") return { type: "personal" };
     const household = capabilities.household;
-    if (!household || (write ? !capabilities.householdWrite : !capabilities.householdRead)) {
+    if (
+        !household ||
+        (write ? !capabilities.householdWrite : !capabilities.householdRead)
+    ) {
         throw new Error("Household Pantry access is unavailable");
     }
     return { type: "household", householdId: household.householdId };
@@ -175,7 +178,10 @@ export function registerInventoryTools(
             inputSchema: {
                 scope: z.enum(["personal", "household"]),
                 query: z.string().max(200).optional(),
-                candidate_names: z.array(z.string().min(1).max(300)).max(30).optional(),
+                candidate_names: z
+                    .array(z.string().min(1).max(300))
+                    .max(30)
+                    .optional(),
                 location: locationSchema.optional(),
                 include_depleted: z.boolean().optional(),
                 limit: z.number().int().min(1).max(200).optional(),

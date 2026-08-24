@@ -7,12 +7,18 @@ export const INVENTORY_CAPABILITY_CONTRACTS = [
     {
         id: "inventory.reconcile",
         mcp: ["reconcile_pantry"],
-        web: ["POST /api/app/pantry/reconcile", "POST /api/app/pantry/scan-preview"],
+        web: [
+            "POST /api/app/pantry/reconcile",
+            "POST /api/app/pantry/scan-preview",
+        ],
     },
     {
         id: "purchase.reconcile",
         mcp: ["reconcile_purchase"],
-        web: ["POST /api/app/purchases/reconcile", "POST /api/app/purchases/receipt-preview"],
+        web: [
+            "POST /api/app/purchases/reconcile",
+            "POST /api/app/purchases/receipt-preview",
+        ],
     },
 ] as const;
 

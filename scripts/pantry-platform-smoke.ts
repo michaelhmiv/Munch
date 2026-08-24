@@ -7,17 +7,10 @@ const {
     createHousehold,
     createHouseholdInvitation,
 } = await import("../src/households/repository.js");
-const {
-    getPantry,
-    reconcilePantry,
-    reconcilePurchase,
-    setPantryPreference,
-} = await import("../src/inventory/repository.js");
-const {
-    addGroceryItems,
-    getGroceryList,
-    markGroceryItemPurchased,
-} = await import("../src/planning/repository.js");
+const { getPantry, reconcilePantry, reconcilePurchase, setPantryPreference } =
+    await import("../src/inventory/repository.js");
+const { addGroceryItems, getGroceryList, markGroceryItemPurchased } =
+    await import("../src/planning/repository.js");
 const { closePlatformDatabase, withUserDatabase } =
     await import("../src/platform/database.js");
 
@@ -86,7 +79,9 @@ const initial = await reconcilePantry({
     ],
 });
 if (initial.operations.length !== 2) {
-    throw new Error("Initial Pantry reconciliation did not apply two operations");
+    throw new Error(
+        "Initial Pantry reconciliation did not apply two operations",
+    );
 }
 const replay = await reconcilePantry({
     userId: owner.userId,
@@ -118,7 +113,9 @@ let pantry = await getPantry({
     scope: personalScope,
     includeDepleted: true,
 });
-const sugar = pantry.items.find((item) => item.normalized_name === "granulated sugar");
+const sugar = pantry.items.find(
+    (item) => item.normalized_name === "granulated sugar",
+);
 const spinach = pantry.items.find((item) => item.normalized_name === "spinach");
 if (sugar?.quantity !== 1 || sugar.quantity_mode !== "exact") {
     throw new Error("Exact Pantry quantity did not persist");
@@ -153,7 +150,9 @@ pantry = await getPantry({
 if (pantry.items.find((item) => item.id === sugar.id)?.quantity !== 0.5) {
     throw new Error("Pantry consumption did not decrement exact quantity");
 }
-if (pantry.items.find((item) => item.id === spinach.id)?.stock_state !== "low") {
+if (
+    pantry.items.find((item) => item.id === spinach.id)?.stock_state !== "low"
+) {
     throw new Error("Pantry low-state reconciliation failed");
 }
 
@@ -249,7 +248,9 @@ if (
     receipt.summary.ignoredNonFood !== 1 ||
     receipt.summary.needsReview !== 1
 ) {
-    throw new Error(`Receipt reconciliation summary was wrong: ${JSON.stringify(receipt.summary)}`);
+    throw new Error(
+        `Receipt reconciliation summary was wrong: ${JSON.stringify(receipt.summary)}`,
+    );
 }
 const receiptReplay = await reconcilePurchase({
     userId: owner.userId,
@@ -305,14 +306,22 @@ const memberPantry = await getPantry({
     userId: member.userId,
     scope: householdScope,
 });
-if (!memberPantry.items.some((item) => item.normalized_name === "cottage cheese")) {
+if (
+    !memberPantry.items.some(
+        (item) => item.normalized_name === "cottage cheese",
+    )
+) {
     throw new Error("Household member could not read shared Pantry");
 }
 const viewerPantry = await getPantry({
     userId: viewer.userId,
     scope: householdScope,
 });
-if (!viewerPantry.items.some((item) => item.normalized_name === "cottage cheese")) {
+if (
+    !viewerPantry.items.some(
+        (item) => item.normalized_name === "cottage cheese",
+    )
+) {
     throw new Error("Household viewer could not read shared Pantry");
 }
 
@@ -336,7 +345,10 @@ const outsiderPantry = await getPantry({
     userId: outsider.userId,
     scope: householdScope,
 });
-if (outsiderPantry.items.length !== 0 || outsiderPantry.inventorySpaceId !== null) {
+if (
+    outsiderPantry.items.length !== 0 ||
+    outsiderPantry.inventorySpaceId !== null
+) {
     throw new Error("Outsider read another household Pantry");
 }
 let outsiderWriteDenied = false;
@@ -364,7 +376,9 @@ await withUserDatabase(owner.userId, async (tx) => {
           and column_name in ('image', 'image_bytes', 'raw_image', 'receipt_image', 'base64')
     `;
     if (forbiddenColumns.length) {
-        throw new Error("Receipt persistence unexpectedly contains raw image columns");
+        throw new Error(
+            "Receipt persistence unexpectedly contains raw image columns",
+        );
     }
 });
 

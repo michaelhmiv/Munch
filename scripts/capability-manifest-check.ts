@@ -11,9 +11,10 @@ import {
 const errors = assertCapabilityManifest();
 const discovered = new Set<string>();
 const sourceFiles = new Bun.Glob("src/**/*.ts");
-const conditionalToolMap = CONDITIONAL_PREMIUM_MCP_TOOL_CAPABILITY_MAP as Readonly<
-    Record<string, string>
->;
+const conditionalToolMap =
+    CONDITIONAL_PREMIUM_MCP_TOOL_CAPABILITY_MAP as Readonly<
+        Record<string, string>
+    >;
 
 for (const contract of INVENTORY_CAPABILITY_CONTRACTS) {
     if (contract.mcp.length === 0 || contract.web.length === 0) {
@@ -58,7 +59,11 @@ for (const [toolName, capabilityId] of Object.entries(conditionalToolMap)) {
             `Conditional premium capability lists ${toolName}, but no source registration was found`,
         );
     }
-    if (!INVENTORY_CAPABILITY_CONTRACTS.some((contract) => contract.id === capabilityId)) {
+    if (
+        !INVENTORY_CAPABILITY_CONTRACTS.some(
+            (contract) => contract.id === capabilityId,
+        )
+    ) {
         errors.push(
             `Conditional premium tool ${toolName} maps to unknown capability ${capabilityId}`,
         );

@@ -119,7 +119,9 @@ if (!serialized.includes('"name":"Yellow onion"')) {
     throw new Error("Account export omitted accessible household groceries");
 }
 if (!serialized.includes('"name":"Cottage cheese"')) {
-    throw new Error("Account export omitted accessible shared Pantry inventory");
+    throw new Error(
+        "Account export omitted accessible shared Pantry inventory",
+    );
 }
 if (!serialized.includes('"inventory_events"')) {
     throw new Error("Account export omitted Pantry event history");
@@ -128,7 +130,9 @@ if (serialized.includes('"actor_user_id"')) {
     throw new Error("Account export leaked Pantry actor user IDs");
 }
 if (document.schema_version !== 2) {
-    throw new Error("Account export schema version was not advanced for Pantry");
+    throw new Error(
+        "Account export schema version was not advanced for Pantry",
+    );
 }
 if (exported.recordCount < 7) {
     throw new Error(
@@ -137,4 +141,6 @@ if (exported.recordCount < 7) {
 }
 
 await closePlatformDatabase();
-console.log("Munch complete account export and Pantry privacy smoke test passed.");
+console.log(
+    "Munch complete account export and Pantry privacy smoke test passed.",
+);

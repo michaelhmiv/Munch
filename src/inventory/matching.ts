@@ -27,7 +27,10 @@ export function normalizeInventoryName(value: string): string {
         .normalize("NFKD")
         .replace(/[\u0300-\u036f]/g, "")
         .toLowerCase()
-        .replace(/\b(organic|fresh|large|small|medium|whole|package|pkg)\b/g, " ")
+        .replace(
+            /\b(organic|fresh|large|small|medium|whole|package|pkg)\b/g,
+            " ",
+        )
         .replace(/[^a-z0-9]+/g, " ")
         .trim()
         .replace(/\s+/g, " ");
@@ -91,8 +94,10 @@ export function compatibleInventoryUnits(
     const b = canonicalInventoryUnit(right);
     if (!a || !b) return true;
     if (a === b) return true;
-    return (MASS_UNITS.has(a) && MASS_UNITS.has(b)) ||
-        (VOLUME_UNITS.has(a) && VOLUME_UNITS.has(b));
+    return (
+        (MASS_UNITS.has(a) && MASS_UNITS.has(b)) ||
+        (VOLUME_UNITS.has(a) && VOLUME_UNITS.has(b))
+    );
 }
 
 export function convertInventoryQuantity(
@@ -103,15 +108,29 @@ export function convertInventoryQuantity(
     const a = canonicalInventoryUnit(from);
     const b = canonicalInventoryUnit(to);
     if (!a || !b || a === b) return value;
-    const grams: Record<string, number> = { g: 1, kg: 1000, oz: 28.349523125, lb: 453.59237 };
-    const ml: Record<string, number> = { ml: 1, l: 1000, tsp: 4.92892159375, tbsp: 14.78676478125, cup: 236.5882365 };
+    const grams: Record<string, number> = {
+        g: 1,
+        kg: 1000,
+        oz: 28.349523125,
+        lb: 453.59237,
+    };
+    const ml: Record<string, number> = {
+        ml: 1,
+        l: 1000,
+        tsp: 4.92892159375,
+        tbsp: 14.78676478125,
+        cup: 236.5882365,
+    };
     if (a in grams && b in grams) return (value * grams[a]!) / grams[b]!;
     if (a in ml && b in ml) return (value * ml[a]!) / ml[b]!;
     return null;
 }
 
 export function inventoryIdentityScore(
-    item: Pick<InventoryMatchableItem, "normalized_name" | "food_provider" | "provider_food_id">,
+    item: Pick<
+        InventoryMatchableItem,
+        "normalized_name" | "food_provider" | "provider_food_id"
+    >,
     requirement: IngredientRequirement,
 ): number {
     if (
@@ -148,14 +167,24 @@ export function bestInventoryMatch(
     return best && best.score >= 0.62 ? best : null;
 }
 
-export type RecipeReadiness = "ready_now" | "likely_ready" | "almost_there" | "missing_core";
+export type RecipeReadiness =
+    "ready_now" | "likely_ready" | "almost_there" | "missing_core";
 
 export interface RecipeAvailabilityResult {
     readiness: RecipeReadiness;
-    matched: Array<{ ingredient: string; inventory_item_id: string; score: number; sufficient: boolean | null }>;
+    matched: Array<{
+        ingredient: string;
+        inventory_item_id: string;
+        score: number;
+        sufficient: boolean | null;
+    }>;
     missing_required: string[];
     missing_optional: string[];
-    shortages: Array<{ ingredient: string; missing_quantity: number; unit: string }>;
+    shortages: Array<{
+        ingredient: string;
+        missing_quantity: number;
+        unit: string;
+    }>;
 }
 
 export function evaluateRecipeAvailability(
@@ -174,11 +203,17 @@ export function evaluateRecipeAvailability(
         if (staples.has(normalizeInventoryName(ingredient.name))) continue;
         const candidate = bestInventoryMatch(inventory, ingredient);
         if (!candidate) {
-            (ingredient.optional ? missingOptional : missingRequired).push(ingredient.name);
+            (ingredient.optional ? missingOptional : missingRequired).push(
+                ingredient.name,
+            );
             continue;
         }
         let sufficient: boolean | null = null;
-        if (ingredient.quantity && ingredient.unit && candidate.item.quantity != null) {
+        if (
+            ingredient.quantity &&
+            ingredient.unit &&
+            candidate.item.quantity != null
+        ) {
             const available = convertInventoryQuantity(
                 candidate.item.quantity,
                 candidate.item.unit,
@@ -189,13 +224,18 @@ export function evaluateRecipeAvailability(
                 if (!sufficient && !ingredient.optional) {
                     shortages.push({
                         ingredient: ingredient.name,
-                        missing_quantity: Number((ingredient.quantity - available).toFixed(3)),
+                        missing_quantity: Number(
+                            (ingredient.quantity - available).toFixed(3),
+                        ),
                         unit: ingredient.unit,
                     });
                 }
             }
         }
-        if (!ingredient.optional && (candidate.item.quantity_mode !== "exact" || sufficient === null)) {
+        if (
+            !ingredient.optional &&
+            (candidate.item.quantity_mode !== "exact" || sufficient === null)
+        ) {
             uncertainRequired += 1;
         }
         matched.push({

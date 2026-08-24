@@ -31,12 +31,22 @@ export interface InventoryVisionConfig {
 }
 
 export interface InventoryVisionDependencies {
-    fetcher?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+    fetcher?: (
+        input: RequestInfo | URL,
+        init?: RequestInit,
+    ) => Promise<Response>;
 }
 
-function boundedInteger(value: string | undefined, fallback: number, min: number, max: number) {
+function boundedInteger(
+    value: string | undefined,
+    fallback: number,
+    min: number,
+    max: number,
+) {
     const parsed = Number(value);
-    return Number.isInteger(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
+    return Number.isInteger(parsed)
+        ? Math.min(max, Math.max(min, parsed))
+        : fallback;
 }
 
 export function inventoryVisionConfig(
@@ -51,8 +61,16 @@ export function inventoryVisionConfig(
             env.MUNCH_PANTRY_VISION_MODEL?.trim() ||
             env.MUNCH_RECIPE_IMPORT_AI_MODEL?.trim() ||
             "openai/gpt-5.6-luna",
-        baseUrl: (env.MUNCH_PANTRY_VISION_BASE_URL?.trim() || "https://openrouter.ai/api/v1").replace(/\/+$/, ""),
-        timeoutMs: boundedInteger(env.MUNCH_PANTRY_VISION_TIMEOUT_MS, 30_000, 5_000, 60_000),
+        baseUrl: (
+            env.MUNCH_PANTRY_VISION_BASE_URL?.trim() ||
+            "https://openrouter.ai/api/v1"
+        ).replace(/\/+$/, ""),
+        timeoutMs: boundedInteger(
+            env.MUNCH_PANTRY_VISION_TIMEOUT_MS,
+            30_000,
+            5_000,
+            60_000,
+        ),
         appUrl: env.MUNCH_APP_BASE_URL?.trim(),
     };
 }
@@ -69,7 +87,9 @@ function responseText(value: unknown): string | undefined {
     if (!Array.isArray(value)) return undefined;
     return value
         .map((part) =>
-            part && typeof part === "object" && typeof (part as any).text === "string"
+            part &&
+            typeof part === "object" &&
+            typeof (part as any).text === "string"
                 ? (part as any).text
                 : typeof part === "string"
                   ? part
@@ -92,7 +112,10 @@ export async function previewInventoryImage(
     if (!/^image\/(jpeg|png|webp)$/i.test(input.mimeType)) {
         throw new Error("Pantry image must be JPEG, PNG, or WebP");
     }
-    if (input.bytes.byteLength < 1 || input.bytes.byteLength > 8 * 1024 * 1024) {
+    if (
+        input.bytes.byteLength < 1 ||
+        input.bytes.byteLength > 8 * 1024 * 1024
+    ) {
         throw new Error("Pantry image must be between 1 byte and 8 MB");
     }
     const controller = new AbortController();
@@ -131,11 +154,14 @@ export async function previewInventoryImage(
             }),
         });
         if (!response.ok) {
-            throw new Error(`Pantry vision provider returned HTTP ${response.status}`);
+            throw new Error(
+                `Pantry vision provider returned HTTP ${response.status}`,
+            );
         }
         const payload = (await response.json()) as any;
         const text = responseText(payload?.choices?.[0]?.message?.content);
-        if (!text) throw new Error("Pantry vision returned no structured content");
+        if (!text)
+            throw new Error("Pantry vision returned no structured content");
         let decoded: unknown;
         try {
             decoded = JSON.parse(text);

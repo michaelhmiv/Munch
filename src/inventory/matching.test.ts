@@ -45,9 +45,9 @@ const inventory = [
 
 describe("inventory matching", () => {
     test("normalizes common merchandising words", () => {
-        expect(normalizeInventoryName("Fresh Organic Yellow Onion - Large")).toBe(
-            "yellow onion",
-        );
+        expect(
+            normalizeInventoryName("Fresh Organic Yellow Onion - Large"),
+        ).toBe("yellow onion");
     });
 
     test("normalizes unit aliases and converts compatible units", () => {
@@ -57,12 +57,12 @@ describe("inventory matching", () => {
     });
 
     test("finds generic food matches without requiring exact labels", () => {
-        expect(bestInventoryMatch(inventory, { name: "ground beef" })?.item.id).toBe(
-            "beef",
-        );
-        expect(bestInventoryMatch(inventory, { name: "spinach" })?.item.id).toBe(
-            "spinach",
-        );
+        expect(
+            bestInventoryMatch(inventory, { name: "ground beef" })?.item.id,
+        ).toBe("beef");
+        expect(
+            bestInventoryMatch(inventory, { name: "spinach" })?.item.id,
+        ).toBe("spinach");
     });
 
     test("ranks a recipe with only optional omissions as ready", () => {
@@ -93,7 +93,10 @@ describe("inventory matching", () => {
     });
 
     test("presence-only stock produces likely rather than exact readiness", () => {
-        const result = evaluateRecipeAvailability([{ name: "Spinach" }], inventory);
+        const result = evaluateRecipeAvailability(
+            [{ name: "Spinach" }],
+            inventory,
+        );
         expect(result.readiness).toBe("likely_ready");
     });
 });

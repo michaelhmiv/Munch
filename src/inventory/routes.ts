@@ -45,22 +45,38 @@ function scopeFromValue(
 ): InventoryScope {
     const scope = value ?? "personal";
     if (scope === "personal") return { type: "personal" };
-    if (scope !== "household") throw new Error("Pantry scope must be personal or household");
-    if (!capabilities.household || (write ? !capabilities.householdWrite : !capabilities.householdRead)) {
+    if (scope !== "household")
+        throw new Error("Pantry scope must be personal or household");
+    if (
+        !capabilities.household ||
+        (write ? !capabilities.householdWrite : !capabilities.householdRead)
+    ) {
         throw new Error("Household Pantry access is unavailable");
     }
-    return { type: "household", householdId: capabilities.household.householdId };
+    return {
+        type: "household",
+        householdId: capabilities.household.householdId,
+    };
 }
 
 function locationValue(value: unknown): InventoryLocation | undefined {
     if (value === undefined || value === null || value === "") return undefined;
-    if (value === "pantry" || value === "fridge" || value === "freezer" || value === "unspecified") {
+    if (
+        value === "pantry" ||
+        value === "fridge" ||
+        value === "freezer" ||
+        value === "unspecified"
+    ) {
         return value;
     }
     throw new Error("Invalid Pantry location");
 }
 
-function numberValue(value: unknown, label: string, allowZero = false): number | undefined {
+function numberValue(
+    value: unknown,
+    label: string,
+    allowZero = false,
+): number | undefined {
     if (value === undefined || value === null || value === "") return undefined;
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || (allowZero ? parsed < 0 : parsed <= 0)) {
@@ -76,31 +92,52 @@ function pantryOperations(value: unknown): PantryOperation[] {
     return value.map((raw) => {
         const body = objectValue(raw, "Pantry operation");
         const action = body.action;
-        const confidence = numberValue(body.confidence, "Pantry confidence", true);
+        const confidence = numberValue(
+            body.confidence,
+            "Pantry confidence",
+            true,
+        );
         if (action === "acquire") {
-            if (typeof body.name !== "string" || !body.name.trim()) throw new Error("Pantry acquisition name is required");
+            if (typeof body.name !== "string" || !body.name.trim())
+                throw new Error("Pantry acquisition name is required");
             return {
                 action,
                 name: body.name,
                 quantity: numberValue(body.quantity, "Pantry quantity", true),
                 unit: typeof body.unit === "string" ? body.unit : undefined,
                 quantityMode:
-                    body.quantity_mode === "exact" || body.quantity_mode === "approximate" || body.quantity_mode === "presence_only"
+                    body.quantity_mode === "exact" ||
+                    body.quantity_mode === "approximate" ||
+                    body.quantity_mode === "presence_only"
                         ? body.quantity_mode
                         : undefined,
                 location: locationValue(body.location),
-                foodProvider: typeof body.food_provider === "string" ? body.food_provider : undefined,
-                providerFoodId: typeof body.provider_food_id === "string" ? body.provider_food_id : undefined,
-                barcode: typeof body.barcode === "string" ? body.barcode : undefined,
+                foodProvider:
+                    typeof body.food_provider === "string"
+                        ? body.food_provider
+                        : undefined,
+                providerFoodId:
+                    typeof body.provider_food_id === "string"
+                        ? body.provider_food_id
+                        : undefined,
+                barcode:
+                    typeof body.barcode === "string" ? body.barcode : undefined,
                 note: typeof body.note === "string" ? body.note : undefined,
                 confidence,
             };
         }
-        const itemId = typeof body.inventory_item_id === "string" ? body.inventory_item_id : "";
+        const itemId =
+            typeof body.inventory_item_id === "string"
+                ? body.inventory_item_id
+                : "";
         if (!itemId) throw new Error("Pantry inventory_item_id is required");
         if (action === "consume") {
-            const quantity = numberValue(body.quantity, "Pantry consumption quantity");
-            if (!quantity) throw new Error("Pantry consumption quantity is required");
+            const quantity = numberValue(
+                body.quantity,
+                "Pantry consumption quantity",
+            );
+            if (!quantity)
+                throw new Error("Pantry consumption quantity is required");
             return {
                 action,
                 inventoryItemId: itemId,
@@ -109,7 +146,12 @@ function pantryOperations(value: unknown): PantryOperation[] {
                 confidence,
             };
         }
-        if (action === "consume_all" || action === "mark_depleted" || action === "discard" || action === "mark_low") {
+        if (
+            action === "consume_all" ||
+            action === "mark_depleted" ||
+            action === "discard" ||
+            action === "mark_low"
+        ) {
             return { action, inventoryItemId: itemId, confidence };
         }
         if (action === "move") {
@@ -124,7 +166,11 @@ function pantryOperations(value: unknown): PantryOperation[] {
                 quantity:
                     body.quantity === null
                         ? null
-                        : numberValue(body.quantity, "Pantry correction quantity", true),
+                        : numberValue(
+                              body.quantity,
+                              "Pantry correction quantity",
+                              true,
+                          ),
                 unit:
                     body.unit === null
                         ? null
@@ -132,15 +178,23 @@ function pantryOperations(value: unknown): PantryOperation[] {
                           ? body.unit
                           : undefined,
                 quantityMode:
-                    body.quantity_mode === "exact" || body.quantity_mode === "approximate" || body.quantity_mode === "presence_only"
+                    body.quantity_mode === "exact" ||
+                    body.quantity_mode === "approximate" ||
+                    body.quantity_mode === "presence_only"
                         ? body.quantity_mode
                         : undefined,
                 stockState:
-                    body.stock_state === "available" || body.stock_state === "low" || body.stock_state === "depleted"
+                    body.stock_state === "available" ||
+                    body.stock_state === "low" ||
+                    body.stock_state === "depleted"
                         ? body.stock_state
                         : undefined,
                 note:
-                    body.note === null ? null : typeof body.note === "string" ? body.note : undefined,
+                    body.note === null
+                        ? null
+                        : typeof body.note === "string"
+                          ? body.note
+                          : undefined,
                 confidence,
             };
         }
@@ -154,16 +208,29 @@ function purchaseLines(value: unknown): PurchaseLineInput[] {
     }
     return value.map((raw) => {
         const body = objectValue(raw, "Purchase line");
-        if (typeof body.name !== "string" || !body.name.trim()) throw new Error("Purchase line name is required");
+        if (typeof body.name !== "string" || !body.name.trim())
+            throw new Error("Purchase line name is required");
         return {
-            rawLabel: typeof body.raw_label === "string" ? body.raw_label : undefined,
+            rawLabel:
+                typeof body.raw_label === "string" ? body.raw_label : undefined,
             name: body.name,
             quantity: numberValue(body.quantity, "Purchase quantity"),
             unit: typeof body.unit === "string" ? body.unit : undefined,
-            foodProvider: typeof body.food_provider === "string" ? body.food_provider : undefined,
-            providerFoodId: typeof body.provider_food_id === "string" ? body.provider_food_id : undefined,
-            confidence: numberValue(body.confidence, "Purchase confidence", true),
-            isFood: typeof body.is_food === "boolean" ? body.is_food : undefined,
+            foodProvider:
+                typeof body.food_provider === "string"
+                    ? body.food_provider
+                    : undefined,
+            providerFoodId:
+                typeof body.provider_food_id === "string"
+                    ? body.provider_food_id
+                    : undefined,
+            confidence: numberValue(
+                body.confidence,
+                "Purchase confidence",
+                true,
+            ),
+            isFood:
+                typeof body.is_food === "boolean" ? body.is_food : undefined,
             confirmed: body.confirmed === true,
             location: locationValue(body.location),
         };
@@ -196,7 +263,8 @@ export function createInventoryRouter(): Hono {
 
     app.get("/api/app/pantry/settings", async (c) => {
         const context = await premiumContext(c);
-        if (!context.premium) return privateJson(c, { premium: false, enabled: false }, 403);
+        if (!context.premium)
+            return privateJson(c, { premium: false, enabled: false }, 403);
         return privateJson(c, {
             premium: true,
             enabled: await getPantryPreference(context.userId),
@@ -206,19 +274,29 @@ export function createInventoryRouter(): Hono {
 
     app.patch("/api/app/pantry/settings", requireSameOrigin, async (c) => {
         const context = await premiumContext(c);
-        if (!context.premium) return privateJson(c, { error: "premium_required" }, 403);
+        if (!context.premium)
+            return privateJson(c, { error: "premium_required" }, 403);
         const body = objectValue(await c.req.json(), "Pantry settings");
-        if (typeof body.enabled !== "boolean") throw new Error("Pantry enabled must be boolean");
+        if (typeof body.enabled !== "boolean")
+            throw new Error("Pantry enabled must be boolean");
         return privateJson(c, {
             premium: true,
-            enabled: await setPantryPreference({ userId: context.userId, enabled: body.enabled }),
+            enabled: await setPantryPreference({
+                userId: context.userId,
+                enabled: body.enabled,
+            }),
         });
     });
 
     app.get("/api/app/pantry", async (c) => {
         const context = await premiumContext(c);
-        if (!context.premium) return privateJson(c, { error: "premium_required" }, 403);
-        const scope = scopeFromValue(c.req.query("scope"), context.capabilities, false);
+        if (!context.premium)
+            return privateJson(c, { error: "premium_required" }, 403);
+        const scope = scopeFromValue(
+            c.req.query("scope"),
+            context.capabilities,
+            false,
+        );
         const candidates = (c.req.query("candidates") ?? "")
             .split(",")
             .map((value) => value.trim())
@@ -237,7 +315,8 @@ export function createInventoryRouter(): Hono {
 
     app.post("/api/app/pantry/reconcile", requireSameOrigin, async (c) => {
         const context = await premiumContext(c);
-        if (!context.premium) return privateJson(c, { error: "premium_required" }, 403);
+        if (!context.premium)
+            return privateJson(c, { error: "premium_required" }, 403);
         const body = objectValue(await c.req.json(), "Pantry reconciliation");
         const sourceType = body.source_type;
         if (
@@ -249,12 +328,16 @@ export function createInventoryRouter(): Hono {
         ) {
             throw new Error("Invalid Pantry source type");
         }
-        if (typeof body.idempotency_key !== "string") throw new Error("Pantry idempotency key is required");
+        if (typeof body.idempotency_key !== "string")
+            throw new Error("Pantry idempotency key is required");
         const result = await reconcilePantry({
             userId: context.userId,
             scope: scopeFromValue(body.scope, context.capabilities, true),
             sourceType,
-            sourceEntityId: typeof body.source_entity_id === "string" ? body.source_entity_id : undefined,
+            sourceEntityId:
+                typeof body.source_entity_id === "string"
+                    ? body.source_entity_id
+                    : undefined,
             idempotencyKey: body.idempotency_key,
             operations: pantryOperations(body.operations),
         });
@@ -263,15 +346,23 @@ export function createInventoryRouter(): Hono {
 
     app.post("/api/app/purchases/reconcile", requireSameOrigin, async (c) => {
         const context = await premiumContext(c);
-        if (!context.premium) return privateJson(c, { error: "premium_required" }, 403);
+        if (!context.premium)
+            return privateJson(c, { error: "premium_required" }, 403);
         const body = objectValue(await c.req.json(), "Purchase reconciliation");
-        if (typeof body.idempotency_key !== "string") throw new Error("Purchase idempotency key is required");
+        if (typeof body.idempotency_key !== "string")
+            throw new Error("Purchase idempotency key is required");
         const result = await reconcilePurchase({
             userId: context.userId,
             scope: scopeFromValue(body.scope, context.capabilities, true),
             idempotencyKey: body.idempotency_key,
-            sourceLabel: typeof body.source_label === "string" ? body.source_label : undefined,
-            purchasedAt: typeof body.purchased_at === "string" ? body.purchased_at : undefined,
+            sourceLabel:
+                typeof body.source_label === "string"
+                    ? body.source_label
+                    : undefined,
+            purchasedAt:
+                typeof body.purchased_at === "string"
+                    ? body.purchased_at
+                    : undefined,
             lines: purchaseLines(body.lines),
         });
         return privateJson(c, result);
@@ -279,15 +370,22 @@ export function createInventoryRouter(): Hono {
 
     async function imagePreview(c: Context, mode: "receipt" | "pantry_photo") {
         const context = await premiumContext(c);
-        if (!context.premium) return privateJson(c, { error: "premium_required" }, 403);
-        if (!(await getPantryPreference(context.userId))) return privateJson(c, { error: "pantry_not_enabled" }, 409);
+        if (!context.premium)
+            return privateJson(c, { error: "premium_required" }, 403);
+        if (!(await getPantryPreference(context.userId)))
+            return privateJson(c, { error: "pantry_not_enabled" }, 409);
         const form = await c.req.parseBody();
         const uploaded = form.file;
-        if (!uploaded || typeof uploaded !== "object" || typeof (uploaded as File).arrayBuffer !== "function") {
+        if (
+            !uploaded ||
+            typeof uploaded !== "object" ||
+            typeof (uploaded as File).arrayBuffer !== "function"
+        ) {
             throw new Error("Image file is required");
         }
         const file = uploaded as File;
-        if (file.size > 8 * 1024 * 1024) throw new Error("Image exceeds the 8 MB Pantry limit");
+        if (file.size > 8 * 1024 * 1024)
+            throw new Error("Image exceeds the 8 MB Pantry limit");
         const preview = await previewInventoryImage({
             mode,
             mimeType: file.type,
@@ -300,8 +398,12 @@ export function createInventoryRouter(): Hono {
         });
     }
 
-    app.post("/api/app/purchases/receipt-preview", requireSameOrigin, (c) => imagePreview(c, "receipt"));
-    app.post("/api/app/pantry/scan-preview", requireSameOrigin, (c) => imagePreview(c, "pantry_photo"));
+    app.post("/api/app/purchases/receipt-preview", requireSameOrigin, (c) =>
+        imagePreview(c, "receipt"),
+    );
+    app.post("/api/app/pantry/scan-preview", requireSameOrigin, (c) =>
+        imagePreview(c, "pantry_photo"),
+    );
 
     return app;
 }

@@ -57,7 +57,10 @@ describe("inventory vision", () => {
                                 },
                             ],
                         }),
-                        { status: 200, headers: { "content-type": "application/json" } },
+                        {
+                            status: 200,
+                            headers: { "content-type": "application/json" },
+                        },
                     );
                 },
             },
@@ -71,7 +74,11 @@ describe("inventory vision", () => {
     test("rejects unsupported media before provider calls", async () => {
         await expect(
             previewInventoryImage(
-                { mode: "receipt", mimeType: "application/pdf", bytes: new Uint8Array([1]) },
+                {
+                    mode: "receipt",
+                    mimeType: "application/pdf",
+                    bytes: new Uint8Array([1]),
+                },
                 config,
                 { fetcher: async () => new Response("{}") },
             ),
