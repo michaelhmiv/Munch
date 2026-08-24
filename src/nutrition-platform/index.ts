@@ -13,11 +13,13 @@ export {
 export {
     alcoholTrackingEnabledFromProfile,
     getAlcoholTrackingEnabled,
+    getPantryEnabled,
     getPreferredDrinkUnit,
     getPreferredWeightUnit,
     getProfile,
     getUserTimezone,
     getWidgetsEnabled,
+    pantryEnabledFromProfile,
     preferredDrinkUnitFromProfile,
     upsertProfile,
     widgetsEnabledFromProfile,
