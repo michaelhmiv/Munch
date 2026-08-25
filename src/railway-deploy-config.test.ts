@@ -33,20 +33,26 @@ describe("Railway production deployment contract", () => {
     test("runs migrations before an explicitly gated USDA seed", () => {
         const script = read("scripts/predeploy-production.sh");
         const migration = script.indexOf("bun run db:migrate");
-        const seedSwitch = script.indexOf('seed_mode="${MUNCH_USDA_SEED_MODE:-off}"');
+        const seedSwitch = script.indexOf(
+            'seed_mode="${MUNCH_USDA_SEED_MODE:-off}"',
+        );
 
         expect(migration).toBeGreaterThan(-1);
         expect(seedSwitch).toBeGreaterThan(migration);
         expect(script).toContain("dry-run)");
         expect(script).toContain("seed)");
-        expect(script).toContain("scripts/seed-usda-generic-catalog.sh --dry-run");
+        expect(script).toContain(
+            "scripts/seed-usda-generic-catalog.sh --dry-run",
+        );
         expect(script).toContain("scripts/seed-usda-generic-catalog.sh seed");
         expect(script).toContain("exit 2");
     });
 
     test("keeps the serving process independent from one-off seed work", () => {
         const dockerfile = read("Dockerfile");
-        expect(dockerfile).toContain('CMD ["bun", "--smol", "src/index.ts"]');
+        expect(dockerfile).toContain(
+            'CMD ["bun", "--smol", "src/index.ts"]',
+        );
         expect(dockerfile).not.toContain("start-production.sh");
         expect(existsSync(`${root}scripts/start-production.sh`)).toBe(false);
     });
