@@ -5,7 +5,8 @@
         "dockerfilePath": "Dockerfile"
     },
     "deploy": {
-        "preDeployCommand": "bun run db:migrate",
+        "preDeployCommand": "bash scripts/predeploy-production.sh",
+        "startCommand": "bun --smol src/index.ts",
         "healthcheckPath": "/health/ready",
         "healthcheckTimeout": 60,
         "restartPolicyType": "ON_FAILURE",

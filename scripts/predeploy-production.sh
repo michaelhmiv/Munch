@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+echo "[predeploy] applying database migrations"
+bun run db:migrate
+
 seed_mode="${MUNCH_USDA_SEED_MODE:-off}"
 case "$seed_mode" in
   off|"")
+    echo "[predeploy] USDA catalog seed disabled"
     ;;
   dry-run)
-    echo "[startup] validating USDA generic catalog seed"
+    echo "[predeploy] validating USDA generic catalog seed"
     bash scripts/seed-usda-generic-catalog.sh --dry-run
     ;;
   seed)
-    echo "[startup] applying idempotent USDA generic catalog seed"
+    echo "[predeploy] applying and certifying USDA generic catalog seed"
     bash scripts/seed-usda-generic-catalog.sh seed
     ;;
   *)
@@ -18,5 +22,3 @@ case "$seed_mode" in
     exit 2
     ;;
 esac
-
-exec bun --smol src/index.ts
