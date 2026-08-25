@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { websiteAiModel } from "../website-ai-config.js";
 
 const locationSchema = z.preprocess(
     (value) => {
@@ -94,10 +95,7 @@ export function inventoryVisionConfig(
     if (!apiKey || !enabledFlag(env.MUNCH_PANTRY_VISION_ENABLED)) return null;
     return {
         apiKey,
-        model:
-            env.MUNCH_PANTRY_VISION_MODEL?.trim() ||
-            env.MUNCH_RECIPE_IMPORT_AI_MODEL?.trim() ||
-            "openai/gpt-5.6-luna",
+        model: websiteAiModel(env),
         baseUrl: (
             env.MUNCH_PANTRY_VISION_BASE_URL?.trim() ||
             "https://openrouter.ai/api/v1"

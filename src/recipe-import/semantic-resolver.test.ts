@@ -35,13 +35,13 @@ describe("recipe import website AI configuration", () => {
         expect(
             recipeImportAiConfig({
                 OPENROUTER_API_KEY: "or-test",
-                MUNCH_RECIPE_IMPORT_AI_MODEL: "google/gemini-test",
+                MUNCH_AI_MODEL: "google/gemini-test",
                 MUNCH_RECIPE_IMPORT_AI_MAX_CALLS_PER_IMPORT: "1",
             }),
         ).toMatchObject({
             model: "google/gemini-test",
             maxCallsPerImport: 1,
-            responseFormat: "json_schema",
+            responseFormat: "json_object",
             responseHealing: true,
         });
         expect(
