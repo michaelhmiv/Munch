@@ -1,7 +1,4 @@
-import type {
-    MealDraft,
-    MealDraftQuestion,
-} from "./meal-drafts/types.js";
+import type { MealDraft, MealDraftQuestion } from "./meal-drafts/types.js";
 import type { StructuredMealItemInput } from "./structured-meals/types.js";
 
 export interface ReviewAnswerReference {
