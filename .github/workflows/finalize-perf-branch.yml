@@ -1,0 +1,95 @@
+name: Finalize performance branch
+
+on:
+  push:
+    branches:
+      - perf/nutrition-ingestion-latency
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-performance-branch
+  cancel-in-progress: true
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/nutrition-ingestion-latency
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - name: Normalize recipe ingredient search text
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("src/recipe-import/service.ts")
+          text = path.read_text()
+
+          round_fn = '''function round(value: number): number {
+              return Number(value.toFixed(2));
+          }
+          '''
+          helper = '''function round(value: number): number {
+              return Number(value.toFixed(2));
+          }
+
+          function normalizeIngredientSearchText(value: string): string {
+              return value
+                  .replace(/\\(\\s*(?:US\\s*)?[$€£]\\s*\\d[\\d.,]*(?:[^)]*)\\)/gi, " ")
+                  .replace(/\\[\\s*(?:US\\s*)?[$€£]\\s*\\d[\\d.,]*(?:[^\\]]*)\\]/gi, " ")
+                  .replace(/\\s+/g, " ")
+                  .trim();
+          }
+          '''
+          if "function normalizeIngredientSearchText" not in text:
+              if round_fn not in text:
+                  raise SystemExit("round function marker not found")
+              text = text.replace(round_fn, helper, 1)
+
+          text = text.replace(
+              "const base = ingredient.name.trim();",
+              "const base = normalizeIngredientSearchText(ingredient.name);",
+              1,
+          )
+          text = text.replace(
+              ".map((query) => query.trim())",
+              ".map(normalizeIngredientSearchText)",
+              1,
+          )
+          text = text.replace(
+              "let ingredients = parsed.ingredients;",
+              "let ingredients = parsed.ingredients.map((ingredient) => ({\\n        ...ingredient,\\n        name: normalizeIngredientSearchText(ingredient.name),\\n    }));",
+              1,
+          )
+          path.write_text(text)
+          PY
+      - name: Format final performance files
+        run: >-
+          bunx prettier --write
+          .github/workflows/usda-food-catalog-corpus.yml
+          scripts/food-catalog-benchmark.ts
+          scripts/food-provider-live-smoke.ts
+          src/recipe-import/service.ts
+          src/recipe-import-latency.test.ts
+      - name: Verify recipe import performance and correctness
+        run: bun test src/recipe-import-latency.test.ts src/recipe-import.test.ts
+      - name: Commit finalized source
+        run: |
+          if git diff --quiet; then
+            echo "No finalization changes required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/usda-food-catalog-corpus.yml scripts src/recipe-import
+          git commit -m "Finalize recipe import and provider latency safeguards"
+          git push origin HEAD:perf/nutrition-ingestion-latency
