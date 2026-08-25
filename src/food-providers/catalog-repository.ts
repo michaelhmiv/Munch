@@ -345,8 +345,14 @@ export class FoodCatalogRepository {
                 ) values (
                     ${queryHash},
                     ${normalized},
-                    ${providers},
-                    ${entryIds},
+                    array(
+                        select value
+                        from jsonb_array_elements_text(${providers}::jsonb)
+                    ),
+                    array(
+                        select value::uuid
+                        from jsonb_array_elements_text(${entryIds}::jsonb)
+                    ),
                     now(),
                     ${expiresAt}
                 )
