@@ -1,0 +1,67 @@
+name: Production Certification
+
+on:
+    workflow_dispatch:
+        inputs:
+            base_url:
+                description: "Production or staging origin to certify"
+                required: false
+                default: "https://munch.business"
+                type: string
+            expected_sha:
+                description: "Expected deployed Git SHA; defaults to selected workflow ref"
+                required: false
+                default: ""
+                type: string
+            require_authenticated:
+                description: "Fail unless the authenticated MCP phase can run"
+                required: false
+                default: false
+                type: boolean
+
+permissions:
+    contents: read
+
+concurrency:
+    group: production-certification-${{ inputs.base_url }}
+    cancel-in-progress: false
+
+jobs:
+    certify:
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        env:
+            MUNCH_CERT_BASE_URL: ${{ inputs.base_url }}
+            MUNCH_CERT_EXPECTED_SHA: ${{ inputs.expected_sha != '' && inputs.expected_sha || github.sha }}
+            MUNCH_CERT_REQUIRE_AUTH: ${{ inputs.require_authenticated }}
+            MUNCH_CERT_BEARER_TOKEN: ${{ secrets.MUNCH_CERT_BEARER_TOKEN }}
+            MUNCH_CERT_REPORT: production-certification.json
+            MUNCH_CERT_MARKDOWN_REPORT: production-certification.md
+        steps:
+            - name: Check out selected revision
+              uses: actions/checkout@v4
+            - name: Set up Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
+            - name: Verify public production surface
+              run: bun scripts/certification/public.ts "$MUNCH_CERT_BASE_URL"
+            - name: Certify release identity and MCP surface
+              run: bun scripts/certification/production.ts "$MUNCH_CERT_BASE_URL"
+            - name: Add certification report to workflow summary
+              if: always()
+              run: |
+                  if [[ -f production-certification.md ]]; then
+                    cat production-certification.md >> "$GITHUB_STEP_SUMMARY"
+                  fi
+            - name: Upload certification artifacts
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: production-certification-${{ github.sha }}
+                  path: |
+                      production-certification.json
+                      production-certification.md
+                  if-no-files-found: warn

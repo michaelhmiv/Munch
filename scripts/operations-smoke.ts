@@ -14,6 +14,10 @@ Object.assign(process.env, {
     OFF_USER_AGENT: "Munch operations smoke (test@example.com)",
     USDA_FDC_API_KEY: "operations-usda-key",
     MUNCH_DB_POOL_SIZE: "5",
+    RAILWAY_GIT_COMMIT_SHA: "operations-smoke-sha",
+    RAILWAY_DEPLOYMENT_ID: "operations-smoke-deployment",
+    RAILWAY_ENVIRONMENT_NAME: "production",
+    RAILWAY_SERVICE_ID: "operations-smoke-service",
 });
 
 const { Hono } = await import("hono");
@@ -58,6 +62,29 @@ if (
 ) {
     throw new Error("Readiness route failed");
 }
+const version = await app.request("https://munch.example/health/version");
+if (
+    version.status !== 200 ||
+    version.headers.get("cache-control") !== "no-store"
+) {
+    throw new Error("Version route failed");
+}
+const release = (await version.json()) as {
+    git_sha?: string;
+    deployment_id?: string;
+    environment?: string;
+    service_id?: string;
+};
+if (
+    release.git_sha !== "operations-smoke-sha" ||
+    release.deployment_id !== "operations-smoke-deployment" ||
+    release.environment !== "production" ||
+    release.service_id !== "operations-smoke-service"
+) {
+    throw new Error(
+        `Version route returned unexpected data: ${JSON.stringify(release)}`,
+    );
+}
 
 await closePlatformDatabase();
 const maintenance = Bun.spawn(["bun", "scripts/maintenance.ts"], {
@@ -78,4 +105,6 @@ if (result.maintenance !== "complete") {
     throw new Error("Maintenance did not return a completion result");
 }
 
-console.log("Munch readiness endpoints and maintenance smoke test passed.");
+console.log(
+    "Munch readiness, release identity, and maintenance smoke test passed.",
+);
