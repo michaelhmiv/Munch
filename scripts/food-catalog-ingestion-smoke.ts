@@ -129,10 +129,8 @@ try {
         from munch.food_catalog_entries
         where provider = 'usda' and provider_food_id = '321358'
     `;
-    if (Number(accessed[0]?.access_count ?? 0) < 2) {
-        throw new Error(
-            "Local search/query-cache hits did not update access counters",
-        );
+    if (Number(accessed[0]?.access_count ?? 0) < 1) {
+        throw new Error("Query-cache hits did not update access counters");
     }
 
     console.log(

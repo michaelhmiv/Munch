@@ -257,7 +257,6 @@ export class FoodCatalogRepository {
                 limit ${boundedLimit}
             `,
         );
-        await this.touch(rows.map((row) => row.id));
         const now = Date.now();
         return rows.flatMap((row) => {
             const hit = hitFromRow(row, now);
