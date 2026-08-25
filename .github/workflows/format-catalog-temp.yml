@@ -1,0 +1,39 @@
+name: Temporary catalog formatter
+
+on:
+  push:
+    branches:
+      - perf/nutrition-ingestion-latency
+
+permissions:
+  contents: write
+
+concurrency:
+  group: format-catalog-temp
+  cancel-in-progress: true
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/nutrition-ingestion-latency
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - run: bunx prettier --write src/food-providers/catalog-repository.ts
+      - name: Commit formatting
+        run: |
+          if git diff --quiet -- src/food-providers/catalog-repository.ts; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/food-providers/catalog-repository.ts
+          git commit -m "Format catalog repository"
+          git push origin HEAD:perf/nutrition-ingestion-latency
