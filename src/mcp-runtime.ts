@@ -11,6 +11,7 @@ import { registerInventoryTools } from "./inventory/tools.js";
 import { registerMealDetailTools } from "./meal-detail-tools.js";
 import { registerMealDraftTools } from "./meal-draft-tools.js";
 import { registerMealReviewTools } from "./meal-review-tools.js";
+import { registerMealToRecipeTool } from "./meal-to-recipe.js";
 import {
     registerAdvancedToolGateway,
     withLatencyOptimizedToolCatalog,
@@ -32,11 +33,11 @@ import { withVersionedWidgetResources } from "./widget-resource-versioning.js";
 
 const MUNCH_SERVER_INSTRUCTIONS = `Munch stores and retrieves factual meals, nutrition, hydration, weight, foods, recipes, meal plans, grocery lists, and—when the paid user explicitly enables it—Pantry inventory. Nutrition values are estimates; Munch does not provide medical or dietary advice.
 
-Prefer the direct read/write tool that exactly matches the user's request. Grocery-list requests go straight to get_grocery_list; adding groceries goes straight to add_grocery_items. Today's meals use get_meals_today; date ranges use the matching range tool. Meal plans use get_meal_plan. Saved recipes use search_recipes/get_recipe. Use personal scope by default unless the user explicitly asks for household data. If no direct tool covers a low-frequency correction, setting, export, deletion, or management request, call find_munch_actions and then run_munch_action with the returned parameter contract.
+Prefer the direct read/write tool that exactly matches the user's request. Grocery-list requests go straight to get_grocery_list; adding groceries goes straight to add_grocery_items. Today's meals use get_meals_today; date ranges use the matching range tool. Meal plans use get_meal_plan. Saved recipes use search_recipes/get_recipe. When the user wants an already-known logged meal saved as a recipe, use save_meal_as_recipe with that meal ID instead of searching meals, foods, or ingredients again. Use personal scope by default unless the user explicitly asks for household data. If no direct tool covers a low-frequency correction, setting, export, deletion, or management request, call find_munch_actions and then run_munch_action with the returned parameter contract.
 
 For nutrition resolution, use personal saved/history matches when relevant, then search_foods, then external web only when Munch has no adequate result, and model estimates last. Visible packaged barcodes use lookup_food_barcode.
 
-For a fully resolved text meal, use log_meal with items[]. For photos or unresolved meals, use prepare_meal_review; infer homemade versus restaurant from the evidence instead of asking by default. Use visible scale references when estimating portions. Put low-impact uncertainty into explicit assumptions; resolve only material questions/edits, present the complete review, then use confirm_meal_draft only after explicit user approval. Prefer this atomic review flow over legacy granular draft tools.
+For a fully resolved text meal, use log_meal with items[]. For photos or unresolved meals, use prepare_meal_review; infer homemade versus restaurant from the evidence instead of asking by default. Use visible scale references when estimating portions. Put low-impact uncertainty into explicit assumptions; resolve only material questions/edits, present the complete review, then use confirm_meal_draft only after explicit user approval. Prefer this atomic review flow over legacy granular draft tools. When answering an item-linked material review question, reconcile the affected canonical item in the same resolve_meal_review call; do not close the question while leaving stale assumptions or nutrition behind.
 
 Recipe URLs use parse_recipe_url before saving. Planning never means consumption. A grocery list is not pantry inventory. If Pantry tools are present, Pantry is enabled for this premium user: after a plausibly home-prepared meal is logged, use get_pantry with only the meal's candidate ingredient names to identify likely Pantry overlap, then ask a targeted clarification. Never silently subtract inferred consumption. If the user explicitly says what was used, finished, discarded, moved, or corrected, apply it with reconcile_pantry. Receipt or explicit shopping purchases are acquisition evidence: use reconcile_purchase to atomically match Grocery items and add purchased foods to Pantry; low-confidence lines are left for review. Do not ask Pantry questions for obvious restaurant/takeout meals or leftovers unless the user indicates Pantry ingredients were used. Use get_connection_status only for connection or feature-availability troubleshooting.`;
 
@@ -109,6 +110,7 @@ async function buildMunchMcpServer(
     registerMealDraftTools(optimizedServer, userId);
     registerRecipeImportTools(optimizedServer, userId, capabilities);
     registerRecipePlanningTools(optimizedServer, userId, capabilities);
+    registerMealToRecipeTool(optimizedServer, userId, capabilities);
     if (capabilities.tier === "premium" && pantryEnabledFromProfile(profile)) {
         registerInventoryTools(optimizedServer, userId, capabilities);
     }
