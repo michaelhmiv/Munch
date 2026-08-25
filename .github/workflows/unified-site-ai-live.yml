@@ -1,0 +1,92 @@
+name: Unified Website AI Live Validation
+
+on:
+  push:
+    branches:
+      - refactor/unified-site-ai-model
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: munch_unified_ai_live
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d munch_unified_ai_live"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/munch_unified_ai_live
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      MUNCH_AI_MODEL: qwen/qwen3.7-flash
+      MUNCH_APP_BASE_URL: https://munch.business
+      MUNCH_RECIPE_IMPORT_AI_ENABLED: "true"
+      MUNCH_RECIPE_IMPORT_AI_RESPONSE_FORMAT: "json_object"
+      MUNCH_RECIPE_IMPORT_AI_RESPONSE_HEALING: "true"
+      MUNCH_RECIPE_IMPORT_AI_TIMEOUT_MS: "30000"
+      MUNCH_RECIPE_IMPORT_AI_MAX_CALLS_PER_IMPORT: "2"
+      MUNCH_RECIPE_IMPORT_AI_MAX_TOKENS: "4000"
+      MUNCH_PANTRY_VISION_ENABLED: "true"
+      MUNCH_PANTRY_VISION_TIMEOUT_MS: "30000"
+      MUNCH_PANTRY_PLANNING_ENABLED: "true"
+      MUNCH_PANTRY_PLANNING_TIMEOUT_MS: "60000"
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - name: Verify one model selector across website runtime
+        run: |
+          test -n "$OPENROUTER_API_KEY"
+          ! rg -n 'MUNCH_(RECIPE_IMPORT_AI|PANTRY_VISION|PANTRY_PLANNING)_MODEL|openai/gpt-5\.6-luna' src .env.example .github/workflows/openrouter-*.yml
+          rg -n 'MUNCH_AI_MODEL' src .env.example .github/workflows/openrouter-*.yml
+      - name: Install canonical schema
+        run: bun run db:migrate
+      - name: Create synthetic Pantry vision fixtures
+        shell: bash
+        run: |
+          python3 -m pip install --disable-pip-version-check --quiet pillow
+          python3 - <<'PY'
+          from PIL import Image, ImageDraw, ImageFont
+          def font(size):
+              try: return ImageFont.truetype("DejaVuSans.ttf", size)
+              except Exception: return ImageFont.load_default()
+          receipt = Image.new("RGB", (900, 1150), "white")
+          draw = ImageDraw.Draw(receipt)
+          draw.text((245, 55), "SYNTHETIC MARKET", fill="black", font=font(44))
+          rows = [("GRANULATED SUGAR 5 LB", "$4.99"), ("GREEK YOGURT 32 OZ", "$6.49"), ("AVOCADO 3 COUNT", "$3.00"), ("PAPER TOWELS 2 ROLLS", "$5.99")]
+          y = 180
+          for label, price in rows:
+              draw.text((70, y), label, fill="black", font=font(34)); draw.text((690, y), price, fill="black", font=font(34)); y += 120
+          draw.line((60, y, 840, y), fill="black", width=3); y += 45
+          for label, price in [("SUBTOTAL", "$20.47"), ("TAX", "$1.23"), ("TOTAL", "$21.70")]:
+              draw.text((70, y), label, fill="black", font=font(34)); draw.text((690, y), price, fill="black", font=font(34)); y += 85
+          receipt.save("/tmp/munch-pantry-receipt.png", "PNG")
+          pantry = Image.new("RGB", (1000, 760), (238, 233, 220)); draw = ImageDraw.Draw(pantry)
+          draw.text((250, 35), "PANTRY / FRIDGE SCAN", fill="black", font=font(42))
+          draw.rectangle((60, 170, 940, 200), fill=(120, 90, 60)); draw.rectangle((60, 465, 940, 495), fill=(120, 90, 60))
+          items = [((90,225,300,445),(248,248,248),"COTTAGE\nCHEESE"),((350,250,515,445),(120,180,90),"AVOCADO"),((570,230,850,445),(190,85,85),"GROUND\nBEEF"),((160,520,380,710),(245,245,245),"OLIVE OIL"),((520,535,820,710),(80,155,75),"SPINACH")]
+          for box, color, label in items:
+              draw.rounded_rectangle(box, radius=18, fill=color, outline="black", width=3)
+              draw.multiline_text(((box[0]+box[2])//2,(box[1]+box[3])//2), label, fill="black", font=font(30), anchor="mm", align="center")
+          pantry.save("/tmp/munch-pantry-scan.png", "PNG")
+          PY
+      - name: Run Qwen recipe smoke
+        run: bun scripts/openrouter-recipe-live-smoke.ts
+      - name: Run Qwen Pantry vision smoke
+        run: bun scripts/openrouter-pantry-live-smoke.ts
+      - name: Run Qwen Pantry planning smoke
+        run: bun scripts/openrouter-pantry-planning-live-smoke.ts
