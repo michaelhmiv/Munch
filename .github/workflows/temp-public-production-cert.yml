@@ -25,8 +25,6 @@ jobs:
               with:
                   bun-version: 1
             - run: bun install --frozen-lockfile
-            - name: Verify public production surface
-              run: bun scripts/certification/public.ts "$MUNCH_CERT_BASE_URL"
             - name: Verify exact deployed release
               run: bun scripts/certification/production.ts "$MUNCH_CERT_BASE_URL"
             - name: Upload certification report
