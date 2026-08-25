@@ -10,7 +10,6 @@ permissions:
 
 jobs:
     apply:
-        if: github.event.pull_request.head.sha == '49d7e1c2a5c51a6f694718c32dfec9153e109072'
         runs-on: ubuntu-latest
         timeout-minutes: 5
         steps:
