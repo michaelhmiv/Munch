@@ -73,8 +73,8 @@ replace_once(
 )
 replace_once(
     "src/mcp-runtime.ts",
-    "Prefer this atomic review flow over legacy granular draft tools.\\n\\nRecipe URLs",
-    "Prefer this atomic review flow over legacy granular draft tools. When answering an item-linked material review question, reconcile the affected canonical item in the same resolve_meal_review call; do not close the question while leaving stale assumptions or nutrition behind.\\n\\nRecipe URLs",
+    "Prefer this atomic review flow over legacy granular draft tools.",
+    "Prefer this atomic review flow over legacy granular draft tools. When answering an item-linked material review question, reconcile the affected canonical item in the same resolve_meal_review call; do not close the question while leaving stale assumptions or nutrition behind.",
     "server reconciliation instruction",
 )
 replace_once(
