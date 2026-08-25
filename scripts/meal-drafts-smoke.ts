@@ -117,6 +117,29 @@ if (!prematureRejected) {
 const portionQuestion = draft.questions.find(
     (question) => question.questionKey === "portion_eaten",
 )!;
+const currentItem = draft.items[0]!.item;
+draft = await upsertMealDraftItem({
+    userId: userA,
+    draftId: draft.id,
+    expectedVersion: draft.version,
+    position: 0,
+    item: {
+        ...currentItem,
+        assumptions: [
+            ...(currentItem.assumptions ?? []).filter(
+                (assumption) => assumption !== "Initial plate-size estimate",
+            ),
+            "User confirmed the entire estimated plate was consumed.",
+        ],
+        sourceSnapshot: {
+            ...(currentItem.sourceSnapshot ?? {}),
+            established_facts: {
+                consumed_fraction: 1,
+                consumed_amount: "entire plate",
+            },
+        },
+    },
+});
 draft = await answerMealDraftQuestion({
     userId: userA,
     draftId: draft.id,
@@ -166,6 +189,13 @@ if (
     throw new Error(
         "Accepted unresolved assumption was not preserved on the meal",
     );
+}
+if (
+    !meal.items[0]?.assumptions.some((value) =>
+        value.includes("entire estimated plate was consumed"),
+    )
+) {
+    throw new Error("Reconciled portion answer was not preserved on the meal");
 }
 
 const retry = await confirmMealDraft({

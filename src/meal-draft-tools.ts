@@ -373,7 +373,7 @@ export function registerMealDraftTools(
         {
             title: "Answer Draft Question",
             description:
-                "Record the user's answer to one open draft question. Then inspect next_question and continue until none remain.",
+                "Record the user's answer to one open draft question. For an item-linked question, update the affected canonical draft item first so its facts, assumptions, provenance, and nutrition reflect the answer; answer-only closure is rejected. Then inspect next_question and continue until none remain.",
             annotations: {
                 readOnlyHint: false,
                 destructiveHint: false,

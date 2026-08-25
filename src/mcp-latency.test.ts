@@ -21,6 +21,18 @@ describe("MCP latency catalog optimization", () => {
         expect(description.length).toBeLessThan(261);
     });
 
+    test("routes known meal-to-recipe intent without history fan-out", () => {
+        const description = compactToolDescription(
+            "save_meal_as_recipe",
+            "This fallback should not be used.",
+        );
+        expect(description).toContain("known logged meal");
+        expect(description).toContain(
+            "do not search meals, foods, or ingredients",
+        );
+        expect(description.length).toBeLessThan(261);
+    });
+
     test("compacts unmapped verbose descriptions to one bounded sentence", () => {
         const description = compactToolDescription(
             "example_tool",
@@ -32,10 +44,11 @@ describe("MCP latency catalog optimization", () => {
     });
 
     test("keeps only the direct conversational surface model-visible", () => {
-        expect(directModelToolCount()).toBe(29);
+        expect(directModelToolCount()).toBe(30);
         expect(isModelPrivateTool("get_grocery_list")).toBe(false);
         expect(isModelPrivateTool("confirm_meal_draft")).toBe(false);
         expect(isModelPrivateTool("get_meals_by_date_range")).toBe(false);
+        expect(isModelPrivateTool("save_meal_as_recipe")).toBe(false);
 
         expect(isModelPrivateTool("get_meals_by_date")).toBe(true);
         expect(isModelPrivateTool("set_timezone")).toBe(true);

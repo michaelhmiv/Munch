@@ -55,6 +55,7 @@ const DIRECT_MODEL_TOOLS = new Set([
     "get_recipe",
     "parse_recipe_url",
     "save_recipe",
+    "save_meal_as_recipe",
     "get_meal_plan",
     "save_recipe_and_plan",
 ]);
@@ -95,7 +96,9 @@ const FAST_TOOL_DESCRIPTIONS: Record<string, string> = {
     get_recipe:
         "Return one saved recipe revision with ingredients, instructions, servings, and nutrition facts.",
     save_recipe:
-        "Save a fully established structured recipe. Do not invent ingredients, quantities, servings, or source facts.",
+        "Save a fully established new structured recipe. Do not invent ingredients, quantities, servings, or source facts; use save_meal_as_recipe instead when converting a known logged meal.",
+    save_meal_as_recipe:
+        "Convert a known logged meal directly into a saved recipe using meal_id. Use for 'save that as a recipe' or 'make that meal a recipe'; when meal_id is already known, do not search meals, foods, or ingredients first.",
     update_recipe:
         "Replace a saved recipe with a new immutable revision after reading the current recipe.",
     delete_recipe:
@@ -113,7 +116,7 @@ const FAST_TOOL_DESCRIPTIONS: Record<string, string> = {
     prepare_meal_review:
         "Create one reviewable meal draft for a photo or unresolved meal, including items, estimates, assumptions, and only material questions. This does not log the meal.",
     resolve_meal_review:
-        "Apply the user's answers or edits to a pending meal review. The meal remains unlogged until explicit confirmation.",
+        "Apply answers or edits to a pending meal review. Item-linked answers must include a reconciled full items payload; do not close a material question while leaving stale item facts or nutrition.",
     confirm_meal_draft:
         "Permanently log a prepared meal draft only after the user explicitly confirms the complete review.",
     cancel_meal_draft:
