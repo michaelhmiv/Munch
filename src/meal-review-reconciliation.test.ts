@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { MealDraft } from "./meal-drafts/types.js";
-import { assertReviewAnswersReconciled } from "./meal-review-reconciliation.js";
+import {
+    assertDraftQuestionPreviouslyReconciled,
+    assertReviewAnswersReconciled,
+} from "./meal-review-reconciliation.js";
 
 const beefDraft: MealDraft = {
     id: "11111111-1111-4111-8111-111111111111",
@@ -121,6 +124,31 @@ describe("meal review reconciliation", () => {
                 draft,
                 [{ question_key: "meal_note", answer: "No note" }],
                 undefined,
+            ),
+        ).not.toThrow();
+    });
+
+    test("legacy answer-only flow stays unresolved until the linked item changes", () => {
+        expect(() =>
+            assertDraftQuestionPreviouslyReconciled(
+                beefDraft,
+                beefDraft.questions[0]!,
+            ),
+        ).toThrow("requires reconciling the affected canonical item first");
+
+        const reconciledDraft: MealDraft = {
+            ...beefDraft,
+            items: [
+                {
+                    ...beefDraft.items[0]!,
+                    updatedAt: "2026-08-24T00:00:01.000Z",
+                },
+            ],
+        };
+        expect(() =>
+            assertDraftQuestionPreviouslyReconciled(
+                reconciledDraft,
+                reconciledDraft.questions[0]!,
             ),
         ).not.toThrow();
     });
