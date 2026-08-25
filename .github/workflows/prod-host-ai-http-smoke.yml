@@ -29,5 +29,6 @@ jobs:
           test "$pantry" = 200
           test "$settings" = 401
           test "$ideas" = 401
-          curl -fsS https://munch.business/app/pantry | grep -Fq 'What can I make?'
+          curl -fsS -o /tmp/pantry.html https://munch.business/app/pantry
+          grep -Fq 'What can I make?' /tmp/pantry.html
           echo 'Production host-AI boundary HTTP smoke passed.'
