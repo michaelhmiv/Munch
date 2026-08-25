@@ -100,6 +100,11 @@ if (rawIngredients.size < 19 || unresolved.length > 0) {
 if (draft.requires_review) {
     throw new Error("Recipe assignment smoke unexpectedly requires review.");
 }
+if (draft.warnings.some((entry) => entry.code === "semantic_ai_unavailable")) {
+    throw new Error(
+        "Recipe semantic AI smoke fell back instead of using the configured model.",
+    );
+}
 if (draft.nutrition.status !== "complete") {
     throw new Error(
         `Recipe assignment smoke returned incomplete nutrition: ${draft.nutrition.status}`,

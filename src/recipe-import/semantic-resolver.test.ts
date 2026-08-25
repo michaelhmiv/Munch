@@ -129,6 +129,7 @@ describe("OpenRouter recipe import resolver", () => {
         expect(requests[0]?.body.response_format).toBeDefined();
         expect(requests[0]?.body.plugins).toEqual([{ id: "response-healing" }]);
         expect(requests[0]?.body.stream).toBe(false);
+        expect(requests[0]?.body.reasoning).toEqual({ enabled: false });
         expect(JSON.stringify(requests[0]?.body)).not.toContain(
             "provider_food_id",
         );

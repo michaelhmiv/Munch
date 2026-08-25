@@ -48,7 +48,17 @@ const previewLineSchema = z
 const previewSchema = z
     .object({
         lines: z.array(previewLineSchema).max(200),
-        notes: z.array(z.string().max(300)).max(10),
+        notes: z.preprocess(
+            (value) =>
+                typeof value === "string"
+                    ? value.trim()
+                        ? [value.trim()]
+                        : []
+                    : value == null
+                      ? []
+                      : value,
+            z.array(z.string().max(300)).max(10),
+        ),
     })
     .strict();
 
@@ -172,12 +182,13 @@ export async function previewInventoryImage(
                 temperature: 0,
                 max_tokens: 4000,
                 response_format: { type: "json_object" },
+                reasoning: { enabled: false },
                 provider: { data_collection: "deny" },
                 messages: [
                     {
                         role: "system",
                         content:
-                            "You are a precise grocery and kitchen inventory extractor. Output an object with keys lines and notes. Each line has raw_label, name, quantity, unit, is_food, confidence, location. location must be exactly pantry, fridge, freezer, or unspecified. Do not include payment data or personal information.",
+                            "You are a precise grocery and kitchen inventory extractor. Output one JSON object with exactly two top-level keys: lines and notes. notes MUST be an array of strings; use [] when there are no notes. Each line has raw_label, name, quantity, unit, is_food, confidence, location. location must be exactly pantry, fridge, freezer, or unspecified. Do not include payment data or personal information.",
                     },
                     {
                         role: "user",

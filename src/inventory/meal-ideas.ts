@@ -456,6 +456,7 @@ export async function generatePantryMealIdeas(
             body: JSON.stringify({
                 model: config.model,
                 response_format: { type: "json_object" },
+                reasoning: { enabled: false },
                 provider: { data_collection: "deny" },
                 messages: [
                     { role: "system", content: systemPrompt() },

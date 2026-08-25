@@ -644,7 +644,13 @@ export class OpenRouterRecipeImportResolver implements RecipeImportSemanticResol
                     body: JSON.stringify({
                         model: this.config.model,
                         messages: [
-                            { role: "system", content: system },
+                            {
+                                role: "system",
+                                content:
+                                    this.config.responseFormat === "json_object"
+                                        ? `${system}\n\nReturn one JSON object matching this schema exactly. Do not omit required arrays or keys:\n${JSON.stringify(schema)}`
+                                        : system,
+                            },
                             { role: "user", content: user },
                         ],
                         response_format:
@@ -661,6 +667,7 @@ export class OpenRouterRecipeImportResolver implements RecipeImportSemanticResol
                         ...(this.config.responseHealing
                             ? { plugins: [{ id: "response-healing" }] }
                             : {}),
+                        reasoning: { enabled: false },
                         stream: false,
                         max_tokens: this.config.maxTokens,
                         ...(this.config.temperature === undefined
