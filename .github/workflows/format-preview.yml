@@ -5,28 +5,26 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   format-preview:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1
       - run: bun install --frozen-lockfile
       - run: bunx prettier --write src/mcp-latency.test.ts src/mcp-latency.ts src/mcp-runtime.ts src/meal-review-reconciliation.test.ts src/meal-review-reconciliation.ts src/meal-review-tools.ts src/meal-to-recipe-tool.test.ts src/meal-to-recipe.test.ts src/meal-to-recipe.ts
-      - uses: actions/upload-artifact@v4
-        with:
-          name: formatted-source
-          path: |
-            src/mcp-latency.test.ts
-            src/mcp-latency.ts
-            src/mcp-runtime.ts
-            src/meal-review-reconciliation.test.ts
-            src/meal-review-reconciliation.ts
-            src/meal-review-tools.ts
-            src/meal-to-recipe-tool.test.ts
-            src/meal-to-recipe.test.ts
-            src/meal-to-recipe.ts
+      - name: Commit formatting when needed
+        run: |
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add src/mcp-latency.test.ts src/mcp-latency.ts src/mcp-runtime.ts src/meal-review-reconciliation.test.ts src/meal-review-reconciliation.ts src/meal-review-tools.ts src/meal-to-recipe-tool.test.ts src/meal-to-recipe.test.ts src/meal-to-recipe.ts
+            git commit -m "style: format meal recipe workflow"
+            git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          fi
