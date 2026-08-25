@@ -50,6 +50,11 @@ jobs:
                   .trim();
           }
           '''
+          ingredient_map = '''let ingredients = parsed.ingredients.map((ingredient) => ({
+              ...ingredient,
+              name: normalizeIngredientSearchText(ingredient.name),
+          }));'''
+
           if "function normalizeIngredientSearchText" not in text:
               if round_fn not in text:
                   raise SystemExit("round function marker not found")
@@ -67,7 +72,7 @@ jobs:
           )
           text = text.replace(
               "let ingredients = parsed.ingredients;",
-              "let ingredients = parsed.ingredients.map((ingredient) => ({\\n        ...ingredient,\\n        name: normalizeIngredientSearchText(ingredient.name),\\n    }));",
+              ingredient_map,
               1,
           )
           path.write_text(text)
@@ -90,6 +95,11 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .github/workflows/usda-food-catalog-corpus.yml scripts src/recipe-import
+          git add \
+            .github/workflows/usda-food-catalog-corpus.yml \
+            scripts/food-catalog-benchmark.ts \
+            scripts/food-provider-live-smoke.ts \
+            src/recipe-import/service.ts \
+            src/recipe-import-latency.test.ts
           git commit -m "Finalize recipe import and provider latency safeguards"
           git push origin HEAD:perf/nutrition-ingestion-latency
