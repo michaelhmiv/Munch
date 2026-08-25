@@ -8,9 +8,6 @@ on:
         required: false
         default: "openai/gpt-5.6-luna"
         type: string
-  push:
-    branches:
-      - feat/pantry-intelligence-planning
 
 permissions:
   contents: read
@@ -21,7 +18,6 @@ concurrency:
 
 jobs:
   live:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     services:
@@ -42,7 +38,7 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/munch_planning_live
       MUNCH_APP_BASE_URL: https://munch.business
       MUNCH_PANTRY_PLANNING_ENABLED: "true"
-      MUNCH_PANTRY_PLANNING_MODEL: ${{ inputs.model || 'openai/gpt-5.6-luna' }}
+      MUNCH_PANTRY_PLANNING_MODEL: ${{ inputs.model }}
       MUNCH_PANTRY_PLANNING_TIMEOUT_MS: "60000"
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       NODE_ENV: test
