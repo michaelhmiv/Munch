@@ -62,7 +62,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/inventory src/account-export.ts src/recipe-planning-tools.ts scripts/pantry-ui-smoke.ts scripts/account-export-smoke.ts scripts/pantry-planning-smoke.ts public/pantry.html public/pantry.js public/pantry.css public/privacy.html .github/workflows/ci.yml
+          git add src/inventory src/account-export.ts src/recipe-planning-tools.ts scripts/pantry-ui-smoke.ts scripts/account-export-smoke.ts scripts/pantry-planning-smoke.ts public/pantry.html public/pantry.js public/pantry.css public/privacy.html
           if ! git diff --cached --quiet; then
             git commit -m "feat: complete Pantry Intelligence planning workflow"
             git push origin HEAD:feat/pantry-intelligence-planning
