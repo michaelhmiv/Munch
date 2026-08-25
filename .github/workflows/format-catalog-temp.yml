@@ -38,7 +38,6 @@ jobs:
           src/recipe-planning-tools.ts
           src/recipe-planning-tools.test.ts
           src/food-providers/catalog-repository.ts
-          scripts/apply-perf-branch-patches.py
       - name: Commit patched source
         run: |
           if git diff --quiet; then
@@ -47,6 +46,6 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src scripts/apply-perf-branch-patches.py
+          git add src
           git commit -m "Complete performance instrumentation and retry fixes"
           git push origin HEAD:perf/nutrition-ingestion-latency
