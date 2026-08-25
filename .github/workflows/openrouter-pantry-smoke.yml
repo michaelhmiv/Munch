@@ -4,9 +4,9 @@ on:
     workflow_dispatch:
         inputs:
             model:
-                description: "OpenRouter vision model ID"
+                description: "Shared Munch website OpenRouter model ID"
                 required: false
-                default: "openai/gpt-5.6-luna"
+                default: "qwen/qwen3.7-flash"
                 type: string
 
 permissions:
@@ -24,7 +24,7 @@ jobs:
         env:
             OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
             MUNCH_PANTRY_VISION_ENABLED: "true"
-            MUNCH_PANTRY_VISION_MODEL: ${{ inputs.model }}
+            MUNCH_AI_MODEL: ${{ inputs.model }}
             MUNCH_PANTRY_VISION_TIMEOUT_MS: "30000"
             MUNCH_APP_BASE_URL: "https://munch.business"
         steps:
