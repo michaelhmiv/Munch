@@ -1,0 +1,33 @@
+name: Production Host AI Boundary HTTP Smoke
+
+on:
+  push:
+    branches:
+      - fix/host-ai-mcp-boundary
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify production public and auth boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          code() { curl -sS -o /tmp/body -w '%{http_code}' "$1"; }
+          ready=$(code https://munch.business/health/ready)
+          pantry=$(code https://munch.business/app/pantry)
+          settings=$(code https://munch.business/api/app/pantry/settings)
+          ideas=$(curl -sS -o /tmp/ideas -w '%{http_code}' -X POST \
+            -H 'content-type: application/json' \
+            --data '{"scope":"personal","goal":"high protein"}' \
+            https://munch.business/api/app/pantry/meal-ideas)
+          printf 'ready=%s pantry=%s settings=%s meal_ideas=%s\n' "$ready" "$pantry" "$settings" "$ideas"
+          test "$ready" = 200
+          test "$pantry" = 200
+          test "$settings" = 401
+          test "$ideas" = 401
+          curl -fsS https://munch.business/app/pantry | grep -Fq 'What can I make?'
+          echo 'Production host-AI boundary HTTP smoke passed.'
