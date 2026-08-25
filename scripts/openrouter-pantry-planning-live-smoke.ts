@@ -2,8 +2,10 @@
 
 import { createSmokeIdentity } from "./support/smoke-user.js";
 
-const { generatePantryMealIdeas } = await import("../src/inventory/meal-ideas.js");
-const { classifyPantryFood } = await import("../src/inventory/planning-profile.js");
+const { generatePantryMealIdeas } =
+    await import("../src/inventory/meal-ideas.js");
+const { classifyPantryFood } =
+    await import("../src/inventory/planning-profile.js");
 const { reconcilePantry, setPantryPreference } =
     await import("../src/inventory/repository.js");
 const { closePlatformDatabase, withUserDatabase } =
@@ -17,10 +19,14 @@ function requireCondition(
 }
 
 if (!process.env.DATABASE_URL) {
-    throw new Error("DATABASE_URL is required for the Pantry planning live smoke");
+    throw new Error(
+        "DATABASE_URL is required for the Pantry planning live smoke",
+    );
 }
 if (!process.env.OPENROUTER_API_KEY) {
-    throw new Error("OPENROUTER_API_KEY is required for the Pantry planning live smoke");
+    throw new Error(
+        "OPENROUTER_API_KEY is required for the Pantry planning live smoke",
+    );
 }
 if (process.env.MUNCH_PANTRY_PLANNING_ENABLED !== "true") {
     throw new Error("MUNCH_PANTRY_PLANNING_ENABLED=true is required");
@@ -133,11 +139,22 @@ const { context, result } = await generatePantryMealIdeas({
     assumedStaples: ["salt", "water"],
 });
 
-requireCondition(context.pantry.length >= 24, "Live planning context lost Pantry breadth");
-requireCondition(result.candidates.length >= 3, "Live planning returned fewer than 3 grounded candidates");
+requireCondition(
+    context.pantry.length >= 24,
+    "Live planning context lost Pantry breadth",
+);
+requireCondition(
+    result.candidates.length >= 3,
+    "Live planning returned fewer than 3 grounded candidates",
+);
 
-const names = result.candidates.map((candidate) => candidate.name.trim().toLowerCase());
-requireCondition(new Set(names).size === names.length, "Live planning returned duplicate meal ideas");
+const names = result.candidates.map((candidate) =>
+    candidate.name.trim().toLowerCase(),
+);
+requireCondition(
+    new Set(names).size === names.length,
+    "Live planning returned duplicate meal ideas",
+);
 
 const flavored = result.candidates.filter(
     (candidate) => candidate.flavor_system.length >= 2,
@@ -169,11 +186,15 @@ requireCondition(
 );
 
 requireCondition(
-    result.candidates.every((candidate) => candidate.on_hand_ingredients.length >= 3),
+    result.candidates.every(
+        (candidate) => candidate.on_hand_ingredients.length >= 3,
+    ),
     "Live planning collapsed a meal into an underdeveloped ingredient pile",
 );
 requireCondition(
-    result.candidates.every((candidate) => candidate.missing_required.length <= 1),
+    result.candidates.every(
+        (candidate) => candidate.missing_required.length <= 1,
+    ),
     "Live planning exceeded the requested missing-item budget",
 );
 
@@ -187,7 +208,8 @@ const proteinTokens = [
 ];
 const usedProteins = new Set<string>();
 for (const candidate of result.candidates) {
-    const haystack = `${candidate.name} ${candidate.on_hand_ingredients.join(" ")}`.toLowerCase();
+    const haystack =
+        `${candidate.name} ${candidate.on_hand_ingredients.join(" ")}`.toLowerCase();
     for (const protein of proteinTokens) {
         if (haystack.includes(protein)) usedProteins.add(protein);
     }
