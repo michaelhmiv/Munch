@@ -11,7 +11,8 @@ const {
 const { reconcilePantry, setPantryPreference } =
     await import("../src/inventory/repository.js");
 const { saveRecipeAndPlan } = await import("../src/planning/repository.js");
-const { closePlatformDatabase } = await import("../src/platform/database.js");
+const { closePlatformDatabase, withUserDatabase } =
+    await import("../src/platform/database.js");
 const { consumeExportFile } =
     await import("../src/service-platform/repository.js");
 
@@ -76,7 +77,7 @@ await saveRecipeAndPlan({
 
 await setPantryPreference({ userId: owner.userId, enabled: true });
 await setPantryPreference({ userId: member.userId, enabled: true });
-await reconcilePantry({
+const pantryResult = await reconcilePantry({
     userId: owner.userId,
     scope: { type: "household", householdId: household.householdId },
     sourceType: "manual",
@@ -90,6 +91,21 @@ await reconcilePantry({
             location: "fridge",
         },
     ],
+});
+const cottage = pantryResult.operations[0]?.item;
+if (!cottage) throw new Error("Account export Pantry setup returned no item");
+await withUserDatabase(owner.userId, async (tx) => {
+    await tx`
+        insert into munch.inventory_item_profiles (
+            inventory_item_id, profile_status, source_type,
+            category, culinary_roles, basis_quantity, basis_unit,
+            basis_grams, calories, protein_g, profile_version, enriched_at
+        ) values (
+            ${cottage.id}, 'resolved', 'heuristic', 'dairy',
+            ${"{creamy,dairy,protein}"}::text[],
+            100, 'g', 100, 100, 12, 1, now()
+        )
+    `;
 });
 
 const exported = await exportAccountData(member.userId);
@@ -126,12 +142,22 @@ if (!serialized.includes('"name":"Cottage cheese"')) {
 if (!serialized.includes('"inventory_events"')) {
     throw new Error("Account export omitted Pantry event history");
 }
+const inventoryProfiles = document.inventory_item_profiles;
+if (!Array.isArray(inventoryProfiles) || inventoryProfiles.length < 1) {
+    throw new Error("Account export omitted Pantry planning profiles");
+}
+const cottageProfile = inventoryProfiles.find(
+    (profile: any) => profile?.category === "dairy",
+) as Record<string, unknown> | undefined;
+if (!cottageProfile || Number(cottageProfile.protein_g) !== 12) {
+    throw new Error("Account export Pantry planning profile was incomplete");
+}
 if (serialized.includes('"actor_user_id"')) {
     throw new Error("Account export leaked Pantry actor user IDs");
 }
-if (document.schema_version !== 2) {
+if (document.schema_version !== 3) {
     throw new Error(
-        "Account export schema version was not advanced for Pantry",
+        "Account export schema version was not advanced for Pantry Intelligence",
     );
 }
 if (exported.recordCount < 7) {

@@ -18,6 +18,11 @@ const requiredHtml = [
     'id="pantry-photo"',
     'id="receipt-photo"',
     'id="review"',
+    'id="meal-planner"',
+    'id="meal-idea-form"',
+    'id="meal-goal"',
+    'id="meal-staples"',
+    'id="meal-ideas"',
     'id="inventory"',
     'name="viewport"',
 ];
@@ -31,6 +36,7 @@ for (const endpoint of [
     "/api/app/pantry/settings",
     "/api/app/pantry/reconcile",
     "/api/app/pantry/scan-preview",
+    "/api/app/pantry/meal-ideas",
     "/api/app/purchases/receipt-preview",
     "/api/app/purchases/reconcile",
 ]) {
@@ -93,6 +99,23 @@ if (/receipt_image|raw_image|image_bytes/.test(routes)) {
         "Pantry route source suggests raw receipt media persistence",
     );
 }
+if (
+    !html.includes("whole kitchen") ||
+    !html.includes("spices, sauces, condiments") ||
+    !routes.includes("generatePantryMealIdeas")
+) {
+    throw new Error(
+        "Pantry meal planning does not preserve the deliberate full-kitchen contract",
+    );
+}
+if (
+    js.includes("mealIdeasEl.innerHTML") ||
+    js.includes("candidate.description}`")
+) {
+    throw new Error(
+        "AI meal-idea strings must be rendered with safe text nodes",
+    );
+}
 const pantryLinks = appHtml.match(/href="\/app\/pantry"/g) ?? [];
 if (pantryLinks.length < 2) {
     throw new Error(
@@ -104,6 +127,7 @@ if (!appStyles.includes("grid-template-columns: repeat(6, 1fr)")) {
 }
 if (
     !privacy.includes("Pantry and receipt images") ||
+    !privacy.includes("Pantry meal planning") ||
     !privacy.includes("<strong>OpenRouter</strong>") ||
     !privacy.includes("not a promise of zero retention")
 ) {

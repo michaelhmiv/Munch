@@ -2,6 +2,11 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { withAnalytics } from "../analytics.js";
 import type { MunchCapabilities } from "../billing/capabilities.js";
+import { getPantryPlanningContext } from "./meal-planning.js";
+import {
+    enrichPantryItemsBestEffort,
+    pantryPlanningEnabled,
+} from "./planning-profile.js";
 import {
     getPantry,
     reconcilePantry,
@@ -12,6 +17,38 @@ import {
 const locationSchema = z.enum(["pantry", "fridge", "freezer", "unspecified"]);
 const quantityModeSchema = z.enum(["exact", "approximate", "presence_only"]);
 const stockStateSchema = z.enum(["available", "low", "depleted"]);
+
+const planningProfileOutputSchema = z.object({
+    inventory_item_id: z.string().uuid(),
+    profile_status: z.enum(["resolved", "partial", "unresolved", "failed"]),
+    source_type: z.enum([
+        "provider",
+        "heuristic",
+        "user_supplied",
+        "model_estimate",
+        "unresolved",
+    ]),
+    source_provider: z.string().nullable(),
+    source_food_id: z.string().nullable(),
+    match_confidence: z.number().min(0).max(1).nullable(),
+    category: z.string(),
+    culinary_roles: z.array(z.string()),
+    basis_quantity: z.number().positive().nullable(),
+    basis_unit: z.string().nullable(),
+    basis_grams: z.number().positive().nullable(),
+    nutrients: z.object({
+        calories: z.number().nonnegative().nullable(),
+        protein_g: z.number().nonnegative().nullable(),
+        carbs_g: z.number().nonnegative().nullable(),
+        fat_g: z.number().nonnegative().nullable(),
+        fiber_g: z.number().nonnegative().nullable(),
+        sugar_g: z.number().nonnegative().nullable(),
+        sodium_mg: z.number().nonnegative().nullable(),
+    }),
+    profile_version: z.number().int().positive(),
+    enriched_at: z.string().nullable(),
+    updated_at: z.string(),
+});
 
 const pantryItemOutputSchema = z.object({
     id: z.string().uuid(),
@@ -26,6 +63,7 @@ const pantryItemOutputSchema = z.object({
     provider_food_id: z.string().nullable(),
     barcode: z.string().nullable(),
     note: z.string().nullable(),
+    planning_profile: planningProfileOutputSchema.optional(),
     version: z.number().int().positive(),
     updated_at: z.string(),
 });
@@ -168,7 +206,7 @@ export function registerInventoryTools(
         {
             title: "Get Pantry",
             description:
-                "Read the user's enabled Pantry inventory. For meal reconciliation, pass only the candidate ingredient names so Munch returns likely Pantry matches instead of the full inventory. Pantry, Grocery, and Saved Foods are separate concepts.",
+                "Read the user's enabled Pantry inventory. Use detail_level=planning for deliberate meal planning so the full kitchen context includes categories, culinary roles, and compact nutrition profiles; do not reduce planning to proteins/starches. For meal reconciliation, keep detail_level=basic and pass candidate ingredient names. Pantry, Grocery, and Saved Foods are separate concepts.",
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -177,6 +215,7 @@ export function registerInventoryTools(
             },
             inputSchema: {
                 scope: z.enum(["personal", "household"]),
+                detail_level: z.enum(["basic", "planning"]).optional(),
                 query: z.string().max(200).optional(),
                 candidate_names: z
                     .array(z.string().min(1).max(300))
@@ -189,6 +228,14 @@ export function registerInventoryTools(
             outputSchema: {
                 enabled: z.boolean(),
                 inventorySpaceId: z.string().uuid().nullable(),
+                planning_enabled: z.boolean().optional(),
+                enrichment: z
+                    .object({
+                        resolved: z.number().int().nonnegative(),
+                        partial: z.number().int().nonnegative(),
+                        unresolved: z.number().int().nonnegative(),
+                    })
+                    .optional(),
                 items: z.array(pantryItemOutputSchema),
             },
         },
@@ -196,15 +243,30 @@ export function registerInventoryTools(
             withAnalytics(
                 "get_pantry",
                 async () => {
-                    const pantry = await getPantry({
-                        userId,
-                        scope: inventoryScope(args.scope, capabilities, false),
-                        query: args.query,
-                        candidateNames: args.candidate_names,
-                        location: args.location,
-                        includeDepleted: args.include_depleted,
-                        limit: args.limit,
-                    });
+                    const scope = inventoryScope(
+                        args.scope,
+                        capabilities,
+                        false,
+                    );
+                    const pantry =
+                        args.detail_level === "planning" &&
+                        pantryPlanningEnabled()
+                            ? await getPantryPlanningContext({
+                                  userId,
+                                  scope,
+                                  query: args.query,
+                                  location: args.location,
+                                  limit: args.limit,
+                              })
+                            : await getPantry({
+                                  userId,
+                                  scope,
+                                  query: args.query,
+                                  candidateNames: args.candidate_names,
+                                  location: args.location,
+                                  includeDepleted: args.include_depleted,
+                                  limit: args.limit,
+                              });
                     return {
                         content: [
                             {
@@ -277,6 +339,15 @@ export function registerInventoryTools(
                         idempotencyKey: args.idempotency_key,
                         operations: args.operations.map(toPantryOperation),
                     });
+                    if (pantryPlanningEnabled()) {
+                        await enrichPantryItemsBestEffort({
+                            userId,
+                            inventoryItemIds: result.operations.map(
+                                (operation) => operation.item.id,
+                            ),
+                            limit: 16,
+                        });
+                    }
                     return {
                         content: [
                             {
@@ -372,6 +443,15 @@ export function registerInventoryTools(
                             location: line.location,
                         })),
                     });
+                    if (pantryPlanningEnabled()) {
+                        await enrichPantryItemsBestEffort({
+                            userId,
+                            inventoryItemIds: result.lines
+                                .map((line) => line.inventory_item_id)
+                                .filter((id): id is string => Boolean(id)),
+                            limit: 24,
+                        });
+                    }
                     return {
                         content: [
                             {

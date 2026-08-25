@@ -80,6 +80,8 @@ describe("premium Pantry MCP surface", () => {
         const reconcileSchema = tools.get("reconcile_pantry")?.inputSchema;
         const purchaseSchema = tools.get("reconcile_purchase")?.inputSchema;
         expect(pantrySchema?.candidate_names).toBeDefined();
+        expect(pantrySchema?.detail_level).toBeDefined();
+        expect(tools.has("recommend_meal_from_pantry")).toBe(false);
         expect(reconcileSchema?.idempotency_key).toBeDefined();
         expect(reconcileSchema?.operations).toBeDefined();
         expect(purchaseSchema?.idempotency_key).toBeDefined();

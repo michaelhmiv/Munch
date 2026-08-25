@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { withAnalytics } from "./analytics.js";
 import type { MunchCapabilities } from "./billing/capabilities.js";
+import { rankSavedRecipesForPantry } from "./inventory/meal-planning.js";
 import {
     requirePlanningAccess,
     requirePlanningScope,
@@ -110,6 +111,55 @@ const recipeSummaryOutputSchema = z.object({
     times_logged: z.number().int().nonnegative(),
     last_logged_at: z.string().nullable(),
     updated_at: z.string(),
+});
+const pantryRecipeCandidateOutputSchema = z.object({
+    recipe_id: z.string().uuid(),
+    revision_id: z.string().uuid(),
+    name: z.string(),
+    servings: z.number().positive(),
+    nutrition_status: z.string(),
+    nutrition_per_serving: z.object({
+        calories: z.number().nullable(),
+        protein_g: z.number().nullable(),
+        carbs_g: z.number().nullable(),
+        fat_g: z.number().nullable(),
+        fiber_g: z.number().nullable(),
+    }),
+    preparation_minutes: z.number().int().nonnegative().nullable(),
+    cooking_minutes: z.number().int().nonnegative().nullable(),
+    total_minutes: z.number().int().nonnegative().nullable(),
+    availability: z.object({
+        readiness: z.enum([
+            "ready_now",
+            "likely_ready",
+            "almost_there",
+            "missing_core",
+        ]),
+        matched: z.array(
+            z.object({
+                ingredient: z.string(),
+                inventory_item_id: z.string().uuid(),
+                score: z.number(),
+                sufficient: z.boolean().nullable(),
+            }),
+        ),
+        missing_required: z.array(z.string()),
+        missing_optional: z.array(z.string()),
+        shortages: z.array(
+            z.object({
+                ingredient: z.string(),
+                missing_quantity: z.number().nonnegative(),
+                unit: z.string(),
+            }),
+        ),
+    }),
+    flavor_support: z.object({
+        matched: z.array(z.string()),
+        missing: z.array(z.string()),
+        coverage: z.number().min(0).max(1).nullable(),
+    }),
+    score: z.number(),
+    score_reasons: z.array(z.string()),
 });
 const recipeIngredientOutputSchema = z.object({
     id: z.string().uuid(),
@@ -257,7 +307,12 @@ const groceryPurchasedOutputSchema = z.object({
 });
 
 const planningOutputSchemas = {
-    search_recipes: { recipes: z.array(recipeSummaryOutputSchema) },
+    search_recipes: {
+        recipes: z.array(recipeSummaryOutputSchema),
+        pantry_candidates: z
+            .array(pantryRecipeCandidateOutputSchema)
+            .optional(),
+    },
     get_recipe: { recipe: recipeDetailOutputSchema.nullable() },
     save_recipe: { recipe: savedRecipeResultOutputSchema },
     update_recipe: { recipe: updatedRecipeOutputSchema },
@@ -385,7 +440,7 @@ export function registerRecipePlanningTools(
         {
             title: "Search Recipes",
             description:
-                "Search accessible structured recipes and return factual ingredients, nutrition, timing, scheduling frequency, and logging frequency. Use these facts to satisfy the user's explicit filters. Do not treat Munch as supplying health advice or unstored labels such as favorite or healthy.",
+                "Search accessible structured recipes and return factual nutrition, timing, and usage. For a Pantry meal-planning request, set pantry_match=true and provide pantry_scope/goal so Munch also ranks saved recipes against the full on-hand kitchen, including spices, sauces, aromatics, optional ingredients, shortages, and flavor support. Do not reduce meal planning to protein/starch matching.",
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
@@ -396,10 +451,35 @@ export function registerRecipePlanningTools(
                 query: z.string().min(1).max(200).optional(),
                 scope: z.enum(["personal", "household", "all"]).optional(),
                 limit: z.number().int().min(1).max(50).optional(),
+                pantry_match: z.boolean().optional(),
+                pantry_scope: z.enum(["personal", "household"]).optional(),
+                pantry_goal: z
+                    .enum([
+                        "high_protein",
+                        "low_calorie",
+                        "high_fiber",
+                        "use_what_i_have",
+                        "balanced",
+                    ])
+                    .optional(),
+                assumed_staples: z
+                    .array(z.string().min(1).max(100))
+                    .max(20)
+                    .optional(),
+                max_minutes: z.number().int().positive().max(1440).optional(),
             },
             outputSchema: planningOutputSchemas.search_recipes,
         },
-        async ({ query, scope, limit }) =>
+        async ({
+            query,
+            scope,
+            limit,
+            pantry_match,
+            pantry_scope,
+            pantry_goal,
+            assumed_staples,
+            max_minutes,
+        }) =>
             withAnalytics(
                 "search_recipes",
                 async () => {
@@ -410,6 +490,39 @@ export function registerRecipePlanningTools(
                         scope,
                         limit,
                     });
+                    let pantryCandidates;
+                    if (pantry_match) {
+                        if (capabilities.tier !== "premium") {
+                            throw new Error(
+                                "Pantry-aware recipe ranking requires Munch Premium",
+                            );
+                        }
+                        const requestedPantryScope =
+                            pantry_scope ??
+                            (scope === "household" ? "household" : "personal");
+                        const pantryScope = requireRecipeScope(
+                            requestedPantryScope,
+                            capabilities,
+                            false,
+                        );
+                        pantryCandidates = await rankSavedRecipesForPantry({
+                            userId,
+                            scope: pantryScope,
+                            goal: pantry_goal ?? "balanced",
+                            assumedStaples: assumed_staples,
+                            maxMinutes: max_minutes,
+                            limit: Math.min(limit ?? 6, 12),
+                        });
+                        if (query) {
+                            const normalizedQuery = query.toLowerCase();
+                            pantryCandidates = pantryCandidates.filter(
+                                (candidate) =>
+                                    candidate.name
+                                        .toLowerCase()
+                                        .includes(normalizedQuery),
+                            );
+                        }
+                    }
                     return {
                         content: [
                             {
@@ -420,7 +533,12 @@ export function registerRecipePlanningTools(
                                         : `Found ${recipes.length} structured recipe${recipes.length === 1 ? "" : "s"}.`,
                             },
                         ],
-                        structuredContent: { recipes },
+                        structuredContent: {
+                            recipes,
+                            ...(pantryCandidates
+                                ? { pantry_candidates: pantryCandidates }
+                                : {}),
+                        },
                     };
                 },
                 { userId },

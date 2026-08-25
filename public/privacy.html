@@ -39,7 +39,7 @@
                         and Pantry inventory service designed to work through
                         ChatGPT and compatible MCP clients.
                     </p>
-                    <p class="tiny spacer-top">Last updated: August 24, 2026</p>
+                    <p class="tiny spacer-top">Last updated: August 25, 2026</p>
                 </div>
             </section>
             <div class="container legal-layout">
@@ -99,10 +99,13 @@
                             <li>
                                 Optional Premium Pantry inventory, exact or
                                 approximate quantities, storage locations,
-                                inventory-event history, and structured purchase
-                                or receipt reconciliation results. Munch does
-                                not retain raw Pantry or receipt images after
-                                the website extraction request is processed.
+                                inventory-event history, structured purchase or
+                                receipt reconciliation results, and refreshable
+                                planning profiles that can include compact
+                                nutrition facts, food-source identifiers, and
+                                culinary categories or roles. Munch does not
+                                retain raw Pantry or receipt images after the
+                                website extraction request is processed.
                             </li>
                             <li>
                                 Household names, display names, membership
@@ -147,6 +150,19 @@
                             handled by ChatGPT under OpenAI's policies; Munch
                             receives only the structured tool arguments ChatGPT
                             sends to the connected Munch app.
+                        </p>
+                        <h3>Pantry meal planning</h3>
+                        <p>
+                            When an eligible Premium user asks the Munch website
+                            for Pantry meal ideas, Munch can send the relevant
+                            structured Pantry inventory, compact planning
+                            profiles, explicit assumed staples, request goals,
+                            and saved-recipe candidate facts to its configured
+                            AI processor. This request is used to rank or
+                            generate grounded meal ideas. Raw Pantry or receipt
+                            images are not included in this meal-planning
+                            request, and the recommendation does not change
+                            Pantry, Grocery, or recipe records by itself.
                         </p>
                         <h3>Why it is stored</h3>
                         <p>
@@ -242,7 +258,10 @@
                             <li>
                                 <strong>OpenRouter</strong> receives Pantry or
                                 receipt images uploaded through the Munch
-                                website when AI-assisted extraction is enabled.
+                                website when AI-assisted extraction is enabled,
+                                and receives relevant structured Pantry and
+                                saved-recipe context when an eligible user asks
+                                the website for AI-assisted Pantry meal ideas.
                                 Munch requests routing with provider data
                                 collection disabled. That routing preference is
                                 not a promise of zero retention, and the
