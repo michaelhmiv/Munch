@@ -1,6 +1,7 @@
 import { Hono, type Context } from "hono";
 import { openAiAppsChallenge } from "../openai-submission.js";
 import { buildReadinessReport, type ReadinessReport } from "./readiness.js";
+import { releaseMetadata } from "./release.js";
 
 const READINESS_CACHE_MS = 10_000;
 let readinessCache: { expiresAt: number; report: ReadinessReport } | null =
@@ -34,6 +35,10 @@ export function createOperationsRouter(): Hono {
 
     operations.get("/health", live);
     operations.get("/health/live", live);
+    operations.get("/health/version", (c) => {
+        c.set("suppressAccessLog", true);
+        return c.json(releaseMetadata(), 200, { "Cache-Control": "no-store" });
+    });
     operations.get("/health/ready", async (c) => {
         c.set("suppressAccessLog", true);
         const report = await readiness();
