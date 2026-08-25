@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { asFoodProviderError } from "../src/food-providers/errors.js";
 import { OpenFoodFactsProvider } from "../src/food-providers/open-food-facts.js";
 import { UsdaFoodDataCentralProvider } from "../src/food-providers/usda.js";
 
@@ -46,6 +47,48 @@ async function retry<T>(label: string, callback: () => Promise<T>): Promise<T> {
     throw lastError;
 }
 
+type ProbeResult<T> =
+    | { status: "ok"; value: T; durationMs: number }
+    | { status: "degraded"; code: string; message: string };
+
+const degraded: Record<string, number> = {};
+
+async function probe<T>(
+    label: string,
+    provider: string,
+    callback: () => Promise<T>,
+): Promise<ProbeResult<T>> {
+    try {
+        const [value, durationMs] = await timed(() => retry(label, callback));
+        return { status: "ok", value, durationMs };
+    } catch (error) {
+        const normalized = asFoodProviderError(error, provider);
+        if (
+            normalized.code === "rate_limited" ||
+            normalized.code === "provider_unavailable"
+        ) {
+            degraded[label] = (degraded[label] ?? 0) + 1;
+            console.warn(
+                `[food_provider_live] ${label} degraded code=${normalized.code} provider=${normalized.provider ?? provider} message=${JSON.stringify(normalized.message)}`,
+            );
+            return {
+                status: "degraded",
+                code: normalized.code,
+                message: normalized.message,
+            };
+        }
+        throw normalized;
+    }
+}
+
+function metric(values: number[]) {
+    return {
+        samples: values.length,
+        p50_ms: values.length === 0 ? null : percentile(values, 0.5),
+        p95_ms: values.length === 0 ? null : percentile(values, 0.95),
+    };
+}
+
 const usda = new UsdaFoodDataCentralProvider({
     apiKey: process.env.USDA_FDC_API_KEY?.trim() || "DEMO_KEY",
     timeoutMs: maxLatencyMs,
@@ -63,74 +106,68 @@ const offBarcodeMs: number[] = [];
 const offSearchMs: number[] = [];
 
 for (let index = 0; index < iterations; index += 1) {
-    const [usdaResults, searchMs] = await timed(() =>
-        retry("usda_search", () => usda.search({ query: "banana", limit: 5 })),
+    const usdaSearch = await probe("usda_search", "usda", () =>
+        usda.search({ query: "banana", limit: 5 }),
     );
-    const topUsda = usdaResults[0];
-    if (!topUsda || !topUsda.nutrientsPer100g?.calories) {
-        throw new Error("USDA live search returned no usable banana candidate");
-    }
-    usdaSearchMs.push(searchMs);
+    if (usdaSearch.status === "ok") {
+        const topUsda = usdaSearch.value[0];
+        if (!topUsda || !topUsda.nutrientsPer100g?.calories) {
+            throw new Error("USDA live search returned no usable banana candidate");
+        }
+        usdaSearchMs.push(usdaSearch.durationMs);
 
-    const [usdaDetails, detailsMs] = await timed(() =>
-        retry("usda_details", () =>
+        const usdaDetails = await probe("usda_details", "usda", () =>
             usda.getDetails({ providerFoodId: topUsda.providerFoodId }),
-        ),
-    );
-    if (!usdaDetails || !usdaDetails.nutrientsPer100g?.calories) {
-        throw new Error("USDA live details returned no usable nutrition");
-    }
-    usdaDetailsMs.push(detailsMs);
-
-    const [offProduct, barcodeMs] = await timed(() =>
-        retry("off_barcode", () =>
-            off.lookupBarcode({ barcode: "3017620422003" }),
-        ),
-    );
-    if (!offProduct || !offProduct.nutrientsPer100g?.calories) {
-        throw new Error(
-            "Open Food Facts live barcode lookup returned no usable Nutella nutrition",
         );
+        if (usdaDetails.status === "ok") {
+            if (!usdaDetails.value?.nutrientsPer100g?.calories) {
+                throw new Error("USDA live details returned no usable nutrition");
+            }
+            usdaDetailsMs.push(usdaDetails.durationMs);
+        }
     }
-    offBarcodeMs.push(barcodeMs);
 
-    const [offResults, offSearchDurationMs] = await timed(() =>
-        retry("off_search", () => off.search({ query: "peanut butter", limit: 5 })),
+    const offBarcode = await probe("off_barcode", "open_food_facts", () =>
+        off.lookupBarcode({ barcode: "3017620422003" }),
     );
-    if (offResults.length === 0) {
-        throw new Error("Open Food Facts live search returned no candidates");
+    if (offBarcode.status === "ok") {
+        if (!offBarcode.value?.nutrientsPer100g?.calories) {
+            throw new Error(
+                "Open Food Facts live barcode lookup returned no usable Nutella nutrition",
+            );
+        }
+        offBarcodeMs.push(offBarcode.durationMs);
     }
-    offSearchMs.push(offSearchDurationMs);
+
+    const offSearch = await probe("off_search", "open_food_facts", () =>
+        off.search({ query: "peanut butter", limit: 5 }),
+    );
+    if (offSearch.status === "ok") {
+        if (offSearch.value.length === 0) {
+            throw new Error("Open Food Facts live search returned no candidates");
+        }
+        offSearchMs.push(offSearch.durationMs);
+    }
 }
 
 const report = {
     iterations,
     max_latency_gate_ms: maxLatencyMs,
-    usda_search: {
-        p50_ms: percentile(usdaSearchMs, 0.5),
-        p95_ms: percentile(usdaSearchMs, 0.95),
-    },
-    usda_details: {
-        p50_ms: percentile(usdaDetailsMs, 0.5),
-        p95_ms: percentile(usdaDetailsMs, 0.95),
-    },
-    off_barcode: {
-        p50_ms: percentile(offBarcodeMs, 0.5),
-        p95_ms: percentile(offBarcodeMs, 0.95),
-    },
-    off_search: {
-        p50_ms: percentile(offSearchMs, 0.5),
-        p95_ms: percentile(offSearchMs, 0.95),
-    },
+    degraded,
+    usda_search: metric(usdaSearchMs),
+    usda_details: metric(usdaDetailsMs),
+    off_barcode: metric(offBarcodeMs),
+    off_search: metric(offSearchMs),
 };
 
 console.log(`[food_provider_live] ${JSON.stringify(report)}`);
 
-for (const [label, metric] of Object.entries(report).filter(
-    ([key]) => key !== "iterations" && key !== "max_latency_gate_ms",
+for (const [label, metricValue] of Object.entries(report).filter(
+    ([key]) =>
+        !["iterations", "max_latency_gate_ms", "degraded"].includes(key),
 )) {
-    const p95 = (metric as { p95_ms: number }).p95_ms;
-    if (p95 > maxLatencyMs) {
+    const p95 = (metricValue as { p95_ms: number | null }).p95_ms;
+    if (p95 !== null && p95 > maxLatencyMs) {
         throw new Error(
             `${label} p95 ${p95}ms exceeded live provider gate ${maxLatencyMs}ms`,
         );
