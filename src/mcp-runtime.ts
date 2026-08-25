@@ -32,6 +32,8 @@ import { withVersionedWidgetResources } from "./widget-resource-versioning.js";
 
 const MUNCH_SERVER_INSTRUCTIONS = `Munch stores and retrieves factual meals, nutrition, hydration, weight, foods, recipes, meal plans, grocery lists, and—when the paid user explicitly enables it—Pantry inventory. Nutrition values are estimates; Munch does not provide medical or dietary advice.
 
+Host-model boundary: this MCP server does not invoke Munch's standalone website AI clients. The connected host model is responsible for vision, semantic interpretation, recipe ideation, and other generative reasoning. Use Munch tools for factual/provider lookup, deterministic matching and ranking, authorization, validation, idempotency, and persistence. Never route an MCP request through the standalone website AI layer.
+
 Prefer the direct read/write tool that exactly matches the user's request. Grocery-list requests go straight to get_grocery_list; adding groceries goes straight to add_grocery_items. Today's meals use get_meals_today; date ranges use the matching range tool. Meal plans use get_meal_plan. Saved recipes use search_recipes/get_recipe. Use personal scope by default unless the user explicitly asks for household data. If no direct tool covers a low-frequency correction, setting, export, deletion, or management request, call find_munch_actions and then run_munch_action with the returned parameter contract.
 
 For nutrition resolution, use personal saved/history matches when relevant, then search_foods, then external web only when Munch has no adequate result, and model estimates last. Visible packaged barcodes use lookup_food_barcode.

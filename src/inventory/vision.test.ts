@@ -80,6 +80,7 @@ describe("inventory vision", () => {
         expect(requestBody).toContain("data:image/jpeg;base64,AQID");
         const provider = JSON.parse(requestBody).provider;
         expect(provider).toEqual({ data_collection: "deny" });
+        expect(JSON.parse(requestBody).reasoning).toEqual({ enabled: false });
     });
 
     test("normalizes common provider location synonyms", async () => {
@@ -129,6 +130,37 @@ describe("inventory vision", () => {
         );
         expect(preview.lines[0]?.location).toBe("fridge");
         expect(preview.lines[1]?.location).toBe("freezer");
+    });
+
+    test("normalizes a single provider note string before strict validation", async () => {
+        const preview = await previewInventoryImage(
+            {
+                mode: "pantry_photo",
+                mimeType: "image/png",
+                bytes: new Uint8Array([1]),
+            },
+            config,
+            {
+                fetcher: async () =>
+                    new Response(
+                        JSON.stringify({
+                            choices: [
+                                {
+                                    message: {
+                                        content: JSON.stringify({
+                                            lines: [],
+                                            notes: "Shelf labels were partially obscured.",
+                                        }),
+                                    },
+                                },
+                            ],
+                        }),
+                    ),
+            },
+        );
+        expect(preview.notes).toEqual([
+            "Shelf labels were partially obscured.",
+        ]);
     });
 
     test("rejects unsupported media before provider calls", async () => {

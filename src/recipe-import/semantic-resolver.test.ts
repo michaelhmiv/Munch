@@ -35,13 +35,13 @@ describe("recipe import website AI configuration", () => {
         expect(
             recipeImportAiConfig({
                 OPENROUTER_API_KEY: "or-test",
-                MUNCH_RECIPE_IMPORT_AI_MODEL: "google/gemini-test",
+                MUNCH_AI_MODEL: "google/gemini-test",
                 MUNCH_RECIPE_IMPORT_AI_MAX_CALLS_PER_IMPORT: "1",
             }),
         ).toMatchObject({
             model: "google/gemini-test",
             maxCallsPerImport: 1,
-            responseFormat: "json_schema",
+            responseFormat: "json_object",
             responseHealing: true,
         });
         expect(
@@ -129,6 +129,7 @@ describe("OpenRouter recipe import resolver", () => {
         expect(requests[0]?.body.response_format).toBeDefined();
         expect(requests[0]?.body.plugins).toEqual([{ id: "response-healing" }]);
         expect(requests[0]?.body.stream).toBe(false);
+        expect(requests[0]?.body.reasoning).toEqual({ enabled: false });
         expect(JSON.stringify(requests[0]?.body)).not.toContain(
             "provider_food_id",
         );

@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { summarizeFoodCandidate } from "../food-providers/service.js";
+import {
+    DEFAULT_WEBSITE_AI_MODEL,
+    websiteAiModel,
+} from "../website-ai-config.js";
 import type {
     ParsedRecipe,
     ParsedRecipeIngredient,
@@ -12,7 +16,7 @@ import type {
 } from "./types.js";
 
 export const DEFAULT_RECIPE_IMPORT_AI_BASE_URL = "https://openrouter.ai/api/v1";
-export const DEFAULT_RECIPE_IMPORT_AI_MODEL = "openai/gpt-5.6-luna";
+export const DEFAULT_RECIPE_IMPORT_AI_MODEL = DEFAULT_WEBSITE_AI_MODEL;
 export const DEFAULT_RECIPE_IMPORT_AI_TIMEOUT_MS = 30_000;
 export const DEFAULT_RECIPE_IMPORT_AI_MAX_TOKENS = 4_000;
 export const DEFAULT_RECIPE_IMPORT_AI_MAX_CALLS = 2;
@@ -299,9 +303,9 @@ function enabledFlag(value: string | undefined, fallback: boolean): boolean {
 function responseFormat(
     value: string | undefined,
 ): "json_schema" | "json_object" {
-    return value?.trim().toLowerCase() === "json_object"
-        ? "json_object"
-        : "json_schema";
+    return value?.trim().toLowerCase() === "json_schema"
+        ? "json_schema"
+        : "json_object";
 }
 
 function optionalUrl(value: string | undefined): string | undefined {
@@ -349,9 +353,7 @@ export function recipeImportAiConfig(
     return {
         apiKey,
         baseUrl: baseUrl(env.MUNCH_RECIPE_IMPORT_AI_BASE_URL),
-        model:
-            env.MUNCH_RECIPE_IMPORT_AI_MODEL?.trim() ||
-            DEFAULT_RECIPE_IMPORT_AI_MODEL,
+        model: websiteAiModel(env),
         timeoutMs: boundedInteger(
             env.MUNCH_RECIPE_IMPORT_AI_TIMEOUT_MS,
             DEFAULT_RECIPE_IMPORT_AI_TIMEOUT_MS,
@@ -642,7 +644,13 @@ export class OpenRouterRecipeImportResolver implements RecipeImportSemanticResol
                     body: JSON.stringify({
                         model: this.config.model,
                         messages: [
-                            { role: "system", content: system },
+                            {
+                                role: "system",
+                                content:
+                                    this.config.responseFormat === "json_object"
+                                        ? `${system}\n\nReturn one JSON object matching this schema exactly. Do not omit required arrays or keys:\n${JSON.stringify(schema)}`
+                                        : system,
+                            },
                             { role: "user", content: user },
                         ],
                         response_format:
@@ -659,6 +667,7 @@ export class OpenRouterRecipeImportResolver implements RecipeImportSemanticResol
                         ...(this.config.responseHealing
                             ? { plugins: [{ id: "response-healing" }] }
                             : {}),
+                        reasoning: { enabled: false },
                         stream: false,
                         max_tokens: this.config.maxTokens,
                         ...(this.config.temperature === undefined

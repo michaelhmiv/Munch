@@ -4,9 +4,9 @@ on:
     workflow_dispatch:
         inputs:
             model:
-                description: "OpenRouter planning model ID"
+                description: "Shared Munch website OpenRouter model ID"
                 required: false
-                default: "openai/gpt-5.6-luna"
+                default: "qwen/qwen3.7-flash"
                 type: string
 
 permissions:
@@ -38,7 +38,7 @@ jobs:
             DATABASE_URL: postgresql://postgres:postgres@localhost:5432/munch_planning_live
             MUNCH_APP_BASE_URL: https://munch.business
             MUNCH_PANTRY_PLANNING_ENABLED: "true"
-            MUNCH_PANTRY_PLANNING_MODEL: ${{ inputs.model }}
+            MUNCH_AI_MODEL: ${{ inputs.model }}
             MUNCH_PANTRY_PLANNING_TIMEOUT_MS: "60000"
             OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
             NODE_ENV: test

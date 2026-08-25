@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { websiteAiModel } from "../website-ai-config.js";
 import { normalizeInventoryName } from "./matching.js";
 import {
     getPantryPlanningContext,
@@ -234,10 +235,7 @@ export function pantryPlanningModelConfig(
     if (!apiKey) return null;
     return {
         apiKey,
-        model:
-            env.MUNCH_PANTRY_PLANNING_MODEL?.trim() ||
-            env.MUNCH_RECIPE_IMPORT_AI_MODEL?.trim() ||
-            "openai/gpt-5.6-luna",
+        model: websiteAiModel(env),
         baseUrl: (
             env.MUNCH_PANTRY_PLANNING_BASE_URL?.trim() ||
             "https://openrouter.ai/api/v1"
@@ -457,23 +455,17 @@ export async function generatePantryMealIdeas(
             },
             body: JSON.stringify({
                 model: config.model,
-                response_format: {
-                    type: "json_schema",
-                    json_schema: {
-                        name: "munch_pantry_meal_ideas",
-                        strict: true,
-                        schema: pantryMealIdeasResponseJsonSchema,
-                    },
-                },
-                provider: {
-                    data_collection: "deny",
-                    require_parameters: true,
-                },
+                response_format: { type: "json_object" },
+                reasoning: { enabled: false },
+                provider: { data_collection: "deny" },
                 messages: [
-                    { role: "system", content: systemPrompt() },
+                    {
+                        role: "system",
+                        content: `${systemPrompt()}\n\nYour response MUST be one JSON object matching this schema exactly. The only top-level keys are candidates and planning_notes; do not rename, wrap, or replace them.\n${JSON.stringify(pantryMealIdeasResponseJsonSchema)}`,
+                    },
                     {
                         role: "user",
-                        content: `Plan ${context.request.meal_type} deliberately from this JSON context. Follow the supplied response JSON Schema exactly. Use only source=saved_recipe or generated and readiness=ready_now, likely_ready, or almost_there. estimated_nutrition must contain the five scalar nullable fields in the schema; flavor_system and why_it_fits are arrays.\n\n${JSON.stringify(context)}`,
+                        content: `Plan ${context.request.meal_type} deliberately from this JSON context. Use only source=saved_recipe or generated and readiness=ready_now, likely_ready, or almost_there. estimated_nutrition must contain the five scalar nullable fields in the schema; flavor_system and why_it_fits are arrays.\n\n${JSON.stringify(context)}`,
                     },
                 ],
             }),
