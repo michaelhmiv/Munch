@@ -18,13 +18,57 @@ jobs:
         with:
           bun-version: 1
       - run: bun install --frozen-lockfile
-      - run: bunx prettier --write src/mcp-latency.test.ts src/mcp-latency.ts src/mcp-runtime.ts src/meal-review-reconciliation.test.ts src/meal-review-reconciliation.ts src/meal-review-tools.ts src/meal-to-recipe-tool.test.ts src/meal-to-recipe.test.ts src/meal-to-recipe.ts
-      - name: Commit formatting when needed
+      - name: Apply reconciliation contract metadata
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"expected text not found in {path}: {old[:80]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace(
+              "src/capability-manifest.ts",
+              'mcp: complete(["save_recipe"]),',
+              'mcp: complete(["save_recipe", "save_meal_as_recipe"]),',
+          )
+          replace(
+              "src/capability-manifest.ts",
+              '    save_recipe: "recipe.create",\n',
+              '    save_meal_as_recipe: "recipe.create",\n    save_recipe: "recipe.create",\n',
+          )
+          p = Path("src/capability-manifest.test.ts")
+          text = p.read_text()
+          if text.count("toHaveLength(73)") != 2:
+              raise SystemExit("unexpected capability count assertions")
+          p.write_text(text.replace("toHaveLength(73)", "toHaveLength(74)"))
+
+          replace(
+              "src/meal-drafts/repository.ts",
+              'import type { NutrientValues } from "../food-providers/types.js";\n',
+              'import type { NutrientValues } from "../food-providers/types.js";\nimport { assertDraftQuestionPreviouslyReconciled } from "../meal-review-reconciliation.js";\n',
+          )
+          replace(
+              "src/meal-drafts/repository.ts",
+              '        assertVersion(draft, input.expectedVersion);\n        const rows = await tx<Array<{ id: string }>>`\n',
+              '        assertVersion(draft, input.expectedVersion);\n        const question = draft.questions.find(\n            (candidate) =>\n                candidate.id === input.questionId && candidate.status === "open",\n        );\n        if (!question) throw new Error("Open draft question not found");\n        assertDraftQuestionPreviouslyReconciled(draft, question);\n        const rows = await tx<Array<{ id: string }>>`\n',
+          )
+          replace(
+              "src/meal-draft-tools.ts",
+              '"Record the user\'s answer to one open draft question. Then inspect next_question and continue until none remain.",',
+              '"Record the user\'s answer to one open draft question. For an item-linked question, update the affected canonical draft item first so its facts, assumptions, provenance, and nutrition reflect the answer; answer-only closure is rejected. Then inspect next_question and continue until none remain.",',
+          )
+          PY
+      - run: bunx prettier --write src/capability-manifest.ts src/capability-manifest.test.ts src/meal-drafts/repository.ts src/meal-draft-tools.ts src/meal-review-reconciliation.ts src/meal-review-reconciliation.test.ts
+      - name: Commit changes when needed
         run: |
           if ! git diff --quiet; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add src/mcp-latency.test.ts src/mcp-latency.ts src/mcp-runtime.ts src/meal-review-reconciliation.test.ts src/meal-review-reconciliation.ts src/meal-review-tools.ts src/meal-to-recipe-tool.test.ts src/meal-to-recipe.test.ts src/meal-to-recipe.ts
-            git commit -m "style: format meal recipe workflow"
+            git add src/capability-manifest.ts src/capability-manifest.test.ts src/meal-drafts/repository.ts src/meal-draft-tools.ts src/meal-review-reconciliation.ts src/meal-review-reconciliation.test.ts
+            git commit -m "fix: enforce review reconciliation across surfaces"
             git push origin HEAD:${{ github.event.pull_request.head.ref }}
           fi
