@@ -1,0 +1,32 @@
+name: Format preview
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  format-preview:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - run: bunx prettier --write src/mcp-latency.test.ts src/mcp-latency.ts src/mcp-runtime.ts src/meal-review-reconciliation.test.ts src/meal-review-reconciliation.ts src/meal-review-tools.ts src/meal-to-recipe-tool.test.ts src/meal-to-recipe.test.ts src/meal-to-recipe.ts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: formatted-source
+          path: |
+            src/mcp-latency.test.ts
+            src/mcp-latency.ts
+            src/mcp-runtime.ts
+            src/meal-review-reconciliation.test.ts
+            src/meal-review-reconciliation.ts
+            src/meal-review-tools.ts
+            src/meal-to-recipe-tool.test.ts
+            src/meal-to-recipe.test.ts
+            src/meal-to-recipe.ts
