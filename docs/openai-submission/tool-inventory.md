@@ -62,6 +62,7 @@ Generated from the production MCP source. Do not edit manually.
 | `resolve_meal_review`         | `src/meal-review-tools.ts`       |     false |      false |       false |      false |          true |
 | `run_munch_action`            | `src/mcp-latency.ts`             |     false |      false |        true |      false |         false |
 | `save_food`                   | `src/saved-food-tools.ts`        |     false |      false |       false |       true |          true |
+| `save_meal_as_recipe`         | `src/meal-to-recipe.ts`          |     false |      false |       false |       true |          true |
 | `save_recipe`                 | `src/recipe-planning-tools.ts`   |     false |      false |       false |       true |          true |
 | `save_recipe_and_plan`        | `src/recipe-planning-tools.ts`   |     false |      false |       false |       true |          true |
 | `schedule_recipe`             | `src/recipe-planning-tools.ts`   |     false |      false |       false |       true |          true |
