@@ -1,4 +1,7 @@
-import type { MealDraft } from "./meal-drafts/types.js";
+import type {
+    MealDraft,
+    MealDraftQuestion,
+} from "./meal-drafts/types.js";
 import type { StructuredMealItemInput } from "./structured-meals/types.js";
 
 export interface ReviewAnswerReference {
@@ -35,6 +38,36 @@ function findOpenQuestion(draft: MealDraft, answer: ReviewAnswerReference) {
                 (answer.question_key !== undefined &&
                     question.questionKey === answer.question_key)),
     );
+}
+
+/**
+ * Legacy two-step answer flows may close an item-linked question only after the
+ * canonical item was changed in a later transaction. PostgreSQL transaction
+ * timestamps make an unchanged draft item and its initial question share the
+ * same creation epoch; a real subsequent item reconciliation advances updatedAt.
+ */
+export function assertDraftQuestionPreviouslyReconciled(
+    draft: MealDraft,
+    question: MealDraftQuestion,
+): void {
+    if (!question.itemId) return;
+    const item = draft.items.find((record) => record.id === question.itemId);
+    if (!item) {
+        throw new Error(
+            `Review question ${question.questionKey} references a missing meal item`,
+        );
+    }
+    const itemUpdatedAt = Date.parse(item.updatedAt);
+    const questionCreatedAt = Date.parse(question.createdAt);
+    if (
+        !Number.isFinite(itemUpdatedAt) ||
+        !Number.isFinite(questionCreatedAt) ||
+        itemUpdatedAt <= questionCreatedAt
+    ) {
+        throw new Error(
+            `Answering item question "${question.questionKey}" requires reconciling the affected canonical item first. Update its facts, assumptions, provenance, and nutrition as needed, then answer the question.`,
+        );
+    }
 }
 
 /**
