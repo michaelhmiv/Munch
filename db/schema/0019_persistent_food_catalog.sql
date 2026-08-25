@@ -58,6 +58,15 @@ create index food_catalog_name_trgm_idx
 create index food_catalog_brand_trgm_idx
     on munch.food_catalog_entries using gin (normalized_brand gin_trgm_ops)
     where normalized_brand is not null;
+create index food_catalog_lexical_search_idx
+    on munch.food_catalog_entries
+    using gin (
+        to_tsvector(
+            'simple',
+            normalized_name || ' ' || coalesce(normalized_brand, '')
+        )
+    )
+    where deprecated_at is null;
 
 create table munch.food_catalog_query_cache (
     query_hash text primary key,
