@@ -22,10 +22,15 @@ export interface CatalogHit {
 }
 
 interface CatalogRow {
+    id: string;
     provider: FoodProviderName;
     provider_food_id: string;
     source_snapshot: unknown;
     refresh_after: Date | string;
+}
+
+interface CatalogIdentityRow {
+    id: string;
 }
 
 export function normalizeFoodText(value: string): string {
@@ -90,13 +95,22 @@ function contentHash(candidate: FoodCandidate): string {
         .digest("hex");
 }
 
-function candidateFromRow(row: CatalogRow): FoodCandidate | null {
+function candidateFromRow(row: Pick<CatalogRow, "source_snapshot">): FoodCandidate | null {
     const snapshot =
         typeof row.source_snapshot === "string"
             ? JSON.parse(row.source_snapshot)
             : row.source_snapshot;
     if (!snapshot || typeof snapshot !== "object") return null;
     return snapshot as FoodCandidate;
+}
+
+function hitFromRow(row: CatalogRow, now = Date.now()): CatalogHit | null {
+    const candidate = candidateFromRow(row);
+    if (!candidate) return null;
+    return {
+        candidate,
+        stale: new Date(row.refresh_after).getTime() <= now,
+    };
 }
 
 function refreshAfter(
@@ -111,8 +125,71 @@ function refreshAfter(
     return new Date(now.getTime() + ttl);
 }
 
+function providerRevision(candidate: FoodCandidate): string | null {
+    return typeof candidate.raw?.revision === "string"
+        ? candidate.raw.revision
+        : null;
+}
+
+function sourceUpdatedAt(candidate: FoodCandidate): string | null {
+    const value = candidate.sourceUpdatedAt?.trim();
+    if (!value) return null;
+    const parsed = new Date(value);
+    return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
+}
+
+function catalogPayload(
+    candidate: FoodCandidate,
+    config: CatalogConfig,
+    now: Date,
+) {
+    const serving = candidate.portions[0]?.nutrients ?? null;
+    return {
+        provider: candidate.provider,
+        provider_food_id: candidate.providerFoodId,
+        barcode: candidate.barcode ?? null,
+        name: candidate.name,
+        normalized_name: normalizeFoodText(candidate.name),
+        brand: candidate.brand ?? null,
+        normalized_brand: candidate.brand
+            ? normalizeFoodText(candidate.brand)
+            : null,
+        data_kind: candidate.dataKind,
+        portions: candidate.portions,
+        nutrients_per_100g: candidate.nutrientsPer100g ?? null,
+        declared_serving_nutrition: serving,
+        nutrient_payload: candidate.nutrientsPer100g ?? {},
+        source_snapshot: candidate,
+        source_url: candidate.attribution.url ?? null,
+        source_license: candidate.attribution.license ?? null,
+        provider_revision: providerRevision(candidate),
+        source_updated_at: sourceUpdatedAt(candidate),
+        fetched_at: now.toISOString(),
+        last_successful_refresh_at: now.toISOString(),
+        refresh_after: refreshAfter(candidate, config, now).toISOString(),
+        confidence: candidate.confidence,
+        content_hash: contentHash(candidate),
+    };
+}
+
 export class FoodCatalogRepository {
     constructor(private readonly config: CatalogConfig) {}
+
+    private async touch(ids: string[]): Promise<void> {
+        if (!this.config.writesEnabled || ids.length === 0) return;
+        const payload = JSON.stringify(ids);
+        await withServiceDatabase(async (tx) => {
+            await tx`
+                update munch.food_catalog_entries
+                set last_accessed_at = now(),
+                    access_count = access_count + 1
+                where id in (
+                    select value::uuid
+                    from jsonb_array_elements_text(${payload}::jsonb)
+                )
+            `;
+        });
+    }
 
     async findByProviderId(
         provider: FoodProviderName,
@@ -126,16 +203,10 @@ export class FoodCatalogRepository {
                 where provider = ${provider}
                   and provider_food_id = ${providerFoodId}
                   and deprecated_at is null
-                returning provider, provider_food_id, source_snapshot, refresh_after
+                returning id, provider, provider_food_id, source_snapshot, refresh_after
             `;
             const row = rows[0];
-            if (!row) return null;
-            const candidate = candidateFromRow(row);
-            if (!candidate) return null;
-            return {
-                candidate,
-                stale: new Date(row.refresh_after) <= new Date(),
-            };
+            return row ? hitFromRow(row) : null;
         });
     }
 
@@ -147,29 +218,24 @@ export class FoodCatalogRepository {
                 set last_accessed_at = now(), access_count = access_count + 1
                 where barcode = ${barcode}
                   and deprecated_at is null
-                returning provider, provider_food_id, source_snapshot, refresh_after
+                returning id, provider, provider_food_id, source_snapshot, refresh_after
             `;
+            const now = Date.now();
             return rows.flatMap((row) => {
-                const candidate = candidateFromRow(row);
-                return candidate
-                    ? [
-                          {
-                              candidate,
-                              stale: new Date(row.refresh_after) <= new Date(),
-                          },
-                      ]
-                    : [];
+                const hit = hitFromRow(row, now);
+                return hit ? [hit] : [];
             });
         });
     }
 
-    async searchLocal(query: string, limit: number): Promise<FoodCandidate[]> {
+    async searchLocal(query: string, limit: number): Promise<CatalogHit[]> {
         if (!this.config.readsEnabled) return [];
         const normalized = normalizeFoodText(query);
         if (!normalized) return [];
-        return withServiceDatabase(async (tx) => {
-            const rows = await tx<CatalogRow[]>`
-                select provider, provider_food_id, source_snapshot, refresh_after
+        const boundedLimit = Math.max(1, Math.min(25, limit));
+        const rows = await withServiceDatabase(async (tx) =>
+            tx<CatalogRow[]>`
+                select id, provider, provider_food_id, source_snapshot, refresh_after
                 from munch.food_catalog_entries
                 where deprecated_at is null
                   and (
@@ -179,33 +245,128 @@ export class FoodCatalogRepository {
                   )
                 order by
                     case when normalized_name = ${normalized} then 0 else 1 end,
-                    greatest(similarity(normalized_name, ${normalized}), similarity(coalesce(normalized_brand, ''), ${normalized})) desc,
+                    greatest(
+                        similarity(normalized_name, ${normalized}),
+                        similarity(coalesce(normalized_brand, ''), ${normalized})
+                    ) desc,
                     confidence desc,
+                    access_count desc,
                     last_accessed_at desc
-                limit ${Math.max(1, Math.min(25, limit))}
+                limit ${boundedLimit}
+            `,
+        );
+        await this.touch(rows.map((row) => row.id));
+        const now = Date.now();
+        return rows.flatMap((row) => {
+            const hit = hitFromRow(row, now);
+            return hit ? [hit] : [];
+        });
+    }
+
+    async findCachedSearch(
+        query: string,
+        limit: number,
+    ): Promise<CatalogHit[] | null> {
+        if (!this.config.readsEnabled) return null;
+        const normalized = normalizeFoodText(query);
+        if (!normalized) return null;
+        const queryHash = hashCatalogIdentity(normalized);
+        const boundedLimit = Math.max(1, Math.min(25, limit));
+        const rows = await withServiceDatabase(async (tx) =>
+            tx<CatalogRow[]>`
+                select
+                    entry.id,
+                    entry.provider,
+                    entry.provider_food_id,
+                    entry.source_snapshot,
+                    entry.refresh_after
+                from munch.food_catalog_query_cache cache
+                cross join lateral unnest(cache.entry_ids)
+                    with ordinality as cached(entry_id, ordinal)
+                join munch.food_catalog_entries entry
+                  on entry.id = cached.entry_id
+                 and entry.deprecated_at is null
+                where cache.query_hash = ${queryHash}
+                  and cache.expires_at > now()
+                order by cached.ordinal
+                limit ${boundedLimit}
+            `,
+        );
+        if (rows.length === 0) return null;
+        await this.touch(rows.map((row) => row.id));
+        const now = Date.now();
+        return rows.flatMap((row) => {
+            const hit = hitFromRow(row, now);
+            return hit ? [hit] : [];
+        });
+    }
+
+    async recordSearch(
+        query: string,
+        candidates: FoodCandidate[],
+    ): Promise<void> {
+        if (!this.config.writesEnabled || candidates.length === 0) return;
+        const normalized = normalizeFoodText(query);
+        if (!normalized) return;
+        const queryHash = hashCatalogIdentity(normalized);
+        const identities = candidates.map((candidate, index) => ({
+            provider: candidate.provider,
+            provider_food_id: candidate.providerFoodId,
+            ordinal: index,
+        }));
+        const identityPayload = JSON.stringify(identities);
+        const providers = [...new Set(candidates.map((candidate) => candidate.provider))];
+        const expiresAt = new Date(Date.now() + this.config.searchTtlMs);
+        await withServiceDatabase(async (tx) => {
+            const rows = await tx<CatalogIdentityRow[]>`
+                select entry.id
+                from jsonb_to_recordset(${identityPayload}::jsonb)
+                    as input(provider text, provider_food_id text, ordinal integer)
+                join munch.food_catalog_entries entry
+                  on entry.provider = input.provider
+                 and entry.provider_food_id = input.provider_food_id
+                 and entry.deprecated_at is null
+                order by input.ordinal
             `;
-            return rows.flatMap((row) => {
-                const candidate = candidateFromRow(row);
-                return candidate ? [candidate] : [];
-            });
+            if (rows.length === 0) return;
+            const entryIds = rows.map((row) => row.id);
+            await tx`
+                insert into munch.food_catalog_query_cache (
+                    query_hash,
+                    normalized_query,
+                    provider_set,
+                    entry_ids,
+                    fetched_at,
+                    expires_at
+                ) values (
+                    ${queryHash},
+                    ${normalized},
+                    ${providers},
+                    ${entryIds},
+                    now(),
+                    ${expiresAt}
+                )
+                on conflict (query_hash) do update set
+                    normalized_query = excluded.normalized_query,
+                    provider_set = excluded.provider_set,
+                    entry_ids = excluded.entry_ids,
+                    fetched_at = excluded.fetched_at,
+                    expires_at = excluded.expires_at
+            `;
         });
     }
 
     async upsert(candidate: FoodCandidate): Promise<void> {
-        if (!this.config.writesEnabled) return;
-        validateCatalogCandidate(candidate);
+        await this.upsertMany([candidate]);
+    }
+
+    async upsertMany(candidates: FoodCandidate[]): Promise<void> {
+        if (!this.config.writesEnabled || candidates.length === 0) return;
+        for (const candidate of candidates) validateCatalogCandidate(candidate);
         const now = new Date();
-        const normalizedName = normalizeFoodText(candidate.name);
-        const normalizedBrand = candidate.brand
-            ? normalizeFoodText(candidate.brand)
-            : null;
-        const serving = candidate.portions[0]?.nutrients ?? null;
-        const sourceUrl = candidate.attribution.url ?? null;
-        const sourceLicense = candidate.attribution.license ?? null;
-        const revision =
-            typeof candidate.raw?.revision === "string"
-                ? candidate.raw.revision
-                : null;
+        const payload = JSON.stringify(
+            candidates.map((candidate) => catalogPayload(candidate, this.config, now)),
+        );
         await withServiceDatabase(async (tx) => {
             await tx`
                 insert into munch.food_catalog_entries (
@@ -215,15 +376,53 @@ export class FoodCatalogRepository {
                     source_snapshot, source_url, source_license, provider_revision,
                     source_updated_at, fetched_at, last_successful_refresh_at,
                     refresh_after, confidence, content_hash
-                ) values (
-                    ${candidate.provider}, ${candidate.providerFoodId}, ${candidate.barcode ?? null},
-                    ${candidate.name}, ${normalizedName}, ${candidate.brand ?? null},
-                    ${normalizedBrand}, ${candidate.dataKind}, ${candidate.portions}::jsonb,
-                    ${candidate.nutrientsPer100g ?? null}::jsonb, ${serving}::jsonb,
-                    ${candidate.nutrientsPer100g ?? {}}::jsonb, ${candidate}::jsonb,
-                    ${sourceUrl}, ${sourceLicense}, ${revision}, ${candidate.sourceUpdatedAt ?? null},
-                    ${now}, ${now}, ${refreshAfter(candidate, this.config, now)},
-                    ${candidate.confidence}, ${contentHash(candidate)}
+                )
+                select
+                    row.provider,
+                    row.provider_food_id,
+                    row.barcode,
+                    row.name,
+                    row.normalized_name,
+                    row.brand,
+                    row.normalized_brand,
+                    row.data_kind,
+                    row.portions,
+                    row.nutrients_per_100g,
+                    row.declared_serving_nutrition,
+                    row.nutrient_payload,
+                    row.source_snapshot,
+                    row.source_url,
+                    row.source_license,
+                    row.provider_revision,
+                    nullif(row.source_updated_at, '')::timestamptz,
+                    row.fetched_at::timestamptz,
+                    row.last_successful_refresh_at::timestamptz,
+                    row.refresh_after::timestamptz,
+                    row.confidence,
+                    row.content_hash
+                from jsonb_to_recordset(${payload}::jsonb) as row(
+                    provider text,
+                    provider_food_id text,
+                    barcode text,
+                    name text,
+                    normalized_name text,
+                    brand text,
+                    normalized_brand text,
+                    data_kind text,
+                    portions jsonb,
+                    nutrients_per_100g jsonb,
+                    declared_serving_nutrition jsonb,
+                    nutrient_payload jsonb,
+                    source_snapshot jsonb,
+                    source_url text,
+                    source_license text,
+                    provider_revision text,
+                    source_updated_at text,
+                    fetched_at text,
+                    last_successful_refresh_at text,
+                    refresh_after text,
+                    confidence double precision,
+                    content_hash text
                 )
                 on conflict (provider, provider_food_id) do update set
                     barcode = excluded.barcode,
@@ -249,10 +448,6 @@ export class FoodCatalogRepository {
                     deprecated_at = null
             `;
         });
-    }
-
-    async upsertMany(candidates: FoodCandidate[]): Promise<void> {
-        for (const candidate of candidates) await this.upsert(candidate);
     }
 
     async isNegative(
