@@ -1,5 +1,4 @@
 import type { NutrientValues } from "../food-providers/types.js";
-import { assertDraftQuestionPreviouslyReconciled } from "../meal-review-reconciliation.js";
 import {
     withUserDatabase,
     type DatabaseTransaction,
@@ -451,6 +450,31 @@ export async function addMealDraftQuestion(input: {
     });
 }
 
+async function assertDraftQuestionPreviouslyReconciledAtDatabasePrecision(
+    tx: DatabaseTransaction,
+    draftId: string,
+    question: MealDraftQuestion,
+): Promise<void> {
+    if (!question.itemId) return;
+    const rows = await tx<Array<{ reconciled: boolean }>>`
+        select exists (
+            select 1
+            from munch.meal_draft_questions q
+            join munch.meal_draft_items i
+              on i.id = q.item_id
+             and i.draft_id = q.draft_id
+            where q.id = ${question.id}
+              and q.draft_id = ${draftId}
+              and i.updated_at > q.created_at
+        ) as reconciled
+    `;
+    if (!rows[0]?.reconciled) {
+        throw new Error(
+            `Answering item question "${question.questionKey}" requires reconciling the affected canonical item first. Update its facts, assumptions, provenance, and nutrition as needed, then answer the question.`,
+        );
+    }
+}
+
 export async function answerMealDraftQuestion(input: {
     userId: string;
     draftId: string;
@@ -473,7 +497,11 @@ export async function answerMealDraftQuestion(input: {
                 candidate.status === "open",
         );
         if (!question) throw new Error("Open draft question not found");
-        assertDraftQuestionPreviouslyReconciled(draft, question);
+        await assertDraftQuestionPreviouslyReconciledAtDatabasePrecision(
+            tx,
+            input.draftId,
+            question,
+        );
         const rows = await tx<Array<{ id: string }>>`
             update munch.meal_draft_questions
             set status = 'answered', answer = ${answer}, answered_at = now()
