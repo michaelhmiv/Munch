@@ -459,10 +459,13 @@ export async function generatePantryMealIdeas(
                 reasoning: { enabled: false },
                 provider: { data_collection: "deny" },
                 messages: [
-                    { role: "system", content: systemPrompt() },
+                    {
+                        role: "system",
+                        content: `${systemPrompt()}\n\nYour response MUST be one JSON object matching this schema exactly. The only top-level keys are candidates and planning_notes; do not rename, wrap, or replace them.\n${JSON.stringify(pantryMealIdeasResponseJsonSchema)}`,
+                    },
                     {
                         role: "user",
-                        content: `Plan ${context.request.meal_type} deliberately from this JSON context. Follow the supplied response JSON Schema exactly. Use only source=saved_recipe or generated and readiness=ready_now, likely_ready, or almost_there. estimated_nutrition must contain the five scalar nullable fields in the schema; flavor_system and why_it_fits are arrays.\n\n${JSON.stringify(context)}`,
+                        content: `Plan ${context.request.meal_type} deliberately from this JSON context. Use only source=saved_recipe or generated and readiness=ready_now, likely_ready, or almost_there. estimated_nutrition must contain the five scalar nullable fields in the schema; flavor_system and why_it_fits are arrays.\n\n${JSON.stringify(context)}`,
                     },
                 ],
             }),
