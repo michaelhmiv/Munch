@@ -25,7 +25,7 @@ jobs:
         run: python3 scripts/pantry-intelligence-fixup.py
       - name: Format and verify wired surfaces
         run: |
-          bunx prettier --write src/inventory src/recipe-planning-tools.ts db/schema/0025_inventory_planning_profiles.sql db/updates/0027_inventory_planning_profiles.sql
+          bunx prettier --write src/inventory src/recipe-planning-tools.ts
           bun test src/inventory
           bun run typecheck
       - name: Commit verified product wiring
