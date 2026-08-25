@@ -1,10 +1,8 @@
 #!/usr/bin/env bun
 
 import { SQL } from "bun";
-import path from "node:path";
 import { foodCatalogConfig } from "../src/food-providers/catalog-config.js";
 import { FoodCatalogRepository } from "../src/food-providers/catalog-repository.js";
-import { importUsdaBulkFile } from "../src/food-providers/usda-bulk.js";
 import type { FoodCandidate } from "../src/food-providers/types.js";
 
 const databaseUrl = process.env.DATABASE_URL?.trim();
@@ -16,9 +14,9 @@ const iterations = Math.max(
 );
 const database = new SQL({ url: databaseUrl, max: 4 });
 const repository = new FoodCatalogRepository(foodCatalogConfig());
-const fixture = path.resolve(
-    "src/food-providers/fixtures/usda-foundation-mini.json",
-);
+const exactQuery = "benchmark generic food 123";
+const fuzzyQuery = "benchmark genric food 123";
+const targetProviderFoodId = String(8_000_000 + 123);
 
 function percentile(values: number[], fraction: number): number {
     const sorted = [...values].sort((left, right) => left - right);
@@ -72,27 +70,14 @@ const synthetic: FoodCandidate[] = Array.from({ length: 500 }, (_, index) => ({
 
 async function cleanup() {
     await database`
-        delete from munch.food_catalog_query_cache
-        where normalized_query in ('banana', 'bananas ripe')
-    `;
-    await database`
         delete from munch.food_catalog_entries
         where provider = 'usda'
-          and (
-              provider_food_id in ('321358', '2346400')
-              or provider_revision = 'ci-benchmark'
-          )
+          and provider_revision = 'ci-benchmark'
     `;
 }
 
 try {
     await cleanup();
-    await importUsdaBulkFile({
-        filePath: fixture,
-        dataset: "foundation",
-        release: "2026-04",
-        sink: repository,
-    });
 
     const [, batchUpsertMs] = await timed(() =>
         repository.upsertMany(synthetic),
@@ -101,18 +86,26 @@ try {
     const fuzzyDurations: number[] = [];
     for (let index = 0; index < iterations; index += 1) {
         const [exact, exactMs] = await timed(() =>
-            repository.searchLocal("banana", 10),
+            repository.searchLocal(exactQuery, 10),
         );
-        if (!exact.some((hit) => hit.candidate.providerFoodId === "321358")) {
-            throw new Error("Exact benchmark lost the seeded banana candidate");
+        if (
+            !exact.some(
+                (hit) => hit.candidate.providerFoodId === targetProviderFoodId,
+            )
+        ) {
+            throw new Error("Exact benchmark lost its isolated seeded candidate");
         }
         exactDurations.push(exactMs);
 
         const [fuzzy, fuzzyMs] = await timed(() =>
-            repository.searchLocal("bananas ripe", 10),
+            repository.searchLocal(fuzzyQuery, 10),
         );
-        if (!fuzzy.some((hit) => hit.candidate.providerFoodId === "321358")) {
-            throw new Error("Fuzzy benchmark lost the seeded banana candidate");
+        if (
+            !fuzzy.some(
+                (hit) => hit.candidate.providerFoodId === targetProviderFoodId,
+            )
+        ) {
+            throw new Error("Fuzzy benchmark lost its isolated seeded candidate");
         }
         fuzzyDurations.push(fuzzyMs);
     }
@@ -120,11 +113,13 @@ try {
     const report = {
         iterations,
         exact: {
+            query: exactQuery,
             p50_ms: percentile(exactDurations, 0.5),
             p95_ms: percentile(exactDurations, 0.95),
             max_ms: Number(Math.max(...exactDurations).toFixed(2)),
         },
         fuzzy: {
+            query: fuzzyQuery,
             p50_ms: percentile(fuzzyDurations, 0.5),
             p95_ms: percentile(fuzzyDurations, 0.95),
             max_ms: Number(Math.max(...fuzzyDurations).toFixed(2)),
