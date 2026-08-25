@@ -69,7 +69,10 @@ describe("recipe import latency", () => {
                     active -= 1;
                     return {
                         candidates: [
-                            foodCandidate(query, String(9_000 + searches.length)),
+                            foodCandidate(
+                                query,
+                                String(9_000 + searches.length),
+                            ),
                         ],
                         failures: [],
                     };

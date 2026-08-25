@@ -115,6 +115,14 @@ function round(value: number): number {
     return Number(value.toFixed(2));
 }
 
+function normalizeIngredientSearchText(value: string): string {
+    return value
+        .replace(/\(\s*(?:US\s*)?[$€£]\s*\d[\d.,]*(?:[^)]*)\)/gi, " ")
+        .replace(/\[\s*(?:US\s*)?[$€£]\s*\d[\d.,]*(?:[^\]]*)\]/gi, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
 function similarity(query: string, candidate: FoodCandidate): number {
     const normalizedQuery = normalizeFoodText(query);
     const candidateNames = [candidate.name, candidate.brand]
@@ -765,7 +773,7 @@ function mergeCandidates(
 function deterministicSearchQueries(
     ingredient: ParsedRecipeIngredient,
 ): string[] {
-    const base = ingredient.name.trim();
+    const base = normalizeIngredientSearchText(ingredient.name);
     if (!base) return [];
     const stripped = base
         .replace(
@@ -801,7 +809,7 @@ async function searchIngredientCandidates(
         ...(ingredient.searchQueries ?? []),
         ...deterministicSearchQueries(ingredient),
     ]
-        .map((query) => query.trim())
+        .map(normalizeIngredientSearchText)
         .filter(Boolean)
         .filter((query, index, all) => all.indexOf(query) === index)
         .slice(0, MAX_SEMANTIC_SEARCH_QUERIES);
@@ -1162,7 +1170,10 @@ export async function previewRecipeUrl(
     }
     const sourceUrl = canonicalUrl ?? page.finalUrl;
     const foodSearch = options.foodSearch ?? getFoodSearchService();
-    let ingredients = parsed.ingredients;
+    let ingredients = parsed.ingredients.map((ingredient) => ({
+        ...ingredient,
+        name: normalizeIngredientSearchText(ingredient.name),
+    }));
     let semanticWarning: RecipeImportWarning | undefined;
     let semanticMs = 0;
     if (options.semanticResolver) {

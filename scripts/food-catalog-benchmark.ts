@@ -93,7 +93,9 @@ try {
                 (hit) => hit.candidate.providerFoodId === targetProviderFoodId,
             )
         ) {
-            throw new Error("Exact benchmark lost its isolated seeded candidate");
+            throw new Error(
+                "Exact benchmark lost its isolated seeded candidate",
+            );
         }
         exactDurations.push(exactMs);
 
@@ -105,7 +107,9 @@ try {
                 (hit) => hit.candidate.providerFoodId === targetProviderFoodId,
             )
         ) {
-            throw new Error("Fuzzy benchmark lost its isolated seeded candidate");
+            throw new Error(
+                "Fuzzy benchmark lost its isolated seeded candidate",
+            );
         }
         fuzzyDurations.push(fuzzyMs);
     }

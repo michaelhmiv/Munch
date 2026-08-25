@@ -112,7 +112,9 @@ for (let index = 0; index < iterations; index += 1) {
     if (usdaSearch.status === "ok") {
         const topUsda = usdaSearch.value[0];
         if (!topUsda || !topUsda.nutrientsPer100g?.calories) {
-            throw new Error("USDA live search returned no usable banana candidate");
+            throw new Error(
+                "USDA live search returned no usable banana candidate",
+            );
         }
         usdaSearchMs.push(usdaSearch.durationMs);
 
@@ -121,7 +123,9 @@ for (let index = 0; index < iterations; index += 1) {
         );
         if (usdaDetails.status === "ok") {
             if (!usdaDetails.value?.nutrientsPer100g?.calories) {
-                throw new Error("USDA live details returned no usable nutrition");
+                throw new Error(
+                    "USDA live details returned no usable nutrition",
+                );
             }
             usdaDetailsMs.push(usdaDetails.durationMs);
         }
@@ -144,7 +148,9 @@ for (let index = 0; index < iterations; index += 1) {
     );
     if (offSearch.status === "ok") {
         if (offSearch.value.length === 0) {
-            throw new Error("Open Food Facts live search returned no candidates");
+            throw new Error(
+                "Open Food Facts live search returned no candidates",
+            );
         }
         offSearchMs.push(offSearch.durationMs);
     }
@@ -163,8 +169,7 @@ const report = {
 console.log(`[food_provider_live] ${JSON.stringify(report)}`);
 
 for (const [label, metricValue] of Object.entries(report).filter(
-    ([key]) =>
-        !["iterations", "max_latency_gate_ms", "degraded"].includes(key),
+    ([key]) => !["iterations", "max_latency_gate_ms", "degraded"].includes(key),
 )) {
     const p95 = (metricValue as { p95_ms: number | null }).p95_ms;
     if (p95 !== null && p95 > maxLatencyMs) {
