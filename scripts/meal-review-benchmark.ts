@@ -54,6 +54,25 @@ const items = [
     },
 ];
 
+function reconcileSauce<T extends (typeof items)[number]>(item: T): T {
+    return {
+        ...item,
+        nutrients: {
+            ...item.nutrients,
+            calories: (item.nutrients.calories ?? 0) + 35,
+            carbs_g: (item.nutrients.carbs_g ?? 0) + 7,
+        },
+        assumptions: [
+            ...(item.assumptions ?? []),
+            "Includes estimated nutrition for the user-confirmed 1 tbsp sauce.",
+        ],
+        sourceSnapshot: {
+            ...(item.sourceSnapshot ?? {}),
+            user_confirmed_sauce_amount: "1 tbsp",
+        },
+    } as T;
+}
+
 async function deleteUser(userId: string) {
     await withAuthDatabase(async (tx) => {
         await tx`delete from munch.users where id = ${userId}`;
@@ -145,6 +164,29 @@ async function legacyQuestion(userId: string) {
         impactScore: 90,
     });
     const question = draft.questions.find((value) => value.status === "open")!;
+    const chicken = draft.items[0]!.item;
+    draft = await upsertMealDraftItem({
+        userId,
+        draftId: draft.id,
+        expectedVersion: draft.version,
+        position: 0,
+        item: {
+            ...chicken,
+            nutrients: {
+                ...chicken.nutrients,
+                calories: (chicken.nutrients.calories ?? 0) + 35,
+                carbs_g: (chicken.nutrients.carbs_g ?? 0) + 7,
+            },
+            assumptions: [
+                ...(chicken.assumptions ?? []),
+                "Includes estimated nutrition for the user-confirmed 1 tbsp sauce.",
+            ],
+            sourceSnapshot: {
+                ...(chicken.sourceSnapshot ?? {}),
+                user_confirmed_sauce_amount: "1 tbsp",
+            },
+        },
+    });
     draft = await answerMealDraftQuestion({
         userId,
         draftId: draft.id,
@@ -183,6 +225,9 @@ async function atomicQuestion(userId: string) {
         draftId: draft.id,
         expectedVersion: draft.version,
         answers: [{ questionId: question.id, answer: "One tablespoon" }],
+        items: items.map((item, position) =>
+            position === 0 ? reconcileSauce(item) : item,
+        ),
         questions: [],
     });
     return draft;
@@ -264,7 +309,7 @@ const improvement = {
     ),
     clear_server_operations_before: 5,
     clear_server_operations_after: 1,
-    one_question_server_operations_before: 7,
+    one_question_server_operations_before: 8,
     one_question_server_operations_after: 2,
 };
 
