@@ -1,4 +1,5 @@
 import type { NutrientValues } from "../food-providers/types.js";
+import { assertDraftQuestionPreviouslyReconciled } from "../meal-review-reconciliation.js";
 import {
     withUserDatabase,
     type DatabaseTransaction,
@@ -466,6 +467,13 @@ export async function answerMealDraftQuestion(input: {
         if (!draft) throw new Error("Meal draft not found");
         assertEditable(draft);
         assertVersion(draft, input.expectedVersion);
+        const question = draft.questions.find(
+            (candidate) =>
+                candidate.id === input.questionId &&
+                candidate.status === "open",
+        );
+        if (!question) throw new Error("Open draft question not found");
+        assertDraftQuestionPreviouslyReconciled(draft, question);
         const rows = await tx<Array<{ id: string }>>`
             update munch.meal_draft_questions
             set status = 'answered', answer = ${answer}, answered_at = now()
