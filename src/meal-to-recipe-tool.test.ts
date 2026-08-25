@@ -47,7 +47,9 @@ describe("save_meal_as_recipe MCP contract", () => {
             idempotentHint: true,
             openWorldHint: false,
         });
-        expect(tool.description).toContain("do not search meal history or saved foods first");
+        expect(tool.description).toContain(
+            "do not search meal history or saved foods first",
+        );
         expect(Object.keys(tool.inputSchema)).toEqual([
             "meal_id",
             "scope",

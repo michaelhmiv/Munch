@@ -71,31 +71,37 @@ describe("meal review reconciliation", () => {
 
     test("rejects an unchanged item payload", () => {
         expect(() =>
-            assertReviewAnswersReconciled(beefDraft, [answer], [
-                beefDraft.items[0]!.item,
-            ]),
+            assertReviewAnswersReconciled(
+                beefDraft,
+                [answer],
+                [beefDraft.items[0]!.item],
+            ),
         ).toThrow("did not change the affected canonical item");
     });
 
     test("accepts an answer when the canonical item is reconciled", () => {
         expect(() =>
-            assertReviewAnswersReconciled(beefDraft, [answer], [
-                {
-                    ...beefDraft.items[0]!.item,
-                    nutrients: {
-                        calories: 360,
-                        protein_g: 45,
-                        carbs_g: 0,
-                        fat_g: 19,
+            assertReviewAnswersReconciled(
+                beefDraft,
+                [answer],
+                [
+                    {
+                        ...beefDraft.items[0]!.item,
+                        nutrients: {
+                            calories: 360,
+                            protein_g: 45,
+                            carbs_g: 0,
+                            fat_g: 19,
+                        },
+                        assumptions: [
+                            "Estimated approximately 6 oz cooked 90% lean ground beef from photo; cooking fat remains unknown.",
+                        ],
+                        sourceSnapshot: {
+                            established_facts: { lean_percentage: 90 },
+                        },
                     },
-                    assumptions: [
-                        "Estimated approximately 6 oz cooked 90% lean ground beef from photo; cooking fat remains unknown.",
-                    ],
-                    sourceSnapshot: {
-                        established_facts: { lean_percentage: 90 },
-                    },
-                },
-            ]),
+                ],
+            ),
         ).not.toThrow();
     });
 

@@ -136,7 +136,8 @@ export function buildMealDerivedRecipe(
         );
     }
     const name = overrides.name?.trim() || meal.description.trim();
-    if (!name) throw new Error("A recipe name could not be derived from the meal");
+    if (!name)
+        throw new Error("A recipe name could not be derived from the meal");
     const servings = overrides.servings ?? 1;
     if (!Number.isFinite(servings) || servings <= 0) {
         throw new Error("Recipe servings must be positive");
@@ -175,7 +176,9 @@ export function mealRecipeIdempotencyKey(
     scope: PlanningScope,
 ): string {
     const owner =
-        scope.type === "personal" ? "personal" : `household:${scope.householdId}`;
+        scope.type === "personal"
+            ? "personal"
+            : `household:${scope.householdId}`;
     return `meal-to-recipe:${mealId}:${owner}`;
 }
 
@@ -268,14 +271,7 @@ export function registerMealToRecipeTool(
             },
             outputSchema: saveMealAsRecipeOutputSchema,
         },
-        async ({
-            meal_id,
-            scope,
-            name,
-            servings,
-            description,
-            instructions,
-        }) =>
+        async ({ meal_id, scope, name, servings, description, instructions }) =>
             withAnalytics(
                 "save_meal_as_recipe",
                 async () => {

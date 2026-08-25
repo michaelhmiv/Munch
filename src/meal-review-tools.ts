@@ -356,7 +356,8 @@ export function registerMealReviewTools(
                             userId,
                             args.draft_id,
                         );
-                        if (!currentDraft) throw new Error("Meal draft not found");
+                        if (!currentDraft)
+                            throw new Error("Meal draft not found");
                         assertReviewAnswersReconciled(
                             currentDraft,
                             args.answers,

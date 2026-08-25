@@ -185,8 +185,7 @@ describe("meal to recipe conversion", () => {
             established_facts: { lean_percentage: 90 },
             _munch: {
                 source_meal_id: mealId,
-                source_meal_item_id:
-                    "33333333-3333-4333-8333-333333333331",
+                source_meal_item_id: "33333333-3333-4333-8333-333333333331",
                 source_meal_assumptions: ["90% lean; cooking fat unknown"],
             },
         });

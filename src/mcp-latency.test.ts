@@ -27,7 +27,9 @@ describe("MCP latency catalog optimization", () => {
             "This fallback should not be used.",
         );
         expect(description).toContain("known logged meal");
-        expect(description).toContain("do not search meals, foods, or ingredients");
+        expect(description).toContain(
+            "do not search meals, foods, or ingredients",
+        );
         expect(description.length).toBeLessThan(261);
     });
 
