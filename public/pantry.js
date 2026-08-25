@@ -431,7 +431,8 @@ function renderMealIdeas(result) {
     if (!candidates.length) {
         const empty = document.createElement("p");
         empty.className = "empty";
-        empty.textContent = "No grounded meal ideas were returned for this Pantry.";
+        empty.textContent =
+            "No grounded meal ideas were returned for this Pantry.";
         mealIdeasEl.append(empty);
     }
 }

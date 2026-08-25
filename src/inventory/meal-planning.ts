@@ -325,6 +325,24 @@ function flavorSupport(row: RecipeRow, availability: RecipeAvailabilityResult) {
     };
 }
 
+function refinePlanningReadiness(
+    availability: RecipeAvailabilityResult,
+): RecipeAvailabilityResult {
+    const missingCore = [
+        ...availability.missing_required,
+        ...availability.shortages.map((shortage) => shortage.ingredient),
+    ].some((name) => {
+        const classification = classifyPantryFood(name);
+        return (
+            classification.culinaryRoles.includes("main") ||
+            classification.culinaryRoles.includes("protein")
+        );
+    });
+    return missingCore && availability.readiness !== "missing_core"
+        ? { ...availability, readiness: "missing_core" }
+        : availability;
+}
+
 function goalScore(
     goal: PantryMealGoal,
     nutrition: ReturnType<typeof nutritionFromRow>,
@@ -406,13 +424,16 @@ export async function rankSavedRecipesForPantry(input: {
     assumedStaples?: string[];
     maxMinutes?: number;
     limit?: number;
+    context?: PantryPlanningContext;
 }): Promise<PantryRecipeCandidate[]> {
     const [context, recipes] = await Promise.all([
-        getPantryPlanningContext({
-            userId: input.userId,
-            scope: input.scope,
-            limit: 200,
-        }),
+        input.context
+            ? Promise.resolve(input.context)
+            : getPantryPlanningContext({
+                  userId: input.userId,
+                  scope: input.scope,
+                  limit: 200,
+              }),
         readSavedRecipeRows({
             userId: input.userId,
             scope: input.scope,
@@ -434,10 +455,12 @@ export async function rankSavedRecipesForPantry(input: {
     }));
     const goal = input.goal ?? "balanced";
     const candidates = recipes.map((row) => {
-        const availability = evaluateRecipeAvailability(
-            ingredientRequirements(row),
-            inventory,
-            input.assumedStaples ?? [],
+        const availability = refinePlanningReadiness(
+            evaluateRecipeAvailability(
+                ingredientRequirements(row),
+                inventory,
+                input.assumedStaples ?? [],
+            ),
         );
         const scoring = scorePantryRecipe({ goal, row, availability });
         const nutrition = {

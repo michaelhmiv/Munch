@@ -155,22 +155,21 @@ export async function buildMealIdeaContext(input: PantryMealIdeaRequest) {
         .map((value) => value.trim())
         .filter(Boolean)
         .slice(0, 20);
-    const [pantry, savedRecipes] = await Promise.all([
-        getPantryPlanningContext({
-            userId: input.userId,
-            scope: input.scope,
-            limit: 200,
-            enrichLimit: 32,
-        }),
-        rankSavedRecipesForPantry({
-            userId: input.userId,
-            scope: input.scope,
-            goal: input.goal,
-            assumedStaples,
-            maxMinutes: input.maxMinutes,
-            limit: 8,
-        }),
-    ]);
+    const pantry = await getPantryPlanningContext({
+        userId: input.userId,
+        scope: input.scope,
+        limit: 200,
+        enrichLimit: 32,
+    });
+    const savedRecipes = await rankSavedRecipesForPantry({
+        userId: input.userId,
+        scope: input.scope,
+        goal: input.goal,
+        assumedStaples,
+        maxMinutes: input.maxMinutes,
+        limit: 8,
+        context: pantry,
+    });
     return {
         request: {
             goal: input.goal,

@@ -60,6 +60,7 @@ export async function exportAccountData(
             groceryItems,
             inventorySpaces,
             inventoryItems,
+            inventoryItemProfiles,
             inventoryEvents,
             purchaseReconciliations,
             purchaseReconciliationLines,
@@ -232,6 +233,22 @@ export async function exportAccountData(
                 order by item.inventory_space_id, item.created_at, item.id
             `,
             tx<JsonRecord[]>`
+                select profile.*
+                from munch.inventory_item_profiles profile
+                join munch.inventory_items item
+                  on item.id = profile.inventory_item_id
+                join munch.inventory_spaces space
+                  on space.id = item.inventory_space_id
+                where space.personal_owner_user_id = ${userId}
+                   or space.household_id in (
+                       select membership.household_id
+                       from munch.household_memberships membership
+                       where membership.user_id = ${userId}
+                         and membership.status = 'active'
+                   )
+                order by item.inventory_space_id, profile.inventory_item_id
+            `,
+            tx<JsonRecord[]>`
                 select event.*
                 from munch.inventory_events event
                 join munch.inventory_spaces space
@@ -279,7 +296,7 @@ export async function exportAccountData(
         ]);
 
         return {
-            schema_version: 2,
+            schema_version: 3,
             exported_at: new Date().toISOString(),
             account: account[0] ?? null,
             preferences: preferences[0] ?? null,
@@ -299,6 +316,7 @@ export async function exportAccountData(
             grocery_items: stripInternalFields(groceryItems),
             inventory_spaces: stripInternalFields(inventorySpaces),
             inventory_items: stripInternalFields(inventoryItems),
+            inventory_item_profiles: stripInternalFields(inventoryItemProfiles),
             inventory_events: stripInternalFields(inventoryEvents),
             purchase_reconciliations: stripInternalFields(
                 purchaseReconciliations,

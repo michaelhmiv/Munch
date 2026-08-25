@@ -432,12 +432,22 @@ async function resolveCandidate(
     return candidate;
 }
 
+function postgresTextArrayLiteral(values: string[]): string {
+    return `{${values
+        .map(
+            (value) =>
+                `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`,
+        )
+        .join(",")}}`;
+}
+
 async function persistProfile(
     userId: string,
     profile: Omit<PantryPlanningProfile, "updated_at" | "enriched_at">,
 ): Promise<PantryPlanningProfile> {
     return withUserDatabase(userId, async (tx) => {
         const n = profile.nutrients;
+        const culinaryRoles = postgresTextArrayLiteral(profile.culinary_roles);
         const rows = await tx<Array<Record<string, unknown>>>`
             insert into munch.inventory_item_profiles (
                 inventory_item_id, profile_status, source_type,
@@ -450,7 +460,7 @@ async function persistProfile(
                 ${profile.inventory_item_id}, ${profile.profile_status},
                 ${profile.source_type}, ${profile.source_provider},
                 ${profile.source_food_id}, ${profile.match_confidence},
-                ${profile.category}, ${profile.culinary_roles}::text[],
+                ${profile.category}, ${culinaryRoles}::text[],
                 ${profile.basis_quantity}, ${profile.basis_unit},
                 ${profile.basis_grams}, ${n.calories}, ${n.protein_g},
                 ${n.carbs_g}, ${n.fat_g}, ${n.fiber_g}, ${n.sugar_g},
@@ -572,10 +582,11 @@ export async function getStoredPlanningProfiles(
 ): Promise<Map<string, PantryPlanningProfile>> {
     const ids = [...new Set(inventoryItemIds)].slice(0, 200);
     if (!ids.length) return new Map();
+    const idsLiteral = `{${ids.join(",")}}`;
     return withUserDatabase(userId, async (tx) => {
         const rows = await tx<Array<Record<string, unknown>>>`
             select * from munch.inventory_item_profiles
-            where inventory_item_id = any(${ids}::uuid[])
+            where inventory_item_id = any(${idsLiteral}::uuid[])
         `;
         return new Map(
             rows.map((row) => {

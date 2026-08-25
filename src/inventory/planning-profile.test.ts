@@ -42,6 +42,8 @@ describe("Pantry planning classification", () => {
         expect(classifyPantryFood("fresh garlic").culinaryRoles).toContain(
             "aromatic",
         );
+        expect(classifyPantryFood("red bell pepper").category).toBe("produce");
+        expect(classifyPantryFood("black pepper").category).toBe("spice");
     });
 
     test("gives protein-rich dairy both culinary and nutrition roles", () => {
