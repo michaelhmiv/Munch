@@ -26,6 +26,115 @@ jobs:
         with:
           bun-version: 1
       - run: bun install --frozen-lockfile
+      - name: Apply deterministic performance patches
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          repository = Path("src/food-providers/catalog-repository.ts")
+          text = repository.read_text()
+          start = text.index("    async searchLocal(")
+          end = text.index("    async findCachedSearch(", start)
+          method = r'''    async searchLocal(query: string, limit: number): Promise<CatalogHit[]> {
+              if (!this.config.readsEnabled) return [];
+              const normalized = normalizeFoodText(query);
+              if (!normalized) return [];
+              const boundedLimit = Math.max(1, Math.min(25, limit));
+              const lexicalRows = await withServiceDatabase(
+                  async (tx) =>
+                      tx<CatalogRow[]>`
+                      select id, provider, provider_food_id, source_snapshot, refresh_after
+                      from munch.food_catalog_entries
+                      where deprecated_at is null
+                        and to_tsvector(
+                              'simple',
+                              normalized_name || ' ' || coalesce(normalized_brand, '')
+                            ) @@ plainto_tsquery('simple', ${normalized})
+                      order by
+                          case when normalized_name = ${normalized} then 0 else 1 end,
+                          ts_rank_cd(
+                              to_tsvector(
+                                  'simple',
+                                  normalized_name || ' ' || coalesce(normalized_brand, '')
+                              ),
+                              plainto_tsquery('simple', ${normalized})
+                          ) desc,
+                          greatest(
+                              similarity(normalized_name, ${normalized}),
+                              similarity(coalesce(normalized_brand, ''), ${normalized})
+                          ) desc,
+                          confidence desc,
+                          length(normalized_name) asc
+                      limit ${boundedLimit}
+                  `,
+              );
+              const rows = lexicalRows.length
+                  ? lexicalRows
+                  : await withServiceDatabase(
+                        async (tx) =>
+                            tx<CatalogRow[]>`
+                            select id, provider, provider_food_id, source_snapshot, refresh_after
+                            from munch.food_catalog_entries
+                            where deprecated_at is null
+                              and (
+                                normalized_name % ${normalized}
+                                or normalized_name like ${`%${normalized}%`}
+                                or normalized_brand % ${normalized}
+                              )
+                            order by
+                                case when normalized_name = ${normalized} then 0 else 1 end,
+                                greatest(
+                                    similarity(normalized_name, ${normalized}),
+                                    similarity(coalesce(normalized_brand, ''), ${normalized})
+                                ) desc,
+                                confidence desc,
+                                length(normalized_name) asc
+                            limit ${boundedLimit}
+                        `,
+                    );
+              const now = Date.now();
+              return rows.flatMap((row) => {
+                  const hit = hitFromRow(row, now);
+                  return hit ? [hit] : [];
+              });
+          }
+
+'''
+          repository.write_text(text[:start] + method + text[end:])
+
+          planning = Path("src/recipe-planning-tools.ts")
+          text = planning.read_text()
+          old = '                query: z.string().min(1).max(200).optional(),'
+          new = '''                query: z.preprocess(
+                      (value) =>
+                          typeof value === "string"
+                              ? value.trim() || undefined
+                              : value,
+                      z.string().min(1).max(200).optional(),
+                  ),'''
+          if old not in text and new not in text:
+              raise SystemExit("search_recipes query schema marker not found")
+          text = text.replace(old, new, 1)
+          planning.write_text(text)
+
+          tests = Path("src/recipe-planning-tools.test.ts")
+          text = tests.read_text()
+          marker = '''    test("keeps the catalog when an account lacks recipe read access", () => {'''
+          addition = '''    test("normalizes blank optional recipe queries instead of forcing a retry", () => {
+              const tools = captureTools(premiumPersonal);
+              const querySchema = tools.get("search_recipes")?.inputSchema.query;
+              expect(querySchema.parse("")).toBeUndefined();
+              expect(querySchema.parse("   ")).toBeUndefined();
+              expect(querySchema.parse("  pasta  ")).toBe("pasta");
+          });
+
+'''
+          if addition not in text:
+              if marker not in text:
+                  raise SystemExit("recipe planning test insertion marker not found")
+              text = text.replace(marker, addition + marker, 1)
+          tests.write_text(text)
+          PY
       - name: Format performance work
         run: >-
           bunx prettier --write
@@ -43,7 +152,7 @@ jobs:
           scripts/food-catalog-ingestion-smoke.ts
           scripts/food-provider-live-smoke.ts
           .github/workflows/usda-food-catalog-corpus.yml
-      - name: Commit formatting if needed
+      - name: Commit branch changes if needed
         run: |
           if git diff --quiet; then
             exit 0
@@ -51,5 +160,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src scripts .github/workflows/usda-food-catalog-corpus.yml
-          git commit -m "Format performance optimization changes"
+          git commit -m "Optimize indexed food search and normalize blank recipe queries"
           git push origin HEAD:perf/nutrition-ingestion-latency
