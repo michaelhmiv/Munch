@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+    pantryMealIdeasResponseJsonSchema,
     pantryPlanningModelConfig,
     validateMealIdeaGrounding,
     type PantryMealIdeasResponse,
@@ -150,6 +151,18 @@ describe("Pantry meal idea grounding", () => {
             ),
         ).toThrow("no grounded meal candidates");
     });
+});
+
+test("Pantry planning exposes a strict provider JSON schema", () => {
+    expect(pantryMealIdeasResponseJsonSchema.additionalProperties).toBe(false);
+    expect(
+        pantryMealIdeasResponseJsonSchema.properties.candidates.items.properties
+            .source.enum,
+    ).toEqual(["saved_recipe", "generated"]);
+    expect(
+        pantryMealIdeasResponseJsonSchema.properties.candidates.items.properties
+            .readiness.enum,
+    ).toEqual(["ready_now", "likely_ready", "almost_there"]);
 });
 
 test("website planning requires both the feature flag and OpenRouter key", () => {
