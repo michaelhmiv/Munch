@@ -234,8 +234,9 @@ export class FoodCatalogRepository {
         const normalized = normalizeFoodText(query);
         if (!normalized) return [];
         const boundedLimit = Math.max(1, Math.min(25, limit));
-        const rows = await withServiceDatabase(async (tx) =>
-            tx<CatalogRow[]>`
+        const rows = await withServiceDatabase(
+            async (tx) =>
+                tx<CatalogRow[]>`
                 select id, provider, provider_food_id, source_snapshot, refresh_after
                 from munch.food_catalog_entries
                 where deprecated_at is null
@@ -273,8 +274,9 @@ export class FoodCatalogRepository {
         if (!normalized) return null;
         const queryHash = hashCatalogIdentity(normalized);
         const boundedLimit = Math.max(1, Math.min(25, limit));
-        const rows = await withServiceDatabase(async (tx) =>
-            tx<CatalogRow[]>`
+        const rows = await withServiceDatabase(
+            async (tx) =>
+                tx<CatalogRow[]>`
                 select
                     entry.id,
                     entry.provider,
