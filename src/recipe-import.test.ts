@@ -223,18 +223,17 @@ describe("recipe import enrichment", () => {
         });
         expect(draft.ingredient_review[1]?.resolution).toBe("assumed");
         expect(draft.recipe.ingredients[1]).toMatchObject({
-            source_type: "model_estimate",
-            quantity: 0.25,
-            unit: "tsp",
-            nutrients: {
-                calories: 0,
-                protein_g: 0,
-                carbs_g: 0,
-                fat_g: 0,
-            },
+            source_type: "user_supplied",
+        });
+        expect(draft.recipe.ingredients[1]?.quantity).toBeUndefined();
+        expect(draft.recipe.ingredients[1]?.unit).toBeUndefined();
+        expect(draft.recipe.ingredients[1]?.nutrients).toBeUndefined();
+        expect(draft.recipe.ingredients[1]?.source_snapshot).toMatchObject({
+            raw_ingredient: "Salt to taste",
+            nutrition_treatment: "unmeasured_source_quantity",
         });
         expect(draft.status).toBe("partial");
-        expect(draft.nutrition.status).toBe("complete");
+        expect(draft.nutrition.status).toBe("partial");
         expect(draft.nutrition.total.calories).toBe(364);
         expect(draft.requires_review).toBe(false);
     });
@@ -326,15 +325,21 @@ describe("recipe import enrichment", () => {
         });
         expect(draft.ingredient_review[0]?.resolution).toBe("assumed");
         expect(draft.ingredient_review[1]?.resolution).toBe("assumed");
-        expect(draft.recipe.ingredients[1]?.source_type).toBe("model_estimate");
+        expect(draft.recipe.ingredients[1]?.source_type).toBe("user_supplied");
+        expect(draft.recipe.ingredients[1]?.quantity).toBeUndefined();
+        expect(draft.recipe.ingredients[1]?.unit).toBeUndefined();
+        expect(draft.recipe.ingredients[1]?.nutrients).toBeUndefined();
         expect(draft.assumptions).toHaveLength(1);
         expect(
             draft.warnings.some((item) => item.code === "quantity_range"),
         ).toBe(false);
-        expect(searches.some((query) => /salt|pepper/i.test(query))).toBe(true);
+        expect(searches.some((query) => /salt|pepper/i.test(query))).toBe(
+            false,
+        );
+        expect(draft.nutrition.status).toBe("partial");
     });
 
-    test("batches uncertain ingredients into assignments and leaves no ordinary item unresolved", async () => {
+    test("batches material ambiguity without inventing low-impact source quantities", async () => {
         const wine: FoodCandidate = {
             provider: "usda",
             providerFoodId: "300",
@@ -416,10 +421,9 @@ describe("recipe import enrichment", () => {
             ],
             resolveUncertainIngredients: async (requests) => {
                 assignmentCalls += 1;
-                expect(requests).toHaveLength(2);
+                expect(requests).toHaveLength(1);
                 expect(requests.map((request) => request.reason)).toEqual([
                     "ambiguous_candidate",
-                    "missing_quantity",
                 ]);
                 return new Map([
                     [
@@ -435,23 +439,6 @@ describe("recipe import enrichment", () => {
                             confidence: 0.93,
                             rationale:
                                 "The generic red wine candidate fits the source line.",
-                        },
-                    ],
-                    [
-                        "1:0",
-                        {
-                            key: "1:0",
-                            name: "salt",
-                            quantity: 0.25,
-                            unit: "tsp",
-                            candidateId: "usda:301",
-                            decision: "assumed",
-                            searchQueries: ["salt"],
-                            assumption:
-                                "Estimated a conservative amount for seasoning to taste.",
-                            confidence: 0.9,
-                            rationale:
-                                "Salt remains part of the recipe even though the source did not specify a quantity.",
                         },
                     ],
                 ]);
@@ -488,12 +475,13 @@ describe("recipe import enrichment", () => {
             ),
         ).toBe(false);
         expect(draft.recipe.ingredients[1]).toMatchObject({
-            name: "salt",
-            quantity: 0.25,
-            unit: "tsp",
-            source_type: "usda",
-            nutrients: { sodium_mg: 581.25 },
+            name: "kosher salt",
+            source_type: "user_supplied",
         });
+        expect(draft.recipe.ingredients[1]?.quantity).toBeUndefined();
+        expect(draft.recipe.ingredients[1]?.unit).toBeUndefined();
+        expect(draft.recipe.ingredients[1]?.nutrients).toBeUndefined();
+        expect(draft.nutrition.status).toBe("partial");
         expect(draft.requires_review).toBe(false);
     });
 

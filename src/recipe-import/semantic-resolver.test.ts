@@ -130,9 +130,11 @@ describe("OpenRouter recipe import resolver", () => {
         expect(requests[0]?.body.plugins).toEqual([{ id: "response-healing" }]);
         expect(requests[0]?.body.stream).toBe(false);
         expect(requests[0]?.body.reasoning).toEqual({ enabled: false });
-        expect(JSON.stringify(requests[0]?.body)).not.toContain(
-            "provider_food_id",
-        );
+        const requestBody = JSON.stringify(requests[0]?.body);
+        expect(requestBody).not.toContain("provider_food_id");
+        expect(requestBody).toContain("leave quantity and unit unset");
+        expect(requestBody).not.toContain("1/4 teaspoon salt");
+        expect(requestBody).not.toContain("1/8 teaspoon pepper");
     });
 
     test("reranks only the supplied candidates and returns the selected choice", async () => {
