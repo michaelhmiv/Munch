@@ -6,7 +6,9 @@ import {
     resolveMealReview,
     type AtomicReviewQuestionInput,
 } from "./meal-drafts/atomic.js";
+import { getMealDraft } from "./meal-drafts/repository.js";
 import type { MealDraft } from "./meal-drafts/types.js";
+import { assertReviewAnswersReconciled } from "./meal-review-reconciliation.js";
 import { aggregateStructuredMealItems } from "./structured-meals/repository.js";
 import type { StructuredMealItemInput } from "./structured-meals/types.js";
 import { WIDGET_RESOURCE_METADATA } from "./openai-submission.js";
@@ -310,7 +312,7 @@ export function registerMealReviewTools(
         {
             title: "Resolve or Edit Meal Review",
             description:
-                "Atomically apply the user's answer, revised item estimates, remaining material questions, or review edits. Pass full items when changing any item. Set accept_remaining_assumptions only when the user explicitly says to stop asking or accepts the stated assumptions. The result remains pending until explicit confirmation.",
+                "Atomically apply the user's answer, revised item estimates, remaining material questions, or review edits. For any item-linked material answer, pass the full items array with the affected item reconciled to the new fact—including assumptions, provenance, and nutrition when materially changed. Answer-only closure of an item question is rejected so stale canonical facts cannot reach confirmation. Set accept_remaining_assumptions only when the user explicitly says to stop asking or accepts the stated assumptions. The result remains pending until explicit confirmation.",
             annotations: {
                 readOnlyHint: false,
                 destructiveHint: false,
@@ -348,6 +350,19 @@ export function registerMealReviewTools(
                 "resolve_meal_review",
                 async () => {
                     const started = performance.now();
+                    const items = args.items?.map(toStructuredItem);
+                    if ((args.answers?.length ?? 0) > 0) {
+                        const currentDraft = await getMealDraft(
+                            userId,
+                            args.draft_id,
+                        );
+                        if (!currentDraft) throw new Error("Meal draft not found");
+                        assertReviewAnswersReconciled(
+                            currentDraft,
+                            args.answers,
+                            items,
+                        );
+                    }
                     const draft = await resolveMealReview({
                         userId,
                         draftId: args.draft_id,
@@ -367,7 +382,7 @@ export function registerMealReviewTools(
                         description: args.description,
                         loggedAt: args.logged_at,
                         notes: args.notes,
-                        items: args.items?.map(toStructuredItem),
+                        items,
                         questions: args.questions?.map(toQuestion),
                         acceptRemainingAssumptions:
                             args.accept_remaining_assumptions,
