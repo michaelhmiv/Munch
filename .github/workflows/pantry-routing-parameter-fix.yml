@@ -1,0 +1,39 @@
+name: Pantry routing parameter fix
+
+on:
+  push:
+    branches:
+      - feat/pantry-intelligence-planning
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/pantry-intelligence-planning
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - name: Apply provider routing parameter patch
+        run: python3 scripts/pantry-routing-parameter-fix.py
+      - name: Format and verify
+        run: |
+          bunx prettier --write src/inventory/meal-ideas.ts
+          bun test src/inventory/meal-ideas.test.ts
+          bun run typecheck
+      - name: Commit verified product fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/inventory/meal-ideas.ts
+          if ! git diff --cached --quiet; then
+            git commit -m "fix: keep Pantry strict routing parameters compatible"
+            git push origin HEAD:feat/pantry-intelligence-planning
+          fi
