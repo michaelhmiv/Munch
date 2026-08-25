@@ -50,6 +50,11 @@ bun scripts/import-usda-food-catalog.ts --file "$survey_json" --dataset survey -
 bun scripts/import-usda-food-catalog.ts --file "$sr_legacy_json" --dataset sr_legacy --release 2018-04 "${common_args[@]}"
 
 if [[ "$mode" == "seed" ]]; then
+  # Queries cached before the generic corpus existed can legitimately point to
+  # branded provider results. Invalidate only global food-resolution caches so
+  # the newly seeded USDA corpus participates immediately; no user data lives
+  # in these cache tables.
+  bun scripts/clear-food-catalog-query-cache.ts
   bun scripts/food-catalog-production-audit.ts
   MUNCH_FOOD_CORPUS_REPORT="$workdir/food-catalog-corpus.json" bun scripts/food-catalog-common-corpus.ts
 fi
