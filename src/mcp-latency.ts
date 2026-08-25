@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { observeAnalytics } from "./analytics.js";
 import { MCP_TOOL_CAPABILITY_MAP } from "./capability-manifest.js";
 
 type ToolConfig = Record<string, any>;
@@ -399,7 +400,10 @@ export function withLatencyOptimizedToolCatalog(server: McpServer): McpServer {
  * discovery for low-frequency Munch operations. Common intents never pay this
  * extra round-trip; advanced requests keep full backend parity.
  */
-export function registerAdvancedToolGateway(server: McpServer): void {
+export function registerAdvancedToolGateway(
+    server: McpServer,
+    userId?: string,
+): void {
     const registry = TOOL_REGISTRIES.get(server);
     if (!registry) {
         throw new Error(
@@ -407,6 +411,19 @@ export function registerAdvancedToolGateway(server: McpServer): void {
         );
     }
     const toolServer = server as unknown as ToolServer;
+    const observe = <T>(
+        toolName: string,
+        args: Record<string, unknown>,
+        handler: () => Promise<T> | T,
+    ): Promise<T> | T =>
+        userId
+            ? observeAnalytics(
+                  toolName,
+                  async () => handler(),
+                  { userId },
+                  args,
+              )
+            : handler();
 
     toolServer.registerTool(
         "find_munch_actions",
@@ -427,44 +444,45 @@ export function registerAdvancedToolGateway(server: McpServer): void {
                 actions: z.array(advancedActionSchema),
             },
         },
-        async ({ query }) => {
-            const ranked = [...registry.entries()]
-                .map(([name, tool]) => ({
-                    score: actionSearchScore(query, name, tool.config),
-                    action: advancedActionRecord(name, tool),
-                }))
-                .filter((candidate) => candidate.score > 0)
-                .sort(
-                    (a, b) =>
-                        b.score - a.score ||
-                        a.action.action.localeCompare(b.action.action),
-                )
-                .slice(0, ADVANCED_ACTION_LIMIT);
+        async ({ query }) =>
+            observe("find_munch_actions", { query }, async () => {
+                const ranked = [...registry.entries()]
+                    .map(([name, tool]) => ({
+                        score: actionSearchScore(query, name, tool.config),
+                        action: advancedActionRecord(name, tool),
+                    }))
+                    .filter((candidate) => candidate.score > 0)
+                    .sort(
+                        (a, b) =>
+                            b.score - a.score ||
+                            a.action.action.localeCompare(b.action.action),
+                    )
+                    .slice(0, ADVANCED_ACTION_LIMIT);
 
-            const actions = ranked.map((candidate) => candidate.action);
-            return {
-                content: [
-                    {
-                        type: "text",
-                        text:
-                            actions.length === 0
-                                ? `No advanced Munch action matched "${query}". Use a direct Munch tool if one fits.`
-                                : actions
-                                      .map((action) => {
-                                          const params = action.parameters
-                                              .map(
-                                                  (parameter) =>
-                                                      `${parameter.name}:${parameter.type}${parameter.required ? " required" : " optional"}`,
-                                              )
-                                              .join(", ");
-                                          return `${action.action} — ${action.description}${params ? ` Parameters: ${params}.` : ""}`;
-                                      })
-                                      .join("\n"),
-                    },
-                ],
-                structuredContent: { actions },
-            };
-        },
+                const actions = ranked.map((candidate) => candidate.action);
+                return {
+                    content: [
+                        {
+                            type: "text",
+                            text:
+                                actions.length === 0
+                                    ? `No advanced Munch action matched "${query}". Use a direct Munch tool if one fits.`
+                                    : actions
+                                          .map((action) => {
+                                              const params = action.parameters
+                                                  .map(
+                                                      (parameter) =>
+                                                          `${parameter.name}:${parameter.type}${parameter.required ? " required" : " optional"}`,
+                                                  )
+                                                  .join(", ");
+                                              return `${action.action} — ${action.description}${params ? ` Parameters: ${params}.` : ""}`;
+                                          })
+                                          .join("\n"),
+                        },
+                    ],
+                    structuredContent: { actions },
+                };
+            }),
     );
 
     toolServer.registerTool(
@@ -490,25 +508,26 @@ export function registerAdvancedToolGateway(server: McpServer): void {
                     ),
             },
         },
-        async ({ action, args, confirm }) => {
-            const tool = registry.get(action);
-            if (!tool) {
-                throw new Error(
-                    `Unknown or direct Munch action "${action}". Call find_munch_actions first.`,
-                );
-            }
-            const destructive = isDestructive(tool);
-            if (destructive && confirm !== true) {
-                throw new Error(
-                    `Advanced action "${action}" is destructive and requires explicit confirmation.`,
-                );
-            }
-            const forwardedArgs =
-                destructive && confirm === true && !("confirm" in args)
-                    ? { ...args, confirm: true }
-                    : args;
-            const parsed = parseAdvancedArgs(tool.config, forwardedArgs);
-            return tool.handler(parsed);
-        },
+        async ({ action, args, confirm }) =>
+            observe("run_munch_action", { action, args, confirm }, async () => {
+                const tool = registry.get(action);
+                if (!tool) {
+                    throw new Error(
+                        `Unknown or direct Munch action "${action}". Call find_munch_actions first.`,
+                    );
+                }
+                const destructive = isDestructive(tool);
+                if (destructive && confirm !== true) {
+                    throw new Error(
+                        `Advanced action "${action}" is destructive and requires explicit confirmation.`,
+                    );
+                }
+                const forwardedArgs =
+                    destructive && confirm === true && !("confirm" in args)
+                        ? { ...args, confirm: true }
+                        : args;
+                const parsed = parseAdvancedArgs(tool.config, forwardedArgs);
+                return tool.handler(parsed);
+            }),
     );
 }

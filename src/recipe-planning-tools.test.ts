@@ -59,6 +59,14 @@ describe("recipe MCP surface", () => {
         expect(tools.get("log_recipe")?.annotations.idempotentHint).toBe(true);
     });
 
+    test("normalizes blank optional recipe queries instead of forcing a retry", () => {
+        const tools = captureTools(premiumPersonal);
+        const querySchema = tools.get("search_recipes")?.inputSchema.query;
+        expect(querySchema.parse("")).toBeUndefined();
+        expect(querySchema.parse("   ")).toBeUndefined();
+        expect(querySchema.parse("  pasta  ")).toBe("pasta");
+    });
+
     test("keeps the catalog when an account lacks recipe read access", () => {
         const tools = captureTools({
             ...premiumPersonal,

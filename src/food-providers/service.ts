@@ -2,8 +2,10 @@ import { foodCatalogConfig } from "./catalog-config.js";
 import {
     FoodCatalogRepository,
     normalizeFoodText,
+    type CatalogHit,
 } from "./catalog-repository.js";
 import { OpenFoodFactsProvider } from "./open-food-facts.js";
+import { canonicalizeFoodSearchQuery } from "./query-normalization.js";
 import {
     FoodProviderRegistry,
     type AggregatedFoodSearchResult,
@@ -112,9 +114,25 @@ function dedupe(candidates: FoodCandidate[]): FoodCandidate[] {
     });
 }
 
+function freshCandidates(hits: CatalogHit[]): FoodCandidate[] {
+    return hits.filter((hit) => !hit.stale).map((hit) => hit.candidate);
+}
+
+function staleCandidates(hits: CatalogHit[]): FoodCandidate[] {
+    return hits.filter((hit) => hit.stale).map((hit) => hit.candidate);
+}
+
 export class FoodSearchService {
     private readonly config = foodCatalogConfig();
     private readonly catalog: FoodCatalogRepository;
+    private readonly inFlightSearches = new Map<
+        string,
+        Promise<AggregatedFoodSearchResult>
+    >();
+    private readonly inFlightBarcodes = new Map<
+        string,
+        Promise<AggregatedFoodSearchResult>
+    >();
 
     constructor(
         private readonly registry = new FoodProviderRegistry([
@@ -134,23 +152,73 @@ export class FoodSearchService {
         query: string,
         limit = 10,
     ): Promise<AggregatedFoodSearchResult> {
-        const startedAt = performance.now();
-        const normalized = normalizeFoodText(query);
+        const canonicalQuery = canonicalizeFoodSearchQuery(query);
+        const normalized = normalizeFoodText(canonicalQuery);
         if (!normalized) return { candidates: [], failures: [] };
         const boundedLimit = Math.max(1, Math.min(25, limit));
+        const key = `${normalized}\u0000${boundedLimit}`;
+        const existing = this.inFlightSearches.get(key);
+        if (existing) {
+            console.info(
+                "[food_resolution] operation=search resolution_layer=in_flight_dedupe",
+            );
+            return existing;
+        }
+        const pending = this.resolveSearch(normalized, boundedLimit).finally(
+            () => {
+                this.inFlightSearches.delete(key);
+            },
+        );
+        this.inFlightSearches.set(key, pending);
+        return pending;
+    }
+
+    private async resolveSearch(
+        normalized: string,
+        boundedLimit: number,
+    ): Promise<AggregatedFoodSearchResult> {
+        const startedAt = performance.now();
+
+        const queryCacheStartedAt = performance.now();
+        const cachedHits = await this.catalog.findCachedSearch(
+            normalized,
+            boundedLimit,
+        );
+        const queryCacheMs = Math.round(
+            performance.now() - queryCacheStartedAt,
+        );
+        if (cachedHits) {
+            const cachedFresh = freshCandidates(cachedHits);
+            const strongCached = isStrongLocalMatch(normalized, cachedFresh[0]);
+            if (strongCached || cachedFresh.length >= boundedLimit) {
+                console.info(
+                    `[food_resolution] operation=search resolution_layer=query_cache local_count=${cachedFresh.length} query_cache_ms=${queryCacheMs} total_ms=${Math.round(performance.now() - startedAt)} reason=${strongCached ? "strong_exact_match" : "result_limit_satisfied"}`,
+                );
+                return {
+                    candidates: cachedFresh.slice(0, boundedLimit),
+                    failures: [],
+                };
+            }
+        }
+
         const localStartedAt = performance.now();
-        const local = await this.catalog.searchLocal(normalized, boundedLimit);
+        const localHits = await this.catalog.searchLocal(
+            normalized,
+            boundedLimit,
+        );
         const localMs = Math.round(performance.now() - localStartedAt);
+        const local = freshCandidates(localHits);
+        const stale = staleCandidates(localHits);
         const strongLocal = isStrongLocalMatch(normalized, local[0]);
         if (strongLocal || local.length >= boundedLimit) {
             console.info(
-                `[food_resolution] operation=search resolution_layer=local_cache local_count=${local.length} local_ms=${localMs} total_ms=${Math.round(performance.now() - startedAt)} reason=${strongLocal ? "strong_exact_match" : "result_limit_satisfied"}`,
+                `[food_resolution] operation=search resolution_layer=local_cache local_count=${local.length} stale_count=${stale.length} query_cache_ms=${queryCacheMs} local_ms=${localMs} total_ms=${Math.round(performance.now() - startedAt)} reason=${strongLocal ? "strong_exact_match" : "result_limit_satisfied"}`,
             );
             return { candidates: local.slice(0, boundedLimit), failures: [] };
         }
 
         console.info(
-            `[food_catalog] local_miss operation=search count=${local.length} local_ms=${localMs}`,
+            `[food_catalog] local_miss operation=search fresh_count=${local.length} stale_count=${stale.length} local_ms=${localMs}`,
         );
         const providerStartedAt = performance.now();
         const result = await this.registry.search({
@@ -164,12 +232,33 @@ export class FoodSearchService {
                 `[food_catalog] provider_write operation=search count=${result.candidates.length}`,
             );
         }
+
         const combined = rankCandidates(
             { query: normalized },
             dedupe([...local, ...result.candidates]),
         ).slice(0, boundedLimit);
+        if (combined.length > 0) {
+            await this.catalog.recordSearch(normalized, combined);
+        }
+
+        if (
+            result.candidates.length === 0 &&
+            result.failures.length > 0 &&
+            stale.length > 0 &&
+            this.config.staleOnError
+        ) {
+            const fallback = rankCandidates(
+                { query: normalized },
+                dedupe([...local, ...stale]),
+            ).slice(0, boundedLimit);
+            console.warn(
+                `[food_resolution] operation=search resolution_layer=stale_on_error local_count=${local.length} stale_count=${stale.length} failures=${result.failures.length} provider_ms=${providerMs} total_ms=${Math.round(performance.now() - startedAt)}`,
+            );
+            return { candidates: fallback, failures: result.failures };
+        }
+
         console.info(
-            `[food_resolution] operation=search resolution_layer=providers local_count=${local.length} provider_count=${result.candidates.length} failures=${result.failures.length} local_ms=${localMs} provider_ms=${providerMs} total_ms=${Math.round(performance.now() - startedAt)}`,
+            `[food_resolution] operation=search resolution_layer=providers local_count=${local.length} stale_count=${stale.length} provider_count=${result.candidates.length} failures=${result.failures.length} query_cache_ms=${queryCacheMs} local_ms=${localMs} provider_ms=${providerMs} total_ms=${Math.round(performance.now() - startedAt)}`,
         );
         return { candidates: combined, failures: result.failures };
     }
@@ -186,6 +275,19 @@ export class FoodSearchService {
                 `[food_catalog] local_hit operation=details provider=${decoded.provider}`,
             );
             return local.candidate;
+        }
+
+        if (
+            await this.catalog.isNegative(
+                "details",
+                decoded.providerFoodId,
+                decoded.provider,
+            )
+        ) {
+            console.info(
+                `[food_catalog] negative_hit operation=details provider=${decoded.provider}`,
+            );
+            return local?.candidate ?? null;
         }
 
         try {
@@ -221,10 +323,25 @@ export class FoodSearchService {
         if (digits.length < 8 || digits.length > 14) {
             return { candidates: [], failures: [] };
         }
+        const existing = this.inFlightBarcodes.get(digits);
+        if (existing) {
+            console.info(
+                "[food_resolution] operation=barcode resolution_layer=in_flight_dedupe",
+            );
+            return existing;
+        }
+        const pending = this.resolveBarcode(digits).finally(() => {
+            this.inFlightBarcodes.delete(digits);
+        });
+        this.inFlightBarcodes.set(digits, pending);
+        return pending;
+    }
+
+    private async resolveBarcode(
+        digits: string,
+    ): Promise<AggregatedFoodSearchResult> {
         const local = await this.catalog.findByBarcode(digits);
-        const fresh = local
-            .filter((hit) => !hit.stale)
-            .map((hit) => hit.candidate);
+        const fresh = freshCandidates(local);
         if (fresh.length > 0) {
             console.info(
                 `[food_resolution] operation=barcode resolution_layer=local_cache count=${fresh.length}`,

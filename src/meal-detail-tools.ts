@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { withAnalytics } from "./analytics.js";
 import { getNutritionProvenanceAnalysis } from "./nutrition-provenance.js";
 import { getStructuredMeal } from "./structured-meals/repository.js";
 import { getUserTimezone } from "./storage.js";
@@ -204,50 +205,57 @@ export function registerMealDetailTools(
                 openWorldHint: false,
             },
         },
-        async ({ meal_id }) => {
-            const meal = await getStructuredMeal(userId, meal_id);
-            if (!meal) throw new Error("Meal not found");
-            const items = meal.items.map(serializeItem);
-            const structuredContent = {
-                meal: {
-                    id: meal.id,
-                    logged_at: meal.loggedAt,
-                    meal_type: meal.mealType,
-                    description: meal.description,
-                    calories: meal.calories,
-                    protein_g: meal.proteinG,
-                    carbs_g: meal.carbsG,
-                    fat_g: meal.fatG,
-                    fiber_g: meal.fiberG,
-                    sugar_g: meal.sugarG,
-                    alcohol_g: meal.alcoholG,
-                    notes: meal.notes,
-                    source_recipe_id: meal.sourceRecipeId,
-                    source_recipe_revision_id: meal.sourceRecipeRevisionId,
-                    source_planned_meal_id: meal.sourcePlannedMealId,
-                    item_count: items.length,
-                    items,
-                    legacy_aggregate: items.length === 0,
+        async ({ meal_id }) =>
+            withAnalytics(
+                "get_meal_details",
+                async () => {
+                    const meal = await getStructuredMeal(userId, meal_id);
+                    if (!meal) throw new Error("Meal not found");
+                    const items = meal.items.map(serializeItem);
+                    const structuredContent = {
+                        meal: {
+                            id: meal.id,
+                            logged_at: meal.loggedAt,
+                            meal_type: meal.mealType,
+                            description: meal.description,
+                            calories: meal.calories,
+                            protein_g: meal.proteinG,
+                            carbs_g: meal.carbsG,
+                            fat_g: meal.fatG,
+                            fiber_g: meal.fiberG,
+                            sugar_g: meal.sugarG,
+                            alcohol_g: meal.alcoholG,
+                            notes: meal.notes,
+                            source_recipe_id: meal.sourceRecipeId,
+                            source_recipe_revision_id:
+                                meal.sourceRecipeRevisionId,
+                            source_planned_meal_id: meal.sourcePlannedMealId,
+                            item_count: items.length,
+                            items,
+                            legacy_aggregate: items.length === 0,
+                        },
+                    };
+                    const itemLines = items.length
+                        ? items
+                              .map(
+                                  (item) =>
+                                      `- ${item.name}${item.portion_label ? ` (${item.portion_label})` : ""}: ${item.nutrients.calories ?? "?"} kcal · source=${item.source_type}${item.provider ? `/${item.provider}` : ""}${item.confidence == null ? "" : ` · confidence=${item.confidence.toFixed(2)}`}`,
+                              )
+                              .join("\n")
+                        : "Item-level details were not recorded for this legacy aggregate meal.";
+                    return {
+                        content: [
+                            {
+                                type: "text" as const,
+                                text: `${meal.description}\nMeal ID: ${meal.id}\n${itemLines}`,
+                            },
+                        ],
+                        structuredContent,
+                    };
                 },
-            };
-            const itemLines = items.length
-                ? items
-                      .map(
-                          (item) =>
-                              `- ${item.name}${item.portion_label ? ` (${item.portion_label})` : ""}: ${item.nutrients.calories ?? "?"} kcal · source=${item.source_type}${item.provider ? `/${item.provider}` : ""}${item.confidence == null ? "" : ` · confidence=${item.confidence.toFixed(2)}`}`,
-                      )
-                      .join("\n")
-                : "Item-level details were not recorded for this legacy aggregate meal.";
-            return {
-                content: [
-                    {
-                        type: "text" as const,
-                        text: `${meal.description}\nMeal ID: ${meal.id}\n${itemLines}`,
-                    },
-                ],
-                structuredContent,
-            };
-        },
+                { userId },
+                { meal_id },
+            ),
     );
 
     toolServer.registerTool(

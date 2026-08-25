@@ -119,7 +119,7 @@ async function buildMunchMcpServer(
         capabilities,
         capabilityResolution: capabilityResolution.status,
     });
-    registerAdvancedToolGateway(optimizedServer);
+    registerAdvancedToolGateway(optimizedServer, userId);
     return server;
 }
 

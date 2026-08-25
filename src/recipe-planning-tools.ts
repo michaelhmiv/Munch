@@ -448,7 +448,13 @@ export function registerRecipePlanningTools(
                 openWorldHint: false,
             },
             inputSchema: {
-                query: z.string().min(1).max(200).optional(),
+                query: z.preprocess(
+                    (value) =>
+                        typeof value === "string"
+                            ? value.trim() || undefined
+                            : value,
+                    z.string().min(1).max(200).optional(),
+                ),
                 scope: z.enum(["personal", "household", "all"]).optional(),
                 limit: z.number().int().min(1).max(50).optional(),
                 pantry_match: z.boolean().optional(),
