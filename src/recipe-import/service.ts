@@ -378,60 +378,32 @@ function isLowImpactIngredient(ingredient: ParsedRecipeIngredient): boolean {
     );
 }
 
-function lowImpactDefaults(ingredient: ParsedRecipeIngredient): {
-    quantity: number;
-    unit: string;
-} {
-    const text = `${ingredient.name} ${ingredient.rawText}`.toLowerCase();
-    if (text.includes("pepper")) return { quantity: 0.125, unit: "tsp" };
-    if (text.includes("salt")) return { quantity: 0.25, unit: "tsp" };
-    return { quantity: 0.25, unit: "tsp" };
-}
-
-function lowImpactEstimate(ingredient: ParsedRecipeIngredient): NutrientFacts {
-    const text = `${ingredient.name} ${ingredient.rawText}`.toLowerCase();
-    const estimate: NutrientFacts = {
-        calories: 0,
-        protein_g: 0,
-        carbs_g: 0,
-        fat_g: 0,
-    };
-    if (text.includes("salt")) estimate.sodium_mg = 575;
-    if (text.includes("pepper")) {
-        estimate.calories = 1;
-        estimate.carbs_g = 0.2;
-        estimate.protein_g = 0.05;
-    }
-    return estimate;
-}
-
 function lowImpactIngredient(
     ingredient: ParsedRecipeIngredient,
     sourceUrl: string,
     strategy: string,
     semanticLabel?: string,
 ): EnrichedIngredient {
-    const defaults = lowImpactDefaults(ingredient);
-    const quantity = ingredient.quantity ?? defaults.quantity;
-    const unit = ingredient.unit ?? defaults.unit;
+    const hasMeasuredQuantity = ingredient.quantity !== undefined;
     const assumption = ingredientAssumption(ingredient) ?? {
         position: ingredient.sourcePosition ?? 0,
         raw_text: ingredient.rawText,
-        message: `The source did not specify a measurable amount; retained the ingredient and estimated ${quantity} ${unit} for nutrition.`,
+        message: hasMeasuredQuantity
+            ? "Nutrition providers could not resolve this low-impact source ingredient; retained the source quantity without inventing nutrition."
+            : "The source did not specify a measurable amount; retained the low-impact ingredient without inventing a quantity or nutrition contribution.",
         impact: "low" as const,
         source: semanticLabel ? ("website_ai" as const) : ("parser" as const),
     };
     return {
         ingredient: {
             name: ingredient.name,
-            quantity,
-            unit,
+            quantity: ingredient.quantity,
+            unit: ingredient.unit,
             preparation: ingredient.preparation,
             optional: ingredient.optional,
-            source_type: "model_estimate",
+            source_type: "user_supplied",
             source_url: sourceUrl,
             confidence: ingredient.semanticConfidence,
-            nutrients: lowImpactEstimate(ingredient),
             source_snapshot: {
                 resolution_layer: "recipe_url",
                 resolution: "assumed",
@@ -445,9 +417,9 @@ function lowImpactIngredient(
                 imported_source_url: sourceUrl,
                 assumption: assumption.message,
                 impact: "low",
-                nutrition_treatment: "low_impact_quantity_estimate",
-                estimated_quantity: quantity,
-                estimated_unit: unit,
+                nutrition_treatment: hasMeasuredQuantity
+                    ? "provider_unavailable_source_quantity"
+                    : "unmeasured_source_quantity",
             },
         },
         review: {
@@ -523,9 +495,7 @@ function modelEstimatedIngredient(
 
 function isLowImpactUnmeasurable(ingredient: ParsedRecipeIngredient): boolean {
     return (
-        isLowImpactIngredient(ingredient) &&
-        (ingredient.quantity === undefined ||
-            (ingredient.searchQueries?.length ?? 0) === 0)
+        isLowImpactIngredient(ingredient) && ingredient.quantity === undefined
     );
 }
 
@@ -715,6 +685,7 @@ function assignmentReason(
     ingredient: ParsedRecipeIngredient,
     candidates: FoodCandidate[],
 ): RecipeImportIngredientAssignmentRequest["reason"] | undefined {
+    if (isLowImpactUnmeasurable(ingredient)) return undefined;
     if (candidates.length === 0) return "no_candidate";
     if (ingredient.quantity === undefined) return "missing_quantity";
     const top = rankedCandidates(ingredient, candidates)[0]?.candidate;
@@ -889,6 +860,14 @@ async function enrichIngredients(
         while (next < ingredients.length) {
             const index = next++;
             const ingredient = ingredients[index]!;
+            if (isLowImpactUnmeasurable(ingredient)) {
+                searched[index] = {
+                    ingredient,
+                    candidates: [],
+                    unavailable: false,
+                };
+                continue;
+            }
             const result = await searchIngredientCandidates(
                 ingredient,
                 foodSearch,
