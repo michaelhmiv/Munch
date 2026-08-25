@@ -457,8 +457,6 @@ export async function generatePantryMealIdeas(
             },
             body: JSON.stringify({
                 model: config.model,
-                temperature: 0.25,
-                max_tokens: 5500,
                 response_format: {
                     type: "json_schema",
                     json_schema: {
