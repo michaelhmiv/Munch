@@ -26,7 +26,10 @@ function repoPath(file: string): string {
     return relative(SRC_ROOT, file).split(sep).join("/");
 }
 
-function resolveSourceImport(fromFile: string, specifier: string): string | null {
+function resolveSourceImport(
+    fromFile: string,
+    specifier: string,
+): string | null {
     if (!specifier.startsWith(".")) return null;
     const raw = resolve(dirname(fromFile), specifier);
     const candidates = [
@@ -65,7 +68,8 @@ function reachableMcpSources(): Map<string, string> {
         visited.set(file, source);
         for (const specifier of relativeImports(source)) {
             const target = resolveSourceImport(file, specifier);
-            if (target && target.startsWith(`${SRC_ROOT}${sep}`)) pending.push(target);
+            if (target && target.startsWith(`${SRC_ROOT}${sep}`))
+                pending.push(target);
         }
     }
     return visited;
@@ -113,7 +117,9 @@ describe("host AI / MCP architecture boundary", () => {
         for (const [file, source] of reachable) {
             const path = repoPath(file);
             if (FORBIDDEN_MCP_MODULES.has(path)) {
-                violations.push(`${path}: website AI module is reachable from MCP`);
+                violations.push(
+                    `${path}: website AI module is reachable from MCP`,
+                );
             }
             for (const [pattern, label] of FORBIDDEN_MCP_SOURCE_PATTERNS) {
                 if (pattern.test(source)) {
@@ -135,7 +141,9 @@ describe("host AI / MCP architecture boundary", () => {
         process.env.MUNCH_RECIPE_IMPORT_AI_ENABLED = "true";
         globalThis.fetch = (async () => {
             unexpectedFetches += 1;
-            throw new Error("MCP recipe preview attempted an unexpected network call");
+            throw new Error(
+                "MCP recipe preview attempted an unexpected network call",
+            );
         }) as typeof fetch;
 
         try {
@@ -168,7 +176,8 @@ describe("host AI / MCP architecture boundary", () => {
             expect(unexpectedFetches).toBe(0);
         } finally {
             globalThis.fetch = previousFetch;
-            if (previousApiKey === undefined) delete process.env.OPENROUTER_API_KEY;
+            if (previousApiKey === undefined)
+                delete process.env.OPENROUTER_API_KEY;
             else process.env.OPENROUTER_API_KEY = previousApiKey;
             if (previousEnabled === undefined)
                 delete process.env.MUNCH_RECIPE_IMPORT_AI_ENABLED;
