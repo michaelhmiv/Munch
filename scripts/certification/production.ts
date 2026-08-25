@@ -1,11 +1,9 @@
 #!/usr/bin/env bun
 
-import {
-    summarizeDurations,
-    type CertificationCheck,
-} from "./report.js";
+import { summarizeDurations, type CertificationCheck } from "./report.js";
 
-const input = process.argv[2]?.trim() || process.env.MUNCH_CERT_BASE_URL?.trim();
+const input =
+    process.argv[2]?.trim() || process.env.MUNCH_CERT_BASE_URL?.trim();
 if (!input) {
     console.error(
         "Usage: bun scripts/certification/production.ts https://host",
@@ -95,8 +93,7 @@ function parseJsonRpc(
 }
 
 function mcpHeaders(): Record<string, string> {
-    if (!bearerToken)
-        throw new Error("Authenticated token is not configured");
+    if (!bearerToken) throw new Error("Authenticated token is not configured");
     return {
         authorization: `Bearer ${bearerToken}`,
         accept: "application/json, text/event-stream",
@@ -122,9 +119,7 @@ async function mcpRequest(
     return parseJsonRpc(text, response.headers.get("content-type") ?? "");
 }
 
-async function mcpNotification(
-    body: Record<string, unknown>,
-): Promise<void> {
+async function mcpNotification(body: Record<string, unknown>): Promise<void> {
     const response = await fetch(`${baseUrl}/mcp`, {
         method: "POST",
         headers: mcpHeaders(),
@@ -163,7 +158,8 @@ await record("health.ready", async () => {
 
 release = await record("health.version", async () => {
     const value = await expectJson("/health/version");
-    if (value.service !== "munch") throw new Error("Release service is invalid");
+    if (value.service !== "munch")
+        throw new Error("Release service is invalid");
     if (expectedSha && value.git_sha !== expectedSha) {
         throw new Error(
             `Production SHA ${String(value.git_sha)} does not match expected ${expectedSha}`,
