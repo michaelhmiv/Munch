@@ -62,7 +62,10 @@ const synthetic: FoodCandidate[] = Array.from({ length: 500 }, (_, index) => ({
             },
         },
     ],
-    attribution: { label: "USDA FoodData Central", license: "CC0 / public domain" },
+    attribution: {
+        label: "USDA FoodData Central",
+        license: "CC0 / public domain",
+    },
     confidence: 0.95,
     raw: { revision: "ci-benchmark" },
 }));
@@ -91,7 +94,9 @@ try {
         sink: repository,
     });
 
-    const [, batchUpsertMs] = await timed(() => repository.upsertMany(synthetic));
+    const [, batchUpsertMs] = await timed(() =>
+        repository.upsertMany(synthetic),
+    );
     const exactDurations: number[] = [];
     const fuzzyDurations: number[] = [];
     for (let index = 0; index < iterations; index += 1) {
@@ -129,10 +134,14 @@ try {
     console.log(`[food_catalog_benchmark] ${JSON.stringify(report)}`);
 
     if (report.exact.p95_ms > 50) {
-        throw new Error(`Exact local search p95 exceeded 50ms: ${report.exact.p95_ms}ms`);
+        throw new Error(
+            `Exact local search p95 exceeded 50ms: ${report.exact.p95_ms}ms`,
+        );
     }
     if (report.fuzzy.p95_ms > 75) {
-        throw new Error(`Fuzzy local search p95 exceeded 75ms: ${report.fuzzy.p95_ms}ms`);
+        throw new Error(
+            `Fuzzy local search p95 exceeded 75ms: ${report.fuzzy.p95_ms}ms`,
+        );
     }
     if (report.bulk_upsert_500_ms > 2_000) {
         throw new Error(

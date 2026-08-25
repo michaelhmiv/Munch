@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import type { FoodCatalogRepository, CatalogHit } from "./catalog-repository.js";
+import type {
+    FoodCatalogRepository,
+    CatalogHit,
+} from "./catalog-repository.js";
 import { FoodProviderError } from "./errors.js";
 import { FoodProviderRegistry } from "./registry.js";
 import { FoodSearchService } from "./service.js";
@@ -33,7 +36,9 @@ function candidate(overrides: Partial<FoodCandidate> = {}): FoodCandidate {
     };
 }
 
-function fakeCatalog(overrides: Record<string, unknown> = {}): FoodCatalogRepository {
+function fakeCatalog(
+    overrides: Record<string, unknown> = {},
+): FoodCatalogRepository {
     return {
         async findCachedSearch() {
             return null;
@@ -210,7 +215,9 @@ describe("provider circuit breaker", () => {
 
         await registry.search({ query: "rare branded food" });
         await registry.search({ query: "rare branded food" });
-        const openResult = await registry.search({ query: "rare branded food" });
+        const openResult = await registry.search({
+            query: "rare branded food",
+        });
         expect(providerCalls).toBe(2);
         expect(openResult.failures[0]).toMatchObject({
             provider: "open_food_facts",

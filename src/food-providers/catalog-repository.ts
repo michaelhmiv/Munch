@@ -95,7 +95,9 @@ function contentHash(candidate: FoodCandidate): string {
         .digest("hex");
 }
 
-function candidateFromRow(row: Pick<CatalogRow, "source_snapshot">): FoodCandidate | null {
+function candidateFromRow(
+    row: Pick<CatalogRow, "source_snapshot">,
+): FoodCandidate | null {
     const snapshot =
         typeof row.source_snapshot === "string"
             ? JSON.parse(row.source_snapshot)
@@ -233,8 +235,9 @@ export class FoodCatalogRepository {
         const normalized = normalizeFoodText(query);
         if (!normalized) return [];
         const boundedLimit = Math.max(1, Math.min(25, limit));
-        const rows = await withServiceDatabase(async (tx) =>
-            tx<CatalogRow[]>`
+        const rows = await withServiceDatabase(
+            async (tx) =>
+                tx<CatalogRow[]>`
                 select id, provider, provider_food_id, source_snapshot, refresh_after
                 from munch.food_catalog_entries
                 where deprecated_at is null
@@ -272,8 +275,9 @@ export class FoodCatalogRepository {
         if (!normalized) return null;
         const queryHash = hashCatalogIdentity(normalized);
         const boundedLimit = Math.max(1, Math.min(25, limit));
-        const rows = await withServiceDatabase(async (tx) =>
-            tx<CatalogRow[]>`
+        const rows = await withServiceDatabase(
+            async (tx) =>
+                tx<CatalogRow[]>`
                 select
                     entry.id,
                     entry.provider,
@@ -315,7 +319,9 @@ export class FoodCatalogRepository {
             ordinal: index,
         }));
         const identityPayload = JSON.stringify(identities);
-        const providers = [...new Set(candidates.map((candidate) => candidate.provider))];
+        const providers = [
+            ...new Set(candidates.map((candidate) => candidate.provider)),
+        ];
         const expiresAt = new Date(Date.now() + this.config.searchTtlMs);
         await withServiceDatabase(async (tx) => {
             const rows = await tx<CatalogIdentityRow[]>`
@@ -365,7 +371,9 @@ export class FoodCatalogRepository {
         for (const candidate of candidates) validateCatalogCandidate(candidate);
         const now = new Date();
         const payload = JSON.stringify(
-            candidates.map((candidate) => catalogPayload(candidate, this.config, now)),
+            candidates.map((candidate) =>
+                catalogPayload(candidate, this.config, now),
+            ),
         );
         await withServiceDatabase(async (tx) => {
             await tx`

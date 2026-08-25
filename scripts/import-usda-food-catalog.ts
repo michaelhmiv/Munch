@@ -63,9 +63,7 @@ const stats = await importUsdaBulkFile({
     batchSize,
     ...(maxRecords === undefined ? {} : { maxRecords }),
     dryRun,
-    sink: dryRun
-        ? { async upsertMany() {} }
-        : repository,
+    sink: dryRun ? { async upsertMany() {} } : repository,
 });
 
 console.log(

@@ -98,14 +98,18 @@ export async function* streamUsdaBulkFoods(
             const keyIndex = header.indexOf(rootKey);
             if (keyIndex < 0) {
                 if (header.length > 1_048_576) {
-                    throw new Error(`USDA bulk JSON root ${rootKey} was not found`);
+                    throw new Error(
+                        `USDA bulk JSON root ${rootKey} was not found`,
+                    );
                 }
                 continue;
             }
             const arrayIndex = header.indexOf("[", keyIndex + rootKey.length);
             if (arrayIndex < 0) {
                 if (header.length > 1_048_576) {
-                    throw new Error(`USDA bulk JSON array ${rootKey} was not found`);
+                    throw new Error(
+                        `USDA bulk JSON array ${rootKey} was not found`,
+                    );
                 }
                 continue;
             }
@@ -159,12 +163,19 @@ export async function* streamUsdaBulkFoods(
             try {
                 parsed = JSON.parse(object);
             } catch (error) {
-                throw new Error("USDA bulk JSON contained a malformed food record", {
-                    cause: error,
-                });
+                throw new Error(
+                    "USDA bulk JSON contained a malformed food record",
+                    {
+                        cause: error,
+                    },
+                );
             }
             object = "";
-            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            if (
+                parsed &&
+                typeof parsed === "object" &&
+                !Array.isArray(parsed)
+            ) {
                 yield parsed as Record<string, unknown>;
             }
         }

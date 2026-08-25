@@ -164,9 +164,11 @@ export class FoodSearchService {
             );
             return existing;
         }
-        const pending = this.resolveSearch(normalized, boundedLimit).finally(() => {
-            this.inFlightSearches.delete(key);
-        });
+        const pending = this.resolveSearch(normalized, boundedLimit).finally(
+            () => {
+                this.inFlightSearches.delete(key);
+            },
+        );
         this.inFlightSearches.set(key, pending);
         return pending;
     }

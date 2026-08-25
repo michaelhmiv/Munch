@@ -112,7 +112,8 @@ export class FoodProviderRegistry {
             const providerCooldown = error.retryAfterSeconds
                 ? error.retryAfterSeconds * 1_000
                 : 0;
-            openUntil = this.now() + Math.max(this.cooldownMs, providerCooldown);
+            openUntil =
+                this.now() + Math.max(this.cooldownMs, providerCooldown);
             console.warn(
                 `[food_provider] circuit_open provider=${provider} failures=${consecutiveFailures} cooldown_ms=${openUntil - this.now()}`,
             );
@@ -144,7 +145,10 @@ export class FoodProviderRegistry {
                         this.recordSuccess(provider.name);
                         return { provider: provider.name, value };
                     } catch (error) {
-                        const normalized = asFoodProviderError(error, provider.name);
+                        const normalized = asFoodProviderError(
+                            error,
+                            provider.name,
+                        );
                         this.recordFailure(provider.name, normalized);
                         throw normalized;
                     }
@@ -218,7 +222,10 @@ export class FoodProviderRegistry {
                         this.recordSuccess(provider.name);
                         return { provider: provider.name, value };
                     } catch (error) {
-                        const normalized = asFoodProviderError(error, provider.name);
+                        const normalized = asFoodProviderError(
+                            error,
+                            provider.name,
+                        );
                         this.recordFailure(provider.name, normalized);
                         throw normalized;
                     }

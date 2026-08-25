@@ -27,7 +27,8 @@ function replaceUnicodeFractions(value: string): string {
  * that are part of the food name, and trailing package sizes.
  */
 export function canonicalizeFoodSearchQuery(value: string): string {
-    let query = replaceUnicodeFractions(value).normalize("NFKC")
+    let query = replaceUnicodeFractions(value)
+        .normalize("NFKC")
         .replace(/[~≈]/g, " ")
         .replace(/\(\s*\$\s*\d+(?:\.\d{1,2})?\s*\)/g, " ")
         .replace(/\(\s*\d+(?:\.\d{1,2})?\s*(?:¢|cents?)\s*\)/gi, " ")

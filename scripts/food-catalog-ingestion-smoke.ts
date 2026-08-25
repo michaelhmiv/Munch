@@ -39,7 +39,9 @@ try {
         sink: repository,
     });
     if (first.written !== 2 || first.rejected !== 1) {
-        throw new Error(`Unexpected first import stats: ${JSON.stringify(first)}`);
+        throw new Error(
+            `Unexpected first import stats: ${JSON.stringify(first)}`,
+        );
     }
 
     const second = await importUsdaBulkFile({
@@ -50,7 +52,9 @@ try {
         sink: repository,
     });
     if (second.written !== 2) {
-        throw new Error(`Unexpected idempotent import stats: ${JSON.stringify(second)}`);
+        throw new Error(
+            `Unexpected idempotent import stats: ${JSON.stringify(second)}`,
+        );
     }
 
     const rows = await database<
@@ -67,15 +71,21 @@ try {
         order by provider_food_id
     `;
     if (rows.length !== 2) {
-        throw new Error(`Expected 2 idempotent catalog rows, found ${rows.length}`);
+        throw new Error(
+            `Expected 2 idempotent catalog rows, found ${rows.length}`,
+        );
     }
-    if (rows.some((row) => row.provider_revision !== "bulk:foundation:2026-04")) {
+    if (
+        rows.some((row) => row.provider_revision !== "bulk:foundation:2026-04")
+    ) {
         throw new Error("Bulk provenance revision was not persisted");
     }
 
     const local = await repository.searchLocal("banana", 10);
     if (local.length === 0 || local[0]?.candidate.providerFoodId !== "321358") {
-        throw new Error("Local trigram search did not recover the seeded banana");
+        throw new Error(
+            "Local trigram search did not recover the seeded banana",
+        );
     }
     if (local[0]?.stale) {
         throw new Error("Newly imported USDA fixture was unexpectedly stale");
@@ -87,7 +97,9 @@ try {
     );
     const cached = await repository.findCachedSearch("banana", 10);
     if (!cached?.length || cached[0]?.candidate.providerFoodId !== "321358") {
-        throw new Error("Query-result cache did not recover the persisted candidate");
+        throw new Error(
+            "Query-result cache did not recover the persisted candidate",
+        );
     }
 
     await database`
@@ -97,7 +109,9 @@ try {
     `;
     const stale = await repository.searchLocal("banana", 10);
     if (!stale[0]?.stale) {
-        throw new Error("Local text search failed to expose stale catalog state");
+        throw new Error(
+            "Local text search failed to expose stale catalog state",
+        );
     }
 
     const countRows = await database<Array<{ count: number | string }>>`
@@ -116,7 +130,9 @@ try {
         where provider = 'usda' and provider_food_id = '321358'
     `;
     if (Number(accessed[0]?.access_count ?? 0) < 2) {
-        throw new Error("Local search/query-cache hits did not update access counters");
+        throw new Error(
+            "Local search/query-cache hits did not update access counters",
+        );
     }
 
     console.log(

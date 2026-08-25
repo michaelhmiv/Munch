@@ -144,7 +144,9 @@ function tokenCoverage(query: string, name: string, brand?: string): number {
     const queryTokens = tokens(query);
     if (queryTokens.length === 0) return 0;
     const candidateTokens = new Set(tokens(`${brand ?? ""} ${name}`));
-    const matched = queryTokens.filter((token) => candidateTokens.has(token)).length;
+    const matched = queryTokens.filter((token) =>
+        candidateTokens.has(token),
+    ).length;
     return matched / queryTokens.length;
 }
 
@@ -208,12 +210,14 @@ const report = {
 const reportPath =
     process.env.MUNCH_FOOD_CORPUS_REPORT ?? "/tmp/food-catalog-corpus.json";
 await Bun.write(reportPath, JSON.stringify(report, null, 2));
-console.log(`[food_catalog_corpus] ${JSON.stringify({
-    corpus_size: report.corpus_size,
-    local_hit_rate: report.local_hit_rate,
-    quality_rate: report.quality_rate,
-    p95_ms: report.latency.p95_ms,
-})}`);
+console.log(
+    `[food_catalog_corpus] ${JSON.stringify({
+        corpus_size: report.corpus_size,
+        local_hit_rate: report.local_hit_rate,
+        quality_rate: report.quality_rate,
+        p95_ms: report.latency.p95_ms,
+    })}`,
+);
 
 const summaryPath = process.env.GITHUB_STEP_SUMMARY;
 if (summaryPath) {
