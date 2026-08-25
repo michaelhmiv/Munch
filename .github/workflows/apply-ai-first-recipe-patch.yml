@@ -1,16 +1,16 @@
 name: Apply AI-first recipe patch
 
 on:
-    push:
+    pull_request:
         branches:
-            - feat/ai-first-recipe-resolution
+            - main
 
 permissions:
     contents: write
 
 jobs:
     apply:
-        if: github.event.head_commit.message == 'ci: apply semantic recipe patch'
+        if: github.event.pull_request.head.sha == '49d7e1c2a5c51a6f694718c32dfec9153e109072'
         runs-on: ubuntu-latest
         timeout-minutes: 5
         steps:
