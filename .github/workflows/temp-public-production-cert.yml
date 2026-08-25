@@ -1,0 +1,40 @@
+name: Temporary public production certification
+
+on:
+    pull_request:
+        branches:
+            - main
+
+permissions:
+    contents: read
+
+jobs:
+    certify:
+        if: github.head_ref == 'test/public-production-cert-4131'
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        env:
+            MUNCH_CERT_BASE_URL: https://munch.business
+            MUNCH_CERT_EXPECTED_SHA: 4131dcb46afcb49988ed98db7cb99e1ba51c3df8
+            MUNCH_CERT_REQUIRE_AUTH: "false"
+            MUNCH_CERT_REPORT: production-certification.json
+            MUNCH_CERT_MARKDOWN_REPORT: production-certification.md
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - run: bun install --frozen-lockfile
+            - name: Verify public production surface
+              run: bun scripts/certification/public.ts "$MUNCH_CERT_BASE_URL"
+            - name: Verify exact deployed release
+              run: bun scripts/certification/production.ts "$MUNCH_CERT_BASE_URL"
+            - name: Upload certification report
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: public-production-cert-4131
+                  path: |
+                      production-certification.json
+                      production-certification.md
+                  if-no-files-found: warn
