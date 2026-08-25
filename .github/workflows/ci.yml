@@ -103,6 +103,10 @@ jobs:
         run: bun scripts/nutrition-platform-smoke.ts
       - name: Exercise persistent food catalog ingestion, cache locality, freshness, and idempotency
         run: bun scripts/food-catalog-ingestion-smoke.ts
+      - name: Benchmark food catalog local search and batched writes
+        env:
+          MUNCH_FOOD_BENCHMARK_ITERATIONS: "60"
+        run: bun scripts/food-catalog-benchmark.ts
       - name: Exercise Railway service facilities
         run: bun scripts/service-platform-smoke.ts
       - name: Exercise structured meal items, totals, idempotency, and RLS
