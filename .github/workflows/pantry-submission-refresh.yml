@@ -1,22 +1,17 @@
 name: Pantry submission refresh
 
 on:
-  push:
-    branches:
-      - feat/pantry-intelligence-planning
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   refresh:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: feat/pantry-intelligence-planning
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1
@@ -32,5 +27,5 @@ jobs:
           git add chatgpt-app-submission.json docs/openai-submission/tool-inventory.md
           if ! git diff --cached --quiet; then
             git commit -m "docs: refresh Pantry Intelligence submission artifacts"
-            git push origin HEAD:feat/pantry-intelligence-planning
+            git push
           fi
