@@ -109,11 +109,11 @@ describe("Pantry planning nutrition snapshot", () => {
 });
 
 test("Pantry planning is explicitly feature-gated", () => {
-    expect(pantryPlanningEnabled({ MUNCH_PANTRY_PLANNING_ENABLED: "true" })).toBe(
-        true,
-    );
-    expect(pantryPlanningEnabled({ MUNCH_PANTRY_PLANNING_ENABLED: "false" })).toBe(
-        false,
-    );
+    expect(
+        pantryPlanningEnabled({ MUNCH_PANTRY_PLANNING_ENABLED: "true" }),
+    ).toBe(true);
+    expect(
+        pantryPlanningEnabled({ MUNCH_PANTRY_PLANNING_ENABLED: "false" }),
+    ).toBe(false);
     expect(pantryPlanningEnabled({})).toBe(false);
 });

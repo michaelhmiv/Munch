@@ -214,7 +214,11 @@ function isGroundedIngredient(name: string, pantryNames: string[]): boolean {
     if (!wanted) return false;
     return pantryNames.some((actual) => {
         if (!actual) return false;
-        if (actual === wanted || actual.includes(wanted) || wanted.includes(actual)) {
+        if (
+            actual === wanted ||
+            actual.includes(wanted) ||
+            wanted.includes(actual)
+        ) {
             return true;
         }
         const a = new Set(actual.split(" "));
@@ -254,15 +258,20 @@ export function validateMealIdeaGrounding(
         }
         if (
             candidate.source === "saved_recipe" &&
-            (!candidate.saved_recipe_id || !savedIds.has(candidate.saved_recipe_id))
+            (!candidate.saved_recipe_id ||
+                !savedIds.has(candidate.saved_recipe_id))
         ) {
             return false;
         }
-        if (candidate.source === "generated" && candidate.saved_recipe_id !== null) {
+        if (
+            candidate.source === "generated" &&
+            candidate.saved_recipe_id !== null
+        ) {
             return false;
         }
         if (
-            candidate.missing_required.length > context.request.allow_missing_items
+            candidate.missing_required.length >
+            context.request.allow_missing_items
         ) {
             return false;
         }
@@ -328,7 +337,8 @@ export async function generatePantryMealIdeas(
         }
         const payload = (await response.json()) as any;
         const text = responseText(payload?.choices?.[0]?.message?.content);
-        if (!text) throw new Error("Pantry planning returned no structured content");
+        if (!text)
+            throw new Error("Pantry planning returned no structured content");
         let decoded: unknown;
         try {
             decoded = JSON.parse(text);

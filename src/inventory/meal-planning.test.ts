@@ -162,7 +162,9 @@ describe("Pantry deliberate recipe scoring", () => {
         );
         expect(garnishAvailability.missing_required).toHaveLength(0);
         expect(garnishAvailability.missing_optional).toEqual(["scallions"]);
-        expect(proteinAvailability.missing_required).toContain("chicken breast");
+        expect(proteinAvailability.missing_required).toContain(
+            "chicken breast",
+        );
         expect(
             scorePantryRecipe({
                 goal: "high_protein",
@@ -194,8 +196,8 @@ describe("Pantry deliberate recipe scoring", () => {
             ["salt"],
         );
         expect(availability.missing_required).toEqual([]);
-        expect(availability.matched.map((match) => match.ingredient)).not.toContain(
-            "salt",
-        );
+        expect(
+            availability.matched.map((match) => match.ingredient),
+        ).not.toContain("salt");
     });
 });

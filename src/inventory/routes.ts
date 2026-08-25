@@ -2,6 +2,12 @@ import { Hono, type Context } from "hono";
 import { requireSameOrigin } from "../accounts/csrf.js";
 import { requireWebSession } from "../accounts/session.js";
 import { resolveMunchCapabilities } from "../billing/capabilities.js";
+import { generatePantryMealIdeas } from "./meal-ideas.js";
+import { getPantryPlanningContext } from "./meal-planning.js";
+import {
+    enrichPantryItemsBestEffort,
+    pantryPlanningEnabled,
+} from "./planning-profile.js";
 import {
     getPantry,
     getPantryPreference,
@@ -303,14 +309,28 @@ export function createInventoryRouter(): Hono {
             .map((value) => value.trim())
             .filter(Boolean)
             .slice(0, 30);
-        const pantry = await getPantry({
-            userId: context.userId,
-            scope,
-            query: c.req.query("q"),
-            candidateNames: candidates,
-            location: locationValue(c.req.query("location")),
-            includeDepleted: c.req.query("include_depleted") === "true",
-        });
+        const detailLevel = c.req.query("detail_level") ?? "basic";
+        if (detailLevel !== "basic" && detailLevel !== "planning") {
+            throw new Error("Invalid Pantry detail level");
+        }
+        const pantry =
+            detailLevel === "planning" && pantryPlanningEnabled()
+                ? await getPantryPlanningContext({
+                      userId: context.userId,
+                      scope,
+                      query: c.req.query("q"),
+                      location: locationValue(c.req.query("location")),
+                      limit: 200,
+                  })
+                : await getPantry({
+                      userId: context.userId,
+                      scope,
+                      query: c.req.query("q"),
+                      candidateNames: candidates,
+                      location: locationValue(c.req.query("location")),
+                      includeDepleted:
+                          c.req.query("include_depleted") === "true",
+                  });
         return privateJson(c, pantry);
     });
 
@@ -342,6 +362,15 @@ export function createInventoryRouter(): Hono {
             idempotencyKey: body.idempotency_key,
             operations: pantryOperations(body.operations),
         });
+        if (pantryPlanningEnabled()) {
+            await enrichPantryItemsBestEffort({
+                userId: context.userId,
+                inventoryItemIds: result.operations.map(
+                    (operation) => operation.item.id,
+                ),
+                limit: 16,
+            });
+        }
         return privateJson(c, result);
     });
 
@@ -366,7 +395,80 @@ export function createInventoryRouter(): Hono {
                     : undefined,
             lines: purchaseLines(body.lines),
         });
+        if (pantryPlanningEnabled()) {
+            await enrichPantryItemsBestEffort({
+                userId: context.userId,
+                inventoryItemIds: result.lines
+                    .map((line) => line.inventory_item_id)
+                    .filter((id): id is string => Boolean(id)),
+                limit: 24,
+            });
+        }
         return privateJson(c, result);
+    });
+
+    app.post("/api/app/pantry/meal-ideas", requireSameOrigin, async (c) => {
+        const context = await premiumContext(c);
+        if (!context.premium)
+            return privateJson(c, { error: "premium_required" }, 403);
+        if (!(await getPantryPreference(context.userId)))
+            return privateJson(c, { error: "pantry_not_enabled" }, 409);
+        if (!pantryPlanningEnabled())
+            return privateJson(c, { error: "pantry_planning_disabled" }, 503);
+        const body = objectValue(await c.req.json(), "Pantry meal ideas");
+        const goal = body.goal ?? "balanced";
+        if (
+            goal !== "high_protein" &&
+            goal !== "low_calorie" &&
+            goal !== "high_fiber" &&
+            goal !== "use_what_i_have" &&
+            goal !== "balanced"
+        ) {
+            throw new Error("Invalid Pantry meal goal");
+        }
+        const mealType = body.meal_type ?? "dinner";
+        if (
+            mealType !== "breakfast" &&
+            mealType !== "lunch" &&
+            mealType !== "dinner" &&
+            mealType !== "snack"
+        ) {
+            throw new Error("Invalid meal type");
+        }
+        const assumedStaples = Array.isArray(body.assumed_staples)
+            ? body.assumed_staples
+                  .filter((value): value is string => typeof value === "string")
+                  .map((value) => value.trim())
+                  .filter(Boolean)
+                  .slice(0, 20)
+            : [];
+        const scope = scopeFromValue(body.scope, context.capabilities, false);
+        const generated = await generatePantryMealIdeas({
+            userId: context.userId,
+            scope,
+            goal,
+            mealType,
+            servings: numberValue(body.servings, "Servings"),
+            maxMinutes: numberValue(body.max_minutes, "Maximum minutes"),
+            allowMissingItems:
+                body.allow_missing_items === undefined
+                    ? 1
+                    : numberValue(
+                          body.allow_missing_items,
+                          "Allowed missing items",
+                          true,
+                      ),
+            assumedStaples,
+        });
+        return privateJson(c, {
+            result: generated.result,
+            context_summary: {
+                pantry_items: generated.context.pantry.length,
+                saved_recipe_candidates:
+                    generated.context.saved_recipe_candidates.length,
+                enrichment: generated.context.pantry_enrichment,
+            },
+        });
     });
 
     async function imagePreview(c: Context, mode: "receipt" | "pantry_photo") {

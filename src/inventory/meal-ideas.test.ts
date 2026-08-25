@@ -74,7 +74,11 @@ const context = {
             missing_required: [],
             missing_optional: [],
             shortages: [],
-            flavor_support: { matched: ["smoked paprika"], missing: [], coverage: 1 },
+            flavor_support: {
+                matched: ["smoked paprika"],
+                missing: [],
+                coverage: 1,
+            },
             score: 90,
             score_reasons: ["strong seasoning/sauce support from Pantry"],
         },

@@ -1,4 +1,7 @@
-import { encodeFoodCandidateId, getFoodSearchService } from "../food-providers/service.js";
+import {
+    encodeFoodCandidateId,
+    getFoodSearchService,
+} from "../food-providers/service.js";
 import type { FoodCandidate, NutrientValues } from "../food-providers/types.js";
 import { withUserDatabase } from "../platform/database.js";
 import { normalizeInventoryName } from "./matching.js";
@@ -6,10 +9,7 @@ import { normalizeInventoryName } from "./matching.js";
 export const PANTRY_PLANNING_PROFILE_VERSION = 1;
 
 export type PantryPlanningProfileStatus =
-    | "resolved"
-    | "partial"
-    | "unresolved"
-    | "failed";
+    "resolved" | "partial" | "unresolved" | "failed";
 export type PantryPlanningProfileSource =
     | "provider"
     | "heuristic"
@@ -128,7 +128,8 @@ const ROLE_RULES: Array<{
     {
         category: "legume",
         roles: ["protein", "fiber", "base", "side"],
-        pattern: /\b(bean|beans|lentil|lentils|chickpea|chickpeas|edamame|peas)\b/,
+        pattern:
+            /\b(bean|beans|lentil|lentils|chickpea|chickpeas|edamame|peas)\b/,
     },
     {
         category: "grain_starch",
@@ -171,10 +172,15 @@ export function classifyPantryFood(name: string): PantryPlanningClassification {
             if (/\b(cumin|chili powder|salsa)\b/.test(normalized)) {
                 roles.add("mexican-tex-mex");
             }
-            if (/\b(soy sauce|sesame oil|gochujang|ginger)\b/.test(normalized)) {
+            if (
+                /\b(soy sauce|sesame oil|gochujang|ginger)\b/.test(normalized)
+            ) {
                 roles.add("east-asian");
             }
-            return { category: rule.category, culinaryRoles: [...roles].sort() };
+            return {
+                category: rule.category,
+                culinaryRoles: [...roles].sort(),
+            };
         }
     }
     return { category: "other", culinaryRoles: ["ingredient"] };
@@ -198,7 +204,9 @@ function compactNutrients(values?: NutrientValues) {
     };
 }
 
-function hasCoreNutrition(values: ReturnType<typeof compactNutrients>): boolean {
+function hasCoreNutrition(
+    values: ReturnType<typeof compactNutrients>,
+): boolean {
     return (
         values.calories !== null ||
         values.protein_g !== null ||
@@ -250,7 +258,9 @@ export function planningProfileFromCandidate(
     const basis = candidateBasis(candidate);
     return {
         inventory_item_id: inventoryItemId,
-        profile_status: hasCoreNutrition(basis.nutrients) ? "resolved" : "partial",
+        profile_status: hasCoreNutrition(basis.nutrients)
+            ? "resolved"
+            : "partial",
         source_type: "provider",
         source_provider: candidate.provider,
         source_food_id: candidate.providerFoodId,
@@ -294,7 +304,9 @@ function serializeProfile(row: Record<string, unknown>): PantryPlanningProfile {
         row[key] == null ? null : finiteOrNull(Number(row[key]));
     return {
         inventory_item_id: String(row.inventory_item_id),
-        profile_status: String(row.profile_status) as PantryPlanningProfileStatus,
+        profile_status: String(
+            row.profile_status,
+        ) as PantryPlanningProfileStatus,
         source_type: String(row.source_type) as PantryPlanningProfileSource,
         source_provider:
             row.source_provider == null ? null : String(row.source_provider),
@@ -393,7 +405,9 @@ async function readIdentity(
     });
 }
 
-async function resolveCandidate(item: InventoryIdentity): Promise<FoodCandidate | null> {
+async function resolveCandidate(
+    item: InventoryIdentity,
+): Promise<FoodCandidate | null> {
     const service = getFoodSearchService();
     if (
         item.provider_food_id &&
@@ -464,7 +478,8 @@ async function persistProfile(
                 enriched_at = now(), updated_at = now()
             returning *
         `;
-        if (!rows[0]) throw new Error("Pantry planning profile returned no row");
+        if (!rows[0])
+            throw new Error("Pantry planning profile returned no row");
         return serializeProfile(rows[0]);
     });
 }

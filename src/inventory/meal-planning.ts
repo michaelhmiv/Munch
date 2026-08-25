@@ -264,7 +264,9 @@ async function readSavedRecipeRows(input: {
                       name: String(ingredient.name),
                       quantity: numberOrNull(ingredient.quantity),
                       unit:
-                          ingredient.unit == null ? null : String(ingredient.unit),
+                          ingredient.unit == null
+                              ? null
+                              : String(ingredient.unit),
                       optional: Boolean(ingredient.optional),
                       provider:
                           ingredient.provider == null
@@ -300,11 +302,10 @@ const FLAVOR_CATEGORIES = new Set([
     "cooking_fat",
 ]);
 
-function flavorSupport(
-    row: RecipeRow,
-    availability: RecipeAvailabilityResult,
-) {
-    const matchedNames = new Set(availability.matched.map((match) => match.ingredient));
+function flavorSupport(row: RecipeRow, availability: RecipeAvailabilityResult) {
+    const matchedNames = new Set(
+        availability.matched.map((match) => match.ingredient),
+    );
     const flavorIngredients = row.ingredients
         .filter((ingredient) =>
             FLAVOR_CATEGORIES.has(classifyPantryFood(ingredient.name).category),
@@ -318,11 +319,16 @@ function flavorSupport(
         coverage:
             flavorIngredients.length === 0
                 ? null
-                : Number((matched.length / flavorIngredients.length).toFixed(3)),
+                : Number(
+                      (matched.length / flavorIngredients.length).toFixed(3),
+                  ),
     };
 }
 
-function goalScore(goal: PantryMealGoal, nutrition: ReturnType<typeof nutritionFromRow>) {
+function goalScore(
+    goal: PantryMealGoal,
+    nutrition: ReturnType<typeof nutritionFromRow>,
+) {
     if (goal === "high_protein") {
         const protein = nutrition.protein_g;
         return protein == null ? 0 : Math.min(30, (protein / 50) * 30);
@@ -339,7 +345,9 @@ function goalScore(goal: PantryMealGoal, nutrition: ReturnType<typeof nutritionF
     return 12;
 }
 
-function readinessScore(readiness: RecipeAvailabilityResult["readiness"]): number {
+function readinessScore(
+    readiness: RecipeAvailabilityResult["readiness"],
+): number {
     if (readiness === "ready_now") return 50;
     if (readiness === "likely_ready") return 44;
     if (readiness === "almost_there") return 26;
@@ -374,7 +382,9 @@ export function scorePantryRecipe(input: {
         reasons.push("core ingredients are on hand");
     }
     if (input.goal === "high_protein" && (nutrition.protein_g ?? 0) >= 30) {
-        reasons.push(`${Math.round(nutrition.protein_g!)} g protein per serving`);
+        reasons.push(
+            `${Math.round(nutrition.protein_g!)} g protein per serving`,
+        );
     }
     if ((flavor.coverage ?? 0) >= 0.75 && flavor.matched.length) {
         reasons.push("strong seasoning/sauce support from Pantry");
