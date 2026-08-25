@@ -434,7 +434,7 @@ export const CAPABILITY_MANIFEST = [
     },
     {
         id: "recipe.create",
-        mcp: complete(["save_recipe"]),
+        mcp: complete(["save_recipe", "save_meal_as_recipe"]),
         web: complete(["POST /api/app/recipes", "/app/recipes"]),
         intentionalChannelException: null,
         gap: null,
@@ -687,6 +687,7 @@ export const MCP_TOOL_CAPABILITY_MAP = {
     prepare_meal_review: "mealDraft.create",
     resolve_meal_review: "mealDraft.confirm",
     save_food: "food.saved.write",
+    save_meal_as_recipe: "recipe.create",
     save_recipe: "recipe.create",
     save_recipe_and_plan: "mealPlan.compose",
     schedule_recipe: "mealPlan.schedule",
