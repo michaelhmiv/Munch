@@ -179,7 +179,6 @@ export class FoodCatalogRepository {
 
     private async touch(ids: string[]): Promise<void> {
         if (!this.config.writesEnabled || ids.length === 0) return;
-        const payload = JSON.stringify(ids);
         await withServiceDatabase(async (tx) => {
             await tx`
                 update munch.food_catalog_entries
@@ -187,7 +186,7 @@ export class FoodCatalogRepository {
                     access_count = access_count + 1
                 where id in (
                     select value::uuid
-                    from jsonb_array_elements_text(${payload}::jsonb)
+                    from jsonb_array_elements_text(${ids}::jsonb)
                 )
             `;
         });
@@ -235,9 +234,8 @@ export class FoodCatalogRepository {
         const normalized = normalizeFoodText(query);
         if (!normalized) return [];
         const boundedLimit = Math.max(1, Math.min(25, limit));
-        const rows = await withServiceDatabase(
-            async (tx) =>
-                tx<CatalogRow[]>`
+        const rows = await withServiceDatabase(async (tx) =>
+            tx<CatalogRow[]>`
                 select id, provider, provider_food_id, source_snapshot, refresh_after
                 from munch.food_catalog_entries
                 where deprecated_at is null
@@ -275,9 +273,8 @@ export class FoodCatalogRepository {
         if (!normalized) return null;
         const queryHash = hashCatalogIdentity(normalized);
         const boundedLimit = Math.max(1, Math.min(25, limit));
-        const rows = await withServiceDatabase(
-            async (tx) =>
-                tx<CatalogRow[]>`
+        const rows = await withServiceDatabase(async (tx) =>
+            tx<CatalogRow[]>`
                 select
                     entry.id,
                     entry.provider,
@@ -318,7 +315,6 @@ export class FoodCatalogRepository {
             provider_food_id: candidate.providerFoodId,
             ordinal: index,
         }));
-        const identityPayload = JSON.stringify(identities);
         const providers = [
             ...new Set(candidates.map((candidate) => candidate.provider)),
         ];
@@ -326,7 +322,7 @@ export class FoodCatalogRepository {
         await withServiceDatabase(async (tx) => {
             const rows = await tx<CatalogIdentityRow[]>`
                 select entry.id
-                from jsonb_to_recordset(${identityPayload}::jsonb)
+                from jsonb_to_recordset(${identities}::jsonb)
                     as input(provider text, provider_food_id text, ordinal integer)
                 join munch.food_catalog_entries entry
                   on entry.provider = input.provider
@@ -370,10 +366,8 @@ export class FoodCatalogRepository {
         if (!this.config.writesEnabled || candidates.length === 0) return;
         for (const candidate of candidates) validateCatalogCandidate(candidate);
         const now = new Date();
-        const payload = JSON.stringify(
-            candidates.map((candidate) =>
-                catalogPayload(candidate, this.config, now),
-            ),
+        const payload = candidates.map((candidate) =>
+            catalogPayload(candidate, this.config, now),
         );
         await withServiceDatabase(async (tx) => {
             await tx`
