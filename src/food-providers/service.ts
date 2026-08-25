@@ -5,6 +5,7 @@ import {
     type CatalogHit,
 } from "./catalog-repository.js";
 import { OpenFoodFactsProvider } from "./open-food-facts.js";
+import { canonicalizeFoodSearchQuery } from "./query-normalization.js";
 import {
     FoodProviderRegistry,
     type AggregatedFoodSearchResult,
@@ -151,7 +152,8 @@ export class FoodSearchService {
         query: string,
         limit = 10,
     ): Promise<AggregatedFoodSearchResult> {
-        const normalized = normalizeFoodText(query);
+        const canonicalQuery = canonicalizeFoodSearchQuery(query);
+        const normalized = normalizeFoodText(canonicalQuery);
         if (!normalized) return { candidates: [], failures: [] };
         const boundedLimit = Math.max(1, Math.min(25, limit));
         const key = `${normalized}\u0000${boundedLimit}`;
