@@ -1,4 +1,4 @@
-name: Temporary catalog formatter
+name: Temporary performance branch formatter
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: format-catalog-temp
+  group: format-performance-temp
   cancel-in-progress: true
 
 jobs:
@@ -26,40 +26,30 @@ jobs:
         with:
           bun-version: 1
       - run: bun install --frozen-lockfile
-      - name: Remove synchronous popularity write from unique local-search hot path
+      - name: Format performance work
+        run: >-
+          bunx prettier --write
+          src/analytics.ts
+          src/meal-detail-tools.ts
+          src/mcp-latency.ts
+          src/mcp-latency.test.ts
+          src/mcp-runtime.ts
+          src/recipe-planning-tools.ts
+          src/recipe-planning-tools.test.ts
+          src/food-providers/catalog-repository.ts
+          src/food-providers/service.ts
+          src/food-providers/service.test.ts
+          src/food-providers/registry.ts
+          scripts/food-catalog-ingestion-smoke.ts
+          scripts/food-provider-live-smoke.ts
+          .github/workflows/usda-food-catalog-corpus.yml
+      - name: Commit formatting if needed
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          repository = Path('src/food-providers/catalog-repository.ts')
-          text = repository.read_text()
-          start = text.index('    async searchLocal(')
-          end = text.index('    async findCachedSearch(', start)
-          section = text[start:end]
-          needle = '        await this.touch(rows.map((row) => row.id));\n'
-          if needle not in section:
-              raise SystemExit('searchLocal touch statement was not found')
-          section = section.replace(needle, '', 1)
-          repository.write_text(text[:start] + section + text[end:])
-
-          smoke = Path('scripts/food-catalog-ingestion-smoke.ts')
-          smoke_text = smoke.read_text()
-          smoke_text = smoke_text.replace(
-              'if (Number(accessed[0]?.access_count ?? 0) < 2) {',
-              'if (Number(accessed[0]?.access_count ?? 0) < 1) {',
-          ).replace(
-              '"Local search/query-cache hits did not update access counters",',
-              '"Query-cache hits did not update access counters",',
-          )
-          smoke.write_text(smoke_text)
-          PY
-      - run: bunx prettier --write src/food-providers/catalog-repository.ts scripts/food-catalog-ingestion-smoke.ts
-      - name: Commit optimized formatting
-        run: |
-          if git diff --quiet -- src/food-providers/catalog-repository.ts scripts/food-catalog-ingestion-smoke.ts; then
+          if git diff --quiet; then
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/food-providers/catalog-repository.ts scripts/food-catalog-ingestion-smoke.ts
-          git commit -m "Optimize local catalog read hot path"
+          git add src scripts .github/workflows/usda-food-catalog-corpus.yml
+          git commit -m "Format performance optimization changes"
           git push origin HEAD:perf/nutrition-ingestion-latency
