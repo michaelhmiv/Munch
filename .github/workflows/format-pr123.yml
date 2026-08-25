@@ -1,0 +1,33 @@
+name: Format PR 123
+
+on:
+    pull_request:
+        branches:
+            - main
+
+permissions:
+    contents: write
+
+jobs:
+    format:
+        if: github.head_ref == 'fix/usda-production-predeploy'
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  ref: fix/usda-production-predeploy
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - run: bun install --frozen-lockfile
+            - run: bunx prettier --write src/railway-deploy-config.test.ts
+            - name: Commit exact formatter output
+              run: |
+                  if ! git diff --quiet; then
+                    git config user.name "github-actions[bot]"
+                    git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                    git add src/railway-deploy-config.test.ts
+                    git commit -m "style: apply repository formatter"
+                    git push origin HEAD:fix/usda-production-predeploy
+                  fi
