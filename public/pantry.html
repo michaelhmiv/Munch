@@ -168,6 +168,89 @@
                     <div id="review-lines" class="review-lines"></div>
                 </section>
 
+                <section id="meal-planner" class="card planner-section">
+                    <div class="planner-head">
+                        <div>
+                            <p class="eyebrow">Kitchen intelligence</p>
+                            <h2>What can I make?</h2>
+                            <p class="muted">
+                                Munch checks the whole kitchen—not just the main
+                                protein—including vegetables, starches, dairy,
+                                spices, sauces, condiments, herbs, aromatics,
+                                oils, quantities, and saved recipes before it
+                                ranks meals.
+                            </p>
+                        </div>
+                    </div>
+                    <form id="meal-idea-form" class="planner-form">
+                        <label
+                            >Goal
+                            <select id="meal-goal" name="goal">
+                                <option value="high_protein">High protein</option>
+                                <option value="use_what_i_have">Use what I have</option>
+                                <option value="balanced">Balanced</option>
+                                <option value="high_fiber">High fiber</option>
+                                <option value="low_calorie">Lower calorie</option>
+                            </select></label
+                        >
+                        <label
+                            >Meal
+                            <select id="meal-type" name="meal_type">
+                                <option value="dinner">Dinner</option>
+                                <option value="lunch">Lunch</option>
+                                <option value="breakfast">Breakfast</option>
+                                <option value="snack">Snack</option>
+                            </select></label
+                        >
+                        <label
+                            >Servings
+                            <input
+                                id="meal-servings"
+                                name="servings"
+                                type="number"
+                                min="1"
+                                max="20"
+                                value="2"
+                        /></label>
+                        <label
+                            >Max minutes
+                            <input
+                                id="meal-max-minutes"
+                                name="max_minutes"
+                                type="number"
+                                min="1"
+                                max="1440"
+                                placeholder="No limit"
+                        /></label>
+                        <label
+                            >Missing items okay
+                            <select id="meal-missing-items" name="allow_missing_items">
+                                <option value="0">None</option>
+                                <option value="1" selected>One</option>
+                                <option value="2">Two</option>
+                            </select></label
+                        >
+                        <label class="planner-staples"
+                            >Assumed staples (optional)
+                            <input
+                                id="meal-staples"
+                                name="assumed_staples"
+                                maxlength="300"
+                                placeholder="salt, black pepper"
+                            />
+                            <small
+                                >Leave blank unless you want Munch to assume you
+                                always have these.</small
+                            ></label
+                        >
+                        <button id="plan-meal" type="submit">
+                            Plan from my kitchen
+                        </button>
+                    </form>
+                    <div id="meal-idea-status" class="status" aria-live="polite"></div>
+                    <div id="meal-ideas" class="meal-ideas"></div>
+                </section>
+
                 <section class="card inventory-section">
                     <div class="inventory-head">
                         <div>
