@@ -63,7 +63,10 @@ if (
     throw new Error("Readiness route failed");
 }
 const version = await app.request("https://munch.example/health/version");
-if (version.status !== 200 || version.headers.get("cache-control") !== "no-store") {
+if (
+    version.status !== 200 ||
+    version.headers.get("cache-control") !== "no-store"
+) {
     throw new Error("Version route failed");
 }
 const release = (await version.json()) as {
@@ -78,7 +81,9 @@ if (
     release.environment !== "production" ||
     release.service_id !== "operations-smoke-service"
 ) {
-    throw new Error(`Version route returned unexpected data: ${JSON.stringify(release)}`);
+    throw new Error(
+        `Version route returned unexpected data: ${JSON.stringify(release)}`,
+    );
 }
 
 await closePlatformDatabase();
@@ -100,4 +105,6 @@ if (result.maintenance !== "complete") {
     throw new Error("Maintenance did not return a completion result");
 }
 
-console.log("Munch readiness, release identity, and maintenance smoke test passed.");
+console.log(
+    "Munch readiness, release identity, and maintenance smoke test passed.",
+);
