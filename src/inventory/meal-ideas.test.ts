@@ -153,7 +153,7 @@ describe("Pantry meal idea grounding", () => {
     });
 });
 
-test("Pantry planning exposes a strict provider JSON schema", () => {
+test("Pantry planning documents a strict runtime response contract", () => {
     expect(pantryMealIdeasResponseJsonSchema.additionalProperties).toBe(false);
     expect(
         pantryMealIdeasResponseJsonSchema.properties.candidates.items.properties
@@ -171,7 +171,14 @@ test("website planning requires both the feature flag and OpenRouter key", () =>
             MUNCH_PANTRY_PLANNING_ENABLED: "true",
             OPENROUTER_API_KEY: "test-key",
         })?.model,
-    ).toBe("openai/gpt-5.6-luna");
+    ).toBe("qwen/qwen3.7-flash");
+    expect(
+        pantryPlanningModelConfig({
+            MUNCH_PANTRY_PLANNING_ENABLED: "true",
+            OPENROUTER_API_KEY: "test-key",
+            MUNCH_AI_MODEL: "custom/model",
+        })?.model,
+    ).toBe("custom/model");
     expect(
         pantryPlanningModelConfig({
             MUNCH_PANTRY_PLANNING_ENABLED: "false",
