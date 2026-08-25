@@ -50,9 +50,7 @@ describe("Railway production deployment contract", () => {
 
     test("keeps the serving process independent from one-off seed work", () => {
         const dockerfile = read("Dockerfile");
-        expect(dockerfile).toContain(
-            'CMD ["bun", "--smol", "src/index.ts"]',
-        );
+        expect(dockerfile).toContain('CMD ["bun", "--smol", "src/index.ts"]');
         expect(dockerfile).not.toContain("start-production.sh");
         expect(existsSync(`${root}scripts/start-production.sh`)).toBe(false);
     });
