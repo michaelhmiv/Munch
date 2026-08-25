@@ -13,6 +13,9 @@ const reviewEl = $("#review");
 const reviewLinesEl = $("#review-lines");
 const reviewTitleEl = $("#review-title");
 const applyReviewEl = $("#apply-review");
+const mealIdeaForm = $("#meal-idea-form");
+const mealIdeaStatusEl = $("#meal-idea-status");
+const mealIdeasEl = $("#meal-ideas");
 
 let premium = false;
 let reviewState = null;
@@ -20,6 +23,11 @@ let reviewState = null;
 function status(message, error = false) {
     statusEl.textContent = message || "";
     statusEl.style.color = error ? "#9b2c2c" : "#555";
+}
+
+function mealStatus(message, error = false) {
+    mealIdeaStatusEl.textContent = message || "";
+    mealIdeaStatusEl.style.color = error ? "#9b2c2c" : "#555";
 }
 
 async function api(path, options = {}) {
@@ -351,6 +359,126 @@ applyReviewEl.addEventListener("click", async () => {
         await loadPantry();
     } catch (error) {
         status(error.message, true);
+    }
+});
+
+function addTextList(parent, label, values) {
+    if (!Array.isArray(values) || values.length === 0) return;
+    const block = document.createElement("div");
+    block.className = "idea-detail";
+    const title = document.createElement("strong");
+    title.textContent = label;
+    const text = document.createElement("span");
+    text.textContent = values.join(", ");
+    block.append(title, text);
+    parent.append(block);
+}
+
+function renderMealIdeas(result) {
+    mealIdeasEl.replaceChildren();
+    const candidates = result?.candidates || [];
+    for (const candidate of candidates) {
+        const card = document.createElement("article");
+        card.className = "meal-idea-card";
+
+        const head = document.createElement("div");
+        head.className = "meal-idea-head";
+        const titleWrap = document.createElement("div");
+        const title = document.createElement("h3");
+        title.textContent = candidate.name;
+        const description = document.createElement("p");
+        description.className = "muted";
+        description.textContent = candidate.description;
+        titleWrap.append(title, description);
+        const badge = document.createElement("span");
+        badge.className = "pill";
+        badge.textContent =
+            candidate.source === "saved_recipe"
+                ? "Saved recipe"
+                : candidate.readiness.replaceAll("_", " ");
+        head.append(titleWrap, badge);
+        card.append(head);
+
+        const metrics = document.createElement("div");
+        metrics.className = "idea-metrics";
+        const nutrition = candidate.estimated_nutrition || {};
+        const metricValues = [
+            nutrition.protein_g == null
+                ? null
+                : `${Math.round(nutrition.protein_g)} g protein`,
+            nutrition.calories == null
+                ? null
+                : `~${Math.round(nutrition.calories)} kcal`,
+            candidate.total_minutes == null
+                ? null
+                : `${candidate.total_minutes} min`,
+        ].filter(Boolean);
+        for (const value of metricValues) {
+            const metric = document.createElement("span");
+            metric.textContent = value;
+            metrics.append(metric);
+        }
+        if (metricValues.length) card.append(metrics);
+
+        addTextList(card, "Flavor system", candidate.flavor_system);
+        addTextList(card, "On hand", candidate.on_hand_ingredients);
+        addTextList(card, "Assumed staples", candidate.assumed_staples);
+        addTextList(card, "Missing", candidate.missing_required);
+        addTextList(card, "Optional", candidate.missing_optional);
+        addTextList(card, "Why it fits", candidate.why_it_fits);
+        mealIdeasEl.append(card);
+    }
+    if (!candidates.length) {
+        const empty = document.createElement("p");
+        empty.className = "empty";
+        empty.textContent = "No grounded meal ideas were returned for this Pantry.";
+        mealIdeasEl.append(empty);
+    }
+}
+
+mealIdeaForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = new FormData(mealIdeaForm);
+    const staples = String(form.get("assumed_staples") || "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .slice(0, 20);
+    const maxMinutes = String(form.get("max_minutes") || "").trim();
+    const button = $("#plan-meal");
+    button.disabled = true;
+    mealIdeasEl.replaceChildren();
+    mealStatus(
+        "Looking across your Pantry, fridge, freezer, seasonings, sauces, and saved recipes…",
+    );
+    try {
+        const payload = await api("/api/app/pantry/meal-ideas", {
+            method: "POST",
+            body: JSON.stringify({
+                scope: currentScope(),
+                goal: String(form.get("goal") || "balanced"),
+                meal_type: String(form.get("meal_type") || "dinner"),
+                servings: Number(form.get("servings") || 2),
+                ...(maxMinutes ? { max_minutes: Number(maxMinutes) } : {}),
+                allow_missing_items: Number(
+                    form.get("allow_missing_items") || 0,
+                ),
+                assumed_staples: staples,
+            }),
+        });
+        renderMealIdeas(payload.result);
+        const count = payload.result?.candidates?.length || 0;
+        mealStatus(
+            `Considered ${payload.context_summary?.pantry_items ?? "your"} Pantry items and ${payload.context_summary?.saved_recipe_candidates ?? 0} saved-recipe candidates; returned ${count} grounded meal idea${count === 1 ? "" : "s"}.`,
+        );
+    } catch (error) {
+        const message =
+            error.status === 503
+                ? "Kitchen planning is not enabled on this Munch deployment yet."
+                : error.message;
+        mealStatus(message, true);
+    } finally {
+        button.disabled = false;
     }
 });
 
