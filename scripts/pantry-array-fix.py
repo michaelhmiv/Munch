@@ -59,6 +59,62 @@ replace(
 )
 
 replace(
+    "src/inventory/meal-planning.ts",
+    '''function goalScore(
+    goal: PantryMealGoal,
+    nutrition: ReturnType<typeof nutritionFromRow>,
+) {''',
+    '''function refinePlanningReadiness(
+    availability: RecipeAvailabilityResult,
+): RecipeAvailabilityResult {
+    const missingCore = [
+        ...availability.missing_required,
+        ...availability.shortages.map((shortage) => shortage.ingredient),
+    ].some((name) => {
+        const classification = classifyPantryFood(name);
+        return (
+            classification.culinaryRoles.includes("main") ||
+            classification.culinaryRoles.includes("protein")
+        );
+    });
+    return missingCore && availability.readiness !== "missing_core"
+        ? { ...availability, readiness: "missing_core" }
+        : availability;
+}
+
+function goalScore(
+    goal: PantryMealGoal,
+    nutrition: ReturnType<typeof nutritionFromRow>,
+) {''',
+)
+replace(
+    "src/inventory/meal-planning.ts",
+    '''        const availability = evaluateRecipeAvailability(
+            ingredientRequirements(row),
+            inventory,
+            input.assumedStaples ?? [],
+        );
+        const scoring = scorePantryRecipe({ goal, row, availability });''',
+    '''        const availability = refinePlanningReadiness(
+            evaluateRecipeAvailability(
+                ingredientRequirements(row),
+                inventory,
+                input.assumedStaples ?? [],
+            ),
+        );
+        const scoring = scorePantryRecipe({ goal, row, availability });''',
+)
+replace(
+    "src/inventory/meal-planning.test.ts",
+    '''        expect(proteinAvailability.missing_required).toContain("chicken breast");
+        expect(
+            scorePantryRecipe({''',
+    '''        expect(proteinAvailability.missing_required).toContain("chicken breast");
+        expect(
+            scorePantryRecipe({''',
+)
+
+replace(
     "scripts/pantry-planning-smoke.ts",
     '''        await tx`
             insert into munch.inventory_item_profiles (''',
@@ -83,4 +139,4 @@ replace(
     '${"{creamy,dairy,protein}"}::text[],',
 )
 
-print("Pantry Postgres array serialization fix applied.")
+print("Pantry Postgres and planning-readiness fixes applied.")
