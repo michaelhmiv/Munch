@@ -1,124 +1,124 @@
 name: USDA food catalog corpus
 
 on:
-  pull_request:
-    paths:
-      - "src/food-providers/**"
-      - "scripts/food-catalog-*.ts"
-      - "scripts/import-usda-food-catalog.ts"
-      - ".github/workflows/usda-food-catalog-corpus.yml"
-  workflow_dispatch:
-  schedule:
-    - cron: "17 8 * * 1"
+    pull_request:
+        paths:
+            - "src/food-providers/**"
+            - "scripts/food-catalog-*.ts"
+            - "scripts/import-usda-food-catalog.ts"
+            - ".github/workflows/usda-food-catalog-corpus.yml"
+    workflow_dispatch:
+    schedule:
+        - cron: "17 8 * * 1"
 
 permissions:
-  contents: read
+    contents: read
 
 concurrency:
-  group: usda-food-catalog-${{ github.ref }}
-  cancel-in-progress: true
+    group: usda-food-catalog-${{ github.ref }}
+    cancel-in-progress: true
 
 jobs:
-  real-usda-corpus:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    services:
-      postgres:
-        image: postgres:17
+    real-usda-corpus:
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        services:
+            postgres:
+                image: postgres:17
+                env:
+                    POSTGRES_USER: postgres
+                    POSTGRES_PASSWORD: postgres
+                    POSTGRES_DB: munch_food_corpus
+                ports:
+                    - 5432:5432
+                options: >-
+                    --health-cmd "pg_isready -U postgres -d munch_food_corpus"
+                    --health-interval 5s
+                    --health-timeout 5s
+                    --health-retries 10
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: munch_food_corpus
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d munch_food_corpus"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/munch_food_corpus
-      MUNCH_FOOD_CATALOG_READS_ENABLED: "true"
-      MUNCH_FOOD_CATALOG_WRITES_ENABLED: "true"
-      MUNCH_FOOD_BENCHMARK_ITERATIONS: "60"
-      MUNCH_FOOD_CORPUS_REPORT: /tmp/food-catalog-corpus.json
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-      - name: Install canonical database schema
-        run: bun run db:migrate
-      - name: Download current USDA JSON releases
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p /tmp/usda/foundation /tmp/usda/survey /tmp/usda/sr_legacy
-          curl --fail --location --retry 4 --retry-all-errors \
-            https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_foundation_food_json_2026-04-30.zip \
-            -o /tmp/usda/foundation.zip
-          curl --fail --location --retry 4 --retry-all-errors \
-            https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_survey_food_json_2024-10-31.zip \
-            -o /tmp/usda/survey.zip
-          curl --fail --location --retry 4 --retry-all-errors \
-            https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_json_2018-04.zip \
-            -o /tmp/usda/sr_legacy.zip
-          unzip -q /tmp/usda/foundation.zip -d /tmp/usda/foundation
-          unzip -q /tmp/usda/survey.zip -d /tmp/usda/survey
-          unzip -q /tmp/usda/sr_legacy.zip -d /tmp/usda/sr_legacy
-          FOUNDATION_JSON="$(find /tmp/usda/foundation -type f -name '*.json' | head -n 1)"
-          SURVEY_JSON="$(find /tmp/usda/survey -type f -name '*.json' | head -n 1)"
-          SR_JSON="$(find /tmp/usda/sr_legacy -type f -name '*.json' | head -n 1)"
-          test -n "$FOUNDATION_JSON"
-          test -n "$SURVEY_JSON"
-          test -n "$SR_JSON"
-          echo "FOUNDATION_JSON=$FOUNDATION_JSON" >> "$GITHUB_ENV"
-          echo "SURVEY_JSON=$SURVEY_JSON" >> "$GITHUB_ENV"
-          echo "SR_JSON=$SR_JSON" >> "$GITHUB_ENV"
-          du -h /tmp/usda/*.zip "$FOUNDATION_JSON" "$SURVEY_JSON" "$SR_JSON"
-      - name: Dry-run every real USDA dataset
-        run: |
-          bun scripts/import-usda-food-catalog.ts --file "$FOUNDATION_JSON" --dataset foundation --release 2026-04 --max-records 100 --dry-run
-          bun scripts/import-usda-food-catalog.ts --file "$SURVEY_JSON" --dataset survey --release 2024-10 --max-records 100 --dry-run
-          bun scripts/import-usda-food-catalog.ts --file "$SR_JSON" --dataset sr_legacy --release 2018-04 --max-records 100 --dry-run
-      - name: Import current Foundation, FNDDS, and SR Legacy catalogs
-        run: |
-          bun scripts/import-usda-food-catalog.ts --file "$FOUNDATION_JSON" --dataset foundation --release 2026-04 --batch-size 500
-          bun scripts/import-usda-food-catalog.ts --file "$SURVEY_JSON" --dataset survey --release 2024-10 --batch-size 500
-          bun scripts/import-usda-food-catalog.ts --file "$SR_JSON" --dataset sr_legacy --release 2018-04 --batch-size 500
-      - name: Validate common-food local coverage and ranking
-        run: bun scripts/food-catalog-common-corpus.ts
-      - name: Benchmark local search and batched writes
-        run: bun scripts/food-catalog-benchmark.ts
-      - name: Publish corpus report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: usda-food-catalog-corpus-${{ github.run_id }}
-          path: /tmp/food-catalog-corpus.json
-          if-no-files-found: warn
-          retention-days: 14
+            DATABASE_URL: postgresql://postgres:postgres@localhost:5432/munch_food_corpus
+            MUNCH_FOOD_CATALOG_READS_ENABLED: "true"
+            MUNCH_FOOD_CATALOG_WRITES_ENABLED: "true"
+            MUNCH_FOOD_BENCHMARK_ITERATIONS: "60"
+            MUNCH_FOOD_CORPUS_REPORT: /tmp/food-catalog-corpus.json
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@v4
+            - name: Set up Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
+            - name: Install canonical database schema
+              run: bun run db:migrate
+            - name: Download current USDA JSON releases
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  mkdir -p /tmp/usda/foundation /tmp/usda/survey /tmp/usda/sr_legacy
+                  curl --fail --location --retry 4 --retry-all-errors \
+                    https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_foundation_food_json_2026-04-30.zip \
+                    -o /tmp/usda/foundation.zip
+                  curl --fail --location --retry 4 --retry-all-errors \
+                    https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_survey_food_json_2024-10-31.zip \
+                    -o /tmp/usda/survey.zip
+                  curl --fail --location --retry 4 --retry-all-errors \
+                    https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_json_2018-04.zip \
+                    -o /tmp/usda/sr_legacy.zip
+                  unzip -q /tmp/usda/foundation.zip -d /tmp/usda/foundation
+                  unzip -q /tmp/usda/survey.zip -d /tmp/usda/survey
+                  unzip -q /tmp/usda/sr_legacy.zip -d /tmp/usda/sr_legacy
+                  FOUNDATION_JSON="$(find /tmp/usda/foundation -type f -name '*.json' | head -n 1)"
+                  SURVEY_JSON="$(find /tmp/usda/survey -type f -name '*.json' | head -n 1)"
+                  SR_JSON="$(find /tmp/usda/sr_legacy -type f -name '*.json' | head -n 1)"
+                  test -n "$FOUNDATION_JSON"
+                  test -n "$SURVEY_JSON"
+                  test -n "$SR_JSON"
+                  echo "FOUNDATION_JSON=$FOUNDATION_JSON" >> "$GITHUB_ENV"
+                  echo "SURVEY_JSON=$SURVEY_JSON" >> "$GITHUB_ENV"
+                  echo "SR_JSON=$SR_JSON" >> "$GITHUB_ENV"
+                  du -h /tmp/usda/*.zip "$FOUNDATION_JSON" "$SURVEY_JSON" "$SR_JSON"
+            - name: Dry-run every real USDA dataset
+              run: |
+                  bun scripts/import-usda-food-catalog.ts --file "$FOUNDATION_JSON" --dataset foundation --release 2026-04 --max-records 100 --dry-run
+                  bun scripts/import-usda-food-catalog.ts --file "$SURVEY_JSON" --dataset survey --release 2024-10 --max-records 100 --dry-run
+                  bun scripts/import-usda-food-catalog.ts --file "$SR_JSON" --dataset sr_legacy --release 2018-04 --max-records 100 --dry-run
+            - name: Import current Foundation, FNDDS, and SR Legacy catalogs
+              run: |
+                  bun scripts/import-usda-food-catalog.ts --file "$FOUNDATION_JSON" --dataset foundation --release 2026-04 --batch-size 500
+                  bun scripts/import-usda-food-catalog.ts --file "$SURVEY_JSON" --dataset survey --release 2024-10 --batch-size 500
+                  bun scripts/import-usda-food-catalog.ts --file "$SR_JSON" --dataset sr_legacy --release 2018-04 --batch-size 500
+            - name: Validate common-food local coverage and ranking
+              run: bun scripts/food-catalog-common-corpus.ts
+            - name: Benchmark local search and batched writes
+              run: bun scripts/food-catalog-benchmark.ts
+            - name: Publish corpus report
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: usda-food-catalog-corpus-${{ github.run_id }}
+                  path: /tmp/food-catalog-corpus.json
+                  if-no-files-found: warn
+                  retention-days: 14
 
-  live-providers:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      USDA_FDC_API_KEY: DEMO_KEY
-      OFF_USER_AGENT: Munch-CI/1.0 (https://munch.business; support@munch.business)
-      MUNCH_PROVIDER_LIVE_ITERATIONS: "3"
-      MUNCH_PROVIDER_LIVE_MAX_MS: "6000"
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-      - name: Exercise USDA and Open Food Facts live providers
-        run: bun scripts/food-provider-live-smoke.ts
+    live-providers:
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        env:
+            USDA_FDC_API_KEY: DEMO_KEY
+            OFF_USER_AGENT: Munch-CI/1.0 (https://munch.business; support@munch.business)
+            MUNCH_PROVIDER_LIVE_ITERATIONS: "3"
+            MUNCH_PROVIDER_LIVE_MAX_MS: "6000"
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@v4
+            - name: Set up Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
+            - name: Exercise USDA and Open Food Facts live providers
+              run: bun scripts/food-provider-live-smoke.ts
