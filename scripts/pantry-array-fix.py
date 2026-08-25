@@ -39,6 +39,24 @@ replace(
     '${profile.category}, ${profile.culinary_roles}::text[],',
     '${profile.category}, ${culinaryRoles}::text[],',
 )
+replace(
+    "src/inventory/planning-profile.ts",
+    '''    const ids = [...new Set(inventoryItemIds)].slice(0, 200);
+    if (!ids.length) return new Map();
+    return withUserDatabase(userId, async (tx) => {
+        const rows = await tx<Array<Record<string, unknown>>>`
+            select * from munch.inventory_item_profiles
+            where inventory_item_id = any(${ids}::uuid[])
+        `;''',
+    '''    const ids = [...new Set(inventoryItemIds)].slice(0, 200);
+    if (!ids.length) return new Map();
+    const idsLiteral = `{${ids.join(",")}}`;
+    return withUserDatabase(userId, async (tx) => {
+        const rows = await tx<Array<Record<string, unknown>>>`
+            select * from munch.inventory_item_profiles
+            where inventory_item_id = any(${idsLiteral}::uuid[])
+        `;''',
+)
 
 replace(
     "scripts/pantry-planning-smoke.ts",
