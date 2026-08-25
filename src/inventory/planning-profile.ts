@@ -78,7 +78,7 @@ const ROLE_RULES: Array<{
         category: "spice",
         roles: ["seasoning", "flavor-builder"],
         pattern:
-            /\b(cumin|paprika|turmeric|coriander|cinnamon|nutmeg|clove|allspice|cayenne|chili powder|garlic powder|onion powder|seasoning|pepper|salt)\b/,
+            /\b(cumin|paprika|turmeric|coriander|cinnamon|nutmeg|clove|allspice|cayenne|chili powder|garlic powder|onion powder|seasoning|black pepper|white pepper|ground pepper|peppercorns?|salt)\b/,
     },
     {
         category: "herb",
@@ -140,7 +140,7 @@ const ROLE_RULES: Array<{
         category: "produce",
         roles: ["vegetable", "produce", "side"],
         pattern:
-            /\b(spinach|kale|broccoli|pepper|peppers|carrot|carrots|cucumber|zucchini|squash|tomato|tomatoes|lettuce|cabbage|mushroom|mushrooms|corn|asparagus|green bean|green beans)\b/,
+            /\b(spinach|kale|broccoli|bell pepper|bell peppers|pepper|peppers|carrot|carrots|cucumber|zucchini|squash|tomato|tomatoes|lettuce|cabbage|mushroom|mushrooms|corn|asparagus|green bean|green beans)\b/,
     },
     {
         category: "fruit",
