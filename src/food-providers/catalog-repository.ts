@@ -61,8 +61,9 @@ function validateNutrients(nutrients: NutrientValues | undefined): void {
 }
 
 export function validateCatalogCandidate(candidate: FoodCandidate): void {
-    if (!candidate.providerFoodId.trim())
+    if (!candidate.providerFoodId.trim()) {
         throw new Error("Missing provider food ID");
+    }
     if (!candidate.name.trim()) throw new Error("Missing food name");
     if (candidate.barcode && !/^[0-9]{8,14}$/.test(candidate.barcode)) {
         throw new Error("Invalid barcode");
@@ -234,29 +235,58 @@ export class FoodCatalogRepository {
         const normalized = normalizeFoodText(query);
         if (!normalized) return [];
         const boundedLimit = Math.max(1, Math.min(25, limit));
-        const rows = await withServiceDatabase(
+        const lexicalRows = await withServiceDatabase(
             async (tx) =>
                 tx<CatalogRow[]>`
                 select id, provider, provider_food_id, source_snapshot, refresh_after
                 from munch.food_catalog_entries
                 where deprecated_at is null
-                  and (
-                    normalized_name % ${normalized}
-                    or normalized_name like ${`%${normalized}%`}
-                    or coalesce(normalized_brand, '') % ${normalized}
-                  )
+                  and to_tsvector(
+                        'simple',
+                        normalized_name || ' ' || coalesce(normalized_brand, '')
+                      ) @@ plainto_tsquery('simple', ${normalized})
                 order by
                     case when normalized_name = ${normalized} then 0 else 1 end,
+                    ts_rank_cd(
+                        to_tsvector(
+                            'simple',
+                            normalized_name || ' ' || coalesce(normalized_brand, '')
+                        ),
+                        plainto_tsquery('simple', ${normalized})
+                    ) desc,
                     greatest(
                         similarity(normalized_name, ${normalized}),
                         similarity(coalesce(normalized_brand, ''), ${normalized})
                     ) desc,
                     confidence desc,
-                    access_count desc,
-                    last_accessed_at desc
+                    length(normalized_name) asc
                 limit ${boundedLimit}
             `,
         );
+        const rows = lexicalRows.length
+            ? lexicalRows
+            : await withServiceDatabase(
+                  async (tx) =>
+                      tx<CatalogRow[]>`
+                    select id, provider, provider_food_id, source_snapshot, refresh_after
+                    from munch.food_catalog_entries
+                    where deprecated_at is null
+                      and (
+                        normalized_name % ${normalized}
+                        or normalized_name like ${`%${normalized}%`}
+                        or normalized_brand % ${normalized}
+                      )
+                    order by
+                        case when normalized_name = ${normalized} then 0 else 1 end,
+                        greatest(
+                            similarity(normalized_name, ${normalized}),
+                            similarity(coalesce(normalized_brand, ''), ${normalized})
+                        ) desc,
+                        confidence desc,
+                        length(normalized_name) asc
+                    limit ${boundedLimit}
+                `,
+              );
         const now = Date.now();
         return rows.flatMap((row) => {
             const hit = hitFromRow(row, now);
