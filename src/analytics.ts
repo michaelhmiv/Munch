@@ -108,6 +108,81 @@ function persistAnalytics(record: AnalyticsRecord): void {
     });
 }
 
+function analyticsRecord(
+    toolName: string,
+    context: AnalyticsContext,
+    invokedAt: string,
+    durationMs: number,
+    success: boolean,
+    args?: Record<string, unknown>,
+    errorCategory?: string,
+): AnalyticsRecord {
+    return {
+        user_id: context.userId,
+        tool_name: toolName,
+        success,
+        duration_ms: durationMs,
+        error_category: errorCategory,
+        date_range_days: calculateDateRangeDays(
+            args?.start_date as string | undefined,
+            args?.end_date as string | undefined,
+        ),
+        mcp_session_id: context.sessionId,
+        invoked_at: invokedAt,
+    };
+}
+
+/**
+ * Observe a handler while preserving its native success/error semantics.
+ * This is used at infrastructure/gateway boundaries where callers rely on
+ * thrown validation errors rather than MCP error payload conversion.
+ */
+export async function observeAnalytics<T>(
+    toolName: string,
+    handler: () => Promise<T>,
+    context: AnalyticsContext,
+    args?: Record<string, unknown>,
+): Promise<T> {
+    const start = performance.now();
+    const invokedAt = new Date().toISOString();
+    try {
+        const result = await handler();
+        const durationMs = Math.round(performance.now() - start);
+        console.log(
+            `[analytics] ${toolName} success ${durationMs}ms user=${context.userId}`,
+        );
+        persistAnalytics(
+            analyticsRecord(
+                toolName,
+                context,
+                invokedAt,
+                durationMs,
+                true,
+                args,
+            ),
+        );
+        return result;
+    } catch (error) {
+        const durationMs = Math.round(performance.now() - start);
+        const errorCategory = categorizeError(error);
+        console.warn(
+            `[analytics] ${toolName} error=${errorCategory} ${durationMs}ms user=${context.userId}`,
+        );
+        persistAnalytics(
+            analyticsRecord(
+                toolName,
+                context,
+                invokedAt,
+                durationMs,
+                false,
+                args,
+                errorCategory,
+            ),
+        );
+        throw error;
+    }
+}
+
 /**
  * Wrap a tool handler with timing + analytics.
  *
