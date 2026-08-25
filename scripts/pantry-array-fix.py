@@ -104,15 +104,6 @@ replace(
         );
         const scoring = scorePantryRecipe({ goal, row, availability });''',
 )
-replace(
-    "src/inventory/meal-planning.test.ts",
-    '''        expect(proteinAvailability.missing_required).toContain("chicken breast");
-        expect(
-            scorePantryRecipe({''',
-    '''        expect(proteinAvailability.missing_required).toContain("chicken breast");
-        expect(
-            scorePantryRecipe({''',
-)
 
 replace(
     "scripts/pantry-planning-smoke.ts",
