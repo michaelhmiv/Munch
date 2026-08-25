@@ -75,22 +75,28 @@ async function expectJson(path: string): Promise<Record<string, unknown>> {
     return (await response.json()) as Record<string, unknown>;
 }
 
-function parseJsonRpc(text: string, contentType: string): Record<string, unknown> {
+function parseJsonRpc(
+    text: string,
+    contentType: string,
+): Record<string, unknown> {
     if (contentType.includes("text/event-stream")) {
         const data = text
             .split(/\r?\n/)
             .filter((line) => line.startsWith("data:"))
             .map((line) => line.slice(5).trim())
             .find(Boolean);
-        if (!data) throw new Error("MCP SSE response contained no JSON-RPC data");
+        if (!data)
+            throw new Error("MCP SSE response contained no JSON-RPC data");
         return JSON.parse(data) as Record<string, unknown>;
     }
-    if (!text.trim()) throw new Error("MCP response contained no JSON-RPC data");
+    if (!text.trim())
+        throw new Error("MCP response contained no JSON-RPC data");
     return JSON.parse(text) as Record<string, unknown>;
 }
 
 function mcpHeaders(): Record<string, string> {
-    if (!bearerToken) throw new Error("Authenticated token is not configured");
+    if (!bearerToken)
+        throw new Error("Authenticated token is not configured");
     return {
         authorization: `Bearer ${bearerToken}`,
         accept: "application/json, text/event-stream",
@@ -109,12 +115,16 @@ async function mcpRequest(
     });
     const text = await response.text();
     if (!response.ok) {
-        throw new Error(`MCP returned ${response.status}: ${text.slice(0, 300)}`);
+        throw new Error(
+            `MCP returned ${response.status}: ${text.slice(0, 300)}`,
+        );
     }
     return parseJsonRpc(text, response.headers.get("content-type") ?? "");
 }
 
-async function mcpNotification(body: Record<string, unknown>): Promise<void> {
+async function mcpNotification(
+    body: Record<string, unknown>,
+): Promise<void> {
     const response = await fetch(`${baseUrl}/mcp`, {
         method: "POST",
         headers: mcpHeaders(),
@@ -132,7 +142,9 @@ async function mcpNotification(body: Record<string, unknown>): Promise<void> {
             response.headers.get("content-type") ?? "",
         );
         if (parsed.error) {
-            throw new Error(`MCP notification returned an error: ${text.slice(0, 300)}`);
+            throw new Error(
+                `MCP notification returned an error: ${text.slice(0, 300)}`,
+            );
         }
     }
 }
