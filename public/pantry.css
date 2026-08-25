@@ -111,7 +111,8 @@ body {
 }
 .stack h2,
 .inventory-section h2,
-#review h2 {
+#review h2,
+.planner-section h2 {
     margin: 4px 0 0;
     font-size: 20px;
 }
@@ -126,6 +127,11 @@ label {
     display: flex;
     flex-direction: column;
     gap: 6px;
+}
+label small {
+    font-weight: 500;
+    color: #777;
+    line-height: 1.35;
 }
 input,
 select,
@@ -179,10 +185,12 @@ button:disabled {
     display: none !important;
 }
 .review-head,
-.inventory-head {
+.inventory-head,
+.planner-head,
+.meal-idea-head {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
     gap: 14px;
 }
 .review-lines {
@@ -204,6 +212,74 @@ button:disabled {
 .review-row .confidence {
     font-size: 12px;
     color: #777;
+}
+.planner-section {
+    margin-top: 16px;
+}
+.planner-head .muted {
+    max-width: 780px;
+    margin-top: 7px;
+}
+.planner-form {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 16px;
+    align-items: end;
+}
+.planner-staples {
+    grid-column: span 4;
+}
+#plan-meal {
+    min-height: 42px;
+}
+.meal-ideas {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 8px;
+}
+.meal-idea-card {
+    border: 1px solid #e6e6df;
+    border-radius: 14px;
+    padding: 15px;
+    background: #fafaf7;
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+}
+.meal-idea-card h3 {
+    margin: 0 0 5px;
+    font-size: 18px;
+}
+.meal-idea-head .pill {
+    flex: 0 0 auto;
+    text-transform: capitalize;
+}
+.idea-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+.idea-metrics span {
+    background: #ecece6;
+    border-radius: 999px;
+    padding: 5px 9px;
+    font-size: 12px;
+    font-weight: 750;
+}
+.idea-detail {
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr);
+    gap: 8px;
+    font-size: 13px;
+    line-height: 1.45;
+}
+.idea-detail strong {
+    color: #4f4f49;
+}
+.idea-detail span {
+    color: #66645f;
 }
 .inventory-section {
     margin-top: 16px;
@@ -271,8 +347,16 @@ button:disabled {
         grid-column: 1/-1;
         grid-row: 1;
     }
-    .grid-two {
+    .grid-two,
+    .meal-ideas {
         grid-template-columns: 1fr;
+    }
+    .planner-form {
+        grid-template-columns: 1fr 1fr;
+    }
+    .planner-staples,
+    #plan-meal {
+        grid-column: 1/-1;
     }
     .review-row {
         grid-template-columns: auto 1fr 0.7fr;
@@ -291,5 +375,9 @@ button:disabled {
     }
     .switch-row {
         align-self: flex-start;
+    }
+    .idea-detail {
+        grid-template-columns: 1fr;
+        gap: 2px;
     }
 }
