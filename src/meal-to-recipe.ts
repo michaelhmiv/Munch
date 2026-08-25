@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { withAnalytics } from "./analytics.js";
-import { resolveMunchCapabilitiesSafe } from "./billing/capabilities.js";
+import type { MunchCapabilities } from "./billing/capabilities.js";
 import { requireRecipeScope } from "./mcp-capability-guard.js";
 import {
     saveRecipe,
@@ -209,6 +209,7 @@ export async function saveMealAsRecipe(
 export function registerMealToRecipeTool(
     server: McpServer,
     userId: string,
+    capabilities: MunchCapabilities,
 ): void {
     const toolServer = server as unknown as {
         registerTool: (
@@ -278,11 +279,9 @@ export function registerMealToRecipeTool(
             withAnalytics(
                 "save_meal_as_recipe",
                 async () => {
-                    const capabilityResolution =
-                        await resolveMunchCapabilitiesSafe(userId);
                     const resolvedScope = requireRecipeScope(
                         scope ?? "personal",
-                        capabilityResolution.capabilities,
+                        capabilities,
                         true,
                     );
                     const recipe = await saveMealAsRecipe({
