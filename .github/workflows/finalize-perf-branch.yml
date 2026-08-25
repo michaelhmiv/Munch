@@ -77,29 +77,31 @@ jobs:
           )
           path.write_text(text)
           PY
-      - name: Format final performance files
+      - name: Format final performance source files
         run: >-
           bunx prettier --write
-          .github/workflows/usda-food-catalog-corpus.yml
           scripts/food-catalog-benchmark.ts
           scripts/food-provider-live-smoke.ts
           src/recipe-import/service.ts
           src/recipe-import-latency.test.ts
+      - name: Show required USDA workflow formatting
+        run: |
+          bunx prettier --write .github/workflows/usda-food-catalog-corpus.yml
+          git diff -- .github/workflows/usda-food-catalog-corpus.yml
       - name: Verify recipe import performance and correctness
         run: bun test src/recipe-import-latency.test.ts src/recipe-import.test.ts
       - name: Commit finalized source
         run: |
-          if git diff --quiet; then
-            echo "No finalization changes required."
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
-            .github/workflows/usda-food-catalog-corpus.yml \
             scripts/food-catalog-benchmark.ts \
             scripts/food-provider-live-smoke.ts \
             src/recipe-import/service.ts \
             src/recipe-import-latency.test.ts
+          if git diff --cached --quiet; then
+            echo "No staged source changes required."
+            exit 0
+          fi
           git commit -m "Finalize recipe import and provider latency safeguards"
           git push origin HEAD:perf/nutrition-ingestion-latency
