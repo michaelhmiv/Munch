@@ -1,0 +1,122 @@
+name: Qwen Website AI Compatibility Fix
+
+on:
+  push:
+    branches:
+      - refactor/unified-site-ai-model
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/unified-site-ai-model
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - name: Apply Qwen compatibility fixes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"missing marker in {path}: {old[:120]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          # Vision: accept the narrow Qwen notes string drift, keep strict parsing after preprocessing,
+          # make the prompt explicit, and disable reasoning for fast extraction.
+          replace(
+              "src/inventory/vision.ts",
+              '        notes: z.array(z.string().max(300)).max(10),',
+              '''        notes: z.preprocess(\n            (value) =>\n                typeof value === "string"\n                    ? value.trim()\n                        ? [value.trim()]\n                        : []\n                    : value == null\n                      ? []\n                      : value,\n            z.array(z.string().max(300)).max(10),\n        ),''',
+          )
+          replace(
+              "src/inventory/vision.ts",
+              '                            "You are a precise grocery and kitchen inventory extractor. Output an object with keys lines and notes. Each line has raw_label, name, quantity, unit, is_food, confidence, location. location must be exactly pantry, fridge, freezer, or unspecified. Do not include payment data or personal information.",',
+              '                            "You are a precise grocery and kitchen inventory extractor. Output one JSON object with exactly two top-level keys: lines and notes. notes MUST be an array of strings; use [] when there are no notes. Each line has raw_label, name, quantity, unit, is_food, confidence, location. location must be exactly pantry, fridge, freezer, or unspecified. Do not include payment data or personal information.",',
+          )
+          replace(
+              "src/inventory/vision.ts",
+              '                response_format: { type: "json_object" },\n                provider: { data_collection: "deny" },',
+              '                response_format: { type: "json_object" },\n                reasoning: { enabled: false },\n                provider: { data_collection: "deny" },',
+          )
+
+          # Pantry planning: use the same low-latency non-reasoning Qwen behavior.
+          replace(
+              "src/inventory/meal-ideas.ts",
+              '                response_format: { type: "json_object" },\n                provider: { data_collection: "deny" },',
+              '                response_format: { type: "json_object" },\n                reasoning: { enabled: false },\n                provider: { data_collection: "deny" },',
+          )
+
+          # Recipe semantic resolver: disable reasoning and embed the schema in the prompt whenever
+          # provider-enforced JSON Schema is not being used.
+          replace(
+              "src/recipe-import/semantic-resolver.ts",
+              '''                        messages: [\n                            { role: "system", content: system },\n                            { role: "user", content: user },\n                        ],''',
+              '''                        messages: [\n                            {\n                                role: "system",\n                                content:\n                                    this.config.responseFormat === "json_object"\n                                        ? `${system}\\n\\nReturn one JSON object matching this schema exactly. Do not omit required arrays or keys:\\n${JSON.stringify(schema)}`\n                                        : system,\n                            },\n                            { role: "user", content: user },\n                        ],''',
+          )
+          replace(
+              "src/recipe-import/semantic-resolver.ts",
+              '''                        response_format:\n                            this.config.responseFormat === "json_object"\n                                ? { type: "json_object" }\n                                : {''',
+              '''                        response_format:\n                            this.config.responseFormat === "json_object"\n                                ? { type: "json_object" }\n                                : {''',
+          )
+          replace(
+              "src/recipe-import/semantic-resolver.ts",
+              '''                        ...(this.config.responseHealing\n                            ? { plugins: [{ id: "response-healing" }] }\n                            : {}),\n                        stream: false,''',
+              '''                        ...(this.config.responseHealing\n                            ? { plugins: [{ id: "response-healing" }] }\n                            : {}),\n                        reasoning: { enabled: false },\n                        stream: false,''',
+          )
+
+          # Focused regression checks.
+          replace(
+              "src/inventory/vision.test.ts",
+              '        expect(provider).toEqual({ data_collection: "deny" });',
+              '        expect(provider).toEqual({ data_collection: "deny" });\n        expect(JSON.parse(requestBody).reasoning).toEqual({ enabled: false });',
+          )
+          insert_marker = '''    test("rejects unsupported media before provider calls", async () => {'''
+          addition = '''    test("normalizes a single provider note string before strict validation", async () => {\n        const preview = await previewInventoryImage(\n            {\n                mode: "pantry_photo",\n                mimeType: "image/png",\n                bytes: new Uint8Array([1]),\n            },\n            config,\n            {\n                fetcher: async () =>\n                    new Response(\n                        JSON.stringify({\n                            choices: [\n                                {\n                                    message: {\n                                        content: JSON.stringify({\n                                            lines: [],\n                                            notes: "Shelf labels were partially obscured.",\n                                        }),\n                                    },\n                                },\n                            ],\n                        }),\n                    ),\n            },\n        );\n        expect(preview.notes).toEqual(["Shelf labels were partially obscured."]);\n    });\n\n'''
+          replace("src/inventory/vision.test.ts", insert_marker, addition + insert_marker)
+
+          replace(
+              "src/recipe-import/semantic-resolver.test.ts",
+              '        expect(requests[0]?.body.stream).toBe(false);',
+              '        expect(requests[0]?.body.stream).toBe(false);\n        expect(requests[0]?.body.reasoning).toEqual({ enabled: false });',
+          )
+
+          # The live recipe smoke must prove the semantic call actually succeeded rather than fallback.
+          replace(
+              "scripts/openrouter-recipe-live-smoke.ts",
+              '''if (draft.nutrition.status !== "complete") {''',
+              '''if (draft.warnings.some((entry) => entry.code === "semantic_ai_unavailable")) {\n    throw new Error("Recipe semantic AI smoke fell back instead of using the configured model.");\n}\nif (draft.nutrition.status !== "complete") {''',
+          )
+          PY
+      - name: Format and verify
+        run: |
+          bunx prettier --write \
+            src/inventory/vision.ts \
+            src/inventory/vision.test.ts \
+            src/inventory/meal-ideas.ts \
+            src/recipe-import/semantic-resolver.ts \
+            src/recipe-import/semantic-resolver.test.ts \
+            scripts/openrouter-recipe-live-smoke.ts
+          bun test src/inventory/vision.test.ts src/inventory/meal-ideas.test.ts src/recipe-import/semantic-resolver.test.ts src/website-ai-config.test.ts
+          bun run typecheck
+      - name: Commit verified fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/inventory/vision.ts src/inventory/vision.test.ts src/inventory/meal-ideas.ts src/recipe-import/semantic-resolver.ts src/recipe-import/semantic-resolver.test.ts scripts/openrouter-recipe-live-smoke.ts
+          if ! git diff --cached --quiet; then
+            git commit -m "fix: harden website AI for Qwen Flash"
+            git push origin HEAD:refactor/unified-site-ai-model
+          fi
