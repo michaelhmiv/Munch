@@ -16,7 +16,9 @@ const UNIT =
     "g|gram(?:s)?|kg|kilogram(?:s)?|oz|ounce(?:s)?|lb|pound(?:s)?|ml|milliliter(?:s)?|l|liter(?:s)?|cup(?:s)?|tbsp|tablespoon(?:s)?|tsp|teaspoon(?:s)?|clove(?:s)?|slice(?:s)?|can(?:s)?|package(?:s)?|pkg|bottle(?:s)?|pinch(?:es)?|dash(?:es)?|sprig(?:s)?|stalk(?:s)?";
 
 function replaceUnicodeFractions(value: string): string {
-    return value.replace(/[¼½¾⅓⅔⅛⅜⅝⅞]/g, (fraction) => FRACTIONS[fraction] ?? fraction);
+    return value
+        .replace(/[¼½¾⅓⅔⅛⅜⅝⅞]/g, (fraction) => FRACTIONS[fraction] ?? fraction)
+        .replace(/⁄/g, "/");
 }
 
 /**
@@ -25,7 +27,7 @@ function replaceUnicodeFractions(value: string): string {
  * that are part of the food name, and trailing package sizes.
  */
 export function canonicalizeFoodSearchQuery(value: string): string {
-    let query = replaceUnicodeFractions(value.normalize("NFKC"))
+    let query = replaceUnicodeFractions(value).normalize("NFKC")
         .replace(/[~≈]/g, " ")
         .replace(/\(\s*\$\s*\d+(?:\.\d{1,2})?\s*\)/g, " ")
         .replace(/\(\s*\d+(?:\.\d{1,2})?\s*(?:¢|cents?)\s*\)/gi, " ")
