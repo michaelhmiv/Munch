@@ -41,7 +41,9 @@ jobs:
           bun-version: 1
       - run: bun install --frozen-lockfile
       - name: Apply completion patches
-        run: python3 scripts/pantry-intelligence-completion.py
+        run: |
+          python3 scripts/pantry-intelligence-completion.py
+          python3 scripts/pantry-array-fix.py
       - name: Format product surfaces
         run: |
           bunx prettier --write src/inventory src/account-export.ts src/recipe-planning-tools.ts scripts/pantry-ui-smoke.ts scripts/account-export-smoke.ts scripts/pantry-planning-smoke.ts public/pantry.html public/pantry.js public/pantry.css public/privacy.html .github/workflows/ci.yml
