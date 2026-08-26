@@ -47,12 +47,47 @@ jobs:
               run: |
                   set -o pipefail
                   bun scripts/experiments/recipe-bun-profile-sweep.ts | tee recipe-bun-profile-sweep.jsonl
+            - name: Repeat selected fallback sequence
+              shell: bash
+              run: |
+                  set -o pipefail
+                  bun scripts/experiments/recipe-bun-fallback-stability.ts | tee recipe-bun-fallback-stability.jsonl
             - uses: actions/upload-artifact@v4
               with:
                   name: recipe-bun-transport-spike-${{ github.sha }}
                   path: |
                       recipe-bun-transport-spike.jsonl
                       recipe-bun-profile-sweep.jsonl
+                      recipe-bun-fallback-stability.jsonl
+
+    zod3-parser-patch-spike:
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  ref: experiment/recipe-fetch-fallbacks
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - run: bun install --frozen-lockfile
+            - name: Confirm Zod 3 transitional package exposes v4 API
+              run: bun -e 'import { z } from "zod/v4"; if (typeof z.httpUrl !== "function") process.exit(1); console.log("zod/v4 httpUrl available")'
+            - name: Install parser fallback without changing root Zod
+              run: bun add --no-save recipe-scrapers@1.10.0 cheerio@1.1.2
+            - name: Patch parser runtime to use bundled zod/v4 entrypoint
+              run: |
+                  sed -i 's/from "zod"/from "zod\/v4"/g' node_modules/recipe-scrapers/dist/index.mjs
+                  grep -q 'from "zod/v4"' node_modules/recipe-scrapers/dist/index.mjs
+            - name: Exercise Love and Lemons parser fallback on root Zod 3
+              shell: bash
+              run: |
+                  set -o pipefail
+                  bun scripts/experiments/recipe-zod4-parser-spike.ts | tee recipe-zod3-patched-parser-spike.jsonl
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: recipe-zod3-patched-parser-spike-${{ github.sha }}
+                  path: recipe-zod3-patched-parser-spike.jsonl
 
     curl-cffi-safe-spike:
         runs-on: ubuntu-latest
