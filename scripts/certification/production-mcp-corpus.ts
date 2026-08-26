@@ -3,6 +3,7 @@
 process.env.MUNCH_REVIEWER_SEED_MODE = "true";
 
 import { RECIPE_IMPORT_CORPUS } from "../../src/recipe-import/fixtures/recipe-corpus.js";
+import { foodNameMatches } from "./food-name-match.js";
 
 if (!process.env.DATABASE_URL) {
     throw new Error(
@@ -441,14 +442,6 @@ const FOOD_CASES = [
     ["honey", ["honey"]],
 ] as const;
 
-function nameMatches(name: string, expected: readonly string[]): boolean {
-    const normalized = name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, " ")
-        .trim();
-    return expected.some((value) => normalized.includes(value));
-}
-
 async function runFoodPhase(): Promise<PhaseResult> {
     let identity: Identity | null = null;
     const started = performance.now();
@@ -472,7 +465,7 @@ async function runFoodPhase(): Promise<PhaseResult> {
                 Array<Record<string, unknown>> | undefined;
             const top = candidates?.[0];
             const name = typeof top?.name === "string" ? top.name : "";
-            if (!top || !nameMatches(name, expected)) {
+            if (!top || !foodNameMatches(name, expected)) {
                 throw new Error(
                     `Food query ${query} returned an implausible top result: ${name || "none"}`,
                 );
