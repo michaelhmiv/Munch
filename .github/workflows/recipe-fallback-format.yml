@@ -1,0 +1,37 @@
+name: Format Recipe Fallback Branch
+
+on:
+    push:
+        branches:
+            - feature/recipe-import-resilience
+
+permissions:
+    contents: write
+
+jobs:
+    format:
+        if: github.actor != 'github-actions[bot]'
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  ref: feature/recipe-import-resilience
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - run: bun install --frozen-lockfile
+            - name: Format changed TypeScript
+              run: bunx prettier --write src/recipe-import/fetch.ts src/recipe-fetch-fallback.test.ts
+            - name: Commit formatting
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  git config user.name "github-actions[bot]"
+                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                  git add src/recipe-import/fetch.ts src/recipe-fetch-fallback.test.ts
+                  if git diff --cached --quiet; then
+                    exit 0
+                  fi
+                  git commit -m "style: format recipe fallback"
+                  git push origin HEAD:feature/recipe-import-resilience
