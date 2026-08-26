@@ -216,9 +216,12 @@ async function createIdentity(label: string): Promise<Identity> {
         );
     }
 
-    const consentPage = await authApp.request(new URL(consentLocation, baseUrl), {
-        headers: { cookie, "x-real-ip": authIp },
-    });
+    const consentPage = await authApp.request(
+        new URL(consentLocation, baseUrl),
+        {
+            headers: { cookie, "x-real-ip": authIp },
+        },
+    );
     const consentHtml = await consentPage.text();
     if (consentPage.status !== 200) {
         throw new Error(`Consent page failed: ${consentPage.status}`);
@@ -492,8 +495,7 @@ async function runFoodPhase(): Promise<PhaseResult> {
                 return foodNameMatches(name, expected);
             });
             const topName = typeof top?.name === "string" ? top.name : "";
-            const matchName =
-                typeof match?.name === "string" ? match.name : "";
+            const matchName = typeof match?.name === "string" ? match.name : "";
             if (!match) {
                 const names =
                     candidates
@@ -764,17 +766,21 @@ async function runMealPhase(): Promise<PhaseResult> {
 
         const item = Array.isArray(review?.items) ? review.items[0] : null;
         if (!item?.id) throw new Error("prepare_meal_review omitted item id");
-        const resolved = await callTool(identity, "resolve_meal_review_question", {
-            draft_id: draftId,
-            expected_version: version,
-            question_id: question.id,
-            answer: "90% lean",
-            item_update: {
-                item_id: item.id,
-                name: "90% lean ground beef",
-                assumptions: [],
+        const resolved = await callTool(
+            identity,
+            "resolve_meal_review_question",
+            {
+                draft_id: draftId,
+                expected_version: version,
+                question_id: question.id,
+                answer: "90% lean",
+                item_update: {
+                    item_id: item.id,
+                    name: "90% lean ground beef",
+                    assumptions: [],
+                },
             },
-        });
+        );
         const updated = resolved.result.structuredContent?.review as
             Record<string, any> | undefined;
         const updatedItem = Array.isArray(updated?.items)
@@ -810,7 +816,11 @@ async function runMealPhase(): Promise<PhaseResult> {
             servings: 1,
             description: "Ephemeral production certification recipe",
         };
-        const first = await callTool(identity, "save_meal_as_recipe", recipeArgs);
+        const first = await callTool(
+            identity,
+            "save_meal_as_recipe",
+            recipeArgs,
+        );
         const firstConversion = first.result.structuredContent?.conversion as
             Record<string, unknown> | undefined;
         const firstRecipeId = firstConversion?.recipeId;
