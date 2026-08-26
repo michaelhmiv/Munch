@@ -27,3 +27,5 @@ jobs:
                   git add scripts/openrouter-food-adjudication-smoke.ts
                   git diff --cached --quiet || git commit -m "style: format Luna evaluator"
                   git push origin HEAD:fix/food-ranking-gtin-quality
+
+# temporary branch-only formatter; remove before merge
