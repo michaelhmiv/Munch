@@ -22,3 +22,18 @@ case "$seed_mode" in
     exit 2
     ;;
 esac
+
+mcp_cert_mode="${MUNCH_PRODUCTION_MCP_CERT_MODE:-off}"
+case "$mcp_cert_mode" in
+  off|"")
+    echo "[predeploy] production MCP corpus certification disabled"
+    ;;
+  run)
+    echo "[predeploy] running authenticated production MCP corpus certification"
+    bun scripts/certification/production-mcp-corpus.ts
+    ;;
+  *)
+    echo "Invalid MUNCH_PRODUCTION_MCP_CERT_MODE=$mcp_cert_mode (expected off or run)" >&2
+    exit 2
+    ;;
+esac
