@@ -1,0 +1,181 @@
+name: Recipe Import Save Roundtrip
+
+on:
+  push:
+    branches:
+      - test/recipe-import-save-roundtrip
+
+permissions:
+  contents: read
+
+jobs:
+  roundtrip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: munch_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d munch_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/munch_test
+      MUNCH_APP_BASE_URL: https://munch.example
+      BETTER_AUTH_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      RESEND_API_KEY: re_test_schema
+      MUNCH_EMAIL_FROM: Munch <support@munch.example>
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - run: bun run db:migrate
+      - name: Parse live recipes, save through MCP, and read back
+        shell: bash
+        run: |
+          set -euo pipefail
+          bun - <<'TS'
+          import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+          import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+          import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+          import { registerRecipePlanningTools } from "./src/recipe-planning-tools.ts";
+          import { previewRecipeUrl } from "./src/recipe-import/service.ts";
+          import { createSmokeIdentity } from "./scripts/support/smoke-user.ts";
+          import { closePlatformDatabase } from "./src/platform/database.ts";
+
+          const targets = [
+            ["Half Baked Harvest", "https://www.halfbakedharvest.com/slow-cooker-coq-au-vin/"],
+            ["Serious Eats", "https://www.seriouseats.com/the-best-slow-cooked-bolognese-sauce-recipe"],
+            ["Maangchi", "https://www.maangchi.com/recipe/bibimbap"],
+          ] as const;
+
+          const user = await createSmokeIdentity("recipe-import-save-roundtrip");
+          const capabilities = {
+            tier: "premium",
+            entitlementSource: "subscription",
+            coreNutrition: true,
+            personalRecipesRead: true,
+            personalRecipesWrite: true,
+            personalPlanningRead: true,
+            personalPlanningWrite: true,
+            householdRead: false,
+            householdWrite: false,
+            householdManage: false,
+            household: null,
+            historyDays: null,
+            savedFoodLimit: null,
+          } as any;
+
+          const server = new McpServer({ name: "munch-roundtrip-server", version: "1.0.0" });
+          registerRecipePlanningTools(server, user.userId, capabilities);
+          const client = new Client({ name: "munch-roundtrip-client", version: "1.0.0" });
+          const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+          await server.connect(serverTransport);
+          await client.connect(clientTransport);
+
+          const noProviderMatches = {
+            search: async () => ({ candidates: [], failures: [] }),
+          };
+
+          let failures = 0;
+          for (const [site, url] of targets) {
+            const started = performance.now();
+            try {
+              const draft = await previewRecipeUrl(url, { foodSearch: noProviderMatches });
+              if (draft.recipe.instructions.length === 0) throw new Error("parser returned no instructions");
+              if (draft.recipe.ingredients.length === 0) throw new Error("parser returned no ingredients");
+
+              const save = await client.callTool({
+                name: "save_recipe",
+                arguments: {
+                  scope: "personal",
+                  recipe: draft.recipe,
+                  idempotency_key: `roundtrip:${site}:${crypto.randomUUID()}`,
+                },
+              });
+              if (save.isError) throw new Error(`save_recipe failed: ${JSON.stringify(save.content)}`);
+              const saved = (save.structuredContent as any)?.recipe;
+              if (!saved?.recipeId || !saved?.revisionId) throw new Error("save_recipe returned no recipe/revision id");
+
+              const read = await client.callTool({
+                name: "get_recipe",
+                arguments: {
+                  recipe_id: saved.recipeId,
+                  recipe_revision_id: saved.revisionId,
+                },
+              });
+              if (read.isError) throw new Error(`get_recipe failed: ${JSON.stringify(read.content)}`);
+              const stored = (read.structuredContent as any)?.recipe;
+              if (!stored) throw new Error("get_recipe returned no recipe");
+
+              const expectedInstructions = draft.recipe.instructions;
+              if (JSON.stringify(stored.instructions) !== JSON.stringify(expectedInstructions)) {
+                throw new Error(`instructions changed during save: expected=${JSON.stringify(expectedInstructions)} actual=${JSON.stringify(stored.instructions)}`);
+              }
+              if (stored.servings !== draft.recipe.servings) {
+                throw new Error(`servings changed: expected=${draft.recipe.servings} actual=${stored.servings}`);
+              }
+              if (stored.source?.type !== "imported" || stored.source?.url !== draft.recipe.source_url) {
+                throw new Error(`source provenance changed: ${JSON.stringify(stored.source)}`);
+              }
+              if (stored.ingredients.length !== draft.recipe.ingredients.length) {
+                throw new Error(`ingredient count changed: expected=${draft.recipe.ingredients.length} actual=${stored.ingredients.length}`);
+              }
+
+              for (let i = 0; i < draft.recipe.ingredients.length; i++) {
+                const expected = draft.recipe.ingredients[i]!;
+                const actual = stored.ingredients[i]!;
+                const fields = {
+                  position: [actual.position, i],
+                  name: [actual.name, expected.name],
+                  quantity: [actual.quantity, expected.quantity ?? null],
+                  unit: [actual.unit, expected.unit ?? null],
+                  preparation: [actual.preparation, expected.preparation ?? null],
+                  optional: [actual.optional, expected.optional ?? false],
+                  source_type: [actual.source_type, expected.source_type],
+                  source_url: [actual.source_url, expected.source_url ?? null],
+                } as const;
+                for (const [field, [got, want]] of Object.entries(fields)) {
+                  if (got !== want) {
+                    throw new Error(`ingredient ${i} ${field} changed: expected=${JSON.stringify(want)} actual=${JSON.stringify(got)}`);
+                  }
+                }
+                if (JSON.stringify(actual.source_snapshot) !== JSON.stringify(expected.source_snapshot)) {
+                  throw new Error(`ingredient ${i} source_snapshot changed`);
+                }
+              }
+
+              console.log(JSON.stringify({
+                site,
+                ok: true,
+                recipe: stored.name,
+                servings: stored.servings,
+                ingredients: stored.ingredients.length,
+                instructions: stored.instructions.length,
+                source_url: stored.source.url,
+                ms: Math.round(performance.now() - started),
+              }));
+            } catch (error) {
+              failures += 1;
+              console.error(JSON.stringify({
+                site,
+                ok: false,
+                error: error instanceof Error ? error.message : String(error),
+              }));
+            }
+          }
+
+          await client.close();
+          await server.close();
+          await closePlatformDatabase();
+          if (failures > 0) process.exit(1);
+          TS
