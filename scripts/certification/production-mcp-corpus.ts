@@ -4,6 +4,7 @@ process.env.MUNCH_REVIEWER_SEED_MODE = "true";
 
 import { RECIPE_IMPORT_CORPUS } from "../../src/recipe-import/fixtures/recipe-corpus.js";
 import { foodNameMatches } from "./food-name-match.js";
+import { certificationAuthIp } from "./auth-ip.js";
 
 if (!process.env.DATABASE_URL) {
     throw new Error(
@@ -87,6 +88,7 @@ async function codeChallenge(verifier: string): Promise<string> {
 }
 
 async function createIdentity(label: string): Promise<Identity> {
+    const authIp = certificationAuthIp(label);
     const suffix = crypto.randomUUID().replaceAll("-", "");
     const email = `production-cert-${label}-${suffix}@example.test`;
     const password = `Cert-${suffix}-Password!`;
@@ -95,7 +97,11 @@ async function createIdentity(label: string): Promise<Identity> {
 
     const signup = await authApp.request(`${baseUrl}/api/auth/sign-up/email`, {
         method: "POST",
-        headers: { "content-type": "application/json", origin: baseUrl },
+        headers: {
+            "content-type": "application/json",
+            origin: baseUrl,
+            "x-real-ip": authIp,
+        },
         body: JSON.stringify({
             name: `Production cert ${label}`,
             email,
@@ -131,7 +137,11 @@ async function createIdentity(label: string): Promise<Identity> {
 
     const signIn = await authApp.request(`${baseUrl}/api/auth/sign-in/email`, {
         method: "POST",
-        headers: { "content-type": "application/json", origin: baseUrl },
+        headers: {
+            "content-type": "application/json",
+            origin: baseUrl,
+            "x-real-ip": authIp,
+        },
         body: JSON.stringify({
             email,
             password,
@@ -150,7 +160,10 @@ async function createIdentity(label: string): Promise<Identity> {
         `${baseUrl}/api/auth/oauth2/register`,
         {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            headers: {
+                "content-type": "application/json",
+                "x-real-ip": authIp,
+            },
             body: JSON.stringify({
                 client_name: `Munch production cert ${label}`,
                 redirect_uris: [redirectUri],
@@ -185,7 +198,7 @@ async function createIdentity(label: string): Promise<Identity> {
     authorize.searchParams.set("code_challenge_method", "S256");
 
     const authorization = await authApp.request(authorize, {
-        headers: { cookie },
+        headers: { cookie, "x-real-ip": authIp },
         redirect: "manual",
     });
     if (authorization.status !== 302) {
@@ -203,7 +216,7 @@ async function createIdentity(label: string): Promise<Identity> {
     const consentPage = await authApp.request(
         new URL(consentLocation, baseUrl),
         {
-            headers: { cookie },
+            headers: { cookie, "x-real-ip": authIp },
         },
     );
     const consentHtml = await consentPage.text();
@@ -215,6 +228,7 @@ async function createIdentity(label: string): Promise<Identity> {
         headers: {
             cookie,
             "content-type": "application/x-www-form-urlencoded",
+            "x-real-ip": authIp,
         },
         body: new URLSearchParams({
             client_id: hiddenValue(consentHtml, "client_id"),
@@ -241,7 +255,10 @@ async function createIdentity(label: string): Promise<Identity> {
 
     const token = await authApp.request(`${baseUrl}/api/auth/oauth2/token`, {
         method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded" },
+        headers: {
+            "content-type": "application/x-www-form-urlencoded",
+            "x-real-ip": authIp,
+        },
         body: new URLSearchParams({
             grant_type: "authorization_code",
             client_id: client.client_id,
