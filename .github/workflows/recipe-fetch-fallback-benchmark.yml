@@ -24,6 +24,26 @@ jobs:
             - name: Run parser, corpus, host-AI, and network regressions
               run: bun test src/recipe-import.test.ts src/recipe-import-corpus.test.ts src/host-ai-boundary.test.ts src/net.test.ts
 
+    bun-native-fallback-spike:
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  ref: experiment/recipe-fetch-fallbacks
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - run: bun install --frozen-lockfile
+            - name: Install candidate production dependencies ephemerally
+              run: bun add --no-save node-wreq@3.1.0 recipe-scrapers@1.10.0 cheerio@1.1.2
+            - name: Exercise Bun native TLS transport and parser fallback
+              run: bun scripts/experiments/recipe-bun-fallback-spike.ts | tee recipe-bun-fallback-spike.jsonl
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: recipe-bun-fallback-spike-${{ github.sha }}
+                  path: recipe-bun-fallback-spike.jsonl
+
     mealie-comparison:
         runs-on: ubuntu-latest
         timeout-minutes: 20
