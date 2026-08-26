@@ -143,9 +143,7 @@ function candidatePasses(
         definition.required.every((token) =>
             name.includes(normalized(token)),
         ) &&
-        definition.forbidden.every(
-            (token) => !name.includes(normalized(token)),
-        )
+        definition.forbidden.every((token) => !name.includes(normalized(token)))
     );
 }
 
@@ -156,32 +154,35 @@ async function openRouterJson<T>(
     schemaName: string,
     schema: Record<string, unknown>,
 ): Promise<T> {
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-            authorization: `Bearer ${apiKey}`,
-            "content-type": "application/json",
-            "HTTP-Referer": "https://munch.business",
-            "X-Title": title,
-        },
-        body: JSON.stringify({
-            model,
-            temperature: 0,
-            messages: [
-                { role: "system", content: system },
-                { role: "user", content: JSON.stringify(user) },
-            ],
-            response_format: {
-                type: "json_schema",
-                json_schema: {
-                    name: schemaName,
-                    strict: true,
-                    schema,
-                },
+    const response = await fetch(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+            method: "POST",
+            headers: {
+                authorization: `Bearer ${apiKey}`,
+                "content-type": "application/json",
+                "HTTP-Referer": "https://munch.business",
+                "X-Title": title,
             },
-        }),
-        signal: AbortSignal.timeout(60_000),
-    });
+            body: JSON.stringify({
+                model,
+                temperature: 0,
+                messages: [
+                    { role: "system", content: system },
+                    { role: "user", content: JSON.stringify(user) },
+                ],
+                response_format: {
+                    type: "json_schema",
+                    json_schema: {
+                        name: schemaName,
+                        strict: true,
+                        schema,
+                    },
+                },
+            }),
+            signal: AbortSignal.timeout(60_000),
+        },
+    );
     if (!response.ok) {
         throw new Error(
             `OpenRouter ${schemaName} failed: ${response.status} ${(await response.text()).slice(0, 1000)}`,
@@ -191,7 +192,8 @@ async function openRouterJson<T>(
         choices?: Array<{ message?: { content?: string } }>;
     };
     const content = payload.choices?.[0]?.message?.content;
-    if (!content) throw new Error(`OpenRouter returned no ${schemaName} content`);
+    if (!content)
+        throw new Error(`OpenRouter returned no ${schemaName} content`);
     return JSON.parse(content) as T;
 }
 
@@ -218,7 +220,10 @@ async function askLunaForSearch(
         },
     );
     const query = result.search_query.trim();
-    if (!query) throw new Error(`Luna returned an empty search query for ${definition.id}`);
+    if (!query)
+        throw new Error(
+            `Luna returned an empty search query for ${definition.id}`,
+        );
     return query;
 }
 
@@ -229,7 +234,9 @@ function prepareCandidates(candidates: FoodCandidate[]): PreparedCandidate[] {
         brand: candidate.brand ?? null,
         data_kind: candidate.dataKind,
         confidence: candidate.confidence,
-        portions: candidate.portions.slice(0, 5).map((portion) => portion.label),
+        portions: candidate.portions
+            .slice(0, 5)
+            .map((portion) => portion.label),
         calories_per_100g: candidate.nutrientsPer100g?.calories ?? null,
     }));
 }
@@ -251,7 +258,11 @@ async function searchWithLuna(definition: CaseDefinition): Promise<{
     for (let attempt = 0; attempt < 2; attempt += 1) {
         const result = await retrieve(query);
         searches.push(result);
-        if (result.candidates.some((candidate) => candidatePasses(definition, candidate))) {
+        if (
+            result.candidates.some((candidate) =>
+                candidatePasses(definition, candidate),
+            )
+        ) {
             return { searches, candidates: result.candidates };
         }
         if (attempt === 0) {
@@ -307,7 +318,11 @@ for (const definition of CASES) {
     const startedAt = performance.now();
     try {
         const { searches, candidates } = await searchWithLuna(definition);
-        const selection = await askLunaToSelect(definition, searches, candidates);
+        const selection = await askLunaToSelect(
+            definition,
+            searches,
+            candidates,
+        );
         const chosen = candidates[selection.selected_index];
         if (!chosen) {
             throw new Error(
