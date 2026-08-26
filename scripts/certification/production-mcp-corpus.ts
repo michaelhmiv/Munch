@@ -5,6 +5,7 @@ process.env.MUNCH_REVIEWER_SEED_MODE = "true";
 import { RECIPE_IMPORT_CORPUS } from "../../src/recipe-import/fixtures/recipe-corpus.js";
 import { foodNameMatches } from "./food-name-match.js";
 import { certificationAuthIp } from "./auth-ip.js";
+import { shardRecipeCorpus } from "./recipe-corpus-sharding.js";
 
 if (!process.env.DATABASE_URL) {
     throw new Error(
@@ -576,13 +577,9 @@ const EXTRA_RECIPE_URLS = [
 ] as const;
 
 async function runRecipePhase(): Promise<PhaseResult> {
-    let identity: Identity | null = null;
+    const identities: Identity[] = [];
     const started = performance.now();
     try {
-        identity = await createIdentity("recipes");
-        const tools = await initialize(identity);
-        if (!tools.has("parse_recipe_url"))
-            throw new Error("parse_recipe_url is missing");
         const corpus = [
             ...RECIPE_IMPORT_CORPUS.map((entry) => ({
                 site: entry.site,
@@ -590,55 +587,71 @@ async function runRecipePhase(): Promise<PhaseResult> {
             })),
             ...EXTRA_RECIPE_URLS,
         ];
+        const recipeShards = shardRecipeCorpus(corpus);
         const rows: Array<Record<string, unknown>> = [];
         const durations: number[] = [];
-        for (const entry of corpus) {
-            try {
-                const call = await callTool(identity, "parse_recipe_url", {
-                    url: entry.url,
-                });
-                durations.push(call.duration_ms);
-                const draft = call.result.structuredContent?.draft as
-                    Record<string, any> | undefined;
-                const recipe = draft?.recipe as Record<string, any> | undefined;
-                const ingredients = Array.isArray(recipe?.ingredients)
-                    ? recipe.ingredients
-                    : [];
-                if (!recipe?.name || ingredients.length === 0) {
-                    throw new Error(
-                        "parsed draft omitted recipe name or ingredients",
-                    );
+
+        for (const [shardIndex, shard] of recipeShards.entries()) {
+            const identity = await createIdentity(`recipes-${shardIndex + 1}`);
+            identities.push(identity);
+            const tools = await initialize(identity);
+            if (!tools.has("parse_recipe_url"))
+                throw new Error("parse_recipe_url is missing");
+
+            for (const entry of shard) {
+                try {
+                    const call = await callTool(identity, "parse_recipe_url", {
+                        url: entry.url,
+                    });
+                    durations.push(call.duration_ms);
+                    const draft = call.result.structuredContent?.draft as
+                        Record<string, any> | undefined;
+                    const recipe = draft?.recipe as
+                        Record<string, any> | undefined;
+                    const ingredients = Array.isArray(recipe?.ingredients)
+                        ? recipe.ingredients
+                        : [];
+                    if (!recipe?.name || ingredients.length === 0) {
+                        throw new Error(
+                            "parsed draft omitted recipe name or ingredients",
+                        );
+                    }
+                    const review = Array.isArray(draft?.ingredient_review)
+                        ? draft.ingredient_review
+                        : [];
+                    rows.push({
+                        site: entry.site,
+                        url: entry.url,
+                        shard: shardIndex + 1,
+                        ok: true,
+                        duration_ms: call.duration_ms,
+                        name: recipe.name,
+                        ingredients: ingredients.length,
+                        requires_review: Boolean(draft?.requires_review),
+                        ambiguous_or_unresolved: review.filter(
+                            (item: any) =>
+                                item?.resolution === "ambiguous" ||
+                                item?.resolution === "unresolved",
+                        ).length,
+                        warnings: Array.isArray(draft?.warnings)
+                            ? draft.warnings.length
+                            : 0,
+                    });
+                } catch (error) {
+                    rows.push({
+                        site: entry.site,
+                        url: entry.url,
+                        shard: shardIndex + 1,
+                        ok: false,
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    });
                 }
-                const review = Array.isArray(draft?.ingredient_review)
-                    ? draft.ingredient_review
-                    : [];
-                rows.push({
-                    site: entry.site,
-                    url: entry.url,
-                    ok: true,
-                    duration_ms: call.duration_ms,
-                    name: recipe.name,
-                    ingredients: ingredients.length,
-                    requires_review: Boolean(draft?.requires_review),
-                    ambiguous_or_unresolved: review.filter(
-                        (item: any) =>
-                            item?.resolution === "ambiguous" ||
-                            item?.resolution === "unresolved",
-                    ).length,
-                    warnings: Array.isArray(draft?.warnings)
-                        ? draft.warnings.length
-                        : 0,
-                });
-            } catch (error) {
-                rows.push({
-                    site: entry.site,
-                    url: entry.url,
-                    ok: false,
-                    error:
-                        error instanceof Error ? error.message : String(error),
-                });
             }
         }
+
         const succeeded = rows.filter((row) => row.ok === true).length;
         if (succeeded < 20) {
             throw new Error(
@@ -653,12 +666,15 @@ async function runRecipePhase(): Promise<PhaseResult> {
                 total: rows.length,
                 succeeded,
                 failed: rows.length - succeeded,
+                shards: recipeShards.map((shard) => shard.length),
                 p95_ms: p95(durations),
                 rows,
             },
         };
     } finally {
-        await cleanupIdentity(identity);
+        for (const identity of identities.reverse()) {
+            await cleanupIdentity(identity);
+        }
     }
 }
 

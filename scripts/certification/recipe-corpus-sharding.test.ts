@@ -7,7 +7,9 @@ describe("production recipe certification sharding", () => {
         const corpus = Array.from({ length: 26 }, (_, index) => index);
         const shards = shardRecipeCorpus(corpus);
         expect(shards.map((shard) => shard.length)).toEqual([10, 10, 6]);
-        expect(shards.every((shard) => shard.length <= RECIPE_IMPORTS_PER_MINUTE)).toBe(true);
+        expect(
+            shards.every((shard) => shard.length <= RECIPE_IMPORTS_PER_MINUTE),
+        ).toBe(true);
         expect(shards.flat()).toEqual(corpus);
     });
 
