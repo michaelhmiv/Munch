@@ -1,0 +1,157 @@
+name: Temporary wire recipe certification sharding
+
+on:
+    push:
+        branches:
+            - fix/production-cert-recipe-sharding
+
+permissions:
+    contents: write
+
+jobs:
+    apply:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  ref: fix/production-cert-recipe-sharding
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - run: bun install --frozen-lockfile
+            - name: Wire recipe corpus shards
+              run: |
+                  python3 - <<'PY'
+                  from pathlib import Path
+                  import re
+
+                  path = Path('scripts/certification/production-mcp-corpus.ts')
+                  text = path.read_text()
+                  if 'const recipeShards = shardRecipeCorpus(corpus);' in text:
+                      print('recipe corpus sharding already wired')
+                      raise SystemExit(0)
+
+                  import_anchor = 'import { certificationAuthIp } from "./auth-ip.js";\n'
+                  if text.count(import_anchor) != 1:
+                      raise SystemExit('auth ip import anchor changed')
+                  text = text.replace(
+                      import_anchor,
+                      import_anchor + 'import { shardRecipeCorpus } from "./recipe-corpus-sharding.js";\n',
+                      1,
+                  )
+
+                  pattern = re.compile(r'async function runRecipePhase\(\): Promise<PhaseResult> \{.*?\n\}\n\nasync function runMealRecipePhase', re.S)
+                  replacement = '''async function runRecipePhase(): Promise<PhaseResult> {
+    const identities: Identity[] = [];
+    const started = performance.now();
+    try {
+        const corpus = [
+            ...RECIPE_IMPORT_CORPUS.map((entry) => ({
+                site: entry.site,
+                url: entry.url,
+            })),
+            ...EXTRA_RECIPE_URLS,
+        ];
+        const recipeShards = shardRecipeCorpus(corpus);
+        const rows: Array<Record<string, unknown>> = [];
+        const durations: number[] = [];
+
+        for (const [shardIndex, shard] of recipeShards.entries()) {
+            const identity = await createIdentity(`recipes-${shardIndex + 1}`);
+            identities.push(identity);
+            const tools = await initialize(identity);
+            if (!tools.has("parse_recipe_url"))
+                throw new Error("parse_recipe_url is missing");
+
+            for (const entry of shard) {
+                try {
+                    const call = await callTool(identity, "parse_recipe_url", {
+                        url: entry.url,
+                    });
+                    durations.push(call.duration_ms);
+                    const draft = call.result.structuredContent?.draft as
+                        Record<string, any> | undefined;
+                    const recipe = draft?.recipe as Record<string, any> | undefined;
+                    const ingredients = Array.isArray(recipe?.ingredients)
+                        ? recipe.ingredients
+                        : [];
+                    if (!recipe?.name || ingredients.length === 0) {
+                        throw new Error(
+                            "parsed draft omitted recipe name or ingredients",
+                        );
+                    }
+                    const review = Array.isArray(draft?.ingredient_review)
+                        ? draft.ingredient_review
+                        : [];
+                    rows.push({
+                        site: entry.site,
+                        url: entry.url,
+                        shard: shardIndex + 1,
+                        ok: true,
+                        duration_ms: call.duration_ms,
+                        name: recipe.name,
+                        ingredients: ingredients.length,
+                        requires_review: Boolean(draft?.requires_review),
+                        ambiguous_or_unresolved: review.filter(
+                            (item: any) =>
+                                item?.resolution === "ambiguous" ||
+                                item?.resolution === "unresolved",
+                        ).length,
+                        warnings: Array.isArray(draft?.warnings)
+                            ? draft.warnings.length
+                            : 0,
+                    });
+                } catch (error) {
+                    rows.push({
+                        site: entry.site,
+                        url: entry.url,
+                        shard: shardIndex + 1,
+                        ok: false,
+                        error:
+                            error instanceof Error ? error.message : String(error),
+                    });
+                }
+            }
+        }
+
+        const succeeded = rows.filter((row) => row.ok === true).length;
+        if (succeeded < 20) {
+            throw new Error(
+                `Recipe corpus had only ${succeeded}/${rows.length} successful parses`,
+            );
+        }
+        return {
+            phase: "recipes",
+            ok: true,
+            duration_ms: Number((performance.now() - started).toFixed(2)),
+            detail: {
+                total: rows.length,
+                succeeded,
+                failed: rows.length - succeeded,
+                shards: recipeShards.map((shard) => shard.length),
+                p95_ms: p95(durations),
+                rows,
+            },
+        };
+    } finally {
+        for (const identity of identities.reverse()) {
+            await cleanupIdentity(identity);
+        }
+    }
+}
+
+async function runMealRecipePhase'''
+                  text, count = pattern.subn(replacement, text, count=1)
+                  if count != 1:
+                      raise SystemExit('runRecipePhase anchor changed')
+                  path.write_text(text)
+                  PY
+                  bunx prettier --write scripts/certification/production-mcp-corpus.ts scripts/certification/recipe-corpus-sharding.ts scripts/certification/recipe-corpus-sharding.test.ts
+                  bun test scripts/certification/recipe-corpus-sharding.test.ts
+            - name: Commit recipe corpus sharding
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                  git add scripts/certification/production-mcp-corpus.ts scripts/certification/recipe-corpus-sharding.ts scripts/certification/recipe-corpus-sharding.test.ts
+                  git diff --cached --quiet || git commit -m "fix: shard production recipe certification users"
+                  git push origin HEAD:fix/production-cert-recipe-sharding
