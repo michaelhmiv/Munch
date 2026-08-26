@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { PlaywrightCrawler } from "crawlee";
 
 const BLOCKERS = [
@@ -41,9 +42,12 @@ const CONCURRENCY = Math.max(
 );
 
 type ProcessMemory = {
-    bunMb: number;
-    chromiumMb: number;
-    combinedMb: number;
+    bunRssMb: number;
+    chromiumRssMb: number;
+    combinedRssMb: number;
+    bunPssMb: number;
+    chromiumPssMb: number;
+    combinedPssMb: number;
 };
 
 function recipeUsable(html: string): boolean {
@@ -56,27 +60,45 @@ function recipeUsable(html: string): boolean {
     );
 }
 
-function processMemory(): ProcessMemory {
-    const bunMb = process.memoryUsage().rss / 1024 / 1024;
-    let chromiumMb = 0;
+function pssKb(pid: number): number {
     try {
-        const ps = execFileSync("ps", ["-eo", "rss=,comm="], {
+        const smaps = readFileSync(`/proc/${pid}/smaps_rollup`, "utf8");
+        const match = /^Pss:\s+(\d+)\s+kB$/m.exec(smaps);
+        return match ? Number(match[1]) : 0;
+    } catch {
+        return 0;
+    }
+}
+
+function processMemory(): ProcessMemory {
+    const bunRssMb = process.memoryUsage().rss / 1024 / 1024;
+    const bunPssMb = pssKb(process.pid) / 1024;
+    let chromiumRssMb = 0;
+    let chromiumPssMb = 0;
+    try {
+        const ps = execFileSync("ps", ["-eo", "pid=,rss=,comm="], {
             encoding: "utf8",
         });
         for (const line of ps.split("\n")) {
-            const match = /^\s*(\d+)\s+(.+?)\s*$/.exec(line);
+            const match = /^\s*(\d+)\s+(\d+)\s+(.+?)\s*$/.exec(line);
             if (!match) continue;
-            const command = match[2]!.toLowerCase();
+            const command = match[3]!.toLowerCase();
             if (!/(chrome|chromium)/.test(command)) continue;
-            chromiumMb += Number(match[1]) / 1024;
+            const pid = Number(match[1]);
+            chromiumRssMb += Number(match[2]) / 1024;
+            chromiumPssMb += pssKb(pid) / 1024;
         }
     } catch {
-        chromiumMb = 0;
+        chromiumRssMb = 0;
+        chromiumPssMb = 0;
     }
     return {
-        bunMb: Number(bunMb.toFixed(1)),
-        chromiumMb: Number(chromiumMb.toFixed(1)),
-        combinedMb: Number((bunMb + chromiumMb).toFixed(1)),
+        bunRssMb: Number(bunRssMb.toFixed(1)),
+        chromiumRssMb: Number(chromiumRssMb.toFixed(1)),
+        combinedRssMb: Number((bunRssMb + chromiumRssMb).toFixed(1)),
+        bunPssMb: Number(bunPssMb.toFixed(1)),
+        chromiumPssMb: Number(chromiumPssMb.toFixed(1)),
+        combinedPssMb: Number((bunPssMb + chromiumPssMb).toFixed(1)),
     };
 }
 
@@ -93,9 +115,21 @@ const requests = BLOCKERS.flatMap((entry) =>
 
 const runStartedAt = performance.now();
 let firstNavigationStartedAt: number | null = null;
-let peakCombinedMb = 0;
-let peakChromiumMb = 0;
-let peakBunMb = 0;
+let peakCombinedRssMb = 0;
+let peakChromiumRssMb = 0;
+let peakBunRssMb = 0;
+let peakCombinedPssMb = 0;
+let peakChromiumPssMb = 0;
+let peakBunPssMb = 0;
+
+function recordPeaks(memory: ProcessMemory): void {
+    peakCombinedRssMb = Math.max(peakCombinedRssMb, memory.combinedRssMb);
+    peakChromiumRssMb = Math.max(peakChromiumRssMb, memory.chromiumRssMb);
+    peakBunRssMb = Math.max(peakBunRssMb, memory.bunRssMb);
+    peakCombinedPssMb = Math.max(peakCombinedPssMb, memory.combinedPssMb);
+    peakChromiumPssMb = Math.max(peakChromiumPssMb, memory.chromiumPssMb);
+    peakBunPssMb = Math.max(peakBunPssMb, memory.bunPssMb);
+}
 
 const crawler = new PlaywrightCrawler({
     maxConcurrency: CONCURRENCY,
@@ -128,9 +162,7 @@ const crawler = new PlaywrightCrawler({
         await page.waitForTimeout(500);
         const html = await page.content();
         const memory = processMemory();
-        peakCombinedMb = Math.max(peakCombinedMb, memory.combinedMb);
-        peakChromiumMb = Math.max(peakChromiumMb, memory.chromiumMb);
-        peakBunMb = Math.max(peakBunMb, memory.bunMb);
+        recordPeaks(memory);
         const started = Number(request.userData.navigationStartedAt);
         console.log(
             JSON.stringify({
@@ -154,9 +186,7 @@ const crawler = new PlaywrightCrawler({
     },
     async failedRequestHandler({ request, error }) {
         const memory = processMemory();
-        peakCombinedMb = Math.max(peakCombinedMb, memory.combinedMb);
-        peakChromiumMb = Math.max(peakChromiumMb, memory.chromiumMb);
-        peakBunMb = Math.max(peakBunMb, memory.bunMb);
+        recordPeaks(memory);
         const started = Number(request.userData.navigationStartedAt);
         console.log(
             JSON.stringify({
@@ -195,8 +225,11 @@ console.log(
             firstNavigationStartedAt === null
                 ? null
                 : Number((firstNavigationStartedAt - runStartedAt).toFixed(2)),
-        peakBunMb: Number(peakBunMb.toFixed(1)),
-        peakChromiumMb: Number(peakChromiumMb.toFixed(1)),
-        peakCombinedMb: Number(peakCombinedMb.toFixed(1)),
+        peakBunRssMb: Number(peakBunRssMb.toFixed(1)),
+        peakChromiumRssMb: Number(peakChromiumRssMb.toFixed(1)),
+        peakCombinedRssMb: Number(peakCombinedRssMb.toFixed(1)),
+        peakBunPssMb: Number(peakBunPssMb.toFixed(1)),
+        peakChromiumPssMb: Number(peakChromiumPssMb.toFixed(1)),
+        peakCombinedPssMb: Number(peakCombinedPssMb.toFixed(1)),
     }),
 );
