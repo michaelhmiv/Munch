@@ -35,20 +35,22 @@ jobs:
                   from pathlib import Path
                   path = Path('scripts/certification/production-mcp-corpus.ts')
                   text = path.read_text()
-                  needle = '''                const failures = call.result.structuredContent
-                      ?.provider_failures as unknown[] | undefined;
-'''
-                  replacement = '''                if (
-                    barcode === "000000000000" &&
-                    (candidates?.length ?? 0) !== 0
-                ) {
-                    throw new Error(
-                        "All-zero GTIN unexpectedly resolved to a food",
-                    );
-                }
-                const failures = call.result.structuredContent
-                    ?.provider_failures as unknown[] | undefined;
-'''
+                  needle = (
+                      "                const failures = call.result.structuredContent\n"
+                      "                    ?.provider_failures as unknown[] | undefined;\n"
+                  )
+                  replacement = (
+                      "                if (\n"
+                      "                    barcode === \"000000000000\" &&\n"
+                      "                    (candidates?.length ?? 0) !== 0\n"
+                      "                ) {\n"
+                      "                    throw new Error(\n"
+                      "                        \"All-zero GTIN unexpectedly resolved to a food\",\n"
+                      "                    );\n"
+                      "                }\n"
+                      "                const failures = call.result.structuredContent\n"
+                      "                    ?.provider_failures as unknown[] | undefined;\n"
+                  )
                   if needle not in text:
                       if 'All-zero GTIN unexpectedly resolved to a food' in text:
                           raise SystemExit(0)
