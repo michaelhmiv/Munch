@@ -23,10 +23,11 @@ jobs:
               run: |
                   python3 - <<'PY'
                   from pathlib import Path
+                  import re
 
                   path = Path('src/food-providers/catalog-repository.ts')
                   text = path.read_text()
-                  marker = '''export function hashCatalogIdentity(value: string): string {'''
+                  marker = 'export function hashCatalogIdentity(value: string): string {'
                   helper = '''export function lexicalFoodSearchVariants(value: string): string[] {
                       const normalized = normalizeFoodText(value);
                       if (!normalized) return [];
@@ -65,34 +66,35 @@ jobs:
                           raise SystemExit('helper insertion anchor changed')
                       text = text.replace(marker, helper + marker, 1)
 
-                  anchor = '''        const boundedLimit = Math.max(1, Math.min(25, limit));
-                      const retrievalLimit = Math.min(50, Math.max(25, boundedLimit * 5));'''
-                  replacement = '''        const boundedLimit = Math.max(1, Math.min(25, limit));
-                      const lexicalVariants = lexicalFoodSearchVariants(normalized);
-                      const alternate = lexicalVariants[1] ?? normalized;
-                      const retrievalLimit = Math.min(50, Math.max(25, boundedLimit * 5));'''
-                  if anchor in text:
-                      text = text.replace(anchor, replacement, 1)
-                  elif 'const lexicalVariants = lexicalFoodSearchVariants(normalized);' not in text:
-                      raise SystemExit('search variant anchor changed')
+                  if 'const lexicalVariants = lexicalFoodSearchVariants(normalized);' not in text:
+                      pattern = re.compile(
+                          r'(\s*const boundedLimit = Math\.max\(1, Math\.min\(25, limit\)\);\n)(\s*const retrievalLimit = Math\.min\(50, Math\.max\(25, boundedLimit \* 5\)\);)'
+                      )
+                      text, count = pattern.subn(
+                          r'\1        const lexicalVariants = lexicalFoodSearchVariants(normalized);\n        const alternate = lexicalVariants[1] ?? normalized;\n\2',
+                          text,
+                          count=1,
+                      )
+                      if count != 1:
+                          raise SystemExit('search variant anchor changed')
 
-                  anchor = ''') @@ plainto_tsquery('simple', ${normalized})'''
-                  replacement = ''') @@ (
-                                    plainto_tsquery('simple', ${normalized})
-                                    || plainto_tsquery('simple', ${alternate})
-                                  )'''
-                  if anchor in text:
-                      text = text.replace(anchor, replacement, 1)
-                  elif 'plainto_tsquery(\'simple\', ${alternate})' not in text:
-                      raise SystemExit('lexical tsquery anchor changed')
+                  if "plainto_tsquery('simple', ${alternate})" not in text:
+                      needle = ") @@ plainto_tsquery('simple', ${normalized})"
+                      replacement = ") @@ (\n                    plainto_tsquery('simple', ${normalized})\n                    || plainto_tsquery('simple', ${alternate})\n                  )"
+                      if needle not in text:
+                          raise SystemExit('lexical tsquery anchor changed')
+                      text = text.replace(needle, replacement, 1)
                   path.write_text(text)
 
                   path = Path('src/food-providers/catalog-repository.test.ts')
                   text = path.read_text()
-                  if 'lexicalFoodSearchVariants' not in text.split('from "./catalog-repository.js";')[0]:
+                  if 'lexicalFoodSearchVariants,' not in text:
+                      needle = '    hashCatalogIdentity,\n'
+                      if needle not in text:
+                          raise SystemExit('catalog helper import anchor changed')
                       text = text.replace(
-                          '    hashCatalogIdentity,\n',
-                          '    hashCatalogIdentity,\n    lexicalFoodSearchVariants,\n',
+                          needle,
+                          needle + '    lexicalFoodSearchVariants,\n',
                           1,
                       )
                   if 'creates conservative final-noun lexical variants' not in text:
