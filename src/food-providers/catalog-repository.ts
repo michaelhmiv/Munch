@@ -286,7 +286,7 @@ export class FoodCatalogRepository {
         if (!normalized) return [];
         const boundedLimit = Math.max(1, Math.min(25, limit));
         const lexicalTsquery = lexicalFoodSearchTsquery(normalized);
-        const retrievalLimit = Math.min(40, Math.max(25, boundedLimit * 4));
+        const retrievalLimit = Math.min(50, Math.max(25, boundedLimit * 5));
         const lexicalRows = await withServiceDatabase(
             async (tx) =>
                 tx<CatalogRow[]>`
@@ -300,19 +300,7 @@ export class FoodCatalogRepository {
             order by
                 case when normalized_name = ${normalized} then 0 else 1 end,
                 length(normalized_name) asc,
-                ts_rank_cd(
-                    to_tsvector(
-                        'simple',
-                        normalized_name || ' ' || coalesce(normalized_brand, '')
-                    ),
-                    to_tsquery('simple', ${lexicalTsquery})
-                ) desc,
-                greatest(
-                    similarity(normalized_name, ${normalized}),
-                    similarity(coalesce(normalized_brand, ''), ${normalized})
-                ) desc,
-                confidence desc,
-                length(normalized_name) asc
+                confidence desc
             limit ${retrievalLimit}
         `,
         );
