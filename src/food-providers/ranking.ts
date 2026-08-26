@@ -46,6 +46,8 @@ const COMPOSITE_FOOD_TOKENS = new Set([
     "pudding",
     "bread",
     "turkey",
+    "mix",
+    "gravy",
 ]);
 
 export function normalizeFoodText(value: string): string {
@@ -131,6 +133,13 @@ function compositePenalty(query: string, candidate: FoodCandidate): number {
     return 0;
 }
 
+function leadingIngredientBonus(query: string, candidate: FoodCandidate): number {
+    const queryTokens = new Set(normalizedTokens(query));
+    const leading = normalizedTokens(candidate.name)[0];
+    if (!leading || !queryTokens.has(leading)) return 0;
+    return 0.12;
+}
+
 export function candidateIdentity(candidate: FoodCandidate): string {
     if (candidate.barcode) return `barcode:${candidate.barcode}`;
     return [
@@ -192,6 +201,7 @@ export function scoreCandidate(
         recall * 0.28 +
         precision * 0.24 +
         phraseMatch * 0.06 +
+        leadingIngredientBonus(query, candidate) +
         candidate.confidence * 0.1 +
         completeness * 0.04 +
         portionQuality * 0.01 +
