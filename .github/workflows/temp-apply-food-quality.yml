@@ -24,10 +24,37 @@ jobs:
                   python3 - <<'PY'
                   from pathlib import Path
                   path = Path('scripts/certification/apply-food-quality-patch.py')
-                  text = path.read_text()
-                  path.write_text(text.replace(r'/\\\\D/g', r'/\\D/g'))
+                  text = path.read_text().replace(r'/\\\\D/g', r'/\\D/g')
+                  text = text.split('# Tighten production corpus invalid barcode contract.', 1)[0]
+                  path.write_text(text)
                   PY
             - run: python3 scripts/certification/apply-food-quality-patch.py
+            - name: Tighten production barcode certification
+              run: |
+                  python3 - <<'PY'
+                  from pathlib import Path
+                  path = Path('scripts/certification/production-mcp-corpus.ts')
+                  text = path.read_text()
+                  needle = '''                const failures = call.result.structuredContent
+                      ?.provider_failures as unknown[] | undefined;
+'''
+                  replacement = '''                if (
+                    barcode === "000000000000" &&
+                    (candidates?.length ?? 0) !== 0
+                ) {
+                    throw new Error(
+                        "All-zero GTIN unexpectedly resolved to a food",
+                    );
+                }
+                const failures = call.result.structuredContent
+                    ?.provider_failures as unknown[] | undefined;
+'''
+                  if needle not in text:
+                      if 'All-zero GTIN unexpectedly resolved to a food' in text:
+                          raise SystemExit(0)
+                      raise SystemExit('current barcode certification anchor changed')
+                  path.write_text(text.replace(needle, replacement, 1))
+                  PY
             - run: bunx prettier --write src/food-providers/catalog-repository.ts src/food-providers/service.ts src/food-providers/usda.ts src/food-providers/open-food-facts.ts src/foods.ts scripts/certification/production-mcp-corpus.ts src/food-providers/barcode.ts src/food-providers/barcode.test.ts src/food-providers/ranking.ts src/food-providers/ranking.test.ts
             - run: bun test src/food-providers/barcode.test.ts src/food-providers/ranking.test.ts src/food-providers/service.test.ts src/food-providers/catalog-repository.test.ts src/foods.test.ts
             - name: Commit patch
