@@ -111,3 +111,5 @@ jobs:
                   git add scripts/certification/production-mcp-corpus.ts
                   git diff --cached --quiet || git commit -m "test: certify production food candidate recall"
                   git push origin HEAD:test/candidate-set-production-cert
+
+# temporary branch-only updater; remove before merge
