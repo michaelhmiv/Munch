@@ -1,0 +1,76 @@
+name: Recipe Parser Workspace Spike
+
+on:
+    push:
+        branches:
+            - experiment/recipe-fetch-fallbacks
+
+permissions:
+    contents: read
+
+jobs:
+    workspace-parser:
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  ref: experiment/recipe-fetch-fallbacks
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - name: Create isolated parser workspace
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  node <<'NODE'
+                  const fs = require('fs');
+                  const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+                  pkg.workspaces = ['packages/recipe-parser'];
+                  fs.writeFileSync('package.json', JSON.stringify(pkg, null, 4) + '\n');
+                  NODE
+                  mkdir -p packages/recipe-parser
+                  cat > packages/recipe-parser/package.json <<'JSON'
+                  {
+                      "name": "@munch/recipe-parser-fallback",
+                      "private": true,
+                      "type": "module",
+                      "dependencies": {
+                          "cheerio": "1.1.2",
+                          "recipe-scrapers": "1.10.0",
+                          "zod": "4.4.3"
+                      }
+                  }
+                  JSON
+                  cat > packages/recipe-parser/index.ts <<'TS'
+                  export { scrapeRecipe } from "recipe-scrapers";
+                  TS
+            - name: Install isolated dependency graph
+              run: bun install
+            - name: Confirm root remains Zod 3 and parser workspace resolves Zod 4
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  bun -e 'import { z } from "zod"; console.log("root_httpUrl", typeof (z as any).httpUrl); if (typeof (z as any).httpUrl === "function") process.exit(1)'
+                  (cd packages/recipe-parser && bun -e 'import { z } from "zod"; console.log("workspace_httpUrl", typeof z.httpUrl); if (typeof z.httpUrl !== "function") process.exit(1)')
+            - name: Typecheck unchanged Munch against isolated parser workspace
+              run: bun run typecheck
+            - name: Exercise Love and Lemons through workspace parser
+              shell: bash
+              run: |
+                  set -o pipefail
+                  bun -e '
+                    const url = "https://www.loveandlemons.com/lemon-pasta/";
+                    const response = await fetch(url);
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    const html = await response.text();
+                    const { scrapeRecipe } = await import("./packages/recipe-parser/index.ts");
+                    const result = await scrapeRecipe(html, url, { safeParse: true });
+                    if (!result.success) throw result.error;
+                    const ingredientCount = result.data.ingredients.reduce((sum, group) => sum + group.items.length, 0);
+                    const instructionCount = result.data.instructions.reduce((sum, group) => sum + group.items.length, 0);
+                    console.log(JSON.stringify({ title: result.data.title, ingredientCount, instructionCount, rssMb: Math.round(process.memoryUsage().rss / 1024 / 1024) }));
+                    if (result.data.title !== "Lemon Pasta" || ingredientCount < 8 || instructionCount < 4) process.exit(1);
+                  '
+            - name: Focused Munch regressions
+              run: bun test src/recipe-import.test.ts src/host-ai-boundary.test.ts src/net.test.ts
