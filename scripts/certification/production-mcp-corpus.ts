@@ -723,7 +723,7 @@ async function runMealRecipePhase(): Promise<PhaseResult> {
         });
         const first = prepared.result.structuredContent?.review as
             Record<string, any> | undefined;
-        const draftId = first?.draft_id as string | undefined;
+        const draftId = first?.id as string | undefined;
         const version = first?.version as number | undefined;
         const question = Array.isArray(first?.questions)
             ? first.questions.find((value: any) => value?.status === "open")
