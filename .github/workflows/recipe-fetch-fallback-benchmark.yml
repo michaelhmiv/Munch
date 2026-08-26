@@ -25,33 +25,31 @@ jobs:
               run: npm install --no-save --package-lock=false --legacy-peer-deps crawlee playwright recipe-scrapers cheerio zod@4
             - name: Install Chromium
               run: npx playwright install --with-deps chromium
-            - name: Run native and Crawlee benchmark
+            - name: Run expanded native and Crawlee benchmark
               run: bun scripts/experiments/recipe-fetch-fallback-benchmark.ts native,crawlee | tee recipe-fetch-native-crawlee.jsonl
             - uses: actions/upload-artifact@v4
               with:
                   name: recipe-fetch-native-crawlee-${{ github.sha }}
                   path: recipe-fetch-native-crawlee.jsonl
 
-    scrapling:
+    crawlee-stability:
         runs-on: ubuntu-latest
-        timeout-minutes: 20
-        env:
-            SCRAPLING_BLOCKERS_ONLY: "1"
+        timeout-minutes: 25
         steps:
             - uses: actions/checkout@v4
               with:
                   ref: experiment/recipe-fetch-fallbacks
-            - uses: actions/setup-python@v5
+            - uses: oven-sh/setup-bun@v2
               with:
-                  python-version: "3.12"
-            - name: Install Scrapling with browser fetchers
-              run: |
-                  python -m pip install --upgrade pip
-                  pip install "scrapling[fetchers]"
-                  scrapling install
-            - name: Run Scrapling benchmark on known native blockers
-              run: python scripts/experiments/recipe_fetch_scrapling.py | tee recipe-fetch-scrapling.jsonl
+                  bun-version: 1
+            - run: bun install --frozen-lockfile
+            - name: Install experiment-only Crawlee dependencies
+              run: npm install --no-save --package-lock=false --legacy-peer-deps crawlee playwright
+            - name: Install Chromium
+              run: npx playwright install --with-deps chromium
+            - name: Repeat native-blocked publishers five times
+              run: bun scripts/experiments/recipe-fetch-crawlee-stability.ts | tee recipe-fetch-crawlee-stability.jsonl
             - uses: actions/upload-artifact@v4
               with:
-                  name: recipe-fetch-scrapling-${{ github.sha }}
-                  path: recipe-fetch-scrapling.jsonl
+                  name: recipe-fetch-crawlee-stability-${{ github.sha }}
+                  path: recipe-fetch-crawlee-stability.jsonl
