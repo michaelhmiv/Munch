@@ -22,7 +22,7 @@ jobs:
                   bun-version: 1
             - run: bun install --frozen-lockfile
             - name: Install experiment-only JS dependencies
-              run: npm install --no-save --package-lock=false crawlee playwright recipe-scrapers cheerio zod
+              run: npm install --no-save --package-lock=false --legacy-peer-deps crawlee playwright recipe-scrapers cheerio zod@4
             - name: Install Chromium
               run: npx playwright install --with-deps chromium
             - name: Run native and Crawlee benchmark
