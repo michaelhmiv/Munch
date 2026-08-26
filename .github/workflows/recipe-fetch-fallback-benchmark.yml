@@ -34,7 +34,9 @@ jobs:
 
     scrapling:
         runs-on: ubuntu-latest
-        timeout-minutes: 40
+        timeout-minutes: 20
+        env:
+            SCRAPLING_BLOCKERS_ONLY: "1"
         steps:
             - uses: actions/checkout@v4
               with:
@@ -47,7 +49,7 @@ jobs:
                   python -m pip install --upgrade pip
                   pip install "scrapling[fetchers]"
                   scrapling install
-            - name: Run Scrapling benchmark
+            - name: Run Scrapling benchmark on known native blockers
               run: python scripts/experiments/recipe_fetch_scrapling.py | tee recipe-fetch-scrapling.jsonl
             - uses: actions/upload-artifact@v4
               with:
