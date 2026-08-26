@@ -4,6 +4,7 @@ import { PlaywrightCrawler } from "crawlee";
 import { scrapeRecipe } from "recipe-scrapers";
 import { fetchRecipePage, RecipeImportError } from "../../src/recipe-import/fetch.js";
 import { RECIPE_IMPORT_CORPUS } from "../../src/recipe-import/fixtures/recipe-corpus.js";
+import { EXTRA_RECIPE_FETCH_CORPUS } from "./recipe-fetch-extra-corpus.js";
 
 const EXTRA = [
     ["Half Baked Harvest", "https://www.halfbakedharvest.com/slow-cooker-coq-au-vin/"],
@@ -17,6 +18,7 @@ const EXTRA = [
 const CORPUS = [
     ...RECIPE_IMPORT_CORPUS.map((entry) => ({ site: entry.site, url: entry.url })),
     ...EXTRA.map(([site, url]) => ({ site, url })),
+    ...EXTRA_RECIPE_FETCH_CORPUS,
 ];
 
 type Detection = {
