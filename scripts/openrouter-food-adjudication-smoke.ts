@@ -6,7 +6,9 @@ import { FoodCatalogRepository } from "../src/food-providers/catalog-repository.
 
 const apiKey = process.env.OPENROUTER_API_KEY?.trim();
 if (!apiKey) {
-    throw new Error("OPENROUTER_API_KEY is required for Luna food adjudication");
+    throw new Error(
+        "OPENROUTER_API_KEY is required for Luna food adjudication",
+    );
 }
 
 const model =
@@ -74,7 +76,8 @@ const CASES: CaseDefinition[] = [
     {
         id: "cooked-spaghetti",
         query: "spaghetti",
-        context: "I ate 2 cups of cooked spaghetti noodles with sauce logged separately.",
+        context:
+            "I ate 2 cups of cooked spaghetti noodles with sauce logged separately.",
         required: ["spaghetti"],
         forbidden: ["spinach", "squash", "meatball"],
     },
@@ -109,7 +112,10 @@ const CASES: CaseDefinition[] = [
 ];
 
 function normalized(value: string): string {
-    return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    return value
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim();
 }
 
 const prepared = [] as Array<{
@@ -140,14 +146,20 @@ for (const definition of CASES) {
         brand: hit.candidate.brand ?? null,
         data_kind: hit.candidate.dataKind,
         confidence: hit.candidate.confidence,
-        portions: hit.candidate.portions.slice(0, 5).map((portion) => portion.label),
+        portions: hit.candidate.portions
+            .slice(0, 5)
+            .map((portion) => portion.label),
         calories_per_100g: hit.candidate.nutrientsPer100g?.calories ?? null,
     }));
     const hasAcceptable = candidates.some((candidate) => {
         const name = normalized(candidate.name);
         return (
-            definition.required.every((token) => name.includes(normalized(token))) &&
-            definition.forbidden.every((token) => !name.includes(normalized(token)))
+            definition.required.every((token) =>
+                name.includes(normalized(token)),
+            ) &&
+            definition.forbidden.every(
+                (token) => !name.includes(normalized(token)),
+            )
         );
     });
     if (!hasAcceptable) {
@@ -202,11 +214,22 @@ const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
                             items: {
                                 type: "object",
                                 additionalProperties: false,
-                                required: ["id", "selected_index", "confidence"],
+                                required: [
+                                    "id",
+                                    "selected_index",
+                                    "confidence",
+                                ],
                                 properties: {
                                     id: { type: "string" },
-                                    selected_index: { type: "integer", minimum: 0 },
-                                    confidence: { type: "number", minimum: 0, maximum: 1 },
+                                    selected_index: {
+                                        type: "integer",
+                                        minimum: 0,
+                                    },
+                                    confidence: {
+                                        type: "number",
+                                        minimum: 0,
+                                        maximum: 1,
+                                    },
                                 },
                             },
                         },
@@ -240,7 +263,9 @@ if (!Array.isArray(parsed.selections)) {
     throw new Error("Luna adjudication returned no selections array");
 }
 
-const byId = new Map(parsed.selections.map((selection) => [selection.id, selection]));
+const byId = new Map(
+    parsed.selections.map((selection) => [selection.id, selection]),
+);
 const results: Array<Record<string, unknown>> = [];
 for (const definition of CASES) {
     const selection = byId.get(definition.id);
@@ -256,8 +281,12 @@ for (const definition of CASES) {
     }
     const name = normalized(chosen.name);
     const ok =
-        definition.required.every((token) => name.includes(normalized(token))) &&
-        definition.forbidden.every((token) => !name.includes(normalized(token)));
+        definition.required.every((token) =>
+            name.includes(normalized(token)),
+        ) &&
+        definition.forbidden.every(
+            (token) => !name.includes(normalized(token)),
+        );
     results.push({
         id: definition.id,
         query: definition.query,
@@ -266,7 +295,9 @@ for (const definition of CASES) {
         selected_name: chosen.name,
         confidence: selection.confidence ?? null,
         ok,
-        candidate_names: preparedCase.candidates.map((candidate) => candidate.name),
+        candidate_names: preparedCase.candidates.map(
+            (candidate) => candidate.name,
+        ),
     });
     if (!ok) {
         throw new Error(
@@ -275,8 +306,15 @@ for (const definition of CASES) {
     }
 }
 
-const report = { model, cases: results.length, passed: results.length, results };
-console.log(`[food_ai_adjudication] ${JSON.stringify({ model, cases: results.length, passed: results.length })}`);
+const report = {
+    model,
+    cases: results.length,
+    passed: results.length,
+    results,
+};
+console.log(
+    `[food_ai_adjudication] ${JSON.stringify({ model, cases: results.length, passed: results.length })}`,
+);
 console.log(JSON.stringify(report, null, 2));
 
 const summary = process.env.GITHUB_STEP_SUMMARY;

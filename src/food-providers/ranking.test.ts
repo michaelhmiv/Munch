@@ -48,10 +48,11 @@ describe("food candidate ranking", () => {
     });
 
     test("keeps ambiguous semantic alternatives available for the model", () => {
-        const ranked = rankCandidates(
-            { query: "bacon" },
-            [food("Bacon bits"), food("Bacon, cooked"), food("Canadian bacon")],
-        );
+        const ranked = rankCandidates({ query: "bacon" }, [
+            food("Bacon bits"),
+            food("Bacon, cooked"),
+            food("Canadian bacon"),
+        ]);
         expect(ranked.map((candidate) => candidate.name)).toEqual([
             "Bacon bits",
             "Bacon, cooked",
