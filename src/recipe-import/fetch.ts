@@ -6,9 +6,22 @@ export const MAX_RECIPE_URL_LENGTH = 2_000;
 export const MAX_RECIPE_HTML_BYTES = 2 * 1024 * 1024;
 export const MAX_RECIPE_REDIRECTS = 3;
 export const RECIPE_FETCH_TIMEOUT_MS = 10_000;
+export const RECIPE_FALLBACK_FETCH_TIMEOUT_MS = 4_000;
 export const RECIPE_IMPORTS_PER_MINUTE = 10;
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const FALLBACK_STATUSES = new Set([403, 429, 503]);
+const CHALLENGE_MARKERS = [
+    "__cf_chl",
+    "cf-browser-verification",
+    "/cdn-cgi/challenge-platform",
+    "challenges.cloudflare.com",
+    "_incapsula_resource",
+    "distil_r_captcha",
+    "px-captcha",
+    "perimeterx",
+    "datadome",
+] as const;
 const rateBuckets = new Map<string, number[]>();
 let activeFetches = 0;
 const MAX_ACTIVE_FETCHES = 8;
@@ -24,9 +37,37 @@ export class RecipeImportError extends Error {
     }
 }
 
+export type RecipeFallbackProfile = "firefox_151" | "safari_26_4";
+
+export interface RecipeFallbackRequest {
+    profile: RecipeFallbackProfile;
+    platform: "windows" | "macos";
+    timeoutMs: number;
+}
+
+export type RecipeFallbackFetcher = (
+    url: URL,
+    request: RecipeFallbackRequest,
+) => Promise<Response>;
+
 export interface RecipeUrlFetchDependencies {
     fetcher?: typeof fetch;
+    fallbackFetcher?: RecipeFallbackFetcher;
+    fallbackEnabled?: boolean;
     resolver?: (hostname: string) => Promise<Array<{ address: string }>>;
+}
+
+interface ResolvedRecipeUrlFetchDependencies {
+    fetcher: typeof fetch;
+    fallbackFetcher: RecipeFallbackFetcher;
+    fallbackEnabled: boolean;
+    resolver: (hostname: string) => Promise<Array<{ address: string }>>;
+}
+
+interface LoadedRecipeResponse {
+    response: Response;
+    html: string;
+    transport: "native" | RecipeFallbackProfile;
 }
 
 function ipv4Number(value: string): number[] | null {
@@ -232,9 +273,45 @@ async function readBoundedBody(response: Response): Promise<string> {
     return new TextDecoder("utf-8", { fatal: false }).decode(merged);
 }
 
-async function fetchOnce(
+function hasSupportedHtmlContentType(response: Response): boolean {
+    const contentType = response.headers.get("content-type") ?? "";
+    return (
+        !contentType ||
+        /text\/html|application\/xhtml\+xml/i.test(contentType)
+    );
+}
+
+function assertHtmlContentType(response: Response): void {
+    if (!hasSupportedHtmlContentType(response)) {
+        throw new RecipeImportError(
+            "unsupported_content",
+            "the URL did not return an HTML recipe page.",
+            415,
+        );
+    }
+}
+
+export function isRecipeChallengeResponse(
+    response: Pick<Response, "status" | "headers">,
+    html?: string,
+): boolean {
+    if (response.status === 403 || response.status === 503) return true;
+    if (response.headers.has("cf-mitigated")) return true;
+    if (!html) return false;
+    const sample = html.slice(0, 4_096).toLowerCase();
+    return CHALLENGE_MARKERS.some((marker) => sample.includes(marker));
+}
+
+function fallbackEnabledFromEnvironment(): boolean {
+    const value = process.env.MUNCH_RECIPE_IMPERSONATED_FETCH_ENABLED
+        ?.trim()
+        .toLowerCase();
+    return value !== "0" && value !== "false" && value !== "off";
+}
+
+async function nativeFetchOnce(
     url: URL,
-    dependencies: Required<RecipeUrlFetchDependencies>,
+    dependencies: ResolvedRecipeUrlFetchDependencies,
 ): Promise<Response> {
     await resolvePublicHost(url.hostname, dependencies.resolver);
     const controller = new AbortController();
@@ -262,6 +339,129 @@ async function fetchOnce(
     }
 }
 
+async function defaultFallbackFetcher(
+    url: URL,
+    request: RecipeFallbackRequest,
+): Promise<Response> {
+    const { fetch: wreqFetch } = await import("node-wreq");
+    const response = await wreqFetch(url.toString(), {
+        browser: {
+            profile: request.profile,
+            platform: request.platform,
+            headers: true,
+            http2: true,
+        },
+        redirect: "manual",
+        timeout: request.timeoutMs,
+        throwHttpErrors: false,
+    });
+    return response as unknown as Response;
+}
+
+function sourceHttpError(status: number): RecipeImportError {
+    if (status === 429) {
+        return new RecipeImportError(
+            "source_rate_limited",
+            "the recipe source is rate-limiting automated access; try again later.",
+            502,
+        );
+    }
+    return new RecipeImportError(
+        "fetch_failed",
+        `the recipe page returned HTTP ${status}.`,
+        502,
+    );
+}
+
+async function fallbackFetch(
+    url: URL,
+    dependencies: ResolvedRecipeUrlFetchDependencies,
+    triggerStatus: number,
+): Promise<LoadedRecipeResponse | Response> {
+    const profiles: RecipeFallbackRequest[] = [
+        {
+            profile: "firefox_151",
+            platform: "windows",
+            timeoutMs: RECIPE_FALLBACK_FETCH_TIMEOUT_MS,
+        },
+        ...(triggerStatus === 429
+            ? []
+            : [
+                  {
+                      profile: "safari_26_4" as const,
+                      platform: "macos" as const,
+                      timeoutMs: RECIPE_FALLBACK_FETCH_TIMEOUT_MS,
+                  },
+              ]),
+    ];
+    let lastStatus = triggerStatus;
+
+    for (const request of profiles) {
+        await resolvePublicHost(url.hostname, dependencies.resolver);
+        const started = performance.now();
+        let response: Response;
+        try {
+            response = await dependencies.fallbackFetcher(url, request);
+        } catch (error) {
+            if (error instanceof RecipeImportError) throw error;
+            console.info(
+                `[recipe_fetch] transport=${request.profile} host=${url.hostname} status=error duration_ms=${Math.round(performance.now() - started)}`,
+            );
+            continue;
+        }
+
+        lastStatus = response.status;
+        console.info(
+            `[recipe_fetch] transport=${request.profile} host=${url.hostname} status=${response.status} duration_ms=${Math.round(performance.now() - started)}`,
+        );
+
+        if (REDIRECT_STATUSES.has(response.status)) return response;
+        if (response.status === 429) break;
+        if (!response.ok) {
+            if (isRecipeChallengeResponse(response)) continue;
+            throw sourceHttpError(response.status);
+        }
+        assertHtmlContentType(response);
+        const html = await readBoundedBody(response);
+        if (isRecipeChallengeResponse(response, html)) continue;
+        return {
+            response,
+            html,
+            transport: request.profile,
+        };
+    }
+
+    throw sourceHttpError(lastStatus);
+}
+
+async function loadRecipeResponse(
+    url: URL,
+    dependencies: ResolvedRecipeUrlFetchDependencies,
+): Promise<LoadedRecipeResponse | Response> {
+    const response = await nativeFetchOnce(url, dependencies);
+    if (REDIRECT_STATUSES.has(response.status)) return response;
+
+    if (!response.ok) {
+        if (
+            dependencies.fallbackEnabled &&
+            FALLBACK_STATUSES.has(response.status)
+        ) {
+            return fallbackFetch(url, dependencies, response.status);
+        }
+        throw sourceHttpError(response.status);
+    }
+
+    assertHtmlContentType(response);
+    const html = await readBoundedBody(response);
+    if (
+        dependencies.fallbackEnabled &&
+        isRecipeChallengeResponse(response, html)
+    ) {
+        return fallbackFetch(url, dependencies, response.status);
+    }
+    return { response, html, transport: "native" };
+}
+
 export async function fetchRecipePage(
     submittedValue: string,
     options: RecipeUrlFetchDependencies & { rateLimitKey?: string } = {},
@@ -275,8 +475,11 @@ export async function fetchRecipePage(
         );
     }
     activeFetches += 1;
-    const dependencies: Required<RecipeUrlFetchDependencies> = {
+    const dependencies: ResolvedRecipeUrlFetchDependencies = {
         fetcher: options.fetcher ?? fetch,
+        fallbackFetcher: options.fallbackFetcher ?? defaultFallbackFetcher,
+        fallbackEnabled:
+            options.fallbackEnabled ?? fallbackEnabledFromEnvironment(),
         resolver:
             options.resolver ??
             (async (hostname) => lookup(hostname, { all: true })),
@@ -284,8 +487,8 @@ export async function fetchRecipePage(
     try {
         let current = assertSafeRecipeUrl(submittedValue);
         for (let redirect = 0; redirect <= MAX_RECIPE_REDIRECTS; redirect++) {
-            const response = await fetchOnce(current, dependencies);
-            if (REDIRECT_STATUSES.has(response.status)) {
+            const loaded = await loadRecipeResponse(current, dependencies);
+            if (loaded instanceof Response) {
                 if (redirect === MAX_RECIPE_REDIRECTS) {
                     throw new RecipeImportError(
                         "too_many_redirects",
@@ -293,7 +496,7 @@ export async function fetchRecipePage(
                         502,
                     );
                 }
-                const location = response.headers.get("location");
+                const location = loaded.headers.get("location");
                 if (!location) {
                     throw new RecipeImportError(
                         "invalid_redirect",
@@ -306,31 +509,13 @@ export async function fetchRecipePage(
                 );
                 continue;
             }
-            if (!response.ok) {
-                throw new RecipeImportError(
-                    "fetch_failed",
-                    `the recipe page returned HTTP ${response.status}.`,
-                    502,
-                );
-            }
-            const contentType = response.headers.get("content-type") ?? "";
-            if (
-                contentType &&
-                !/text\/html|application\/xhtml\+xml/i.test(contentType)
-            ) {
-                throw new RecipeImportError(
-                    "unsupported_content",
-                    "the URL did not return an HTML recipe page.",
-                    415,
-                );
-            }
-            const html = await readBoundedBody(response);
+
             return {
                 submittedUrl: submittedValue,
                 finalUrl: assertSafeRecipeUrl(
-                    response.url || current.toString(),
+                    loaded.response.url || current.toString(),
                 ).toString(),
-                html,
+                html: loaded.html,
             };
         }
         throw new RecipeImportError(
