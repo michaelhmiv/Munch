@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { PlaywrightCrawler } from "crawlee";
+import { scrapeRecipe } from "recipe-scrapers";
 import { fetchRecipePage, RecipeImportError } from "../../src/recipe-import/fetch.js";
 import { RECIPE_IMPORT_CORPUS } from "../../src/recipe-import/fixtures/recipe-corpus.js";
 
@@ -24,6 +25,8 @@ type Detection = {
     ingredientSignals: number;
     instructionSignals: number;
     title: string | null;
+    recipeScrapersOk: boolean;
+    recipeScrapersError: string | null;
 };
 
 type Row = {
@@ -40,21 +43,40 @@ type Row = {
     error?: string;
 };
 
-function detectRecipe(html: string): Detection {
+async function detectRecipe(html: string, url: string): Promise<Detection> {
     const recipeJsonLd = /["']@type["']\s*:\s*(?:["']Recipe["']|\[[^\]]*["']Recipe["'])/i.test(html);
     const ingredientSignals = (html.match(/recipeIngredient/gi) ?? []).length;
     const instructionSignals = (html.match(/recipeInstructions/gi) ?? []).length;
-    const title = /<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1]
-        ?.replace(/<[^>]+>/g, " ")
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 180) ?? null;
+    const title =
+        /<title\b[^>]*>([\s\S]*?)<\/title>/i
+            .exec(html)?.[1]
+            ?.replace(/<[^>]+>/g, " ")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 180) ?? null;
+
+    let recipeScrapersOk = false;
+    let recipeScrapersError: string | null = null;
+    try {
+        const parsed = (await scrapeRecipe(html, url, { safeParse: true })) as any;
+        recipeScrapersOk = parsed?.success === true;
+        if (!recipeScrapersOk) {
+            recipeScrapersError = String(
+                parsed?.error?.code ?? parsed?.error?.message ?? "unknown extraction failure",
+            );
+        }
+    } catch (error) {
+        recipeScrapersError = error instanceof Error ? error.message : String(error);
+    }
+
     return {
         usable: Boolean(recipeJsonLd && ingredientSignals > 0 && instructionSignals > 0),
         recipeJsonLd,
         ingredientSignals,
         instructionSignals,
         title,
+        recipeScrapersOk,
+        recipeScrapersError,
     };
 }
 
@@ -71,7 +93,7 @@ async function runNative(): Promise<void> {
         const started = performance.now();
         try {
             const page = await fetchRecipePage(entry.url);
-            const detection = detectRecipe(page.html);
+            const detection = await detectRecipe(page.html, page.finalUrl);
             output({
                 strategy: "native",
                 site: entry.site,
@@ -83,7 +105,9 @@ async function runNative(): Promise<void> {
                 bytes: Buffer.byteLength(page.html),
                 rssMb: rssMb(),
                 detection,
-                ...(!detection.usable ? { error: "fetched HTML did not contain complete Recipe JSON-LD" } : {}),
+                ...(!detection.usable
+                    ? { error: "fetched HTML did not contain complete Recipe JSON-LD" }
+                    : {}),
             });
         } catch (error) {
             output({
@@ -131,8 +155,11 @@ async function runCrawlee(): Promise<void> {
         async requestHandler({ request, page, response }) {
             await page.waitForTimeout(750);
             const html = await page.content();
-            const detection = detectRecipe(html);
-            const entry = byUrl.get(request.url) ?? { site: new URL(request.url).hostname, url: request.url };
+            const detection = await detectRecipe(html, request.loadedUrl ?? page.url());
+            const entry = byUrl.get(request.url) ?? {
+                site: new URL(request.url).hostname,
+                url: request.url,
+            };
             output({
                 strategy: "crawlee",
                 site: entry.site,
@@ -140,15 +167,25 @@ async function runCrawlee(): Promise<void> {
                 ok: detection.usable,
                 status: response?.status() ?? null,
                 finalUrl: request.loadedUrl ?? page.url(),
-                durationMs: Number((performance.now() - (startedByUrl.get(entry.url) ?? performance.now())).toFixed(2)),
+                durationMs: Number(
+                    (
+                        performance.now() -
+                        (startedByUrl.get(entry.url) ?? performance.now())
+                    ).toFixed(2),
+                ),
                 bytes: Buffer.byteLength(html),
                 rssMb: rssMb(),
                 detection,
-                ...(!detection.usable ? { error: "browser HTML did not contain complete Recipe JSON-LD" } : {}),
+                ...(!detection.usable
+                    ? { error: "browser HTML did not contain complete Recipe JSON-LD" }
+                    : {}),
             });
         },
         async failedRequestHandler({ request, error }) {
-            const entry = byUrl.get(request.url) ?? { site: new URL(request.url).hostname, url: request.url };
+            const entry = byUrl.get(request.url) ?? {
+                site: new URL(request.url).hostname,
+                url: request.url,
+            };
             output({
                 strategy: "crawlee",
                 site: entry.site,
@@ -156,7 +193,12 @@ async function runCrawlee(): Promise<void> {
                 ok: false,
                 status: null,
                 finalUrl: request.loadedUrl ?? null,
-                durationMs: Number((performance.now() - (startedByUrl.get(entry.url) ?? performance.now())).toFixed(2)),
+                durationMs: Number(
+                    (
+                        performance.now() -
+                        (startedByUrl.get(entry.url) ?? performance.now())
+                    ).toFixed(2),
+                ),
                 bytes: 0,
                 rssMb: rssMb(),
                 error: error instanceof Error ? error.message : String(error),
@@ -166,6 +208,10 @@ async function runCrawlee(): Promise<void> {
     await crawler.run(CORPUS.map((entry) => entry.url));
 }
 
-const strategies = new Set((process.argv[2] ?? "native,crawlee").split(",").map((value) => value.trim()));
+const strategies = new Set(
+    (process.argv[2] ?? "native,crawlee")
+        .split(",")
+        .map((value) => value.trim()),
+);
 if (strategies.has("native")) await runNative();
 if (strategies.has("crawlee")) await runCrawlee();
