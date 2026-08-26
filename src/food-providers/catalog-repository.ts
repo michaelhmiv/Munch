@@ -45,6 +45,38 @@ export function normalizeFoodText(value: string): string {
         .trim();
 }
 
+export function lexicalFoodSearchVariants(value: string): string[] {
+    const normalized = normalizeFoodText(value);
+    if (!normalized) return [];
+    const tokens = normalized.split(" ").filter(Boolean);
+    const last = tokens.at(-1);
+    if (!last) return [normalized];
+
+    let alternate = last;
+    if (last.length > 4 && last.endsWith("ies")) {
+        alternate = `${last.slice(0, -3)}y`;
+    } else if (last.length > 4 && last.endsWith("oes")) {
+        alternate = last.slice(0, -2);
+    } else if (
+        last.length > 3 &&
+        last.endsWith("s") &&
+        !last.endsWith("ss") &&
+        !last.endsWith("us")
+    ) {
+        alternate = last.slice(0, -1);
+    } else if (/[^aeiou]y$/u.test(last)) {
+        alternate = `${last.slice(0, -1)}ies`;
+    } else if (last.endsWith("o")) {
+        alternate = `${last}es`;
+    } else if (!last.endsWith("s")) {
+        alternate = `${last}s`;
+    }
+
+    if (alternate === last) return [normalized];
+    const variant = [...tokens.slice(0, -1), alternate].join(" ");
+    return variant === normalized ? [normalized] : [normalized, variant];
+}
+
 export function hashCatalogIdentity(value: string): string {
     return createHash("sha256").update(value, "utf8").digest("hex");
 }
@@ -257,6 +289,8 @@ export class FoodCatalogRepository {
         const normalized = normalizeFoodText(query);
         if (!normalized) return [];
         const boundedLimit = Math.max(1, Math.min(25, limit));
+        const lexicalVariants = lexicalFoodSearchVariants(normalized);
+        const alternate = lexicalVariants[1] ?? normalized;
         const retrievalLimit = Math.min(50, Math.max(25, boundedLimit * 5));
         const lexicalRows = await withServiceDatabase(
             async (tx) =>
@@ -267,7 +301,10 @@ export class FoodCatalogRepository {
               and to_tsvector(
                     'simple',
                     normalized_name || ' ' || coalesce(normalized_brand, '')
-                  ) @@ plainto_tsquery('simple', ${normalized})
+                  ) @@ (
+                    plainto_tsquery('simple', ${normalized})
+                    || plainto_tsquery('simple', ${alternate})
+                  )
             order by
                 case when normalized_name = ${normalized} then 0 else 1 end,
                 length(normalized_name) asc,

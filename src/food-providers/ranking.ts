@@ -133,7 +133,10 @@ function compositePenalty(query: string, candidate: FoodCandidate): number {
     return 0;
 }
 
-function leadingIngredientBonus(query: string, candidate: FoodCandidate): number {
+function leadingIngredientBonus(
+    query: string,
+    candidate: FoodCandidate,
+): number {
     const queryTokens = new Set(normalizedTokens(query));
     const leading = normalizedTokens(candidate.name)[0];
     if (!leading || !queryTokens.has(leading)) return 0;

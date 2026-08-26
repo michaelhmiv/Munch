@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
     hashCatalogIdentity,
+    lexicalFoodSearchVariants,
     normalizeFoodText,
     validateCatalogCandidate,
 } from "./catalog-repository.js";
@@ -94,5 +95,16 @@ describe("persistent food catalog helpers", () => {
         expect(() => validateCatalogCandidate(invalid)).toThrow(
             "Invalid portion gram weight",
         );
+    });
+    test("creates conservative final-noun lexical variants", () => {
+        expect(lexicalFoodSearchVariants("onion")).toEqual(["onion", "onions"]);
+        expect(lexicalFoodSearchVariants("pistachios")).toEqual([
+            "pistachios",
+            "pistachio",
+        ]);
+        expect(lexicalFoodSearchVariants("sweet potato")).toEqual([
+            "sweet potato",
+            "sweet potatoes",
+        ]);
     });
 });
