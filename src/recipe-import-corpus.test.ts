@@ -5,12 +5,12 @@ import {
 } from "./recipe-import/fixtures/recipe-corpus.js";
 
 describe("recipe import live corpus", () => {
-    test("contains twenty distinct recipe sites with direct HTTPS URLs", () => {
-        expect(RECIPE_IMPORT_CORPUS).toHaveLength(20);
-        expect(RECIPE_IMPORT_CORPUS_HOSTS).toHaveLength(20);
+    test("contains twenty-one distinct recipe sites with direct HTTPS URLs", () => {
+        expect(RECIPE_IMPORT_CORPUS).toHaveLength(21);
+        expect(RECIPE_IMPORT_CORPUS_HOSTS).toHaveLength(21);
         expect(
             new Set(RECIPE_IMPORT_CORPUS.map((entry) => entry.id)),
-        ).toHaveLength(20);
+        ).toHaveLength(21);
         expect(
             RECIPE_IMPORT_CORPUS.every((entry) => {
                 const url = new URL(entry.url);
