@@ -398,7 +398,9 @@ for (const definition of CASES) {
             confidence: agent.confidence,
             duration_ms: Number((performance.now() - startedAt).toFixed(2)),
             ok,
-            candidate_names: agent.candidates.map((candidate) => candidate.name),
+            candidate_names: agent.candidates.map(
+                (candidate) => candidate.name,
+            ),
         });
         if (!ok) failures.push(`${definition.id}: ${chosen.name}`);
     } catch (error) {
