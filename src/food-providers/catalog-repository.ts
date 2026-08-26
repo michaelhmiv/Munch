@@ -286,7 +286,7 @@ export class FoodCatalogRepository {
         if (!normalized) return [];
         const boundedLimit = Math.max(1, Math.min(25, limit));
         const lexicalTsquery = lexicalFoodSearchTsquery(normalized);
-        const retrievalLimit = Math.min(50, Math.max(25, boundedLimit * 5));
+        const retrievalLimit = Math.min(40, Math.max(25, boundedLimit * 4));
         const lexicalRows = await withServiceDatabase(
             async (tx) =>
                 tx<CatalogRow[]>`

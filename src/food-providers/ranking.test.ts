@@ -225,4 +225,26 @@ describe("generic food ranking", () => {
             ]),
         ).toBe("Macaroni, cooked");
     });
+    test("demotes remaining prepared forms from the real corpus", () => {
+        expect(
+            top("zucchini", [
+                food("Muffin, zucchini", { raw: { dataset: "survey" } }),
+                food("Zucchini, raw"),
+            ]),
+        ).toBe("Zucchini, raw");
+        expect(
+            top("spaghetti", [
+                food("Spaghetti and meatballs dinner, NFS, frozen meal", {
+                    raw: { dataset: "survey" },
+                }),
+                food("Spaghetti, cooked"),
+            ]),
+        ).toBe("Spaghetti, cooked");
+        expect(
+            top("macaroni", [
+                food("Macaroni, vegetable, enriched, cooked"),
+                food("Macaroni, cooked"),
+            ]),
+        ).toBe("Macaroni, cooked");
+    });
 });
