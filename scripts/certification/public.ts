@@ -55,22 +55,33 @@ for (const path of [
 }
 
 const configuredChallenge = process.env.OPENAI_APPS_CHALLENGE?.trim();
-if (configuredChallenge) {
-    const challengeResponse = await expectStatus(
-        "/.well-known/openai-apps-challenge",
-        200,
-    );
+const challengeResponse = await fetch(`${baseUrl}/.well-known/openai-apps-challenge`, {
+    headers: { accept: "text/plain" },
+    redirect: "manual",
+});
+if (challengeResponse.headers.get("location")) {
+    throw new Error("OpenAI challenge unexpectedly redirected");
+}
+if (challengeResponse.status === 200) {
     if (!(challengeResponse.headers.get("content-type") ?? "").startsWith("text/plain")) {
         throw new Error("OpenAI challenge has the wrong content type");
     }
     if (challengeResponse.headers.get("cache-control") !== "no-store") {
         throw new Error("OpenAI challenge must not be cached");
     }
-    if ((await challengeResponse.text()).trim() !== configuredChallenge) {
+    const challengeBody = (await challengeResponse.text()).trim();
+    if (!challengeBody || challengeBody.length > 2_000) {
+        throw new Error("OpenAI challenge returned an invalid body");
+    }
+    if (configuredChallenge && challengeBody !== configuredChallenge) {
         throw new Error("OpenAI challenge response does not match the configured value");
     }
-} else {
-    await expectStatus("/.well-known/openai-apps-challenge", 404);
+} else if (challengeResponse.status !== 404) {
+    throw new Error(
+        `/.well-known/openai-apps-challenge returned ${challengeResponse.status}; expected 200 or 404`,
+    );
+} else if (configuredChallenge) {
+    throw new Error("Configured OpenAI challenge returned 404");
 }
 
 const protectedResource = await fetchJson(
@@ -156,7 +167,8 @@ console.log(
         compatibilityDiscovery: true,
         publicPolicyPages: true,
         reviewerSignInPage: true,
-        openAiChallengeConfigured: Boolean(configuredChallenge),
+        openAiChallengeStatus: challengeResponse.status,
+        openAiChallengeExactValueChecked: Boolean(configuredChallenge),
         portalStylesheet: true,
         mealHistoryRequiresAuthentication: true,
     }),
