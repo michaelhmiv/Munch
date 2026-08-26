@@ -3,6 +3,7 @@
 import { appendFileSync } from "node:fs";
 import { foodCatalogConfig } from "../src/food-providers/catalog-config.js";
 import { FoodCatalogRepository } from "../src/food-providers/catalog-repository.js";
+import type { FoodCandidate } from "../src/food-providers/types.js";
 
 const apiKey = process.env.OPENROUTER_API_KEY?.trim();
 if (!apiKey) {
@@ -17,7 +18,7 @@ const repository = new FoodCatalogRepository(foodCatalogConfig());
 
 interface CaseDefinition {
     id: string;
-    query: string;
+    userPhrase: string;
     context: string;
     required: string[];
     forbidden: string[];
@@ -33,98 +34,96 @@ interface PreparedCandidate {
     calories_per_100g: number | null;
 }
 
-interface PreparedCase {
-    id: string;
-    query: string;
-    context: string;
+interface PreparedSearch {
+    search_query: string;
     candidates: PreparedCandidate[];
 }
 
 const CASES: CaseDefinition[] = [
     {
         id: "bacon-strips",
-        query: "bacon",
+        userPhrase: "bacon",
         context: "I ate 3 strips of bacon with breakfast.",
         required: ["bacon"],
-        forbidden: ["bit", "canadian"],
+        forbidden: ["bit", "canadian", "meatless"],
     },
     {
         id: "bacon-bits",
-        query: "bacon",
+        userPhrase: "bacon",
         context: "I added 2 tablespoons of bacon bits to a salad.",
         required: ["bacon", "bit"],
         forbidden: [],
     },
     {
         id: "diced-onion",
-        query: "onion",
+        userPhrase: "onion",
         context: "The recipe used 1 medium onion, diced.",
         required: ["onion"],
-        forbidden: ["gravy", "mix", "ring"],
+        forbidden: ["gravy", "mix", "ring", "powder", "dip", "bread", "soup"],
     },
     {
         id: "white-rice",
-        query: "white rice",
+        userPhrase: "white rice",
         context: "I ate 1 cup of cooked white rice.",
         required: ["rice"],
         forbidden: ["flour", "bean"],
     },
     {
         id: "plain-walnuts",
-        query: "walnuts",
+        userPhrase: "walnuts",
         context: "I ate 1 ounce of plain walnuts as a snack.",
         required: ["walnut"],
         forbidden: ["glazed", "honey"],
     },
     {
         id: "salmon-fillet",
-        query: "salmon",
+        userPhrase: "salmon",
         context: "Dinner included a 6 ounce grilled salmon fillet.",
         required: ["salmon"],
         forbidden: ["salad"],
     },
     {
         id: "blueberries",
-        query: "blueberries",
+        userPhrase: "blueberries",
         context: "I ate 1 cup of fresh blueberries.",
         required: ["blueberr"],
         forbidden: ["juice", "milk"],
     },
     {
         id: "cooked-spaghetti",
-        query: "spaghetti",
+        userPhrase: "spaghetti",
         context:
             "I ate 2 cups of cooked spaghetti noodles with sauce logged separately.",
         required: ["spaghetti"],
-        forbidden: ["spinach", "squash", "meatball"],
+        forbidden: ["spinach", "squash", "meatball", "sauce", "dry"],
     },
     {
         id: "whole-egg",
-        query: "egg",
+        userPhrase: "egg",
         context: "Breakfast included 1 large whole egg.",
         required: ["egg"],
-        forbidden: ["yolk", "dried"],
+        forbidden: ["yolk", "dried", "bread", "burrito", "soup"],
     },
     {
         id: "chicken-thigh",
-        query: "chicken thigh",
+        userPhrase: "chicken thigh",
         context: "I ate one grilled boneless skinless chicken thigh.",
         required: ["chicken", "thigh"],
-        forbidden: ["breaded", "reheated"],
+        forbidden: ["breaded", "reheated", "coated"],
     },
     {
         id: "two-percent-milk",
-        query: "2% milk",
+        userPhrase: "2% milk",
         context: "I drank 1 cup of 2% dairy milk.",
         required: ["milk"],
-        forbidden: ["yogurt", "rennin", "mix"],
+        forbidden: ["yogurt", "rennin", "mix", "chocolate", "strawberry"],
     },
     {
         id: "skim-milk",
-        query: "skim milk",
+        userPhrase: "skim milk",
         context: "I used 1 cup of skim milk in the recipe.",
         required: ["milk"],
-        forbidden: ["yogurt"],
+        forbidden: ["yogurt", "chocolate", "strawberry", "cheese"],
     },
 ];
 
@@ -150,162 +149,194 @@ function candidatePasses(
     );
 }
 
-async function prepareCase(definition: CaseDefinition): Promise<PreparedCase> {
-    const hits = await repository.searchLocal(definition.query, 8);
-    if (hits.length < 2) {
-        throw new Error(
-            `${definition.id} returned only ${hits.length} local candidates; semantic adjudication needs alternatives`,
-        );
-    }
-    const candidates = hits.map((hit, index) => ({
-        index,
-        name: hit.candidate.name,
-        brand: hit.candidate.brand ?? null,
-        data_kind: hit.candidate.dataKind,
-        confidence: hit.candidate.confidence,
-        portions: hit.candidate.portions
-            .slice(0, 5)
-            .map((portion) => portion.label),
-        calories_per_100g: hit.candidate.nutrientsPer100g?.calories ?? null,
-    }));
-    if (!candidates.some((candidate) => candidatePasses(definition, candidate))) {
-        throw new Error(
-            `${definition.id} retrieval omitted an acceptable candidate: ${candidates
-                .map((candidate) => candidate.name)
-                .join(" | ")}`,
-        );
-    }
-    return {
-        id: definition.id,
-        query: definition.query,
-        context: definition.context,
-        candidates,
-    };
-}
-
-async function askLuna(preparedCase: PreparedCase): Promise<{
-    selected_index: number;
-    confidence: number;
-}> {
+async function openRouterJson<T>(
+    title: string,
+    system: string,
+    user: unknown,
+    schemaName: string,
+    schema: Record<string, unknown>,
+): Promise<T> {
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
             authorization: `Bearer ${apiKey}`,
             "content-type": "application/json",
             "HTTP-Referer": "https://munch.business",
-            "X-Title": "Munch food adjudication CI",
+            "X-Title": title,
         },
         body: JSON.stringify({
             model,
             temperature: 0,
             messages: [
-                {
-                    role: "system",
-                    content:
-                        "You are selecting a factual food database candidate for Munch. The database has already retrieved plausible candidates; your job is semantic interpretation. Use every explicit fact in the user's context, especially quantity, unit, preparation, food form, brand, and anything the user says is logged separately. Do not assume candidate 0 is correct. Prefer the candidate that satisfies the stated facts while introducing the fewest unsupported assumptions or extra ingredients/modifiers. Do not infer an unmentioned flavor, ingredient, preparation, subtype, or brand. Use portion labels as evidence when they help distinguish forms. Select exactly one provided candidate and do not invent a new food.",
-                },
-                {
-                    role: "user",
-                    content: JSON.stringify(preparedCase),
-                },
+                { role: "system", content: system },
+                { role: "user", content: JSON.stringify(user) },
             ],
             response_format: {
                 type: "json_schema",
                 json_schema: {
-                    name: "munch_food_adjudication",
+                    name: schemaName,
                     strict: true,
-                    schema: {
-                        type: "object",
-                        additionalProperties: false,
-                        required: ["selected_index", "confidence"],
-                        properties: {
-                            selected_index: {
-                                type: "integer",
-                                minimum: 0,
-                            },
-                            confidence: {
-                                type: "number",
-                                minimum: 0,
-                                maximum: 1,
-                            },
-                        },
-                    },
+                    schema,
                 },
             },
         }),
         signal: AbortSignal.timeout(60_000),
     });
-
     if (!response.ok) {
         throw new Error(
-            `OpenRouter food adjudication failed for ${preparedCase.id}: ${response.status} ${(await response.text()).slice(0, 1000)}`,
+            `OpenRouter ${schemaName} failed: ${response.status} ${(await response.text()).slice(0, 1000)}`,
         );
     }
-
     const payload = (await response.json()) as {
         choices?: Array<{ message?: { content?: string } }>;
     };
     const content = payload.choices?.[0]?.message?.content;
-    if (!content) {
-        throw new Error(`OpenRouter returned no content for ${preparedCase.id}`);
-    }
-    const parsed = JSON.parse(content) as {
-        selected_index?: number;
-        confidence?: number;
-    };
-    if (!Number.isInteger(parsed.selected_index)) {
-        throw new Error(`Luna omitted selected_index for ${preparedCase.id}`);
-    }
+    if (!content) throw new Error(`OpenRouter returned no ${schemaName} content`);
+    return JSON.parse(content) as T;
+}
+
+async function askLunaForSearch(
+    definition: CaseDefinition,
+    previous?: PreparedSearch,
+): Promise<string> {
+    const result = await openRouterJson<{ search_query: string }>(
+        "Munch food search formulation CI",
+        "You formulate a concise search_foods query for a nutrition database. Use the user's full context, not merely the original noun. Preserve explicitly stated preparation/form/brand facts that help retrieval, such as cooked, whole, skim, 2%, strips, bits, or skinless. Do not invent an unmentioned brand, flavor, ingredient, species, or preparation. If a previous search is supplied and its candidates do not match the context, revise the query to better express the facts that distinguish the intended food. Return a short food search phrase, not an explanation.",
+        {
+            user_phrase: definition.userPhrase,
+            context: definition.context,
+            previous_search: previous ?? null,
+        },
+        "munch_food_search_query",
+        {
+            type: "object",
+            additionalProperties: false,
+            required: ["search_query"],
+            properties: {
+                search_query: { type: "string", minLength: 1, maxLength: 120 },
+            },
+        },
+    );
+    const query = result.search_query.trim();
+    if (!query) throw new Error(`Luna returned an empty search query for ${definition.id}`);
+    return query;
+}
+
+function prepareCandidates(candidates: FoodCandidate[]): PreparedCandidate[] {
+    return candidates.map((candidate, index) => ({
+        index,
+        name: candidate.name,
+        brand: candidate.brand ?? null,
+        data_kind: candidate.dataKind,
+        confidence: candidate.confidence,
+        portions: candidate.portions.slice(0, 5).map((portion) => portion.label),
+        calories_per_100g: candidate.nutrientsPer100g?.calories ?? null,
+    }));
+}
+
+async function retrieve(searchQuery: string): Promise<PreparedSearch> {
+    const hits = await repository.searchLocal(searchQuery, 10);
     return {
-        selected_index: parsed.selected_index!,
-        confidence:
-            typeof parsed.confidence === "number" ? parsed.confidence : 0,
+        search_query: searchQuery,
+        candidates: prepareCandidates(hits.map((hit) => hit.candidate)),
     };
+}
+
+async function searchWithLuna(definition: CaseDefinition): Promise<{
+    searches: PreparedSearch[];
+    candidates: PreparedCandidate[];
+}> {
+    const searches: PreparedSearch[] = [];
+    let query = await askLunaForSearch(definition);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+        const result = await retrieve(query);
+        searches.push(result);
+        if (result.candidates.some((candidate) => candidatePasses(definition, candidate))) {
+            return { searches, candidates: result.candidates };
+        }
+        if (attempt === 0) {
+            query = await askLunaForSearch(definition, result);
+        }
+    }
+    const allCandidates = searches.flatMap((search) => search.candidates);
+    throw new Error(
+        `${definition.id} model-guided retrieval omitted an acceptable candidate after ${searches.length} searches: ${allCandidates
+            .map((candidate) => candidate.name)
+            .join(" | ")}`,
+    );
+}
+
+async function askLunaToSelect(
+    definition: CaseDefinition,
+    searches: PreparedSearch[],
+    candidates: PreparedCandidate[],
+): Promise<{ selected_index: number; confidence: number }> {
+    const result = await openRouterJson<{
+        selected_index: number;
+        confidence: number;
+    }>(
+        "Munch food adjudication CI",
+        "You are selecting a factual food database candidate for Munch. Use every explicit fact in the user's context, especially quantity, unit, preparation, food form, brand, and anything logged separately. Candidate ordering is retrieval order, not a correctness ranking. Prefer the candidate that satisfies the stated facts while introducing the fewest unsupported assumptions or extra ingredients/modifiers. Do not infer an unmentioned flavor, ingredient, subtype, brand, or preparation. Use portion labels as evidence when useful. Select exactly one provided candidate and do not invent a new food.",
+        {
+            user_phrase: definition.userPhrase,
+            context: definition.context,
+            searches: searches.map((search) => search.search_query),
+            candidates,
+        },
+        "munch_food_adjudication",
+        {
+            type: "object",
+            additionalProperties: false,
+            required: ["selected_index", "confidence"],
+            properties: {
+                selected_index: { type: "integer", minimum: 0 },
+                confidence: { type: "number", minimum: 0, maximum: 1 },
+            },
+        },
+    );
+    if (!Number.isInteger(result.selected_index)) {
+        throw new Error(`Luna omitted selected_index for ${definition.id}`);
+    }
+    return result;
 }
 
 const results: Array<Record<string, unknown>> = [];
 const failures: string[] = [];
 
 for (const definition of CASES) {
-    const preparedCase = await prepareCase(definition);
     const startedAt = performance.now();
     try {
-        const selection = await askLuna(preparedCase);
-        const chosen = preparedCase.candidates[selection.selected_index];
+        const { searches, candidates } = await searchWithLuna(definition);
+        const selection = await askLunaToSelect(definition, searches, candidates);
+        const chosen = candidates[selection.selected_index];
         if (!chosen) {
             throw new Error(
-                `selected invalid index ${selection.selected_index} (candidate count ${preparedCase.candidates.length})`,
+                `selected invalid index ${selection.selected_index} (candidate count ${candidates.length})`,
             );
         }
         const ok = candidatePasses(definition, chosen);
         results.push({
             id: definition.id,
-            query: definition.query,
+            user_phrase: definition.userPhrase,
             context: definition.context,
+            search_queries: searches.map((search) => search.search_query),
             selected_index: selection.selected_index,
             selected_name: chosen.name,
             confidence: selection.confidence,
             duration_ms: Number((performance.now() - startedAt).toFixed(2)),
             ok,
-            candidate_names: preparedCase.candidates.map(
-                (candidate) => candidate.name,
-            ),
+            candidate_names: candidates.map((candidate) => candidate.name),
         });
-        if (!ok) {
-            failures.push(`${definition.id}: ${chosen.name}`);
-        }
+        if (!ok) failures.push(`${definition.id}: ${chosen.name}`);
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         results.push({
             id: definition.id,
-            query: definition.query,
+            user_phrase: definition.userPhrase,
             context: definition.context,
             duration_ms: Number((performance.now() - startedAt).toFixed(2)),
             ok: false,
             error: message,
-            candidate_names: preparedCase.candidates.map(
-                (candidate) => candidate.name,
-            ),
         });
         failures.push(`${definition.id}: ${message}`);
     }
@@ -322,12 +353,12 @@ const summary = process.env.GITHUB_STEP_SUMMARY;
 if (summary) {
     appendFileSync(
         summary,
-        `\n### Luna food candidate adjudication\n\nModel: \`${model}\`\n\nPassed: **${passed}/${results.length}** independent contextual candidate selections.\n`,
+        `\n### Luna food search + candidate adjudication\n\nModel: \`${model}\`\n\nPassed: **${passed}/${results.length}** contextual agent loops.\n`,
     );
 }
 
 if (failures.length > 0) {
     throw new Error(
-        `Luna food adjudication failed ${failures.length}/${results.length} cases: ${failures.join("; ")}`,
+        `Luna food agent loop failed ${failures.length}/${results.length} cases: ${failures.join("; ")}`,
     );
 }
