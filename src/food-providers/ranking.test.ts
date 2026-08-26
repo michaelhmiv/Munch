@@ -208,4 +208,21 @@ describe("generic food ranking", () => {
             ]),
         ).toBe("Broccoli, cooked");
     });
+    test("demotes subtype and dish names for generic food queries", () => {
+        expect(
+            top("bacon", [food("Canadian bacon, unprepared"), food("Bacon")]),
+        ).toBe("Bacon");
+        expect(
+            top("spaghetti", [
+                food("Spaghetti squash, cooked"),
+                food("Spaghetti, cooked"),
+            ]),
+        ).toBe("Spaghetti, cooked");
+        expect(
+            top("macaroni", [
+                food("Chili with macaroni", { raw: { dataset: "survey" } }),
+                food("Macaroni, cooked"),
+            ]),
+        ).toBe("Macaroni, cooked");
+    });
 });

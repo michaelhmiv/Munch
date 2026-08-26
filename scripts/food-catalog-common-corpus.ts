@@ -217,6 +217,9 @@ const PLAIN_INGREDIENT_FORM_TOKENS = new Set([
     "spinach",
     "tuna",
     "chinese",
+    "canadian",
+    "squash",
+    "chili",
 ]);
 
 function plainIngredientFormQuality(query: string, name: string): boolean {
