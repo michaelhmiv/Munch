@@ -13,8 +13,12 @@ describe("production food corpus name matching", () => {
     });
 
     test("preserves multiword matching", () => {
-        expect(foodNameMatches("Sweet potatoes, cooked", ["sweet potato"])).toBe(true);
-        expect(foodNameMatches("Black beans, cooked", ["black bean"])).toBe(true);
+        expect(
+            foodNameMatches("Sweet potatoes, cooked", ["sweet potato"]),
+        ).toBe(true);
+        expect(foodNameMatches("Black beans, cooked", ["black bean"])).toBe(
+            true,
+        );
         expect(foodNameMatches("Chocolate milk", ["milk"])).toBe(true);
     });
 
