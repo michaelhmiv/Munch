@@ -22,13 +22,14 @@ jobs:
                   set -euo pipefail
                   bun add --exact cheerio@1.2.0
                   python3 scripts/recipe-finalize-bootstrap.py
-                  bunx prettier --write package.json src/recipe-import/types.ts src/recipe-import/parser.ts src/recipe-import.test.ts src/recipe-import/fixtures/recipe-corpus.ts scripts/recipe-import-save-roundtrip-smoke.ts .github/workflows/ci.yml .github/workflows/recipe-import-corpus-smoke.yml
+                  bunx prettier --write package.json src/recipe-import/types.ts src/recipe-import/parser.ts src/recipe-import.test.ts src/recipe-import/fixtures/recipe-corpus.ts scripts/recipe-import-save-roundtrip-smoke.ts
+                  git checkout -- .github/workflows/ci.yml .github/workflows/recipe-import-corpus-smoke.yml
                   if git diff --quiet; then
-                    echo "No recipe finalization changes remain."
+                    echo "No non-workflow recipe finalization changes remain."
                     exit 0
                   fi
                   git config user.name "github-actions[bot]"
                   git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-                  git add package.json bun.lock src/recipe-import/types.ts src/recipe-import/parser.ts src/recipe-import.test.ts src/recipe-import/fixtures/recipe-corpus.ts scripts/recipe-import-save-roundtrip-smoke.ts .github/workflows/ci.yml .github/workflows/recipe-import-corpus-smoke.yml
+                  git add package.json bun.lock src/recipe-import/types.ts src/recipe-import/parser.ts src/recipe-import.test.ts src/recipe-import/fixtures/recipe-corpus.ts scripts/recipe-import-save-roundtrip-smoke.ts
                   git commit -m "Finalize recipe import parsing and persistence certification"
                   git push
