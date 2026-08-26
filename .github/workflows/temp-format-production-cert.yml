@@ -1,0 +1,30 @@
+name: Temporary format production certification
+
+on:
+    pull_request:
+        branches:
+            - main
+
+permissions:
+    contents: write
+
+jobs:
+    format:
+        if: github.head_ref == 'fix/production-mcp-certification'
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  ref: fix/production-mcp-certification
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - run: bun install --frozen-lockfile
+            - run: bunx prettier --write scripts/certification/production-mcp-corpus.ts scripts/production-deploy-contract.test.ts
+            - name: Commit formatting
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                  git add scripts/certification/production-mcp-corpus.ts scripts/production-deploy-contract.test.ts
+                  git diff --cached --quiet || git commit -m "style: format production certification harness"
+                  git push origin HEAD:fix/production-mcp-certification
