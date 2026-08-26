@@ -1,0 +1,553 @@
+name: Recipe Import Finalize Bootstrap
+
+on:
+    push:
+        branches:
+            - fix/recipe-import-finalize
+
+permissions:
+    contents: write
+
+jobs:
+    apply:
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - name: Apply final recipe import changes
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  if [[ -f scripts/recipe-import-save-roundtrip-smoke.ts ]]; then
+                    echo "Recipe finalization already applied."
+                    exit 0
+                  fi
+
+                  bun add --exact cheerio@1.2.0
+
+                  python3 <<'PY'
+                  from pathlib import Path
+
+                  def replace_once(path: str, old: str, new: str) -> None:
+                      p = Path(path)
+                      text = p.read_text()
+                      if old not in text:
+                          raise SystemExit(f"replacement marker not found in {path}: {old[:100]!r}")
+                      p.write_text(text.replace(old, new, 1))
+
+                  # Extend the public parser contract without coupling it to a third-party implementation name.
+                  types = Path("src/recipe-import/types.ts")
+                  text = types.read_text()
+                  text = text.replace(
+                      'strategy: z.enum(["schema_org_json_ld", "microdata"]),',
+                      'strategy: z.enum([\n            "schema_org_json_ld",\n            "microdata",\n            "recipe_card_html",\n        ]),',
+                  )
+                  text = text.replace(
+                      'strategy: "schema_org_json_ld" | "microdata";',
+                      'strategy: "schema_org_json_ld" | "microdata" | "recipe_card_html";',
+                  )
+                  types.write_text(text)
+
+                  parser = Path("src/recipe-import/parser.ts")
+                  text = parser.read_text()
+                  text = text.replace(
+                      'import type {\n',
+                      'import { load } from "cheerio";\nimport type {\n',
+                      1,
+                  )
+                  text = text.replace(
+                      'export const RECIPE_IMPORT_PARSER_VERSION = "1.0.0";',
+                      'export const RECIPE_IMPORT_PARSER_VERSION = "1.1.0";',
+                      1,
+                  )
+                  marker = '''export function parseRecipeHtml(html: string): ParsedRecipe {
+    const parsed = parseJsonLd(html) ?? parseMicrodata(html);
+    if (!parsed) {
+        throw new Error(
+            "No supported structured recipe data was found on the page.",
+        );
+    }
+    return parsed;
+}
+'''
+                  fallback = r'''function parseRecipeCardHtml(html: string): ParsedRecipe | null {
+    const $ = load(html);
+    const root = $(".wprm-recipe-container, .tasty-recipes").first();
+    if (root.length === 0) return null;
+
+    const clean = (value: string): string | undefined => {
+        const normalized = decodeHtml(value).replace(/\s+/g, " ").trim();
+        return normalized || undefined;
+    };
+    const firstText = (selector: string): string | undefined =>
+        clean(root.find(selector).first().text());
+    const wprm = root.hasClass("wprm-recipe-container");
+
+    const name = firstText(
+        wprm
+            ? ".wprm-recipe-name"
+            : ".tasty-recipes-title, [itemprop='name']",
+    );
+    if (!name) return null;
+
+    const ingredientNodes = wprm
+        ? root.find(".wprm-recipe-ingredient")
+        : root.find(".tasty-recipes-ingredients li");
+    const ingredients = ingredientNodes
+        .toArray()
+        .map((node) => {
+            const item = $(node);
+            let rawText: string | undefined;
+            if (wprm) {
+                const amount = clean(
+                    item.find(".wprm-recipe-ingredient-amount").first().text(),
+                );
+                const unit = clean(
+                    item.find(".wprm-recipe-ingredient-unit").first().text(),
+                );
+                const ingredientName = clean(
+                    item.find(".wprm-recipe-ingredient-name").first().text(),
+                );
+                const notes = clean(
+                    item.find(".wprm-recipe-ingredient-notes").first().text(),
+                );
+                const base = [amount, unit, ingredientName]
+                    .filter(Boolean)
+                    .join(" ");
+                rawText = clean(notes ? `${base}, ${notes}` : base);
+            }
+            rawText ??= clean(item.text());
+            return rawText ? parseIngredientText(rawText) : null;
+        })
+        .filter(
+            (
+                value,
+            ): value is ReturnType<typeof parseIngredientText> => Boolean(value),
+        )
+        .slice(0, 200);
+    if (ingredients.length === 0) return null;
+
+    const warnings: RecipeImportWarning[] = [];
+    for (const ingredient of ingredients) warnings.push(...ingredient.warnings);
+
+    const yieldText = firstText(
+        wprm
+            ? ".wprm-recipe-servings-container, .wprm-recipe-servings"
+            : ".tasty-recipes-yield",
+    );
+    const yieldResult = parseServings(yieldText);
+    if (yieldResult.warning) warnings.push(yieldResult.warning);
+
+    const instructionNodes = wprm
+        ? root.find(".wprm-recipe-instruction-text")
+        : root.find(".tasty-recipes-instructions li");
+    const instructions = instructionNodes
+        .toArray()
+        .map((node) => clean($(node).text()))
+        .filter((value): value is string => Boolean(value))
+        .filter((value, index, all) => all.indexOf(value) === index)
+        .slice(0, 100);
+    if (instructions.length === 0) {
+        warnings.push(
+            warning(
+                "instructions_missing",
+                "The source recipe card did not provide instructions; add them before saving.",
+                "instructions",
+            ),
+        );
+    }
+
+    const prepText = firstText(
+        wprm
+            ? ".wprm-recipe-prep-time-container"
+            : ".tasty-recipes-prep-time",
+    );
+    const cookText = firstText(
+        wprm
+            ? ".wprm-recipe-cook-time-container"
+            : ".tasty-recipes-cook-time",
+    );
+
+    return {
+        strategy: "recipe_card_html",
+        name: name.slice(0, 200),
+        description: firstText(
+            wprm ? ".wprm-recipe-summary" : ".tasty-recipes-description",
+        )?.slice(0, 2_000),
+        servings: yieldResult.servings,
+        instructions,
+        preparationMinutes: parseDuration(prepText),
+        cookingMinutes: parseDuration(cookText),
+        sourceTitle: name.slice(0, 500),
+        siteName: extractMeta(html, "og:site_name"),
+        author: firstText(
+            wprm
+                ? ".wprm-recipe-author"
+                : ".tasty-recipes-author-name, [itemprop='author']",
+        ),
+        canonicalUrl:
+            extractCanonicalLink(html) ?? extractMeta(html, "og:url"),
+        ingredients: ingredients.map((value) => value.ingredient),
+        warnings,
+    };
+}
+
+export function parseRecipeHtml(html: string): ParsedRecipe {
+    const parsed =
+        parseJsonLd(html) ??
+        parseMicrodata(html) ??
+        parseRecipeCardHtml(html);
+    if (!parsed) {
+        throw new Error(
+            "No supported structured recipe data was found on the page.",
+        );
+    }
+    return parsed;
+}
+'''
+                  if marker not in text:
+                      raise SystemExit("parseRecipeHtml marker not found")
+                  parser.write_text(text.replace(marker, fallback, 1))
+
+                  tests = Path("src/recipe-import.test.ts")
+                  text = tests.read_text()
+                  marker = '''    test("preserves raw text and warns when a quantity is not measurable", () => {
+'''
+                  insertion = r'''    test("falls back to WP Recipe Maker cards while preserving source facts", () => {
+        const parsed = parseRecipeHtml(`
+            <html><head>
+              <meta property="og:site_name" content="Example Kitchen" />
+              <link rel="canonical" href="https://example.com/lemon-pasta" />
+            </head><body>
+              <div class="wprm-recipe-container">
+                <h2 class="wprm-recipe-name">Lemon Pasta</h2>
+                <div class="wprm-recipe-summary">A bright weeknight pasta.</div>
+                <div class="wprm-recipe-servings-container">Serves <span class="wprm-recipe-servings">2</span></div>
+                <div class="wprm-recipe-prep-time-container">Prep Time 5 minutes</div>
+                <div class="wprm-recipe-cook-time-container">Cook Time 15 minutes</div>
+                <ul>
+                  <li class="wprm-recipe-ingredient"><span class="wprm-recipe-ingredient-amount">8</span> <span class="wprm-recipe-ingredient-unit">ounces</span> <span class="wprm-recipe-ingredient-name">spaghetti</span></li>
+                  <li class="wprm-recipe-ingredient"><span class="wprm-recipe-ingredient-amount">⅓</span> <span class="wprm-recipe-ingredient-unit">cup</span> <span class="wprm-recipe-ingredient-name">Parmesan cheese</span>, <span class="wprm-recipe-ingredient-notes">grated</span></li>
+                  <li class="wprm-recipe-ingredient"><span class="wprm-recipe-ingredient-name">Sea salt and black pepper to taste</span></li>
+                </ul>
+                <ol>
+                  <li class="wprm-recipe-instruction"><div class="wprm-recipe-instruction-text">Cook the pasta until al dente.</div></li>
+                  <li class="wprm-recipe-instruction"><div class="wprm-recipe-instruction-text">Toss with the sauce and serve.</div></li>
+                </ol>
+              </div>
+            </body></html>
+        `);
+        expect(parsed.strategy).toBe("recipe_card_html");
+        expect(parsed.name).toBe("Lemon Pasta");
+        expect(parsed.servings).toBe(2);
+        expect(parsed.preparationMinutes).toBe(5);
+        expect(parsed.cookingMinutes).toBe(15);
+        expect(parsed.ingredients).toHaveLength(3);
+        expect(parsed.ingredients[0]).toMatchObject({
+            rawText: "8 ounces spaghetti",
+            name: "spaghetti",
+            quantity: 8,
+            unit: "oz",
+        });
+        expect(parsed.ingredients[1]).toMatchObject({
+            rawText: "⅓ cup Parmesan cheese, grated",
+            quantity: 1 / 3,
+            unit: "cup",
+        });
+        expect(parsed.ingredients[2]?.quantity).toBeUndefined();
+        expect(parsed.instructions).toEqual([
+            "Cook the pasta until al dente.",
+            "Toss with the sauce and serve.",
+        ]);
+        expect(parsed.canonicalUrl).toBe("https://example.com/lemon-pasta");
+    });
+
+    test("falls back to Tasty Recipes card markup", () => {
+        const parsed = parseRecipeHtml(`
+            <div class="tasty-recipes">
+              <h2 class="tasty-recipes-title">Simple Toast</h2>
+              <div class="tasty-recipes-yield">Yield: 1 serving</div>
+              <div class="tasty-recipes-ingredients"><ul><li>2 slices bread</li></ul></div>
+              <div class="tasty-recipes-instructions"><ol><li>Toast the bread.</li></ol></div>
+            </div>
+        `);
+        expect(parsed.strategy).toBe("recipe_card_html");
+        expect(parsed.ingredients[0]).toMatchObject({
+            name: "bread",
+            quantity: 2,
+            unit: "slice",
+        });
+        expect(parsed.instructions).toEqual(["Toast the bread."]);
+    });
+
+'''
+                  if marker not in text:
+                      raise SystemExit("recipe import test insertion marker not found")
+                  tests.write_text(text.replace(marker, insertion + marker, 1))
+
+                  ci = Path(".github/workflows/ci.yml")
+                  text = ci.read_text()
+                  marker = '''      - name: Exercise recipes, planning, groceries, idempotency, and RLS
+        run: bun scripts/recipe-planning-smoke.ts
+'''
+                  insertion = marker + '''      - name: Exercise parsed recipe save, read-back, and meal logging
+        run: bun scripts/recipe-import-save-roundtrip-smoke.ts
+'''
+                  if marker not in text:
+                      raise SystemExit("CI insertion marker not found")
+                  ci.write_text(text.replace(marker, insertion, 1))
+
+                  corpus = Path("src/recipe-import/fixtures/recipe-corpus.ts")
+                  text = corpus.read_text()
+                  marker = '''    {
+        id: "food-network-gorgonzola-pasta",
+'''
+                  love = '''    {
+        id: "love-and-lemons-lemon-pasta",
+        site: "Love & Lemons",
+        url: "https://www.loveandlemons.com/lemon-pasta/",
+        variety: "lemon pasta",
+        patterns: [
+            "recipe-card HTML fallback",
+            "quantity-less seasoning",
+            "fraction quantities",
+        ],
+    },
+'''
+                  if marker not in text:
+                      raise SystemExit("corpus insertion marker not found")
+                  corpus.write_text(text.replace(marker, love + marker, 1))
+
+                  workflow = Path(".github/workflows/recipe-import-corpus-smoke.yml")
+                  text = workflow.read_text().replace('default: "20"', 'default: "21"', 1)
+                  workflow.write_text(text)
+                  PY
+
+                  cat > scripts/recipe-import-save-roundtrip-smoke.ts <<'TS'
+                  #!/usr/bin/env bun
+
+                  import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+                  import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+                  import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+                  import { registerRecipePlanningTools } from "../src/recipe-planning-tools.js";
+                  import { previewRecipeUrl } from "../src/recipe-import/service.js";
+                  import { closePlatformDatabase } from "../src/platform/database.js";
+                  import { createSmokeIdentity } from "./support/smoke-user.js";
+
+                  if (!process.env.DATABASE_URL) {
+                      throw new Error("DATABASE_URL is required for recipe import roundtrip smoke tests");
+                  }
+
+                  function canonical(value: unknown): unknown {
+                      if (Array.isArray(value)) return value.map(canonical);
+                      if (value && typeof value === "object") {
+                          return Object.fromEntries(
+                              Object.entries(value as Record<string, unknown>)
+                                  .sort(([a], [b]) => a.localeCompare(b))
+                                  .map(([key, nested]) => [key, canonical(nested)]),
+                          );
+                      }
+                      return value;
+                  }
+
+                  function equalJson(actual: unknown, expected: unknown): boolean {
+                      return JSON.stringify(canonical(actual)) === JSON.stringify(canonical(expected));
+                  }
+
+                  function storedNumber(actual: unknown, expected: unknown, scale: number): boolean {
+                      if (expected == null) return actual == null;
+                      if (typeof actual !== "number" || typeof expected !== "number") return false;
+                      return Math.abs(actual - expected) <= 0.5 * 10 ** -scale + Number.EPSILON;
+                  }
+
+                  const sourceUrl = "https://example.com/roundtrip-lemon-pasta";
+                  const html = `
+                      <html><head>
+                        <meta property="og:site_name" content="Roundtrip Kitchen" />
+                        <link rel="canonical" href="${sourceUrl}" />
+                      </head><body>
+                        <div class="wprm-recipe-container">
+                          <h2 class="wprm-recipe-name">Roundtrip Lemon Pasta</h2>
+                          <div class="wprm-recipe-summary">A source-faithful persistence fixture.</div>
+                          <div class="wprm-recipe-servings-container">Serves <span class="wprm-recipe-servings">2</span></div>
+                          <div class="wprm-recipe-prep-time-container">Prep Time 5 minutes</div>
+                          <div class="wprm-recipe-cook-time-container">Cook Time 15 minutes</div>
+                          <ul>
+                            <li class="wprm-recipe-ingredient"><span class="wprm-recipe-ingredient-amount">8</span> <span class="wprm-recipe-ingredient-unit">ounces</span> <span class="wprm-recipe-ingredient-name">spaghetti</span></li>
+                            <li class="wprm-recipe-ingredient"><span class="wprm-recipe-ingredient-amount">⅓</span> <span class="wprm-recipe-ingredient-unit">cup</span> <span class="wprm-recipe-ingredient-name">Parmesan cheese</span>, <span class="wprm-recipe-ingredient-notes">grated</span></li>
+                            <li class="wprm-recipe-ingredient"><span class="wprm-recipe-ingredient-name">Sea salt to taste</span></li>
+                          </ul>
+                          <ol>
+                            <li class="wprm-recipe-instruction"><div class="wprm-recipe-instruction-text">Cook the pasta until al dente.</div></li>
+                            <li class="wprm-recipe-instruction"><div class="wprm-recipe-instruction-text">Toss with the cheese and serve.</div></li>
+                          </ol>
+                        </div>
+                      </body></html>
+                  `;
+
+                  const user = await createSmokeIdentity("recipe-import-roundtrip");
+                  const draft = await previewRecipeUrl(sourceUrl, {
+                      fetchPage: async (url) => ({
+                          submittedUrl: url,
+                          finalUrl: url,
+                          html,
+                      }),
+                      foodSearch: {
+                          search: async () => ({ candidates: [], failures: [] }),
+                      },
+                  });
+
+                  if (draft.parser.strategy !== "recipe_card_html") {
+                      throw new Error(`Unexpected parser strategy: ${draft.parser.strategy}`);
+                  }
+                  if (draft.recipe.instructions.length !== 2 || draft.recipe.ingredients.length !== 3) {
+                      throw new Error("Parsed fixture did not preserve the expected recipe structure");
+                  }
+
+                  const capabilities = {
+                      tier: "premium",
+                      entitlementSource: "subscription",
+                      coreNutrition: true,
+                      personalRecipesRead: true,
+                      personalRecipesWrite: true,
+                      personalPlanningRead: true,
+                      personalPlanningWrite: true,
+                      householdRead: false,
+                      householdWrite: false,
+                      householdManage: false,
+                      household: null,
+                      historyDays: null,
+                      savedFoodLimit: null,
+                  } as any;
+
+                  const server = new McpServer({ name: "recipe-roundtrip-server", version: "1.0.0" });
+                  registerRecipePlanningTools(server, user.userId, capabilities);
+                  const client = new Client({ name: "recipe-roundtrip-client", version: "1.0.0" });
+                  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+                  await server.connect(serverTransport);
+                  await client.connect(clientTransport);
+
+                  const idempotencyKey = `recipe-import-roundtrip:${crypto.randomUUID()}`;
+                  const save = await client.callTool({
+                      name: "save_recipe",
+                      arguments: {
+                          scope: "personal",
+                          recipe: draft.recipe,
+                          idempotency_key: idempotencyKey,
+                      },
+                  });
+                  if (save.isError) throw new Error(`save_recipe failed: ${JSON.stringify(save.content)}`);
+                  const saved = (save.structuredContent as any)?.recipe;
+                  if (!saved?.recipeId || !saved?.revisionId) {
+                      throw new Error("save_recipe returned no recipe or revision ID");
+                  }
+
+                  const replay = await client.callTool({
+                      name: "save_recipe",
+                      arguments: {
+                          scope: "personal",
+                          recipe: draft.recipe,
+                          idempotency_key: idempotencyKey,
+                      },
+                  });
+                  if (replay.isError || !(replay.structuredContent as any)?.recipe?.deduplicated) {
+                      throw new Error("save_recipe did not deduplicate an idempotent replay");
+                  }
+
+                  const read = await client.callTool({
+                      name: "get_recipe",
+                      arguments: {
+                          recipe_id: saved.recipeId,
+                          recipe_revision_id: saved.revisionId,
+                      },
+                  });
+                  if (read.isError) throw new Error(`get_recipe failed: ${JSON.stringify(read.content)}`);
+                  const stored = (read.structuredContent as any)?.recipe;
+                  if (!stored) throw new Error("get_recipe returned no recipe");
+
+                  if (stored.name !== draft.recipe.name || stored.description !== draft.recipe.description) {
+                      throw new Error("Recipe identity or description changed during persistence");
+                  }
+                  if (!equalJson(stored.instructions, draft.recipe.instructions)) {
+                      throw new Error("Recipe instructions changed during persistence");
+                  }
+                  if (!storedNumber(stored.servings, draft.recipe.servings, 3)) {
+                      throw new Error("Recipe servings changed beyond database precision");
+                  }
+                  if (stored.source?.type !== "imported" || stored.source?.url !== sourceUrl) {
+                      throw new Error("Recipe source provenance changed during persistence");
+                  }
+                  if (stored.ingredients.length !== draft.recipe.ingredients.length) {
+                      throw new Error("Recipe ingredient count changed during persistence");
+                  }
+
+                  for (let index = 0; index < draft.recipe.ingredients.length; index += 1) {
+                      const expected = draft.recipe.ingredients[index]!;
+                      const actual = stored.ingredients[index]!;
+                      if (
+                          actual.position !== index ||
+                          actual.name !== expected.name ||
+                          actual.unit !== (expected.unit ?? null) ||
+                          actual.preparation !== (expected.preparation ?? null) ||
+                          actual.optional !== (expected.optional ?? false) ||
+                          actual.source_type !== expected.source_type ||
+                          actual.source_url !== (expected.source_url ?? null)
+                      ) {
+                          throw new Error(`Recipe ingredient ${index} changed during persistence`);
+                      }
+                      if (!storedNumber(actual.quantity, expected.quantity ?? null, 3)) {
+                          throw new Error(`Recipe ingredient ${index} quantity changed beyond database precision`);
+                      }
+                      if (!equalJson(actual.source_snapshot, expected.source_snapshot)) {
+                          throw new Error(`Recipe ingredient ${index} source snapshot changed`);
+                      }
+                      if (typeof actual.source_snapshot?.raw_ingredient !== "string") {
+                          throw new Error(`Recipe ingredient ${index} lost its raw source text`);
+                      }
+                  }
+
+                  const logged = await client.callTool({
+                      name: "log_recipe",
+                      arguments: {
+                          recipe_id: saved.recipeId,
+                          recipe_revision_id: saved.revisionId,
+                          servings_consumed: 0.5,
+                          meal_type: "dinner",
+                          idempotency_key: `recipe-import-log:${crypto.randomUUID()}`,
+                      },
+                  });
+                  if (logged.isError) throw new Error(`log_recipe failed: ${JSON.stringify(logged.content)}`);
+                  const loggedContent = logged.structuredContent as any;
+                  if (
+                      loggedContent?.recipe_id !== saved.recipeId ||
+                      loggedContent?.recipe_revision_id !== saved.revisionId ||
+                      loggedContent?.logged_meal?.items?.length !== 3 ||
+                      loggedContent?.logged_meal?.items?.[0]?.quantity !== 4
+                  ) {
+                      throw new Error("Logged imported recipe did not preserve revision provenance or serving scaling");
+                  }
+
+                  await client.close();
+                  await server.close();
+                  await closePlatformDatabase();
+                  console.log("Recipe import parse -> save -> read -> log roundtrip passed.");
+                  TS
+
+                  bunx prettier --write \
+                    package.json bun.lock \
+                    src/recipe-import/types.ts \
+                    src/recipe-import/parser.ts \
+                    src/recipe-import.test.ts \
+                    src/recipe-import/fixtures/recipe-corpus.ts \
+                    scripts/recipe-import-save-roundtrip-smoke.ts \
+                    .github/workflows/ci.yml \
+                    .github/workflows/recipe-import-corpus-smoke.yml
+
+                  git config user.name "github-actions[bot]"
+                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                  git add package.json bun.lock src/recipe-import/types.ts src/recipe-import/parser.ts src/recipe-import.test.ts src/recipe-import/fixtures/recipe-corpus.ts scripts/recipe-import-save-roundtrip-smoke.ts .github/workflows/ci.yml .github/workflows/recipe-import-corpus-smoke.yml
+                  git commit -m "Finalize recipe import parsing and persistence certification"
+                  git push
