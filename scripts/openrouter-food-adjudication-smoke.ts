@@ -214,15 +214,15 @@ async function openRouterJson<T>(
 
 async function askLunaForSearch(
     definition: CaseDefinition,
-    previous?: PreparedSearch,
+    previous: PreparedSearch,
 ): Promise<string> {
     const result = await openRouterJson<{ search_query: string }>(
-        "Munch food search formulation CI",
-        "You formulate a concise search_foods query for a nutrition database. Use the user's full context, not merely the original noun. Preserve explicitly stated preparation/form/brand facts that help retrieval, such as cooked, whole, skim, 2%, strips, bits, or skinless. Do not invent an unmentioned brand, flavor, ingredient, species, or preparation. If a previous search is supplied and its candidates do not match the context, revise the query to better express the facts that distinguish the intended food. Return a short food search phrase, not an explanation.",
+        "Munch food search refinement CI",
+        "You refine a nutrition-database search only after seeing that a broader food phrase did not return a reasonable match. Use the user's full context and the actual prior candidates. Database vocabulary may differ from conversational serving words, so do not mechanically copy every quantity or measurement term into the query. Keep the core food identity, add preparation or subtype facts only when they improve retrieval, and broaden or change wording when the previous query was too narrow or returned the wrong form. Do not invent an unmentioned brand, flavor, ingredient, species, or preparation. Return a short food search phrase, not an explanation.",
         {
             user_phrase: definition.userPhrase,
             context: definition.context,
-            previous_search: previous ?? null,
+            previous_search: previous,
         },
         "munch_food_search_query",
         {
@@ -269,9 +269,20 @@ async function searchWithLuna(definition: CaseDefinition): Promise<{
     candidates: PreparedCandidate[];
 }> {
     const searches: PreparedSearch[] = [];
-    let query = await askLunaForSearch(definition);
+    let result = await retrieve(definition.userPhrase);
+    searches.push(result);
+
+    if (
+        result.candidates.some((candidate) =>
+            candidatePasses(definition, candidate),
+        )
+    ) {
+        return { searches, candidates: result.candidates };
+    }
+
     for (let attempt = 0; attempt < 2; attempt += 1) {
-        const result = await retrieve(query);
+        const query = await askLunaForSearch(definition, result);
+        result = await retrieve(query);
         searches.push(result);
         if (
             result.candidates.some((candidate) =>
@@ -280,10 +291,8 @@ async function searchWithLuna(definition: CaseDefinition): Promise<{
         ) {
             return { searches, candidates: result.candidates };
         }
-        if (attempt === 0) {
-            query = await askLunaForSearch(definition, result);
-        }
     }
+
     const allCandidates = searches.flatMap((search) => search.candidates);
     throw new Error(
         `${definition.id} model-guided retrieval omitted an acceptable candidate after ${searches.length} searches: ${allCandidates
