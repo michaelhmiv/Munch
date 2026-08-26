@@ -19,6 +19,14 @@ jobs:
               with:
                   bun-version: 1
             - run: bun install --frozen-lockfile
+            - name: Repair temporary patch anchors
+              run: |
+                  python3 - <<'PY'
+                  from pathlib import Path
+                  path = Path('scripts/certification/apply-food-quality-patch.py')
+                  text = path.read_text()
+                  path.write_text(text.replace(r'/\\\\D/g', r'/\\D/g'))
+                  PY
             - run: python3 scripts/certification/apply-food-quality-patch.py
             - run: bunx prettier --write src/food-providers/catalog-repository.ts src/food-providers/service.ts src/food-providers/usda.ts src/food-providers/open-food-facts.ts src/foods.ts scripts/certification/production-mcp-corpus.ts src/food-providers/barcode.ts src/food-providers/barcode.test.ts src/food-providers/ranking.ts src/food-providers/ranking.test.ts
             - run: bun test src/food-providers/barcode.test.ts src/food-providers/ranking.test.ts src/food-providers/service.test.ts src/food-providers/catalog-repository.test.ts src/foods.test.ts
