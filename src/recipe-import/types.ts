@@ -205,9 +205,7 @@ export interface RecipeImportCandidateChoice {
 }
 
 export type RecipeImportIngredientAssignmentDecision =
-    | "provider_match"
-    | "assumed"
-    | "model_estimate";
+    "provider_match" | "assumed" | "model_estimate";
 
 export interface RecipeImportIngredientAssignmentRequest {
     key: string;
@@ -238,11 +236,7 @@ export interface RecipeImportSemanticResolver {
     normalizeRecipe(
         recipe: Pick<
             ParsedRecipe,
-            | "name"
-            | "description"
-            | "servings"
-            | "instructions"
-            | "ingredients"
+            "name" | "description" | "servings" | "instructions" | "ingredients"
         >,
     ): Promise<RecipeImportIngredientIntent[]>;
     chooseCandidates?(

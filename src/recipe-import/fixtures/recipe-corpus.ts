@@ -27,6 +27,17 @@ export const RECIPE_IMPORT_CORPUS = [
         ],
     },
     {
+        id: "love-and-lemons-lemon-pasta",
+        site: "Love & Lemons",
+        url: "https://www.loveandlemons.com/lemon-pasta/",
+        variety: "lemon pasta",
+        patterns: [
+            "recipe-card HTML fallback",
+            "quantity-less seasoning",
+            "fraction quantities",
+        ],
+    },
+    {
         id: "food-network-gorgonzola-pasta",
         site: "Food Network",
         url: "https://www.foodnetwork.com/recipes/food-network-kitchen/gorgonzola-pasta-with-spinach-and-walnuts-10024399",

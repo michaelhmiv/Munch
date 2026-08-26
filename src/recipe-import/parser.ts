@@ -1,10 +1,11 @@
+import { load } from "cheerio";
 import type {
     ParsedRecipe,
     ParsedRecipeIngredient,
     RecipeImportWarning,
 } from "./types.js";
 
-export const RECIPE_IMPORT_PARSER_VERSION = "1.0.0";
+export const RECIPE_IMPORT_PARSER_VERSION = "1.1.0";
 
 const UNICODE_FRACTIONS: Record<string, string> = {
     "¼": "1/4",
@@ -576,8 +577,122 @@ function parseMicrodata(html: string): ParsedRecipe | null {
     return parsedFromObject(recipe, html, "microdata");
 }
 
+function parseRecipeCardHtml(html: string): ParsedRecipe | null {
+    const $ = load(html);
+    const root = $(".wprm-recipe-container, .tasty-recipes").first();
+    if (root.length === 0) return null;
+
+    const clean = (value: string): string | undefined => {
+        const normalized = decodeHtml(value).replace(/\s+/g, " ").trim();
+        return normalized || undefined;
+    };
+    const firstText = (selector: string): string | undefined =>
+        clean(root.find(selector).first().text());
+    const wprm = root.hasClass("wprm-recipe-container");
+
+    const name = firstText(
+        wprm ? ".wprm-recipe-name" : ".tasty-recipes-title, [itemprop='name']",
+    );
+    if (!name) return null;
+
+    const ingredientNodes = wprm
+        ? root.find(".wprm-recipe-ingredient")
+        : root.find(".tasty-recipes-ingredients li");
+    const ingredients = ingredientNodes
+        .toArray()
+        .map((node) => {
+            const item = $(node);
+            let rawText: string | undefined;
+            if (wprm) {
+                const amount = clean(
+                    item.find(".wprm-recipe-ingredient-amount").first().text(),
+                );
+                const unit = clean(
+                    item.find(".wprm-recipe-ingredient-unit").first().text(),
+                );
+                const ingredientName = clean(
+                    item.find(".wprm-recipe-ingredient-name").first().text(),
+                );
+                const notes = clean(
+                    item.find(".wprm-recipe-ingredient-notes").first().text(),
+                );
+                const base = [amount, unit, ingredientName]
+                    .filter(Boolean)
+                    .join(" ");
+                rawText = clean(notes ? `${base}, ${notes}` : base);
+            }
+            rawText ??= clean(item.text());
+            return rawText ? parseIngredientText(rawText) : null;
+        })
+        .filter((value): value is ReturnType<typeof parseIngredientText> =>
+            Boolean(value),
+        )
+        .slice(0, 200);
+    if (ingredients.length === 0) return null;
+
+    const warnings: RecipeImportWarning[] = [];
+    for (const ingredient of ingredients) warnings.push(...ingredient.warnings);
+
+    const yieldText = firstText(
+        wprm
+            ? ".wprm-recipe-servings-container, .wprm-recipe-servings"
+            : ".tasty-recipes-yield",
+    );
+    const yieldResult = parseServings(yieldText);
+    if (yieldResult.warning) warnings.push(yieldResult.warning);
+
+    const instructionNodes = wprm
+        ? root.find(".wprm-recipe-instruction-text")
+        : root.find(".tasty-recipes-instructions li");
+    const instructions = instructionNodes
+        .toArray()
+        .map((node) => clean($(node).text()))
+        .filter((value): value is string => Boolean(value))
+        .filter((value, index, all) => all.indexOf(value) === index)
+        .slice(0, 100);
+    if (instructions.length === 0) {
+        warnings.push(
+            warning(
+                "instructions_missing",
+                "The source recipe card did not provide instructions; add them before saving.",
+                "instructions",
+            ),
+        );
+    }
+
+    const prepText = firstText(
+        wprm ? ".wprm-recipe-prep-time-container" : ".tasty-recipes-prep-time",
+    );
+    const cookText = firstText(
+        wprm ? ".wprm-recipe-cook-time-container" : ".tasty-recipes-cook-time",
+    );
+
+    return {
+        strategy: "recipe_card_html",
+        name: name.slice(0, 200),
+        description: firstText(
+            wprm ? ".wprm-recipe-summary" : ".tasty-recipes-description",
+        )?.slice(0, 2_000),
+        servings: yieldResult.servings,
+        instructions,
+        preparationMinutes: parseDuration(prepText),
+        cookingMinutes: parseDuration(cookText),
+        sourceTitle: name.slice(0, 500),
+        siteName: extractMeta(html, "og:site_name"),
+        author: firstText(
+            wprm
+                ? ".wprm-recipe-author"
+                : ".tasty-recipes-author-name, [itemprop='author']",
+        ),
+        canonicalUrl: extractCanonicalLink(html) ?? extractMeta(html, "og:url"),
+        ingredients: ingredients.map((value) => value.ingredient),
+        warnings,
+    };
+}
+
 export function parseRecipeHtml(html: string): ParsedRecipe {
-    const parsed = parseJsonLd(html) ?? parseMicrodata(html);
+    const parsed =
+        parseJsonLd(html) ?? parseMicrodata(html) ?? parseRecipeCardHtml(html);
     if (!parsed) {
         throw new Error(
             "No supported structured recipe data was found on the page.",

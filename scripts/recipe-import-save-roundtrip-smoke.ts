@@ -28,7 +28,8 @@ function canonical(value: unknown): unknown {
 
 function equalJson(actual: unknown, expected: unknown): boolean {
     return (
-        JSON.stringify(canonical(actual)) === JSON.stringify(canonical(expected))
+        JSON.stringify(canonical(actual)) ===
+        JSON.stringify(canonical(expected))
     );
 }
 
@@ -41,10 +42,7 @@ function storedNumber(
     if (typeof actual !== "number" || typeof expected !== "number") {
         return false;
     }
-    return (
-        Math.abs(actual - expected) <=
-        0.5 * 10 ** -scale + Number.EPSILON
-    );
+    return Math.abs(actual - expected) <= 0.5 * 10 ** -scale + Number.EPSILON;
 }
 
 const sourceUrl = "https://example.com/roundtrip-lemon-pasta";
@@ -174,7 +172,9 @@ if (
     stored.name !== draft.recipe.name ||
     stored.description !== draft.recipe.description
 ) {
-    throw new Error("Recipe identity or description changed during persistence");
+    throw new Error(
+        "Recipe identity or description changed during persistence",
+    );
 }
 if (!equalJson(stored.instructions, draft.recipe.instructions)) {
     throw new Error("Recipe instructions changed during persistence");
@@ -182,10 +182,7 @@ if (!equalJson(stored.instructions, draft.recipe.instructions)) {
 if (!storedNumber(stored.servings, draft.recipe.servings, 3)) {
     throw new Error("Recipe servings changed beyond database precision");
 }
-if (
-    stored.source?.type !== "imported" ||
-    stored.source?.url !== sourceUrl
-) {
+if (stored.source?.type !== "imported" || stored.source?.url !== sourceUrl) {
     throw new Error("Recipe source provenance changed during persistence");
 }
 if (stored.ingredients.length !== draft.recipe.ingredients.length) {
