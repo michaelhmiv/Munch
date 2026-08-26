@@ -35,6 +35,10 @@ const BLOCKERS = [
 ] as const;
 
 const REPEATS = 5;
+const CONCURRENCY = Math.max(
+    1,
+    Math.min(2, Number(process.env.CRAWLEE_STABILITY_CONCURRENCY ?? "1")),
+);
 
 type ProcessMemory = {
     bunMb: number;
@@ -94,7 +98,7 @@ let peakChromiumMb = 0;
 let peakBunMb = 0;
 
 const crawler = new PlaywrightCrawler({
-    maxConcurrency: 2,
+    maxConcurrency: CONCURRENCY,
     minConcurrency: 1,
     maxRequestRetries: 1,
     navigationTimeoutSecs: 18,
@@ -185,6 +189,7 @@ console.log(
         requests: requests.length,
         sites: BLOCKERS.length,
         repeats: REPEATS,
+        concurrency: CONCURRENCY,
         wallMs: Number((performance.now() - runStartedAt).toFixed(2)),
         browserStartupMs:
             firstNavigationStartedAt === null
