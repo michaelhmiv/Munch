@@ -39,6 +39,13 @@ const COMPOSITE_FOOD_TOKENS = new Set([
     "raisin",
     "meatless",
     "tofu",
+    "cheese",
+    "bean",
+    "babyfood",
+    "ring",
+    "pudding",
+    "bread",
+    "turkey",
 ]);
 
 export function normalizeFoodText(value: string): string {

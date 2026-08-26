@@ -257,7 +257,7 @@ export class FoodCatalogRepository {
         const normalized = normalizeFoodText(query);
         if (!normalized) return [];
         const boundedLimit = Math.max(1, Math.min(25, limit));
-        const retrievalLimit = Math.min(75, Math.max(25, boundedLimit * 5));
+        const retrievalLimit = Math.min(50, Math.max(25, boundedLimit * 5));
         const lexicalRows = await withServiceDatabase(
             async (tx) =>
                 tx<CatalogRow[]>`
@@ -270,6 +270,7 @@ export class FoodCatalogRepository {
                   ) @@ plainto_tsquery('simple', ${normalized})
             order by
                 case when normalized_name = ${normalized} then 0 else 1 end,
+                length(normalized_name) asc,
                 ts_rank_cd(
                     to_tsvector(
                         'simple',
