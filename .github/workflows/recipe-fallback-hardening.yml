@@ -1,0 +1,76 @@
+name: Harden Recipe Fallback Branch
+
+on:
+    push:
+        branches:
+            - feature/recipe-import-resilience
+
+permissions:
+    contents: write
+
+jobs:
+    harden:
+        if: github.actor != 'github-actions[bot]'
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  ref: feature/recipe-import-resilience
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - run: bun install --frozen-lockfile
+            - name: Replace response class identity checks with discriminated results
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  python - <<'PY'
+                  from pathlib import Path
+                  path = Path('src/recipe-import/fetch.ts')
+                  text = path.read_text()
+                  text = text.replace(
+                  '''interface LoadedRecipeResponse {\n    response: Response;\n    html: string;\n    transport: "native" | RecipeFallbackProfile;\n}\n''',
+                  '''interface LoadedRecipeSuccess {\n    kind: "success";\n    response: Response;\n    html: string;\n    transport: "native" | RecipeFallbackProfile;\n}\n\ninterface LoadedRecipeRedirect {\n    kind: "redirect";\n    response: Response;\n}\n\ntype LoadedRecipeResponse = LoadedRecipeSuccess | LoadedRecipeRedirect;\n''')
+                  text = text.replace(
+                  '''        if (REDIRECT_STATUSES.has(response.status)) return response;''',
+                  '''        if (REDIRECT_STATUSES.has(response.status)) {\n            return { kind: "redirect", response };\n        }''')
+                  text = text.replace(
+                  '''        return {\n            response,\n            html,\n            transport: request.profile,\n        };''',
+                  '''        return {\n            kind: "success",\n            response,\n            html,\n            transport: request.profile,\n        };''')
+                  text = text.replace(
+                  '''    if (REDIRECT_STATUSES.has(response.status)) return response;''',
+                  '''    if (REDIRECT_STATUSES.has(response.status)) {\n        return { kind: "redirect", response };\n    }''')
+                  text = text.replace(
+                  '''    return { response, html, transport: "native" };''',
+                  '''    return { kind: "success", response, html, transport: "native" };''')
+                  text = text.replace(
+                  '''            if (loaded instanceof Response) {''',
+                  '''            if (loaded.kind === "redirect") {''')
+                  text = text.replace(
+                  '''                const location = loaded.headers.get("location");''',
+                  '''                const location = loaded.response.headers.get("location");''')
+                  text = text.replace(
+                  '''): Promise<LoadedRecipeResponse | Response> {''',
+                  '''): Promise<LoadedRecipeResponse> {''')
+                  if 'loaded instanceof Response' in text or 'Promise<LoadedRecipeResponse | Response>' in text:
+                      raise SystemExit('hardening patch incomplete')
+                  path.write_text(text)
+                  PY
+            - name: Format and verify focused tests
+              run: |
+                  bunx prettier --write src/recipe-import/fetch.ts
+                  bun run typecheck
+                  bun test src/recipe-import.test.ts src/recipe-fetch-fallback.test.ts src/host-ai-boundary.test.ts src/net.test.ts
+            - name: Commit hardening
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  git config user.name "github-actions[bot]"
+                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                  git add src/recipe-import/fetch.ts
+                  if git diff --cached --quiet; then
+                    exit 0
+                  fi
+                  git commit -m "fix: harden fallback response handling"
+                  git push origin HEAD:feature/recipe-import-resilience
