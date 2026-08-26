@@ -1,0 +1,81 @@
+name: Recipe Fetch Live Certification
+
+on:
+    push:
+        branches:
+            - feature/recipe-import-resilience
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    live-recipe-fetch:
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  ref: feature/recipe-import-resilience
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - run: bun install --frozen-lockfile
+            - name: Certify exact production fetch pipeline against blocker corpus
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  bun - <<'TS'
+                  import { fetchRecipePage, RecipeImportError } from "./src/recipe-import/fetch.ts";
+                  import { parseRecipeHtml } from "./src/recipe-import/parser.ts";
+
+                  const targets = [
+                    ["Allrecipes", "https://www.allrecipes.com/recipe/20144/banana-banana-bread/"],
+                    ["Serious Eats", "https://www.seriouseats.com/the-best-slow-cooked-bolognese-sauce-recipe"],
+                    ["Simply Recipes", "https://www.simplyrecipes.com/recipes/banana_bread/"],
+                    ["Martha Stewart", "https://www.marthastewart.com/336138/basic-chicken-soup"],
+                    ["Food & Wine", "https://www.foodandwine.com/recipes/classic-beef-chili"],
+                    ["Maangchi", "https://www.maangchi.com/recipe/bibimbap"],
+                  ] as const;
+
+                  let failures = 0;
+                  for (const [site, url] of targets) {
+                    const started = performance.now();
+                    try {
+                      const page = await fetchRecipePage(url, { fallbackEnabled: true });
+                      const parsed = parseRecipeHtml(page.html);
+                      const row = {
+                        site,
+                        ok: true,
+                        ms: Math.round(performance.now() - started),
+                        bytes: Buffer.byteLength(page.html),
+                        strategy: parsed.strategy,
+                        ingredients: parsed.ingredients.length,
+                        instructions: parsed.instructions.length,
+                      };
+                      console.log(JSON.stringify(row));
+                      if (parsed.ingredients.length === 0) failures += 1;
+                    } catch (error) {
+                      failures += 1;
+                      console.error(JSON.stringify({
+                        site,
+                        ok: false,
+                        error: error instanceof Error ? error.message : String(error),
+                      }));
+                    }
+                  }
+
+                  try {
+                    await fetchRecipePage("https://food52.com/recipes/27821-julia-child-s-coq-au-vin", { fallbackEnabled: true });
+                    console.log(JSON.stringify({ site: "Food52", outcome: "recovered" }));
+                  } catch (error) {
+                    if (error instanceof RecipeImportError && error.code === "source_rate_limited") {
+                      console.log(JSON.stringify({ site: "Food52", outcome: "source_rate_limited_expected" }));
+                    } else {
+                      console.error(JSON.stringify({ site: "Food52", outcome: "unexpected_error", error: error instanceof Error ? error.message : String(error) }));
+                      failures += 1;
+                    }
+                  }
+
+                  if (failures > 0) process.exit(1);
+                  TS
