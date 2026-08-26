@@ -232,11 +232,13 @@ if (logged.isError) {
     throw new Error(`log_recipe failed: ${JSON.stringify(logged.content)}`);
 }
 const loggedContent = logged.structuredContent as any;
+// The saved recipe yields 2 servings. Logging 0.5 serving is one quarter of
+// the full recipe, so the 8 oz pasta ingredient must scale to 2 oz.
 if (
     loggedContent?.recipe_id !== saved.recipeId ||
     loggedContent?.recipe_revision_id !== saved.revisionId ||
     loggedContent?.logged_meal?.items?.length !== 3 ||
-    loggedContent?.logged_meal?.items?.[0]?.quantity !== 4
+    loggedContent?.logged_meal?.items?.[0]?.quantity !== 2
 ) {
     throw new Error(
         "Logged imported recipe did not preserve revision provenance or serving scaling",
