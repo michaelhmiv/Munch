@@ -1,0 +1,31 @@
+name: Temporary apply food quality patch
+
+on:
+    push:
+        branches:
+            - fix/food-ranking-gtin-quality
+
+permissions:
+    contents: write
+
+jobs:
+    apply:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  ref: fix/food-ranking-gtin-quality
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - run: bun install --frozen-lockfile
+            - run: python3 scripts/certification/apply-food-quality-patch.py
+            - run: bunx prettier --write src/food-providers/catalog-repository.ts src/food-providers/service.ts src/food-providers/usda.ts src/food-providers/open-food-facts.ts src/foods.ts scripts/certification/production-mcp-corpus.ts src/food-providers/barcode.ts src/food-providers/barcode.test.ts src/food-providers/ranking.ts src/food-providers/ranking.test.ts
+            - run: bun test src/food-providers/barcode.test.ts src/food-providers/ranking.test.ts src/food-providers/service.test.ts src/food-providers/catalog-repository.test.ts src/foods.test.ts
+            - name: Commit patch
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                  git add src/food-providers/catalog-repository.ts src/food-providers/service.ts src/food-providers/usda.ts src/food-providers/open-food-facts.ts src/foods.ts scripts/certification/production-mcp-corpus.ts src/food-providers/barcode.ts src/food-providers/barcode.test.ts src/food-providers/ranking.ts src/food-providers/ranking.test.ts
+                  git diff --cached --quiet || git commit -m "fix: rank generic foods and validate GTINs"
+                  git push origin HEAD:fix/food-ranking-gtin-quality
