@@ -1,0 +1,31 @@
+name: Temporary tighten food candidates
+
+on:
+  push:
+    branches:
+      - fix/food-ranking-gtin-quality
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/food-ranking-gtin-quality
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - run: python3 scripts/temp-tighten-food-candidates.py
+      - run: bunx prettier --write src/food-providers/catalog-repository.ts src/food-providers/ranking.ts src/food-providers/ranking.test.ts scripts/food-catalog-common-corpus.ts
+      - run: bun test src/food-providers/ranking.test.ts src/food-providers/service.test.ts src/food-providers/catalog-repository.test.ts
+      - name: Commit permanent changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/food-providers/catalog-repository.ts src/food-providers/ranking.ts src/food-providers/ranking.test.ts scripts/food-catalog-common-corpus.ts
+          git diff --cached --quiet || git commit -m "perf: tighten food candidate retrieval"
+          git push origin HEAD:fix/food-ranking-gtin-quality
