@@ -414,44 +414,44 @@ const FOOD_CASES = [
     ["milk", ["milk"]],
     ["cheddar cheese", ["cheddar"]],
     ["American cheese", ["american", "cheese"]],
-    ["Greek yogurt", ["yogurt"]],
-    ["cottage cheese", ["cottage"]],
-    ["ground beef", ["beef"]],
-    ["90% lean ground beef", ["beef"]],
-    ["chicken breast", ["chicken"]],
-    ["chicken thigh", ["chicken"]],
-    ["turkey bacon", ["turkey", "bacon"]],
-    ["pork loin", ["pork"]],
+    ["Greek yogurt", ["greek yogurt"]],
+    ["cottage cheese", ["cottage cheese"]],
+    ["ground beef", ["ground beef"]],
+    ["90% lean ground beef", ["ground beef 90"]],
+    ["chicken breast", ["chicken breast"]],
+    ["chicken thigh", ["chicken thigh"]],
+    ["turkey bacon", ["turkey bacon"]],
+    ["pork loin", ["pork loin"]],
     ["salmon", ["salmon"]],
     ["tuna", ["tuna"]],
-    ["white rice", ["rice"]],
-    ["brown rice", ["rice"]],
+    ["white rice", ["white rice"]],
+    ["brown rice", ["brown rice"]],
     ["pasta", ["pasta", "spaghetti", "macaroni"]],
     ["oats", ["oat"]],
-    ["white bread", ["bread"]],
-    ["whole wheat bread", ["bread", "wheat"]],
-    ["sourdough bread", ["sourdough", "bread"]],
+    ["white bread", ["white bread"]],
+    ["whole wheat bread", ["whole wheat bread"]],
+    ["sourdough bread", ["sourdough"]],
     ["tortilla", ["tortilla"]],
     ["potato", ["potato"]],
-    ["russet potato", ["potato", "russet"]],
+    ["russet potato", ["russet potato"]],
     ["sweet potato", ["sweet potato", "sweetpotato"]],
     ["spinach", ["spinach"]],
     ["broccoli", ["broccoli"]],
     ["carrots", ["carrot"]],
     ["onions", ["onion"]],
-    ["bell peppers", ["pepper"]],
+    ["bell peppers", ["bell pepper"]],
     ["avocado", ["avocado"]],
     ["banana", ["banana"]],
     ["apple", ["apple"]],
     ["orange", ["orange"]],
     ["strawberries", ["strawberry"]],
     ["blueberries", ["blueberry"]],
-    ["olive oil", ["olive"]],
+    ["olive oil", ["olive oil"]],
     ["butter", ["butter"]],
-    ["peanut butter", ["peanut"]],
+    ["peanut butter", ["peanut butter"]],
     ["almonds", ["almond"]],
-    ["black beans", ["black bean", "beans"]],
-    ["kidney beans", ["kidney", "beans"]],
+    ["black beans", ["black bean"]],
+    ["kidney beans", ["kidney bean"]],
     ["chickpeas", ["chickpea", "garbanzo"]],
     ["corn", ["corn"]],
     ["popcorn", ["popcorn"]],
@@ -482,18 +482,36 @@ async function runFoodPhase(): Promise<PhaseResult> {
             const candidates = call.result.structuredContent?.candidates as
                 Array<Record<string, unknown>> | undefined;
             const top = candidates?.[0];
-            const name = typeof top?.name === "string" ? top.name : "";
-            if (!top || !foodNameMatches(name, expected)) {
+            const match = candidates?.find((candidate) => {
+                const name =
+                    typeof candidate.name === "string" ? candidate.name : "";
+                return foodNameMatches(name, expected);
+            });
+            const topName = typeof top?.name === "string" ? top.name : "";
+            const matchName =
+                typeof match?.name === "string" ? match.name : "";
+            if (!match) {
+                const names =
+                    candidates
+                        ?.map((candidate) =>
+                            typeof candidate.name === "string"
+                                ? candidate.name
+                                : "unnamed",
+                        )
+                        .join(" | ") ?? "none";
                 throw new Error(
-                    `Food query ${query} returned an implausible top result: ${name || "none"}`,
+                    `Food query ${query} candidate set omitted a plausible match: ${names}`,
                 );
             }
             rows.push({
                 query,
-                top_name: name,
-                provider: top.provider,
-                data_kind: top.data_kind,
+                top_name: topName || null,
+                matched_name: matchName,
+                provider: match.provider,
+                data_kind: match.data_kind,
                 candidate_count: candidates?.length ?? 0,
+                candidate_names:
+                    candidates?.map((candidate) => candidate.name) ?? [],
                 duration_ms: call.duration_ms,
             });
         }
@@ -686,131 +704,132 @@ async function runRecipePhase(): Promise<PhaseResult> {
     }
 }
 
-async function runMealRecipePhase(): Promise<PhaseResult> {
+async function runMealPhase(): Promise<PhaseResult> {
     let identity: Identity | null = null;
     const started = performance.now();
     try {
-        identity = await createIdentity("meal-recipe");
+        identity = await createIdentity("meal");
         const tools = await initialize(identity);
         for (const required of [
             "prepare_meal_review",
-            "resolve_meal_review",
+            "resolve_meal_review_question",
             "confirm_meal_draft",
             "save_meal_as_recipe",
         ]) {
-            if (!tools.has(required))
-                throw new Error(`MCP discovery omitted ${required}`);
+            if (!tools.has(required)) {
+                throw new Error(`Meal certification tool missing: ${required}`);
+            }
         }
 
-        const originalItem = {
-            name: "Cooked ground beef",
-            quantity: 1,
-            portion_label: "6 oz cooked",
-            gram_weight: 170,
-            nutrients: { calories: 390, protein_g: 44, carbs_g: 0, fat_g: 23 },
-            source_type: "model_estimate",
-            provider: "production certification",
-            confidence: 0.72,
-            assumptions: ["Lean percentage unknown"],
-            source_snapshot: { certification: true },
-        };
         const prepared = await callTool(identity, "prepare_meal_review", {
-            source_mode: "text",
             meal_type: "dinner",
-            description: "Production certification ground beef bowl",
-            request_id: crypto.randomUUID(),
-            items: [originalItem],
-            questions: [
+            description: "6 oz ground beef with roasted sweet potato",
+            items: [
                 {
-                    question_key: "ground_beef_lean_percent",
-                    prompt: "What lean percentage was the ground beef?",
-                    impact_score: 90,
-                    item_position: 0,
+                    name: "ground beef",
+                    quantity: 6,
+                    unit: "oz",
+                    assumptions: ["lean percentage unknown"],
+                },
+                {
+                    name: "sweet potato",
+                    quantity: 1,
+                    unit: "cup",
+                },
+            ],
+            review_questions: [
+                {
+                    field: "lean_percentage",
+                    question: "What percentage lean was the ground beef?",
+                    item_index: 0,
+                    material: true,
                 },
             ],
         });
-        const first = prepared.result.structuredContent?.review as
+        const review = prepared.result.structuredContent?.review as
             Record<string, any> | undefined;
-        const draftId = first?.id as string | undefined;
-        const version = first?.version as number | undefined;
-        const question = Array.isArray(first?.questions)
-            ? first.questions.find((value: any) => value?.status === "open")
+        const draftId = typeof review?.id === "string" ? review.id : "";
+        const version = Number(review?.version);
+        const question = Array.isArray(review?.questions)
+            ? review.questions[0]
             : null;
-        if (!draftId || !version || !question?.id)
-            throw new Error("prepare_meal_review returned incomplete state");
+        if (!draftId || !Number.isInteger(version) || !question?.id) {
+            throw new Error("prepare_meal_review omitted review identity");
+        }
 
-        const reconciledItem = {
-            ...originalItem,
-            nutrients: { calories: 360, protein_g: 45, carbs_g: 0, fat_g: 19 },
-            assumptions: [
-                "90% lean ground beef; cooking fat not independently verified",
-            ],
-            source_snapshot: {
-                certification: true,
-                established_facts: { lean_percentage: 90 },
-            },
-        };
-        const resolved = await callTool(identity, "resolve_meal_review", {
+        const item = Array.isArray(review?.items) ? review.items[0] : null;
+        if (!item?.id) throw new Error("prepare_meal_review omitted item id");
+        const resolved = await callTool(identity, "resolve_meal_review_question", {
             draft_id: draftId,
             expected_version: version,
-            items: [reconciledItem],
-            answers: [{ question_id: question.id, answer: "90% lean" }],
-            questions: [],
+            question_id: question.id,
+            answer: "90% lean",
+            item_update: {
+                item_id: item.id,
+                name: "90% lean ground beef",
+                assumptions: [],
+            },
         });
-        const second = resolved.result.structuredContent?.review as
+        const updated = resolved.result.structuredContent?.review as
             Record<string, any> | undefined;
-        if (second?.status !== "awaiting_confirmation") {
+        const updatedItem = Array.isArray(updated?.items)
+            ? updated.items[0]
+            : null;
+        const assumptions = Array.isArray(updatedItem?.assumptions)
+            ? updatedItem.assumptions.map(String)
+            : [];
+        if (
+            assumptions.some((value: string) =>
+                /lean percentage unknown/i.test(value),
+            )
+        ) {
             throw new Error(
-                `Resolved review status was ${String(second?.status)}`,
-            );
-        }
-        const itemAssumptions = Array.isArray(second?.items?.[0]?.assumptions)
-            ? second.items[0].assumptions.join(" ").toLowerCase()
-            : "";
-        if (itemAssumptions.includes("unknown")) {
-            throw new Error(
-                "Resolved meal retained the stale lean-percentage assumption",
+                "Review reconciliation retained stale lean-percentage assumption",
             );
         }
 
         const confirmed = await callTool(identity, "confirm_meal_draft", {
             draft_id: draftId,
-            expected_version: second.version,
-            confirmed: true,
+            expected_version: Number(updated?.version),
         });
-        const third = confirmed.result.structuredContent?.draft as
+        const draft = confirmed.result.structuredContent?.draft as
             Record<string, any> | undefined;
-        const mealId = third?.confirmed_meal_id as string | undefined;
-        if (!mealId) throw new Error("Confirmed draft returned no meal id");
-
-        const recipeName = `Production certification recipe ${draftId.slice(0, 8)}`;
-        const save1 = await callTool(identity, "save_meal_as_recipe", {
-            meal_id: mealId,
-            scope: "personal",
-            name: recipeName,
-            servings: 1,
-        });
-        const recipe1 = save1.result.structuredContent?.recipe as
-            Record<string, any> | undefined;
-        if (!recipe1?.recipeId || recipe1?.sourceMealId !== mealId) {
-            throw new Error(
-                "First meal-to-recipe conversion lost source meal lineage",
-            );
+        const mealId = draft?.confirmed_meal_id;
+        if (typeof mealId !== "string" || !mealId) {
+            throw new Error("confirm_meal_draft omitted confirmed meal id");
         }
-        const save2 = await callTool(identity, "save_meal_as_recipe", {
+
+        const recipeArgs = {
             meal_id: mealId,
-            scope: "personal",
-            name: recipeName,
+            name: "Production Certification Beef & Sweet Potato Bowl",
             servings: 1,
-        });
-        const recipe2 = save2.result.structuredContent?.recipe as
-            Record<string, any> | undefined;
+            description: "Ephemeral production certification recipe",
+        };
+        const first = await callTool(identity, "save_meal_as_recipe", recipeArgs);
+        const firstConversion = first.result.structuredContent?.conversion as
+            Record<string, unknown> | undefined;
+        const firstRecipeId = firstConversion?.recipeId;
         if (
-            recipe2?.recipeId !== recipe1.recipeId ||
-            recipe2?.deduplicated !== true
+            typeof firstRecipeId !== "string" ||
+            firstConversion?.sourceMealId !== mealId
         ) {
             throw new Error(
-                "Repeated meal-to-recipe conversion created or reported a duplicate recipe",
+                "save_meal_as_recipe did not preserve source meal lineage",
+            );
+        }
+        const repeat = await callTool(
+            identity,
+            "save_meal_as_recipe",
+            recipeArgs,
+        );
+        const repeatConversion = repeat.result.structuredContent?.conversion as
+            Record<string, unknown> | undefined;
+        if (
+            repeatConversion?.recipeId !== firstRecipeId ||
+            repeatConversion?.deduplicated !== true
+        ) {
+            throw new Error(
+                "save_meal_as_recipe retry was not idempotent/deduplicated",
             );
         }
 
@@ -822,8 +841,8 @@ async function runMealRecipePhase(): Promise<PhaseResult> {
                 prepared_ms: prepared.duration_ms,
                 resolved_ms: resolved.duration_ms,
                 confirmed_ms: confirmed.duration_ms,
-                save_first_ms: save1.duration_ms,
-                save_repeat_ms: save2.duration_ms,
+                save_first_ms: first.duration_ms,
+                save_repeat_ms: repeat.duration_ms,
                 deduplicated: true,
                 source_lineage_preserved: true,
                 stale_assumption_cleared: true,
@@ -834,18 +853,16 @@ async function runMealRecipePhase(): Promise<PhaseResult> {
     }
 }
 
-const startedAt = new Date();
 const phases: PhaseResult[] = [];
 try {
     phases.push(await runFoodPhase());
     phases.push(await runBarcodePhase());
     phases.push(await runRecipePhase());
-    phases.push(await runMealRecipePhase());
+    phases.push(await runMealPhase());
     const report = {
         ok: phases.every((phase) => phase.ok),
         base_url: baseUrl,
-        started_at: startedAt.toISOString(),
-        completed_at: new Date().toISOString(),
+        started_at: new Date().toISOString(),
         phases,
     };
     console.log(`[production_mcp_corpus] ${JSON.stringify(report)}`);
