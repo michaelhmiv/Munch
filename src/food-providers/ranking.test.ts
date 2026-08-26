@@ -76,6 +76,41 @@ describe("generic food ranking", () => {
         ).toBe("Fish, salmon, Atlantic, wild, raw");
     });
 
+    test("prefers candidates led by the requested ingredient", () => {
+        expect(
+            top("2% milk", [
+                food("Rennin, vanilla, dry mix, prepared with 2% milk", {
+                    raw: { dataset: "survey" },
+                }),
+                food(
+                    "Milk, reduced fat, fluid, 2% milkfat, with added vitamin A and vitamin D",
+                ),
+            ]),
+        ).toBe(
+            "Milk, reduced fat, fluid, 2% milkfat, with added vitamin A and vitamin D",
+        );
+        expect(
+            top("skim milk", [
+                food("Yogurt, plain, skim milk", {
+                    raw: { dataset: "survey" },
+                }),
+                food(
+                    "Milk, nonfat, fluid, with added vitamin A and vitamin D (fat free or skim)",
+                ),
+            ]),
+        ).toBe(
+            "Milk, nonfat, fluid, with added vitamin A and vitamin D (fat free or skim)",
+        );
+        expect(
+            top("onion", [
+                food("Gravy, onion, dry, mix", {
+                    raw: { dataset: "survey" },
+                }),
+                food("Onions, raw"),
+            ]),
+        ).toBe("Onions, raw");
+    });
+
     test("singularizes food words when matching generic USDA names", () => {
         expect(
             top("sugar", [
