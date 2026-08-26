@@ -6,7 +6,7 @@ on:
             limit:
                 description: "Number of corpus URLs to exercise"
                 required: false
-                default: "20"
+                default: "21"
                 type: string
             concurrency:
                 description: "Maximum concurrent third-party fetches"
