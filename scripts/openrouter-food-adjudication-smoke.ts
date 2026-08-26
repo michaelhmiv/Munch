@@ -21,6 +21,7 @@ interface CaseDefinition {
     userPhrase: string;
     context: string;
     required: string[];
+    requiredAny?: string[];
     forbidden: string[];
 }
 
@@ -94,8 +95,16 @@ const CASES: CaseDefinition[] = [
         userPhrase: "spaghetti",
         context:
             "I ate 2 cups of cooked spaghetti noodles with sauce logged separately.",
-        required: ["spaghetti"],
-        forbidden: ["spinach", "squash", "meatball", "sauce", "dry"],
+        required: ["cooked"],
+        requiredAny: ["spaghetti", "noodle"],
+        forbidden: [
+            "spinach",
+            "squash",
+            "meatball",
+            "sauce",
+            "dry",
+            "protein fortified",
+        ],
     },
     {
         id: "whole-egg",
@@ -139,12 +148,16 @@ function candidatePasses(
     candidate: PreparedCandidate,
 ): boolean {
     const name = normalized(candidate.name);
-    return (
-        definition.required.every((token) =>
-            name.includes(normalized(token)),
-        ) &&
-        definition.forbidden.every((token) => !name.includes(normalized(token)))
+    const hasRequired = definition.required.every((token) =>
+        name.includes(normalized(token)),
     );
+    const hasRequiredAny =
+        !definition.requiredAny?.length ||
+        definition.requiredAny.some((token) => name.includes(normalized(token)));
+    const avoidsForbidden = definition.forbidden.every(
+        (token) => !name.includes(normalized(token)),
+    );
+    return hasRequired && hasRequiredAny && avoidsForbidden;
 }
 
 async function openRouterJson<T>(
@@ -287,7 +300,7 @@ async function askLunaToSelect(
         confidence: number;
     }>(
         "Munch food adjudication CI",
-        "You are selecting a factual food database candidate for Munch. Use every explicit fact in the user's context, especially quantity, unit, preparation, food form, brand, and anything logged separately. Candidate ordering is retrieval order, not a correctness ranking. Prefer the candidate that satisfies the stated facts while introducing the fewest unsupported assumptions or extra ingredients/modifiers. Do not infer an unmentioned flavor, ingredient, subtype, brand, or preparation. Use portion labels as evidence when useful. Select exactly one provided candidate and do not invent a new food.",
+        "You are selecting a factual food database candidate for Munch. Use every explicit fact in the user's context, especially quantity, unit, preparation, food form, brand, and anything logged separately. Candidate ordering is retrieval order, not a correctness ranking. Prefer the candidate that satisfies the stated facts while introducing the fewest unsupported assumptions or extra ingredients/modifiers. If no candidate exactly preserves every label word, a conservative generic candidate is preferable to a more specific candidate that invents an unmentioned subtype or ingredient. Do not infer an unmentioned flavor, ingredient, subtype, brand, or preparation. Use portion labels as evidence when useful. Select exactly one provided candidate and do not invent a new food.",
         {
             user_phrase: definition.userPhrase,
             context: definition.context,
