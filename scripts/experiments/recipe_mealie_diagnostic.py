@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import resource
 import subprocess
 import sys
@@ -18,6 +17,17 @@ from httpx_curl_cffi import AsyncCurlTransport
 from recipe_scrapers import NoSchemaFoundInWildMode, scrape_html
 
 BROWSER_IMPERSONATIONS = ["chrome", "firefox", "safari", "edge"]
+CHALLENGE_BODY_MARKERS = (
+    b"__cf_chl",
+    b"cf-browser-verification",
+    b"/cdn-cgi/challenge-platform",
+    b"challenges.cloudflare.com",
+    b"_incapsula_resource",
+    b"distil_r_captcha",
+    b"px-captcha",
+    b"perimeterx",
+    b"datadome",
+)
 BRIDGE = "scripts/experiments/recipe-munch-bridge.ts"
 
 CASES = [
@@ -80,11 +90,7 @@ def recipe_scrapers_parse(html_path: Path, url: str) -> dict[str, Any]:
             title = scraper.title()
         except Exception:
             title = None
-        instruction_count = (
-            len(instructions)
-            if isinstance(instructions, list)
-            else (1 if str(instructions).strip() else 0)
-        )
+        instruction_count = len(instructions) if isinstance(instructions, list) else (1 if str(instructions).strip() else 0)
         return {
             "ok": bool(ingredients or instruction_count),
             "duration_ms": round((time.perf_counter() - started) * 1000, 2),
@@ -109,23 +115,14 @@ def recipe_scrapers_parse(html_path: Path, url: str) -> dict[str, Any]:
 
 def challenge_detected(response: httpx.Response) -> bool:
     status = response.status_code
-    if status in (404, 410):
-        return False
-    if 400 <= status < 500:
-        return True
     if status == 503:
         return True
-    if response.headers.get("cf-mitigated", "").lower() == "challenge":
+    if 400 <= status < 500 and status not in (404, 410):
         return True
-    sample = response.text[:120_000].lower()
-    markers = (
-        "challenge-platform",
-        "just a moment...",
-        "cf-chl-",
-        "captcha",
-        "access denied",
-    )
-    return any(marker in sample for marker in markers)
+    if "cf-mitigated" in response.headers:
+        return True
+    sample = response.content[:4096].lower()
+    return any(marker in sample for marker in CHALLENGE_BODY_MARKERS)
 
 
 def hard_http_error(status: int) -> bool:
@@ -142,7 +139,7 @@ async def mealie_style_fetch(url: str, output_path: Path) -> dict[str, Any]:
     for profile in BROWSER_IMPERSONATIONS:
         attempt_started = time.perf_counter()
         try:
-            transport = AsyncCurlTransport(impersonate=profile, default_headers=True)
+            transport = AsyncCurlTransport(impersonate=profile, default_headers=True, verify=False)
             async with httpx.AsyncClient(
                 transport=transport,
                 follow_redirects=True,
@@ -221,14 +218,8 @@ async def run_case(case: dict[str, str], temp_root: Path) -> dict[str, Any]:
     row = {
         "type": "row",
         **case,
-        "native": {
-            "fetch": native_fetch,
-            "parsers": native_parsers,
-        },
-        "mealie_transport": {
-            "fetch": mealie_fetch,
-            "parsers": mealie_parsers,
-        },
+        "native": {"fetch": native_fetch, "parsers": native_parsers},
+        "mealie_transport": {"fetch": mealie_fetch, "parsers": mealie_parsers},
     }
     print(json.dumps(row), flush=True)
     return row
@@ -254,15 +245,13 @@ async def main() -> int:
     native_failures = [row for row in rows if not fetch_ok(row, "native")]
     recovered = [row for row in native_failures if fetch_ok(row, "mealie_transport")]
     same_html_recipe_scrapers_only = [
-        row
-        for row in rows
+        row for row in rows
         if fetch_ok(row, "native")
         and not parser_ok(row, "native", "munch")
         and parser_ok(row, "native", "recipe_scrapers")
     ]
     same_html_munch_only = [
-        row
-        for row in rows
+        row for row in rows
         if fetch_ok(row, "native")
         and parser_ok(row, "native", "munch")
         and not parser_ok(row, "native", "recipe_scrapers")
