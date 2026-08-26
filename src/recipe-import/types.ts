@@ -79,7 +79,11 @@ export const recipeImportDraftOutputSchema = z.object({
     status: z.enum(["ready", "partial"]),
     requires_review: z.boolean(),
     parser: z.object({
-        strategy: z.enum(["schema_org_json_ld", "microdata"]),
+        strategy: z.enum([
+            "schema_org_json_ld",
+            "microdata",
+            "recipe_card_html",
+        ]),
         version: z.string(),
     }),
     source: z.object({
@@ -158,7 +162,7 @@ export interface ParsedRecipeIngredient {
 }
 
 export interface ParsedRecipe {
-    strategy: "schema_org_json_ld" | "microdata";
+    strategy: "schema_org_json_ld" | "microdata" | "recipe_card_html";
     name: string;
     description?: string;
     servings: number;

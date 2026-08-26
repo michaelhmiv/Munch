@@ -179,6 +179,73 @@ describe("recipe import parser", () => {
         });
     });
 
+    test("falls back to WP Recipe Maker cards while preserving source facts", () => {
+        const parsed = parseRecipeHtml(`
+            <html><head>
+              <meta property="og:site_name" content="Example Kitchen" />
+              <link rel="canonical" href="https://example.com/lemon-pasta" />
+            </head><body>
+              <div class="wprm-recipe-container">
+                <h2 class="wprm-recipe-name">Lemon Pasta</h2>
+                <div class="wprm-recipe-summary">A bright weeknight pasta.</div>
+                <div class="wprm-recipe-servings-container">Serves <span class="wprm-recipe-servings">2</span></div>
+                <div class="wprm-recipe-prep-time-container">Prep Time 5 minutes</div>
+                <div class="wprm-recipe-cook-time-container">Cook Time 15 minutes</div>
+                <ul>
+                  <li class="wprm-recipe-ingredient"><span class="wprm-recipe-ingredient-amount">8</span> <span class="wprm-recipe-ingredient-unit">ounces</span> <span class="wprm-recipe-ingredient-name">spaghetti</span></li>
+                  <li class="wprm-recipe-ingredient"><span class="wprm-recipe-ingredient-amount">⅓</span> <span class="wprm-recipe-ingredient-unit">cup</span> <span class="wprm-recipe-ingredient-name">Parmesan cheese</span>, <span class="wprm-recipe-ingredient-notes">grated</span></li>
+                  <li class="wprm-recipe-ingredient"><span class="wprm-recipe-ingredient-name">Sea salt and black pepper to taste</span></li>
+                </ul>
+                <ol>
+                  <li class="wprm-recipe-instruction"><div class="wprm-recipe-instruction-text">Cook the pasta until al dente.</div></li>
+                  <li class="wprm-recipe-instruction"><div class="wprm-recipe-instruction-text">Toss with the sauce and serve.</div></li>
+                </ol>
+              </div>
+            </body></html>
+        `);
+        expect(parsed.strategy).toBe("recipe_card_html");
+        expect(parsed.name).toBe("Lemon Pasta");
+        expect(parsed.servings).toBe(2);
+        expect(parsed.preparationMinutes).toBe(5);
+        expect(parsed.cookingMinutes).toBe(15);
+        expect(parsed.ingredients).toHaveLength(3);
+        expect(parsed.ingredients[0]).toMatchObject({
+            rawText: "8 ounces spaghetti",
+            name: "spaghetti",
+            quantity: 8,
+            unit: "oz",
+        });
+        expect(parsed.ingredients[1]).toMatchObject({
+            rawText: "⅓ cup Parmesan cheese, grated",
+            quantity: 1 / 3,
+            unit: "cup",
+        });
+        expect(parsed.ingredients[2]?.quantity).toBeUndefined();
+        expect(parsed.instructions).toEqual([
+            "Cook the pasta until al dente.",
+            "Toss with the sauce and serve.",
+        ]);
+        expect(parsed.canonicalUrl).toBe("https://example.com/lemon-pasta");
+    });
+
+    test("falls back to Tasty Recipes card markup", () => {
+        const parsed = parseRecipeHtml(`
+            <div class="tasty-recipes">
+              <h2 class="tasty-recipes-title">Simple Toast</h2>
+              <div class="tasty-recipes-yield">Yield: 1 serving</div>
+              <div class="tasty-recipes-ingredients"><ul><li>2 slices bread</li></ul></div>
+              <div class="tasty-recipes-instructions"><ol><li>Toast the bread.</li></ol></div>
+            </div>
+        `);
+        expect(parsed.strategy).toBe("recipe_card_html");
+        expect(parsed.ingredients[0]).toMatchObject({
+            name: "bread",
+            quantity: 2,
+            unit: "slice",
+        });
+        expect(parsed.instructions).toEqual(["Toast the bread."]);
+    });
+
     test("preserves raw text and warns when a quantity is not measurable", () => {
         const result = parseIngredientText("Salt to taste (optional)");
         expect(result.ingredient).toMatchObject({
