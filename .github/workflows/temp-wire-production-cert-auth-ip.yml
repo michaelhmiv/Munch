@@ -1,0 +1,98 @@
+name: Temporary wire production certification auth IPs
+
+on:
+    push:
+        branches:
+            - fix/production-cert-auth-ip
+
+permissions:
+    contents: write
+
+jobs:
+    apply:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  ref: fix/production-cert-auth-ip
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - run: bun install --frozen-lockfile
+            - name: Wire reserved auth IPs
+              run: |
+                  python3 - <<'PY'
+                  from pathlib import Path
+
+                  path = Path('scripts/certification/production-mcp-corpus.ts')
+                  text = path.read_text()
+                  if 'const authIp = certificationAuthIp(label);' in text:
+                      print('certification auth IP wiring already present')
+                      raise SystemExit(0)
+
+                  import_anchor = 'import { foodNameMatches } from "./food-name-match.js";\n'
+                  if text.count(import_anchor) != 1:
+                      raise SystemExit('food matcher import anchor changed')
+                  text = text.replace(
+                      import_anchor,
+                      import_anchor + 'import { certificationAuthIp } from "./auth-ip.js";\n',
+                      1,
+                  )
+
+                  identity_anchor = 'async function createIdentity(label: string): Promise<Identity> {\n    const suffix = crypto.randomUUID().replaceAll("-", "");\n'
+                  if text.count(identity_anchor) != 1:
+                      raise SystemExit('createIdentity anchor changed')
+                  text = text.replace(
+                      identity_anchor,
+                      'async function createIdentity(label: string): Promise<Identity> {\n    const authIp = certificationAuthIp(label);\n    const suffix = crypto.randomUUID().replaceAll("-", "");\n',
+                      1,
+                  )
+
+                  replacements = [
+                      (
+                          'headers: { "content-type": "application/json", origin: baseUrl },',
+                          'headers: {\n            "content-type": "application/json",\n            origin: baseUrl,\n            "x-real-ip": authIp,\n        },',
+                          2,
+                      ),
+                      (
+                          'headers: { "content-type": "application/json" },',
+                          'headers: {\n                "content-type": "application/json",\n                "x-real-ip": authIp,\n            },',
+                          1,
+                      ),
+                      (
+                          'headers: { cookie },',
+                          'headers: { cookie, "x-real-ip": authIp },',
+                          2,
+                      ),
+                      (
+                          '            "content-type": "application/x-www-form-urlencoded",\n        },',
+                          '            "content-type": "application/x-www-form-urlencoded",\n            "x-real-ip": authIp,\n        },',
+                          1,
+                      ),
+                      (
+                          'headers: { "content-type": "application/x-www-form-urlencoded" },',
+                          'headers: {\n            "content-type": "application/x-www-form-urlencoded",\n            "x-real-ip": authIp,\n        },',
+                          1,
+                      ),
+                  ]
+
+                  for old, new, expected in replacements:
+                      count = text.count(old)
+                      if count != expected:
+                          raise SystemExit(f'header anchor changed: expected {expected}, found {count}: {old}')
+                      text = text.replace(old, new, expected)
+
+                  if text.count('"x-real-ip": authIp') != 7:
+                      raise SystemExit('expected seven in-process auth requests to carry x-real-ip')
+
+                  path.write_text(text)
+                  PY
+                  bunx prettier --write scripts/certification/production-mcp-corpus.ts scripts/certification/auth-ip.ts scripts/certification/auth-ip.test.ts
+                  bun test scripts/certification/auth-ip.test.ts
+            - name: Commit auth IP wiring
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                  git add scripts/certification/production-mcp-corpus.ts scripts/certification/auth-ip.ts scripts/certification/auth-ip.test.ts
+                  git diff --cached --quiet || git commit -m "fix: isolate production certification auth buckets"
+                  git push origin HEAD:fix/production-cert-auth-ip
