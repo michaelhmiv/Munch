@@ -1,0 +1,70 @@
+name: Final Recipe Import Live Certification
+
+on:
+    push:
+        branches:
+            - test/recipe-import-final-live
+
+permissions:
+    contents: read
+
+jobs:
+    live:
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - run: bun install --frozen-lockfile
+            - name: Exercise representative live recipe URLs
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  bun - <<'TS'
+                  import { previewRecipeUrl } from "./src/recipe-import/service.ts";
+
+                  const targets = [
+                    ["Love & Lemons", "https://www.loveandlemons.com/lemon-pasta/"],
+                    ["Half Baked Harvest", "https://www.halfbakedharvest.com/slow-cooker-coq-au-vin/"],
+                    ["Serious Eats", "https://www.seriouseats.com/the-best-slow-cooked-bolognese-sauce-recipe"],
+                    ["Maangchi", "https://www.maangchi.com/recipe/bibimbap"],
+                  ] as const;
+
+                  const noProviderMatches = {
+                    search: async () => ({ candidates: [], failures: [] }),
+                  };
+
+                  let failed = 0;
+                  for (const [site, url] of targets) {
+                    const started = performance.now();
+                    try {
+                      const draft = await previewRecipeUrl(url, { foodSearch: noProviderMatches });
+                      if (draft.recipe.ingredients.length === 0) throw new Error("no ingredients");
+                      if (draft.recipe.instructions.length === 0) throw new Error("no instructions");
+                      if (draft.recipe.source_url !== url && !draft.recipe.source_url.startsWith(new URL(url).origin)) {
+                        throw new Error(`unexpected source URL ${draft.recipe.source_url}`);
+                      }
+                      console.log(JSON.stringify({
+                        site,
+                        ok: true,
+                        strategy: draft.parser.strategy,
+                        recipe: draft.recipe.name,
+                        servings: draft.recipe.servings,
+                        ingredients: draft.recipe.ingredients.length,
+                        instructions: draft.recipe.instructions.length,
+                        status: draft.status,
+                        ms: Math.round(performance.now() - started),
+                      }));
+                    } catch (error) {
+                      failed += 1;
+                      console.error(JSON.stringify({
+                        site,
+                        ok: false,
+                        error: error instanceof Error ? error.message : String(error),
+                      }));
+                    }
+                  }
+                  if (failed > 0) process.exit(1);
+                  TS
