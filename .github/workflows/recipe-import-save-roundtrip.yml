@@ -58,6 +58,18 @@ jobs:
             ["Maangchi", "https://www.maangchi.com/recipe/bibimbap"],
           ] as const;
 
+          function canonical(value: unknown): unknown {
+            if (Array.isArray(value)) return value.map(canonical);
+            if (value && typeof value === "object") {
+              return Object.fromEntries(
+                Object.entries(value as Record<string, unknown>)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([key, nested]) => [key, canonical(nested)]),
+              );
+            }
+            return value;
+          }
+
           const user = await createSmokeIdentity("recipe-import-save-roundtrip");
           const capabilities = {
             tier: "premium",
@@ -117,9 +129,8 @@ jobs:
               const stored = (read.structuredContent as any)?.recipe;
               if (!stored) throw new Error("get_recipe returned no recipe");
 
-              const expectedInstructions = draft.recipe.instructions;
-              if (JSON.stringify(stored.instructions) !== JSON.stringify(expectedInstructions)) {
-                throw new Error(`instructions changed during save: expected=${JSON.stringify(expectedInstructions)} actual=${JSON.stringify(stored.instructions)}`);
+              if (JSON.stringify(stored.instructions) !== JSON.stringify(draft.recipe.instructions)) {
+                throw new Error(`instructions changed during save: expected=${JSON.stringify(draft.recipe.instructions)} actual=${JSON.stringify(stored.instructions)}`);
               }
               if (stored.servings !== draft.recipe.servings) {
                 throw new Error(`servings changed: expected=${draft.recipe.servings} actual=${stored.servings}`);
@@ -149,8 +160,10 @@ jobs:
                     throw new Error(`ingredient ${i} ${field} changed: expected=${JSON.stringify(want)} actual=${JSON.stringify(got)}`);
                   }
                 }
-                if (JSON.stringify(actual.source_snapshot) !== JSON.stringify(expected.source_snapshot)) {
-                  throw new Error(`ingredient ${i} source_snapshot changed`);
+                const actualSnapshot = JSON.stringify(canonical(actual.source_snapshot));
+                const expectedSnapshot = JSON.stringify(canonical(expected.source_snapshot));
+                if (actualSnapshot !== expectedSnapshot) {
+                  throw new Error(`ingredient ${i} source_snapshot changed: expected=${expectedSnapshot} actual=${actualSnapshot}`);
                 }
               }
 
