@@ -23,6 +23,23 @@ interface CaseDefinition {
     forbidden: string[];
 }
 
+interface PreparedCandidate {
+    index: number;
+    name: string;
+    brand: string | null;
+    data_kind: string;
+    confidence: number;
+    portions: string[];
+    calories_per_100g: number | null;
+}
+
+interface PreparedCase {
+    id: string;
+    query: string;
+    context: string;
+    candidates: PreparedCandidate[];
+}
+
 const CASES: CaseDefinition[] = [
     {
         id: "bacon-strips",
@@ -118,22 +135,22 @@ function normalized(value: string): string {
         .trim();
 }
 
-const prepared = [] as Array<{
-    id: string;
-    query: string;
-    context: string;
-    candidates: Array<{
-        index: number;
-        name: string;
-        brand: string | null;
-        data_kind: string;
-        confidence: number;
-        portions: string[];
-        calories_per_100g: number | null;
-    }>;
-}>;
+function candidatePasses(
+    definition: CaseDefinition,
+    candidate: PreparedCandidate,
+): boolean {
+    const name = normalized(candidate.name);
+    return (
+        definition.required.every((token) =>
+            name.includes(normalized(token)),
+        ) &&
+        definition.forbidden.every(
+            (token) => !name.includes(normalized(token)),
+        )
+    );
+}
 
-for (const definition of CASES) {
+async function prepareCase(definition: CaseDefinition): Promise<PreparedCase> {
     const hits = await repository.searchLocal(definition.query, 8);
     if (hits.length < 2) {
         throw new Error(
@@ -151,169 +168,153 @@ for (const definition of CASES) {
             .map((portion) => portion.label),
         calories_per_100g: hit.candidate.nutrientsPer100g?.calories ?? null,
     }));
-    const hasAcceptable = candidates.some((candidate) => {
-        const name = normalized(candidate.name);
-        return (
-            definition.required.every((token) =>
-                name.includes(normalized(token)),
-            ) &&
-            definition.forbidden.every(
-                (token) => !name.includes(normalized(token)),
-            )
-        );
-    });
-    if (!hasAcceptable) {
+    if (!candidates.some((candidate) => candidatePasses(definition, candidate))) {
         throw new Error(
             `${definition.id} retrieval omitted an acceptable candidate: ${candidates
                 .map((candidate) => candidate.name)
                 .join(" | ")}`,
         );
     }
-    prepared.push({
+    return {
         id: definition.id,
         query: definition.query,
         context: definition.context,
         candidates,
-    });
+    };
 }
 
-const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-        authorization: `Bearer ${apiKey}`,
-        "content-type": "application/json",
-        "HTTP-Referer": "https://munch.business",
-        "X-Title": "Munch food adjudication CI",
-    },
-    body: JSON.stringify({
-        model,
-        temperature: 0,
-        messages: [
-            {
-                role: "system",
-                content:
-                    "You are the semantic food-candidate adjudicator for Munch. The application has already retrieved factual food database candidates. For each case, choose exactly one candidate index using the user's complete context, especially quantity, unit, preparation, food form, and brand. Do not assume index 0 is correct. Do not invent a candidate. A tablespoon of bacon bits and strips of bacon are different foods; use the context and portion labels. Return only the requested JSON.",
-            },
-            {
-                role: "user",
-                content: JSON.stringify({ cases: prepared }),
-            },
-        ],
-        response_format: {
-            type: "json_schema",
-            json_schema: {
-                name: "munch_food_adjudication",
-                strict: true,
-                schema: {
-                    type: "object",
-                    additionalProperties: false,
-                    required: ["selections"],
-                    properties: {
-                        selections: {
-                            type: "array",
-                            items: {
-                                type: "object",
-                                additionalProperties: false,
-                                required: [
-                                    "id",
-                                    "selected_index",
-                                    "confidence",
-                                ],
-                                properties: {
-                                    id: { type: "string" },
-                                    selected_index: {
-                                        type: "integer",
-                                        minimum: 0,
-                                    },
-                                    confidence: {
-                                        type: "number",
-                                        minimum: 0,
-                                        maximum: 1,
-                                    },
-                                },
+async function askLuna(preparedCase: PreparedCase): Promise<{
+    selected_index: number;
+    confidence: number;
+}> {
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+            authorization: `Bearer ${apiKey}`,
+            "content-type": "application/json",
+            "HTTP-Referer": "https://munch.business",
+            "X-Title": "Munch food adjudication CI",
+        },
+        body: JSON.stringify({
+            model,
+            temperature: 0,
+            messages: [
+                {
+                    role: "system",
+                    content:
+                        "You are selecting a factual food database candidate for Munch. The database has already retrieved plausible candidates; your job is semantic interpretation. Use every explicit fact in the user's context, especially quantity, unit, preparation, food form, brand, and anything the user says is logged separately. Do not assume candidate 0 is correct. Prefer the candidate that satisfies the stated facts while introducing the fewest unsupported assumptions or extra ingredients/modifiers. Do not infer an unmentioned flavor, ingredient, preparation, subtype, or brand. Use portion labels as evidence when they help distinguish forms. Select exactly one provided candidate and do not invent a new food.",
+                },
+                {
+                    role: "user",
+                    content: JSON.stringify(preparedCase),
+                },
+            ],
+            response_format: {
+                type: "json_schema",
+                json_schema: {
+                    name: "munch_food_adjudication",
+                    strict: true,
+                    schema: {
+                        type: "object",
+                        additionalProperties: false,
+                        required: ["selected_index", "confidence"],
+                        properties: {
+                            selected_index: {
+                                type: "integer",
+                                minimum: 0,
+                            },
+                            confidence: {
+                                type: "number",
+                                minimum: 0,
+                                maximum: 1,
                             },
                         },
                     },
                 },
             },
-        },
-    }),
-    signal: AbortSignal.timeout(60_000),
-});
+        }),
+        signal: AbortSignal.timeout(60_000),
+    });
 
-if (!response.ok) {
-    throw new Error(
-        `OpenRouter food adjudication failed: ${response.status} ${(await response.text()).slice(0, 1000)}`,
-    );
-}
+    if (!response.ok) {
+        throw new Error(
+            `OpenRouter food adjudication failed for ${preparedCase.id}: ${response.status} ${(await response.text()).slice(0, 1000)}`,
+        );
+    }
 
-const payload = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-};
-const content = payload.choices?.[0]?.message?.content;
-if (!content) throw new Error("OpenRouter returned no adjudication content");
-const parsed = JSON.parse(content) as {
-    selections?: Array<{
-        id?: string;
+    const payload = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+    };
+    const content = payload.choices?.[0]?.message?.content;
+    if (!content) {
+        throw new Error(`OpenRouter returned no content for ${preparedCase.id}`);
+    }
+    const parsed = JSON.parse(content) as {
         selected_index?: number;
         confidence?: number;
-    }>;
-};
-if (!Array.isArray(parsed.selections)) {
-    throw new Error("Luna adjudication returned no selections array");
+    };
+    if (!Number.isInteger(parsed.selected_index)) {
+        throw new Error(`Luna omitted selected_index for ${preparedCase.id}`);
+    }
+    return {
+        selected_index: parsed.selected_index!,
+        confidence:
+            typeof parsed.confidence === "number" ? parsed.confidence : 0,
+    };
 }
 
-const byId = new Map(
-    parsed.selections.map((selection) => [selection.id, selection]),
-);
 const results: Array<Record<string, unknown>> = [];
+const failures: string[] = [];
+
 for (const definition of CASES) {
-    const selection = byId.get(definition.id);
-    const preparedCase = prepared.find((item) => item.id === definition.id)!;
-    if (!selection || !Number.isInteger(selection.selected_index)) {
-        throw new Error(`Luna omitted selection for ${definition.id}`);
-    }
-    const chosen = preparedCase.candidates[selection.selected_index!];
-    if (!chosen) {
-        throw new Error(
-            `Luna selected invalid index ${selection.selected_index} for ${definition.id}`,
-        );
-    }
-    const name = normalized(chosen.name);
-    const ok =
-        definition.required.every((token) =>
-            name.includes(normalized(token)),
-        ) &&
-        definition.forbidden.every(
-            (token) => !name.includes(normalized(token)),
-        );
-    results.push({
-        id: definition.id,
-        query: definition.query,
-        context: definition.context,
-        selected_index: selection.selected_index,
-        selected_name: chosen.name,
-        confidence: selection.confidence ?? null,
-        ok,
-        candidate_names: preparedCase.candidates.map(
-            (candidate) => candidate.name,
-        ),
-    });
-    if (!ok) {
-        throw new Error(
-            `Luna chose an implausible candidate for ${definition.id}: ${chosen.name}`,
-        );
+    const preparedCase = await prepareCase(definition);
+    const startedAt = performance.now();
+    try {
+        const selection = await askLuna(preparedCase);
+        const chosen = preparedCase.candidates[selection.selected_index];
+        if (!chosen) {
+            throw new Error(
+                `selected invalid index ${selection.selected_index} (candidate count ${preparedCase.candidates.length})`,
+            );
+        }
+        const ok = candidatePasses(definition, chosen);
+        results.push({
+            id: definition.id,
+            query: definition.query,
+            context: definition.context,
+            selected_index: selection.selected_index,
+            selected_name: chosen.name,
+            confidence: selection.confidence,
+            duration_ms: Number((performance.now() - startedAt).toFixed(2)),
+            ok,
+            candidate_names: preparedCase.candidates.map(
+                (candidate) => candidate.name,
+            ),
+        });
+        if (!ok) {
+            failures.push(`${definition.id}: ${chosen.name}`);
+        }
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        results.push({
+            id: definition.id,
+            query: definition.query,
+            context: definition.context,
+            duration_ms: Number((performance.now() - startedAt).toFixed(2)),
+            ok: false,
+            error: message,
+            candidate_names: preparedCase.candidates.map(
+                (candidate) => candidate.name,
+            ),
+        });
+        failures.push(`${definition.id}: ${message}`);
     }
 }
 
-const report = {
-    model,
-    cases: results.length,
-    passed: results.length,
-    results,
-};
+const passed = results.filter((result) => result.ok === true).length;
+const report = { model, cases: results.length, passed, failures, results };
 console.log(
-    `[food_ai_adjudication] ${JSON.stringify({ model, cases: results.length, passed: results.length })}`,
+    `[food_ai_adjudication] ${JSON.stringify({ model, cases: results.length, passed, failed: failures.length })}`,
 );
 console.log(JSON.stringify(report, null, 2));
 
@@ -321,6 +322,12 @@ const summary = process.env.GITHUB_STEP_SUMMARY;
 if (summary) {
     appendFileSync(
         summary,
-        `\n### Luna food candidate adjudication\n\nModel: \`${model}\`\n\nPassed: **${results.length}/${results.length}** contextual candidate selections.\n`,
+        `\n### Luna food candidate adjudication\n\nModel: \`${model}\`\n\nPassed: **${passed}/${results.length}** independent contextual candidate selections.\n`,
+    );
+}
+
+if (failures.length > 0) {
+    throw new Error(
+        `Luna food adjudication failed ${failures.length}/${results.length} cases: ${failures.join("; ")}`,
     );
 }
