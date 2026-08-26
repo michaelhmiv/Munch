@@ -36,6 +36,10 @@ CORPUS = [
     ("Simply Recipes", "https://www.simplyrecipes.com/recipes/banana_bread/"),
 ]
 
+BLOCKED_SITES = {"Allrecipes", "Serious Eats", "Simply Recipes"}
+if os.environ.get("SCRAPLING_BLOCKERS_ONLY", "").lower() in {"1", "true", "yes"}:
+    CORPUS = [entry for entry in CORPUS if entry[0] in BLOCKED_SITES]
+
 
 def rss_mb():
     value = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
@@ -65,7 +69,7 @@ with StealthySession(headless=True, solve_cloudflare=True) as session:
     for site, url in CORPUS:
         started = time.perf_counter()
         try:
-            page = session.fetch(url, google_search=False, network_idle=True)
+            page = session.fetch(url, google_search=False, network_idle=False)
             html = getattr(page, "html_content", None) or getattr(page, "html", None) or getattr(page, "text", None) or str(page)
             if not isinstance(html, str):
                 html = str(html)
