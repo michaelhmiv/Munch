@@ -11,6 +11,14 @@ const NEUTRAL_DESCRIPTOR_TOKENS = new Set([
     "ns",
     "prepared",
     "unenriched",
+    "whole",
+    "fluid",
+    "boneless",
+    "skinless",
+    "table",
+    "fish",
+    "spice",
+    "nut",
 ]);
 
 const COMPOSITE_FOOD_TOKENS = new Set([
@@ -48,6 +56,26 @@ const COMPOSITE_FOOD_TOKENS = new Set([
     "turkey",
     "mix",
     "gravy",
+    "bun",
+    "sauce",
+    "stick",
+    "pickled",
+    "breaded",
+    "reheated",
+    "prepackaged",
+    "honey",
+    "roasted",
+    "dried",
+    "yolk",
+    "white",
+    "pita",
+    "spaghetti",
+    "macaroni",
+    "vegetable",
+    "raab",
+    "light",
+    "cream",
+    "beef",
 ]);
 
 export function normalizeFoodText(value: string): string {
@@ -124,23 +152,32 @@ function datasetPreference(candidate: FoodCandidate): number {
     return 0.03;
 }
 
-function compositePenalty(query: string, candidate: FoodCandidate): number {
+function unexpectedCompositeCount(
+    query: string,
+    candidate: FoodCandidate,
+): number {
     const queryTokens = new Set(normalizedTokens(query));
     const nameTokens = new Set(normalizedTokens(candidate.name));
+    let count = 0;
     for (const token of COMPOSITE_FOOD_TOKENS) {
-        if (!queryTokens.has(token) && nameTokens.has(token)) return 0.14;
+        if (!queryTokens.has(token) && nameTokens.has(token)) count += 1;
     }
-    return 0;
+    return count;
+}
+
+function compositePenalty(query: string, candidate: FoodCandidate): number {
+    return Math.min(0.48, unexpectedCompositeCount(query, candidate) * 0.12);
 }
 
 function leadingIngredientBonus(
     query: string,
     candidate: FoodCandidate,
 ): number {
+    if (unexpectedCompositeCount(query, candidate) > 0) return 0;
     const queryTokens = new Set(normalizedTokens(query));
     const leading = normalizedTokens(candidate.name)[0];
     if (!leading || !queryTokens.has(leading)) return 0;
-    return 0.12;
+    return 0.08;
 }
 
 export function candidateIdentity(candidate: FoodCandidate): string {
@@ -172,7 +209,6 @@ export function scoreCandidate(
 ): number {
     const query = normalizeFoodText(input.query);
     const name = normalizeFoodText(candidate.name);
-    const brand = normalizeFoodText(candidate.brand ?? "");
     const brandedName = normalizeFoodText(
         `${candidate.brand ?? ""} ${candidate.name}`,
     );
