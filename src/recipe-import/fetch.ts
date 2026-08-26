@@ -64,11 +64,19 @@ interface ResolvedRecipeUrlFetchDependencies {
     resolver: (hostname: string) => Promise<Array<{ address: string }>>;
 }
 
-interface LoadedRecipeResponse {
+interface LoadedRecipeSuccess {
+    kind: "success";
     response: Response;
     html: string;
     transport: "native" | RecipeFallbackProfile;
 }
+
+interface LoadedRecipeRedirect {
+    kind: "redirect";
+    response: Response;
+}
+
+type LoadedRecipeResponse = LoadedRecipeSuccess | LoadedRecipeRedirect;
 
 function ipv4Number(value: string): number[] | null {
     const octets = value.split(".").map(Number);
@@ -375,7 +383,7 @@ async function fallbackFetch(
     url: URL,
     dependencies: ResolvedRecipeUrlFetchDependencies,
     triggerStatus: number,
-): Promise<LoadedRecipeResponse | Response> {
+): Promise<LoadedRecipeResponse> {
     const profiles: RecipeFallbackRequest[] = [
         {
             profile: "firefox_151",
@@ -413,7 +421,9 @@ async function fallbackFetch(
             `[recipe_fetch] transport=${request.profile} host=${url.hostname} status=${response.status} duration_ms=${Math.round(performance.now() - started)}`,
         );
 
-        if (REDIRECT_STATUSES.has(response.status)) return response;
+        if (REDIRECT_STATUSES.has(response.status)) {
+            return { kind: "redirect", response };
+        }
         if (response.status === 429) break;
         if (!response.ok) {
             if (isRecipeChallengeResponse(response)) continue;
@@ -423,6 +433,7 @@ async function fallbackFetch(
         const html = await readBoundedBody(response);
         if (isRecipeChallengeResponse(response, html)) continue;
         return {
+            kind: "success",
             response,
             html,
             transport: request.profile,
@@ -435,9 +446,11 @@ async function fallbackFetch(
 async function loadRecipeResponse(
     url: URL,
     dependencies: ResolvedRecipeUrlFetchDependencies,
-): Promise<LoadedRecipeResponse | Response> {
+): Promise<LoadedRecipeResponse> {
     const response = await nativeFetchOnce(url, dependencies);
-    if (REDIRECT_STATUSES.has(response.status)) return response;
+    if (REDIRECT_STATUSES.has(response.status)) {
+        return { kind: "redirect", response };
+    }
 
     if (!response.ok) {
         if (
@@ -457,7 +470,7 @@ async function loadRecipeResponse(
     ) {
         return fallbackFetch(url, dependencies, response.status);
     }
-    return { response, html, transport: "native" };
+    return { kind: "success", response, html, transport: "native" };
 }
 
 export async function fetchRecipePage(
@@ -486,7 +499,7 @@ export async function fetchRecipePage(
         let current = assertSafeRecipeUrl(submittedValue);
         for (let redirect = 0; redirect <= MAX_RECIPE_REDIRECTS; redirect++) {
             const loaded = await loadRecipeResponse(current, dependencies);
-            if (loaded instanceof Response) {
+            if (loaded.kind === "redirect") {
                 if (redirect === MAX_RECIPE_REDIRECTS) {
                     throw new RecipeImportError(
                         "too_many_redirects",
@@ -494,7 +507,7 @@ export async function fetchRecipePage(
                         502,
                     );
                 }
-                const location = loaded.headers.get("location");
+                const location = loaded.response.headers.get("location");
                 if (!location) {
                     throw new RecipeImportError(
                         "invalid_redirect",
