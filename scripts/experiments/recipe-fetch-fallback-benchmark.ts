@@ -126,10 +126,13 @@ async function runNative(): Promise<void> {
     }
 }
 
+function requestStartedAt(request: { userData: Record<string, unknown> }): number {
+    const value = Number(request.userData.recipeBenchmarkStartedAt);
+    return Number.isFinite(value) ? value : performance.now();
+}
+
 async function runCrawlee(): Promise<void> {
     const byUrl = new Map(CORPUS.map((entry) => [entry.url, entry]));
-    const startedByUrl = new Map<string, number>();
-    for (const entry of CORPUS) startedByUrl.set(entry.url, performance.now());
 
     const crawler = new PlaywrightCrawler({
         maxConcurrency: 2,
@@ -143,7 +146,8 @@ async function runCrawlee(): Promise<void> {
             launchOptions: { headless: true },
         },
         preNavigationHooks: [
-            async ({ page }, gotoOptions) => {
+            async ({ page, request }, gotoOptions) => {
+                request.userData.recipeBenchmarkStartedAt = performance.now();
                 gotoOptions.waitUntil = "domcontentloaded";
                 await page.route("**/*", async (route) => {
                     const type = route.request().resourceType();
@@ -153,6 +157,7 @@ async function runCrawlee(): Promise<void> {
             },
         ],
         async requestHandler({ request, page, response }) {
+            const started = requestStartedAt(request);
             await page.waitForTimeout(750);
             const html = await page.content();
             const detection = await detectRecipe(html, request.loadedUrl ?? page.url());
@@ -167,12 +172,7 @@ async function runCrawlee(): Promise<void> {
                 ok: detection.usable,
                 status: response?.status() ?? null,
                 finalUrl: request.loadedUrl ?? page.url(),
-                durationMs: Number(
-                    (
-                        performance.now() -
-                        (startedByUrl.get(entry.url) ?? performance.now())
-                    ).toFixed(2),
-                ),
+                durationMs: Number((performance.now() - started).toFixed(2)),
                 bytes: Buffer.byteLength(html),
                 rssMb: rssMb(),
                 detection,
@@ -182,6 +182,7 @@ async function runCrawlee(): Promise<void> {
             });
         },
         async failedRequestHandler({ request, error }) {
+            const started = requestStartedAt(request);
             const entry = byUrl.get(request.url) ?? {
                 site: new URL(request.url).hostname,
                 url: request.url,
@@ -193,12 +194,7 @@ async function runCrawlee(): Promise<void> {
                 ok: false,
                 status: null,
                 finalUrl: request.loadedUrl ?? null,
-                durationMs: Number(
-                    (
-                        performance.now() -
-                        (startedByUrl.get(entry.url) ?? performance.now())
-                    ).toFixed(2),
-                ),
+                durationMs: Number((performance.now() - started).toFixed(2)),
                 bytes: 0,
                 rssMb: rssMb(),
                 error: error instanceof Error ? error.message : String(error),
