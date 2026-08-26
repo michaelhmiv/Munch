@@ -10,28 +10,6 @@ permissions:
     contents: read
 
 jobs:
-    native-crawlee:
-        runs-on: ubuntu-latest
-        timeout-minutes: 40
-        steps:
-            - uses: actions/checkout@v4
-              with:
-                  ref: experiment/recipe-fetch-fallbacks
-            - uses: oven-sh/setup-bun@v2
-              with:
-                  bun-version: 1
-            - run: bun install --frozen-lockfile
-            - name: Install experiment-only JS dependencies
-              run: npm install --no-save --package-lock=false --legacy-peer-deps crawlee playwright recipe-scrapers cheerio zod@4
-            - name: Install Chromium
-              run: npx playwright install --with-deps chromium
-            - name: Run expanded native and Crawlee benchmark
-              run: bun scripts/experiments/recipe-fetch-fallback-benchmark.ts native,crawlee | tee recipe-fetch-native-crawlee.jsonl
-            - uses: actions/upload-artifact@v4
-              with:
-                  name: recipe-fetch-native-crawlee-${{ github.sha }}
-                  path: recipe-fetch-native-crawlee.jsonl
-
     crawlee-stability:
         runs-on: ubuntu-latest
         timeout-minutes: 25
