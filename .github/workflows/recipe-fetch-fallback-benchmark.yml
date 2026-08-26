@@ -24,7 +24,7 @@ jobs:
             - name: Run parser, corpus, host-AI, and network regressions
               run: bun test src/recipe-import.test.ts src/recipe-import-corpus.test.ts src/host-ai-boundary.test.ts src/net.test.ts
 
-    bun-native-fallback-spike:
+    bun-native-transport-spike:
         runs-on: ubuntu-latest
         timeout-minutes: 15
         steps:
@@ -35,14 +35,46 @@ jobs:
               with:
                   bun-version: 1
             - run: bun install --frozen-lockfile
-            - name: Install candidate production dependencies ephemerally
-              run: bun add --no-save node-wreq@3.1.0 recipe-scrapers@1.10.0 cheerio@1.1.2
-            - name: Exercise Bun native TLS transport and parser fallback
-              run: bun scripts/experiments/recipe-bun-fallback-spike.ts | tee recipe-bun-fallback-spike.jsonl
+            - name: Install node-wreq ephemerally
+              run: bun add --no-save node-wreq@3.1.0
+            - name: Exercise Bun native TLS transport
+              shell: bash
+              run: |
+                  set -o pipefail
+                  bun scripts/experiments/recipe-bun-transport-spike.ts | tee recipe-bun-transport-spike.jsonl
             - uses: actions/upload-artifact@v4
               with:
-                  name: recipe-bun-fallback-spike-${{ github.sha }}
-                  path: recipe-bun-fallback-spike.jsonl
+                  name: recipe-bun-transport-spike-${{ github.sha }}
+                  path: recipe-bun-transport-spike.jsonl
+
+    zod4-parser-spike:
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  ref: experiment/recipe-fetch-fallbacks
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - run: bun install --frozen-lockfile
+            - name: Temporarily test Munch on Zod 4 with parser fallback
+              run: bun add --no-save zod@4.4.3 recipe-scrapers@1.10.0 cheerio@1.1.2
+            - name: Typecheck Munch against Zod 4
+              run: bun run typecheck
+            - name: Run full Munch tests against Zod 4
+              run: bun test
+            - name: Exercise Love and Lemons parser fallback
+              shell: bash
+              run: |
+                  set -o pipefail
+                  bun scripts/experiments/recipe-zod4-parser-spike.ts | tee recipe-zod4-parser-spike.jsonl
+            - uses: actions/upload-artifact@v4
+              if: always()
+              with:
+                  name: recipe-zod4-parser-spike-${{ github.sha }}
+                  path: recipe-zod4-parser-spike.jsonl
+                  if-no-files-found: ignore
 
     mealie-comparison:
         runs-on: ubuntu-latest
@@ -61,7 +93,10 @@ jobs:
             - name: Install Mealie-equivalent parser and HTTP transport
               run: pip install "httpx==0.28.1" "httpx-curl-cffi==0.1.5" "recipe-scrapers==15.12.0"
             - name: Compare Munch with Mealie transport and parser
-              run: python scripts/experiments/recipe_mealie_diagnostic.py | tee recipe-mealie-diagnostic.jsonl
+              shell: bash
+              run: |
+                  set -o pipefail
+                  python scripts/experiments/recipe_mealie_diagnostic.py | tee recipe-mealie-diagnostic.jsonl
             - uses: actions/upload-artifact@v4
               with:
                   name: recipe-mealie-diagnostic-${{ github.sha }}
@@ -84,7 +119,10 @@ jobs:
             - name: Install Chromium
               run: npx playwright install --with-deps chromium
             - name: Repeat native-blocked publishers five times
-              run: bun scripts/experiments/recipe-fetch-crawlee-stability.ts | tee recipe-fetch-crawlee-stability.jsonl
+              shell: bash
+              run: |
+                  set -o pipefail
+                  bun scripts/experiments/recipe-fetch-crawlee-stability.ts | tee recipe-fetch-crawlee-stability.jsonl
             - uses: actions/upload-artifact@v4
               with:
                   name: recipe-fetch-crawlee-stability-${{ github.sha }}
