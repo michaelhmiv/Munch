@@ -276,8 +276,7 @@ async function readBoundedBody(response: Response): Promise<string> {
 function hasSupportedHtmlContentType(response: Response): boolean {
     const contentType = response.headers.get("content-type") ?? "";
     return (
-        !contentType ||
-        /text\/html|application\/xhtml\+xml/i.test(contentType)
+        !contentType || /text\/html|application\/xhtml\+xml/i.test(contentType)
     );
 }
 
@@ -303,9 +302,8 @@ export function isRecipeChallengeResponse(
 }
 
 function fallbackEnabledFromEnvironment(): boolean {
-    const value = process.env.MUNCH_RECIPE_IMPERSONATED_FETCH_ENABLED
-        ?.trim()
-        .toLowerCase();
+    const value =
+        process.env.MUNCH_RECIPE_IMPERSONATED_FETCH_ENABLED?.trim().toLowerCase();
     return value !== "0" && value !== "false" && value !== "off";
 }
 

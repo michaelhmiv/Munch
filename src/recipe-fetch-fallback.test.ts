@@ -59,9 +59,7 @@ describe("recipe fetch fallback", () => {
         });
 
         expect(page.html).toContain("recovered recipe");
-        expect(requests.map(({ profile }) => profile)).toEqual([
-            "firefox_151",
-        ]);
+        expect(requests.map(({ profile }) => profile)).toEqual(["firefox_151"]);
     });
 
     test("escalates from Firefox to Safari only when the challenge persists", async () => {
