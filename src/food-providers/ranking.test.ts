@@ -139,4 +139,38 @@ describe("generic food ranking", () => {
             ]),
         ).toBe("Creamy Peanut Butter");
     });
+    test("demotes prepared forms for plain ingredient queries", () => {
+        expect(
+            top("cinnamon", [
+                food("Cinnamon buns, frosted", { raw: { dataset: "survey" } }),
+                food("Spices, cinnamon, ground"),
+            ]),
+        ).toBe("Spices, cinnamon, ground");
+        expect(
+            top("egg", [
+                food("Egg, yolk, dried"),
+                food("Egg, whole, raw, fresh"),
+            ]),
+        ).toBe("Egg, whole, raw, fresh");
+        expect(
+            top("tuna", [
+                food("Tuna with cream or white sauce", {
+                    raw: { dataset: "survey" },
+                }),
+                food("Fish, tuna, light, raw"),
+            ]),
+        ).toBe("Fish, tuna, light, raw");
+        expect(
+            top("walnuts", [
+                food("Walnuts, honey roasted", { raw: { dataset: "survey" } }),
+                food("Walnuts, raw"),
+            ]),
+        ).toBe("Walnuts, raw");
+        expect(
+            top("cooked broccoli", [
+                food("Broccoli raab, cooked"),
+                food("Broccoli, cooked"),
+            ]),
+        ).toBe("Broccoli, cooked");
+    });
 });

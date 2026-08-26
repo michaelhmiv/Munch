@@ -134,10 +134,29 @@ const COMMON_FOODS = [
 
 const STOP_WORDS = new Set(["and", "with", "the", "of"]);
 
+function canonicalToken(token: string): string {
+    if (token.length > 4 && token.endsWith("ies")) {
+        return `${token.slice(0, -3)}y`;
+    }
+    if (token.length > 4 && token.endsWith("oes")) {
+        return token.slice(0, -2);
+    }
+    if (
+        token.length > 3 &&
+        token.endsWith("s") &&
+        !token.endsWith("ss") &&
+        !token.endsWith("us")
+    ) {
+        return token.slice(0, -1);
+    }
+    return token;
+}
+
 function tokens(value: string): string[] {
     return normalizeFoodText(value)
         .split(" ")
-        .filter((token) => token.length > 1 && !STOP_WORDS.has(token));
+        .filter((token) => token.length > 1 && !STOP_WORDS.has(token))
+        .map(canonicalToken);
 }
 
 function tokenCoverage(query: string, name: string, brand?: string): number {
@@ -148,6 +167,58 @@ function tokenCoverage(query: string, name: string, brand?: string): number {
         candidateTokens.has(token),
     ).length;
     return matched / queryTokens.length;
+}
+
+const PLAIN_INGREDIENT_FORM_TOKENS = new Set([
+    "bun",
+    "sauce",
+    "stick",
+    "pickled",
+    "breaded",
+    "reheated",
+    "prepackaged",
+    "honey",
+    "roasted",
+    "dried",
+    "yolk",
+    "white",
+    "pita",
+    "spaghetti",
+    "macaroni",
+    "vegetable",
+    "raab",
+    "light",
+    "cream",
+    "beef",
+    "salad",
+    "sandwich",
+    "pie",
+    "chip",
+    "cookie",
+    "cracker",
+    "soup",
+    "cake",
+    "cereal",
+    "pizza",
+    "casserole",
+    "dip",
+    "dressing",
+    "powder",
+    "flour",
+    "yogurt",
+    "custard",
+    "pancake",
+    "bagel",
+    "gravy",
+]);
+
+function plainIngredientFormQuality(query: string, name: string): boolean {
+    const queryTokens = new Set(tokens(query));
+    const nameTokens = new Set(tokens(name));
+    for (const token of PLAIN_INGREDIENT_FORM_TOKENS) {
+        if (!queryTokens.has(token) && nameTokens.has(token)) return false;
+    }
+    return true;
 }
 
 function percentile(values: number[], fraction: number): number {
@@ -179,7 +250,11 @@ for (const query of COMMON_FOODS) {
     rows.push({
         query,
         hit: hits.length > 0,
-        quality: Boolean(top && coverage >= 0.5),
+        quality: Boolean(
+            top &&
+            coverage >= 0.5 &&
+            plainIngredientFormQuality(query, top.name),
+        ),
         top: top ? [top.brand, top.name].filter(Boolean).join(" — ") : null,
         coverage: Number(coverage.toFixed(2)),
         duration_ms: Number(durationMs.toFixed(2)),
@@ -232,9 +307,9 @@ if (report.local_hit_rate < 0.95) {
         `USDA local hit rate ${(report.local_hit_rate * 100).toFixed(1)}% is below the 95% gate`,
     );
 }
-if (report.quality_rate < 0.85) {
+if (report.quality_rate < 0.98) {
     throw new Error(
-        `USDA top-result quality rate ${(report.quality_rate * 100).toFixed(1)}% is below the 85% gate`,
+        `USDA top-result quality rate ${(report.quality_rate * 100).toFixed(1)}% is below the 98% gate`,
     );
 }
 if (report.latency.p95_ms > 75) {

@@ -124,17 +124,28 @@ try {
         throw new Error("USDA fixture identities were duplicated");
     }
 
-    const accessed = await database<Array<{ access_count: number | string }>>`
-        select access_count
-        from munch.food_catalog_entries
-        where provider = 'usda' and provider_food_id = '321358'
-    `;
-    if (Number(accessed[0]?.access_count ?? 0) < 1) {
-        throw new Error("Query-cache hits did not update access counters");
+    let accessCount = 0;
+    const accessDeadline = Date.now() + 1_500;
+    while (Date.now() < accessDeadline) {
+        const accessed = await database<
+            Array<{ access_count: number | string }>
+        >`
+            select access_count
+            from munch.food_catalog_entries
+            where provider = 'usda' and provider_food_id = '321358'
+        `;
+        accessCount = Number(accessed[0]?.access_count ?? 0);
+        if (accessCount >= 1) break;
+        await Bun.sleep(25);
+    }
+    if (accessCount < 1) {
+        throw new Error(
+            "Query-cache hits did not asynchronously update access counters",
+        );
     }
 
     console.log(
-        `[food_catalog_smoke] imported=${first.accepted} idempotent_rows=${rows.length} local_hits=${local.length} query_cache_hits=${cached.length} stale_exposed=true access_count=${accessed[0]?.access_count}`,
+        `[food_catalog_smoke] imported=${first.accepted} idempotent_rows=${rows.length} local_hits=${local.length} query_cache_hits=${cached.length} stale_exposed=true access_count=${accessCount}`,
     );
 } finally {
     await cleanup();
