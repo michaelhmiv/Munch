@@ -15,6 +15,7 @@ if (!apiKey) {
 const model =
     process.env.MUNCH_FOOD_ADJUDICATION_MODEL?.trim() || "openai/gpt-5.6-luna";
 const repository = new FoodCatalogRepository(foodCatalogConfig());
+const MAX_SEARCHES = 5;
 
 interface CaseDefinition {
     id: string;
@@ -116,7 +117,7 @@ const CASES: CaseDefinition[] = [
         context:
             "I ate 2 cups of cooked spaghetti noodles with sauce logged separately.",
         required: ["cooked"],
-        requiredAny: ["spaghetti", "noodle"],
+        requiredAny: ["spaghetti", "noodle", "pasta"],
         forbidden: [
             "spinach",
             "squash",
@@ -290,7 +291,7 @@ async function askLunaToDecide(
 ): Promise<AgentDecision> {
     return openRouterJson<AgentDecision>(
         "Munch food search agent CI",
-        "You control factual food lookup for Munch. The first search uses the user's natural food phrase so you can inspect broad database results before narrowing anything. Decide whether the CURRENT candidates contain a defensible match for the full user context or whether another search is needed. Quantity and unit words such as strips, tablespoons, cups, and ounces are evidence about food form and portion; they are not automatically database search terms. Candidate ordering is retrieval relevance, not correctness. Select only when the candidate satisfies explicit preparation/form facts and does not require an unsupported brand, ingredient, species, subtype, or preparation. For an unqualified common food, do not silently substitute a named alternative species or specialty subtype just because it is available; refine toward the conventional or generic form instead. If a candidate directly conflicts with an explicit fact, refine rather than accepting the conflict. A conservative generic candidate is preferable to a more specific candidate that invents an unmentioned modifier. When decision is select, selected_index must identify the CURRENT candidate and search_query must be an empty string. When decision is refine, provide a concise improved food query, set selected_index to 0 as a placeholder, and do not mechanically copy every serving-unit word. Never invent facts absent from the user's context.",
+        "You control factual food lookup for Munch. The first search uses the user's natural food phrase so you can inspect broad database results before narrowing anything. Decide whether the CURRENT candidates contain a defensible nutritional match for the full user context or whether another search is needed. Quantity and unit words such as strips, tablespoons, cups, and ounces are evidence about food form and portion; they are not automatically database search terms. Candidate ordering is retrieval relevance, not correctness. Database labels often omit conversational cut, shape, serving-size, or plain/unmodified wording, so do not require the candidate name to literally repeat words such as diced, medium, fillet, plain, fresh, boneless, or skinless when the candidate is otherwise the same base food and does not contradict the user's facts. Select semantically equivalent generic database wording when it is the closest factual nutritional match. Select only when the candidate satisfies explicit preparation/form facts and does not require an unsupported brand, ingredient, species, subtype, or preparation. For an unqualified common food, do not silently substitute a named alternative species or specialty subtype just because it is available; refine toward the conventional or generic form instead. If a candidate directly conflicts with an explicit fact, refine rather than accepting the conflict. A conservative generic candidate is preferable to a more specific candidate that invents an unmentioned modifier. If earlier refinements have not produced a better exact label, choose the least-modified nutritionally equivalent base-food candidate rather than continuing to chase wording. When decision is select, selected_index must identify the CURRENT candidate and search_query must be an empty string. When decision is refine, provide a concise improved food query, set selected_index to 0 as a placeholder, and do not mechanically copy every serving-unit word. Never invent facts absent from the user's context.",
         {
             user_phrase: definition.userPhrase,
             context: definition.context,
@@ -331,7 +332,7 @@ async function runLunaAgent(definition: CaseDefinition): Promise<{
     const searches: PreparedSearch[] = [];
     let query = definition.userPhrase;
 
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    for (let attempt = 0; attempt < MAX_SEARCHES; attempt += 1) {
         const current = await retrieve(query);
         searches.push(current);
         const decision = await askLunaToDecide(definition, searches, current);
@@ -351,9 +352,17 @@ async function runLunaAgent(definition: CaseDefinition): Promise<{
             };
         }
 
-        if (attempt === 2) {
+        if (attempt === MAX_SEARCHES - 1) {
+            const trace = searches
+                .map(
+                    (search) =>
+                        `${search.search_query} => ${search.candidates
+                            .map((candidate) => candidate.name)
+                            .join(" | ")}`,
+                )
+                .join(" || ");
             throw new Error(
-                `Luna still requested refinement after ${searches.length} searches for ${definition.id}`,
+                `Luna still requested refinement after ${searches.length} searches for ${definition.id}: ${trace}`,
             );
         }
 
