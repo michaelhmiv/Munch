@@ -8,6 +8,7 @@
 // dependency for logging a meal.
 
 import { cacheFood, getCachedFood as readCachedFood } from "./storage.js";
+import { normalizeGtin } from "./food-providers/barcode.js";
 import { gramsFromDrink, formatAlcohol, type DrinkUnit } from "./alcohol.js";
 
 const OFF_PRODUCT_URL = "https://world.openfoodfacts.org/api/v2/product";
@@ -51,9 +52,7 @@ export interface FoodResult {
 // Strip everything but digits and validate length. Real barcodes (EAN-8/13,
 // UPC-A/E, GTIN-14) are 8–14 digits. Returns the cleaned digits or null.
 export function normalizeBarcode(raw: string): string | null {
-    const digits = (raw ?? "").replace(/\D/g, "");
-    if (digits.length < 8 || digits.length > 14) return null;
-    return digits;
+    return normalizeGtin(raw);
 }
 
 // Coerce an Open Food Facts nutriment to a finite number rounded to one

@@ -55,7 +55,6 @@ export function scoreCandidate(
 ): number {
     const query = normalizeFoodText(input.query);
     const name = normalizeFoodText(candidate.name);
-    const brand = normalizeFoodText(candidate.brand ?? "");
     const exactName = query !== "" && query === name ? 1 : 0;
     const exactBrandAndName =
         query !== "" &&

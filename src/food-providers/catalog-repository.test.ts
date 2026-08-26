@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
     hashCatalogIdentity,
+    lexicalFoodSearchTsquery,
     normalizeFoodText,
     validateCatalogCandidate,
 } from "./catalog-repository.js";
@@ -94,5 +95,15 @@ describe("persistent food catalog helpers", () => {
         expect(() => validateCatalogCandidate(invalid)).toThrow(
             "Invalid portion gram weight",
         );
+    });
+    test("creates indexed final-noun prefix queries", () => {
+        expect(lexicalFoodSearchTsquery("onion")).toBe("onion:*");
+        expect(lexicalFoodSearchTsquery("strawberries")).toBe("strawberr:*");
+        expect(lexicalFoodSearchTsquery("strawberry")).toBe("strawberr:*");
+        expect(lexicalFoodSearchTsquery("pistachios")).toBe("pistachio:*");
+        expect(lexicalFoodSearchTsquery("sweet potato")).toBe(
+            "sweet & potato:*",
+        );
+        expect(lexicalFoodSearchTsquery("2% milk")).toBe("2 & milk:*");
     });
 });

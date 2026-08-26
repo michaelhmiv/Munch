@@ -1,4 +1,5 @@
 import { gramsFromDrink } from "../alcohol.js";
+import { normalizeGtin } from "./barcode.js";
 import { FoodProviderError } from "./errors.js";
 import {
     hasUsableNutrition,
@@ -60,8 +61,7 @@ function finiteRaw(value: unknown): number | undefined {
 }
 
 function normalizedBarcode(value: unknown): string | undefined {
-    const digits = String(value ?? "").replace(/\D/g, "");
-    return digits.length >= 8 && digits.length <= 14 ? digits : undefined;
+    return normalizeGtin(String(value ?? "")) ?? undefined;
 }
 
 function firstBrand(value: string | undefined): string | undefined {

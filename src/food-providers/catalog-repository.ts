@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { isValidGtin } from "./barcode.js";
+import { rankCandidates } from "./ranking.js";
 import { withServiceDatabase } from "../platform/database.js";
 import type {
     FoodCandidate,
@@ -43,6 +45,34 @@ export function normalizeFoodText(value: string): string {
         .trim();
 }
 
+export function lexicalFoodSearchTsquery(value: string): string {
+    const normalized = normalizeFoodText(value);
+    if (!normalized) return "";
+    const tokens = normalized.split(" ").filter(Boolean);
+    const lastIndex = tokens.length - 1;
+    const last = tokens[lastIndex];
+    if (!last) return "";
+
+    let stem = last;
+    if (last.length > 4 && last.endsWith("ies")) {
+        stem = last.slice(0, -3);
+    } else if (/[^aeiou]y$/u.test(last)) {
+        stem = last.slice(0, -1);
+    } else if (last.length > 4 && last.endsWith("oes")) {
+        stem = last.slice(0, -2);
+    } else if (
+        last.length > 3 &&
+        last.endsWith("s") &&
+        !last.endsWith("ss") &&
+        !last.endsWith("us")
+    ) {
+        stem = last.slice(0, -1);
+    }
+
+    tokens[lastIndex] = `${stem}:*`;
+    return tokens.join(" & ");
+}
+
 export function hashCatalogIdentity(value: string): string {
     return createHash("sha256").update(value, "utf8").digest("hex");
 }
@@ -65,7 +95,7 @@ export function validateCatalogCandidate(candidate: FoodCandidate): void {
         throw new Error("Missing provider food ID");
     }
     if (!candidate.name.trim()) throw new Error("Missing food name");
-    if (candidate.barcode && !/^[0-9]{8,14}$/.test(candidate.barcode)) {
+    if (candidate.barcode && !isValidGtin(candidate.barcode)) {
         throw new Error("Invalid barcode");
     }
     if (
@@ -176,7 +206,27 @@ function catalogPayload(
 }
 
 export class FoodCatalogRepository {
+    private readonly pendingTouchIds = new Set<string>();
+    private touchTimer: ReturnType<typeof setTimeout> | null = null;
+
     constructor(private readonly config: CatalogConfig) {}
+
+    private scheduleTouch(ids: string[]): void {
+        if (!this.config.writesEnabled || ids.length === 0) return;
+        for (const id of ids) this.pendingTouchIds.add(id);
+        if (this.touchTimer) return;
+        this.touchTimer = setTimeout(() => {
+            const pending = [...this.pendingTouchIds];
+            this.pendingTouchIds.clear();
+            this.touchTimer = null;
+            void this.touch(pending).catch((error) => {
+                console.warn(
+                    `[food_catalog] access_touch_failed count=${pending.length} code=${error instanceof Error ? error.name : "unknown"}`,
+                );
+            });
+        }, 250);
+        this.touchTimer.unref?.();
+    }
 
     private async touch(ids: string[]): Promise<void> {
         if (!this.config.writesEnabled || ids.length === 0) return;
@@ -235,63 +285,92 @@ export class FoodCatalogRepository {
         const normalized = normalizeFoodText(query);
         if (!normalized) return [];
         const boundedLimit = Math.max(1, Math.min(25, limit));
+        const lexicalTsquery = lexicalFoodSearchTsquery(normalized);
+        const retrievalLimit = Math.min(50, Math.max(25, boundedLimit * 5));
         const lexicalRows = await withServiceDatabase(
             async (tx) =>
                 tx<CatalogRow[]>`
-                select id, provider, provider_food_id, source_snapshot, refresh_after
-                from munch.food_catalog_entries
-                where deprecated_at is null
-                  and to_tsvector(
-                        'simple',
-                        normalized_name || ' ' || coalesce(normalized_brand, '')
-                      ) @@ plainto_tsquery('simple', ${normalized})
-                order by
-                    case when normalized_name = ${normalized} then 0 else 1 end,
-                    ts_rank_cd(
-                        to_tsvector(
-                            'simple',
-                            normalized_name || ' ' || coalesce(normalized_brand, '')
-                        ),
-                        plainto_tsquery('simple', ${normalized})
-                    ) desc,
-                    greatest(
-                        similarity(normalized_name, ${normalized}),
-                        similarity(coalesce(normalized_brand, ''), ${normalized})
-                    ) desc,
-                    confidence desc,
-                    length(normalized_name) asc
-                limit ${boundedLimit}
-            `,
+            select id, provider, provider_food_id, source_snapshot, refresh_after
+            from munch.food_catalog_entries
+            where deprecated_at is null
+              and to_tsvector(
+                    'simple',
+                    normalized_name || ' ' || coalesce(normalized_brand, '')
+                  ) @@ to_tsquery('simple', ${lexicalTsquery})
+            order by
+                case when normalized_name = ${normalized} then 0 else 1 end,
+                length(normalized_name) asc,
+                confidence desc
+            limit ${retrievalLimit}
+        `,
         );
         const rows = lexicalRows.length
             ? lexicalRows
             : await withServiceDatabase(
                   async (tx) =>
                       tx<CatalogRow[]>`
-                    select id, provider, provider_food_id, source_snapshot, refresh_after
-                    from munch.food_catalog_entries
-                    where deprecated_at is null
-                      and (
-                        normalized_name % ${normalized}
-                        or normalized_name like ${`%${normalized}%`}
-                        or normalized_brand % ${normalized}
-                      )
-                    order by
-                        case when normalized_name = ${normalized} then 0 else 1 end,
-                        greatest(
-                            similarity(normalized_name, ${normalized}),
-                            similarity(coalesce(normalized_brand, ''), ${normalized})
-                        ) desc,
-                        confidence desc,
-                        length(normalized_name) asc
-                    limit ${boundedLimit}
-                `,
+                  select id, provider, provider_food_id, source_snapshot, refresh_after
+                  from munch.food_catalog_entries
+                  where deprecated_at is null
+                    and (
+                      normalized_name % ${normalized}
+                      or normalized_name like ${`%${normalized}%`}
+                      or coalesce(normalized_brand, '') % ${normalized}
+                    )
+                  order by
+                      case when normalized_name = ${normalized} then 0 else 1 end,
+                      greatest(
+                          similarity(normalized_name, ${normalized}),
+                          similarity(coalesce(normalized_brand, ''), ${normalized})
+                      ) desc,
+                      confidence desc,
+                      length(normalized_name) asc
+                  limit ${retrievalLimit}
+              `,
               );
         const now = Date.now();
-        return rows.flatMap((row) => {
+        const hits = rows.flatMap((row) => {
             const hit = hitFromRow(row, now);
             return hit ? [hit] : [];
         });
+        const ranked = rankCandidates(
+            { query: normalized },
+            hits.map((hit) => hit.candidate),
+        );
+        const order = new Map(
+            ranked.map((candidate, index) => [
+                `${candidate.provider}:${candidate.providerFoodId}`,
+                index,
+            ]),
+        );
+        const rowIds = new Map(
+            rows.map((row) => [
+                `${row.provider}:${row.provider_food_id}`,
+                row.id,
+            ]),
+        );
+        const selected = hits
+            .sort(
+                (left, right) =>
+                    (order.get(
+                        `${left.candidate.provider}:${left.candidate.providerFoodId}`,
+                    ) ?? Number.MAX_SAFE_INTEGER) -
+                    (order.get(
+                        `${right.candidate.provider}:${right.candidate.providerFoodId}`,
+                    ) ?? Number.MAX_SAFE_INTEGER),
+            )
+            .slice(0, boundedLimit);
+        this.scheduleTouch(
+            selected
+                .map(
+                    (hit) =>
+                        rowIds.get(
+                            `${hit.candidate.provider}:${hit.candidate.providerFoodId}`,
+                        ) ?? "",
+                )
+                .filter(Boolean),
+        );
+        return selected;
     }
 
     async findCachedSearch(
@@ -325,7 +404,7 @@ export class FoodCatalogRepository {
             `,
         );
         if (rows.length === 0) return null;
-        await this.touch(rows.map((row) => row.id));
+        this.scheduleTouch(rows.map((row) => row.id));
         const now = Date.now();
         return rows.flatMap((row) => {
             const hit = hitFromRow(row, now);

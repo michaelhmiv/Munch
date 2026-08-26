@@ -188,7 +188,7 @@ export function registerFoodTools(server: McpServer, userId: string): void {
         {
             title: "Search Verified Foods",
             description:
-                "Search USDA FoodData Central and Open Food Facts for generic or branded foods before estimating nutrition. Return several source-labelled candidates when the phrase is ambiguous; use get_food_details with the selected candidate_id to inspect all portions and nutrients. Prefer a user's explicit brand and package details, and do not silently treat a search result as confirmed.",
+                "Search USDA FoodData Central and Open Food Facts for factual food candidates before estimating nutrition. Start with the user's natural food phrase, including an explicit brand when one was actually named, so you can inspect broad factual alternatives before narrowing the search. Use quantity, unit, preparation, and food-form clues such as strips, tablespoons, cooked, whole, or skinless to interpret the returned candidates rather than automatically stuffing every clue into the first query. Candidate order is retrieval relevance, not correctness: choose the option that satisfies the stated facts with the fewest unsupported assumptions. If no candidate is defensible without inventing an unmentioned species, subtype, ingredient, brand, or preparation, search again with a refined phrase. Use get_food_details with the selected candidate_id to inspect all portions and nutrients; never silently treat candidate #1 as confirmed.",
             annotations: {
                 readOnlyHint: true,
                 destructiveHint: false,
