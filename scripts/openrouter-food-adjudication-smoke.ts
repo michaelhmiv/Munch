@@ -153,7 +153,9 @@ function candidatePasses(
     );
     const hasRequiredAny =
         !definition.requiredAny?.length ||
-        definition.requiredAny.some((token) => name.includes(normalized(token)));
+        definition.requiredAny.some((token) =>
+            name.includes(normalized(token)),
+        );
     const avoidsForbidden = definition.forbidden.every(
         (token) => !name.includes(normalized(token)),
     );
