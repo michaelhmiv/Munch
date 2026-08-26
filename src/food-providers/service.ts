@@ -1,4 +1,5 @@
 import { foodCatalogConfig } from "./catalog-config.js";
+import { normalizeGtin } from "./barcode.js";
 import {
     FoodCatalogRepository,
     normalizeFoodText,
@@ -188,7 +189,10 @@ export class FoodSearchService {
             performance.now() - queryCacheStartedAt,
         );
         if (cachedHits) {
-            const cachedFresh = freshCandidates(cachedHits);
+            const cachedFresh = rankCandidates(
+                { query: normalized },
+                freshCandidates(cachedHits),
+            );
             const strongCached = isStrongLocalMatch(normalized, cachedFresh[0]);
             if (strongCached || cachedFresh.length >= boundedLimit) {
                 console.info(
@@ -207,7 +211,10 @@ export class FoodSearchService {
             boundedLimit,
         );
         const localMs = Math.round(performance.now() - localStartedAt);
-        const local = freshCandidates(localHits);
+        const local = rankCandidates(
+            { query: normalized },
+            freshCandidates(localHits),
+        );
         const stale = staleCandidates(localHits);
         const strongLocal = isStrongLocalMatch(normalized, local[0]);
         if (strongLocal || local.length >= boundedLimit) {
@@ -319,10 +326,8 @@ export class FoodSearchService {
     }
 
     async barcode(barcode: string): Promise<AggregatedFoodSearchResult> {
-        const digits = barcode.replace(/\D/g, "");
-        if (digits.length < 8 || digits.length > 14) {
-            return { candidates: [], failures: [] };
-        }
+        const digits = normalizeGtin(barcode);
+        if (!digits) return { candidates: [], failures: [] };
         const existing = this.inFlightBarcodes.get(digits);
         if (existing) {
             console.info(

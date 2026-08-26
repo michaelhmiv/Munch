@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { isValidGtin } from "./barcode.js";
+import { rankCandidates } from "./ranking.js";
 import { withServiceDatabase } from "../platform/database.js";
 import type {
     FoodCandidate,
@@ -65,7 +67,7 @@ export function validateCatalogCandidate(candidate: FoodCandidate): void {
         throw new Error("Missing provider food ID");
     }
     if (!candidate.name.trim()) throw new Error("Missing food name");
-    if (candidate.barcode && !/^[0-9]{8,14}$/.test(candidate.barcode)) {
+    if (candidate.barcode && !isValidGtin(candidate.barcode)) {
         throw new Error("Invalid barcode");
     }
     if (
@@ -176,7 +178,27 @@ function catalogPayload(
 }
 
 export class FoodCatalogRepository {
+    private readonly pendingTouchIds = new Set<string>();
+    private touchTimer: ReturnType<typeof setTimeout> | null = null;
+
     constructor(private readonly config: CatalogConfig) {}
+
+    private scheduleTouch(ids: string[]): void {
+        if (!this.config.writesEnabled || ids.length === 0) return;
+        for (const id of ids) this.pendingTouchIds.add(id);
+        if (this.touchTimer) return;
+        this.touchTimer = setTimeout(() => {
+            const pending = [...this.pendingTouchIds];
+            this.pendingTouchIds.clear();
+            this.touchTimer = null;
+            void this.touch(pending).catch((error) => {
+                console.warn(
+                    `[food_catalog] access_touch_failed count=${pending.length} code=${error instanceof Error ? error.name : "unknown"}`,
+                );
+            });
+        }, 250);
+        this.touchTimer.unref?.();
+    }
 
     private async touch(ids: string[]): Promise<void> {
         if (!this.config.writesEnabled || ids.length === 0) return;
@@ -235,16 +257,22 @@ export class FoodCatalogRepository {
         const normalized = normalizeFoodText(query);
         if (!normalized) return [];
         const boundedLimit = Math.max(1, Math.min(25, limit));
-        const lexicalRows = await withServiceDatabase(
+        const retrievalLimit = Math.min(100, Math.max(25, boundedLimit * 5));
+        const rows = await withServiceDatabase(
             async (tx) =>
                 tx<CatalogRow[]>`
                 select id, provider, provider_food_id, source_snapshot, refresh_after
                 from munch.food_catalog_entries
                 where deprecated_at is null
-                  and to_tsvector(
+                  and (
+                    to_tsvector(
                         'simple',
                         normalized_name || ' ' || coalesce(normalized_brand, '')
-                      ) @@ plainto_tsquery('simple', ${normalized})
+                    ) @@ plainto_tsquery('simple', ${normalized})
+                    or normalized_name % ${normalized}
+                    or normalized_name like ${`%${normalized}%`}
+                    or coalesce(normalized_brand, '') % ${normalized}
+                  )
                 order by
                     case when normalized_name = ${normalized} then 0 else 1 end,
                     ts_rank_cd(
@@ -260,38 +288,49 @@ export class FoodCatalogRepository {
                     ) desc,
                     confidence desc,
                     length(normalized_name) asc
-                limit ${boundedLimit}
+                limit ${retrievalLimit}
             `,
         );
-        const rows = lexicalRows.length
-            ? lexicalRows
-            : await withServiceDatabase(
-                  async (tx) =>
-                      tx<CatalogRow[]>`
-                    select id, provider, provider_food_id, source_snapshot, refresh_after
-                    from munch.food_catalog_entries
-                    where deprecated_at is null
-                      and (
-                        normalized_name % ${normalized}
-                        or normalized_name like ${`%${normalized}%`}
-                        or normalized_brand % ${normalized}
-                      )
-                    order by
-                        case when normalized_name = ${normalized} then 0 else 1 end,
-                        greatest(
-                            similarity(normalized_name, ${normalized}),
-                            similarity(coalesce(normalized_brand, ''), ${normalized})
-                        ) desc,
-                        confidence desc,
-                        length(normalized_name) asc
-                    limit ${boundedLimit}
-                `,
-              );
         const now = Date.now();
-        return rows.flatMap((row) => {
+        const hits = rows.flatMap((row) => {
             const hit = hitFromRow(row, now);
             return hit ? [hit] : [];
         });
+        const ranked = rankCandidates(
+            { query: normalized },
+            hits.map((hit) => hit.candidate),
+        );
+        const order = new Map(
+            ranked.map((candidate, index) => [
+                `${candidate.provider}:${candidate.providerFoodId}`,
+                index,
+            ]),
+        );
+        const selected = hits
+            .sort(
+                (left, right) =>
+                    (order.get(
+                        `${left.candidate.provider}:${left.candidate.providerFoodId}`,
+                    ) ?? Number.MAX_SAFE_INTEGER) -
+                    (order.get(
+                        `${right.candidate.provider}:${right.candidate.providerFoodId}`,
+                    ) ?? Number.MAX_SAFE_INTEGER),
+            )
+            .slice(0, boundedLimit);
+        this.scheduleTouch(
+            selected
+                .map((hit) => {
+                    const row = rows.find(
+                        (entry) =>
+                            entry.provider === hit.candidate.provider &&
+                            entry.provider_food_id ===
+                                hit.candidate.providerFoodId,
+                    );
+                    return row?.id ?? "";
+                })
+                .filter(Boolean),
+        );
+        return selected;
     }
 
     async findCachedSearch(
@@ -325,7 +364,7 @@ export class FoodCatalogRepository {
             `,
         );
         if (rows.length === 0) return null;
-        await this.touch(rows.map((row) => row.id));
+        this.scheduleTouch(rows.map((row) => row.id));
         const now = Date.now();
         return rows.flatMap((row) => {
             const hit = hitFromRow(row, now);

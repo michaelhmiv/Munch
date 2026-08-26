@@ -39,8 +39,8 @@ describe("normalizeBarcode", () => {
     });
 
     test("accepts EAN-8 lower bound and GTIN-14 upper bound", () => {
-        expect(normalizeBarcode("12345678")).toBe("12345678");
-        expect(normalizeBarcode("12345678901234")).toBe("12345678901234");
+        expect(normalizeBarcode("12345670")).toBe("12345670");
+        expect(normalizeBarcode("12345678901231")).toBe("12345678901231");
     });
 
     test("rejects too-short and too-long inputs", () => {

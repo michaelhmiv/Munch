@@ -523,6 +523,14 @@ async function runBarcodePhase(): Promise<PhaseResult> {
                 });
                 const candidates = call.result.structuredContent?.candidates as
                     Array<Record<string, unknown>> | undefined;
+                if (
+                    barcode === "000000000000" &&
+                    (candidates?.length ?? 0) !== 0
+                ) {
+                    throw new Error(
+                        "All-zero GTIN unexpectedly resolved to a food",
+                    );
+                }
                 const failures = call.result.structuredContent
                     ?.provider_failures as unknown[] | undefined;
                 rows.push({

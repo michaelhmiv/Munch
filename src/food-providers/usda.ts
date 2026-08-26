@@ -1,3 +1,4 @@
+import { normalizeGtin } from "./barcode.js";
 import { FoodProviderError } from "./errors.js";
 import {
     hasUsableNutrition,
@@ -249,7 +250,7 @@ export function normalizeUsdaSearchFood(
     const nutrients = normalizeSearchNutrients(food.foodNutrients);
     if (!hasUsableNutrition(nutrients)) return null;
     const providerFoodId = String(food.fdcId);
-    const barcode = food.gtinUpc?.replace(/\D/g, "") || undefined;
+    const barcode = normalizeGtin(food.gtinUpc ?? "") ?? undefined;
     const kind = dataKind(food.dataType, barcode);
     const brand =
         food.brandName?.trim() || food.brandOwner?.trim() || undefined;
@@ -281,7 +282,7 @@ export function normalizeUsdaFoodDetails(
     const nutrients = normalizeDetailNutrients(food.foodNutrients);
     if (!hasUsableNutrition(nutrients)) return null;
     const providerFoodId = String(food.fdcId);
-    const barcode = food.gtinUpc?.replace(/\D/g, "") || undefined;
+    const barcode = normalizeGtin(food.gtinUpc ?? "") ?? undefined;
     const kind = dataKind(food.dataType, barcode);
     const brand =
         food.brandName?.trim() || food.brandOwner?.trim() || undefined;
@@ -467,8 +468,8 @@ export class UsdaFoodDataCentralProvider implements FoodProvider {
     async lookupBarcode(
         input: BarcodeLookupInput,
     ): Promise<FoodCandidate | null> {
-        const barcode = input.barcode.replace(/\D/g, "");
-        if (barcode.length < 8 || barcode.length > 14) return null;
+        const barcode = normalizeGtin(input.barcode);
+        if (!barcode) return null;
         const results = await this.search({
             query: barcode,
             limit: 10,

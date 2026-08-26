@@ -73,7 +73,10 @@ function comparisonTokens(value: string, queryTokens: Set<string>): string[] {
     );
 }
 
-function tokenFit(query: string, value: string): {
+function tokenFit(
+    query: string,
+    value: string,
+): {
     recall: number;
     precision: number;
 } {
