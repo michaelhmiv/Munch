@@ -79,7 +79,11 @@ export const recipeImportDraftOutputSchema = z.object({
     status: z.enum(["ready", "partial"]),
     requires_review: z.boolean(),
     parser: z.object({
-        strategy: z.enum(["schema_org_json_ld", "microdata"]),
+        strategy: z.enum([
+            "schema_org_json_ld",
+            "microdata",
+            "recipe_card_html",
+        ]),
         version: z.string(),
     }),
     source: z.object({
@@ -158,7 +162,7 @@ export interface ParsedRecipeIngredient {
 }
 
 export interface ParsedRecipe {
-    strategy: "schema_org_json_ld" | "microdata";
+    strategy: "schema_org_json_ld" | "microdata" | "recipe_card_html";
     name: string;
     description?: string;
     servings: number;
@@ -201,7 +205,9 @@ export interface RecipeImportCandidateChoice {
 }
 
 export type RecipeImportIngredientAssignmentDecision =
-    "provider_match" | "assumed" | "model_estimate";
+    | "provider_match"
+    | "assumed"
+    | "model_estimate";
 
 export interface RecipeImportIngredientAssignmentRequest {
     key: string;
@@ -232,7 +238,11 @@ export interface RecipeImportSemanticResolver {
     normalizeRecipe(
         recipe: Pick<
             ParsedRecipe,
-            "name" | "description" | "servings" | "instructions" | "ingredients"
+            | "name"
+            | "description"
+            | "servings"
+            | "instructions"
+            | "ingredients"
         >,
     ): Promise<RecipeImportIngredientIntent[]>;
     chooseCandidates?(
