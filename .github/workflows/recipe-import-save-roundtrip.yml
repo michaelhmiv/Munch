@@ -70,6 +70,17 @@ jobs:
             return value;
           }
 
+          function sameJson(actual: unknown, expected: unknown): boolean {
+            return JSON.stringify(canonical(actual)) === JSON.stringify(canonical(expected));
+          }
+
+          function sameStoredNumber(actual: unknown, expected: unknown, scale: number): boolean {
+            if (expected == null) return actual == null;
+            if (typeof actual !== "number" || typeof expected !== "number") return false;
+            const tolerance = 0.5 * 10 ** -scale + Number.EPSILON;
+            return Math.abs(actual - expected) <= tolerance;
+          }
+
           const user = await createSmokeIdentity("recipe-import-save-roundtrip");
           const capabilities = {
             tier: "premium",
@@ -129,14 +140,23 @@ jobs:
               const stored = (read.structuredContent as any)?.recipe;
               if (!stored) throw new Error("get_recipe returned no recipe");
 
-              if (JSON.stringify(stored.instructions) !== JSON.stringify(draft.recipe.instructions)) {
-                throw new Error(`instructions changed during save: expected=${JSON.stringify(draft.recipe.instructions)} actual=${JSON.stringify(stored.instructions)}`);
+              const recipeFields = {
+                name: [stored.name, draft.recipe.name],
+                description: [stored.description, draft.recipe.description ?? null],
+                preparation_minutes: [stored.preparation_minutes, draft.recipe.preparation_minutes ?? null],
+                cooking_minutes: [stored.cooking_minutes, draft.recipe.cooking_minutes ?? null],
+                source_type: [stored.source?.type, "imported"],
+                source_title: [stored.source?.title, draft.recipe.source_title ?? null],
+                source_url: [stored.source?.url, draft.recipe.source_url],
+              } as const;
+              for (const [field, [got, want]] of Object.entries(recipeFields)) {
+                if (got !== want) throw new Error(`recipe ${field} changed: expected=${JSON.stringify(want)} actual=${JSON.stringify(got)}`);
               }
-              if (stored.servings !== draft.recipe.servings) {
+              if (!sameStoredNumber(stored.servings, draft.recipe.servings, 3)) {
                 throw new Error(`servings changed: expected=${draft.recipe.servings} actual=${stored.servings}`);
               }
-              if (stored.source?.type !== "imported" || stored.source?.url !== draft.recipe.source_url) {
-                throw new Error(`source provenance changed: ${JSON.stringify(stored.source)}`);
+              if (!sameJson(stored.instructions, draft.recipe.instructions)) {
+                throw new Error(`instructions changed during save: expected=${JSON.stringify(draft.recipe.instructions)} actual=${JSON.stringify(stored.instructions)}`);
               }
               if (stored.ingredients.length !== draft.recipe.ingredients.length) {
                 throw new Error(`ingredient count changed: expected=${draft.recipe.ingredients.length} actual=${stored.ingredients.length}`);
@@ -145,25 +165,40 @@ jobs:
               for (let i = 0; i < draft.recipe.ingredients.length; i++) {
                 const expected = draft.recipe.ingredients[i]!;
                 const actual = stored.ingredients[i]!;
-                const fields = {
+                const exactFields = {
                   position: [actual.position, i],
                   name: [actual.name, expected.name],
-                  quantity: [actual.quantity, expected.quantity ?? null],
                   unit: [actual.unit, expected.unit ?? null],
                   preparation: [actual.preparation, expected.preparation ?? null],
                   optional: [actual.optional, expected.optional ?? false],
+                  provider: [actual.provider, expected.provider ?? null],
+                  provider_food_id: [actual.provider_food_id, expected.provider_food_id ?? null],
                   source_type: [actual.source_type, expected.source_type],
                   source_url: [actual.source_url, expected.source_url ?? null],
                 } as const;
-                for (const [field, [got, want]] of Object.entries(fields)) {
+                for (const [field, [got, want]] of Object.entries(exactFields)) {
                   if (got !== want) {
                     throw new Error(`ingredient ${i} ${field} changed: expected=${JSON.stringify(want)} actual=${JSON.stringify(got)}`);
                   }
                 }
-                const actualSnapshot = JSON.stringify(canonical(actual.source_snapshot));
-                const expectedSnapshot = JSON.stringify(canonical(expected.source_snapshot));
-                if (actualSnapshot !== expectedSnapshot) {
-                  throw new Error(`ingredient ${i} source_snapshot changed: expected=${expectedSnapshot} actual=${actualSnapshot}`);
+                if (!sameStoredNumber(actual.quantity, expected.quantity ?? null, 3)) {
+                  throw new Error(`ingredient ${i} quantity changed beyond DB precision: expected=${expected.quantity} actual=${actual.quantity}`);
+                }
+                if (!sameStoredNumber(actual.gram_weight, expected.gram_weight ?? null, 3)) {
+                  throw new Error(`ingredient ${i} gram_weight changed beyond DB precision: expected=${expected.gram_weight} actual=${actual.gram_weight}`);
+                }
+                if (!sameStoredNumber(actual.confidence, expected.confidence ?? null, 4)) {
+                  throw new Error(`ingredient ${i} confidence changed beyond DB precision: expected=${expected.confidence} actual=${actual.confidence}`);
+                }
+                if (!sameJson(actual.nutrients, expected.nutrients ?? {})) {
+                  throw new Error(`ingredient ${i} nutrients changed: expected=${JSON.stringify(expected.nutrients ?? {})} actual=${JSON.stringify(actual.nutrients)}`);
+                }
+                if (!sameJson(actual.source_snapshot, expected.source_snapshot)) {
+                  throw new Error(`ingredient ${i} source_snapshot changed: expected=${JSON.stringify(canonical(expected.source_snapshot))} actual=${JSON.stringify(canonical(actual.source_snapshot))}`);
+                }
+                const raw = (actual.source_snapshot as any)?.raw_ingredient;
+                if (typeof raw !== "string" || raw.length === 0) {
+                  throw new Error(`ingredient ${i} lost raw source text`);
                 }
               }
 
