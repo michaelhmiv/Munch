@@ -119,6 +119,8 @@ jobs:
         run: bun scripts/household-lifecycle-smoke.ts
       - name: Exercise recipes, planning, groceries, idempotency, and RLS
         run: bun scripts/recipe-planning-smoke.ts
+      - name: Exercise parsed recipe save, read-back, and meal logging
+        run: bun scripts/recipe-import-save-roundtrip-smoke.ts
       - name: Exercise Pantry inventory, receipt reconciliation, and RLS
         run: bun scripts/pantry-platform-smoke.ts
       - name: Exercise Pantry planning profiles, ranking, and RLS
