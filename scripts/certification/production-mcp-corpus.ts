@@ -16,8 +16,9 @@ if (!process.env.DATABASE_URL) {
 const input =
     process.env.MUNCH_CERT_BASE_URL?.trim() ||
     process.env.MUNCH_APP_BASE_URL?.trim();
-if (!input)
+if (!input) {
     throw new Error("MUNCH_CERT_BASE_URL or MUNCH_APP_BASE_URL is required");
+}
 const baseUrl = new URL(input).origin;
 if (!baseUrl.startsWith("https://")) {
     throw new Error("Production MCP corpus certification requires HTTPS");
@@ -118,8 +119,8 @@ async function createIdentity(label: string): Promise<Identity> {
     const userRows = await withAuthDatabase(
         (tx) =>
             tx<Array<{ id: string }>>`
-            select id from munch.users where email = ${email} limit 1
-        `,
+                select id from munch.users where email = ${email} limit 1
+            `,
     );
     const userId = userRows[0]?.id;
     if (!userId) throw new Error("Ephemeral signup created no user row");
@@ -180,8 +181,9 @@ async function createIdentity(label: string): Promise<Identity> {
         );
     }
     const client = (await registration.json()) as { client_id?: string };
-    if (!client.client_id)
+    if (!client.client_id) {
         throw new Error("Dynamic registration returned no client_id");
+    }
 
     const verifier = `v-${suffix}-${"x".repeat(48)}`;
     const state = `state-${suffix}`;
@@ -214,12 +216,9 @@ async function createIdentity(label: string): Promise<Identity> {
         );
     }
 
-    const consentPage = await authApp.request(
-        new URL(consentLocation, baseUrl),
-        {
-            headers: { cookie, "x-real-ip": authIp },
-        },
-    );
+    const consentPage = await authApp.request(new URL(consentLocation, baseUrl), {
+        headers: { cookie, "x-real-ip": authIp },
+    });
     const consentHtml = await consentPage.text();
     if (consentPage.status !== 200) {
         throw new Error(`Consent page failed: ${consentPage.status}`);
@@ -311,12 +310,14 @@ function parseJsonRpc(
             .filter((line) => line.startsWith("data:"))
             .map((line) => line.slice(5).trim())
             .find(Boolean);
-        if (!data)
+        if (!data) {
             throw new Error("MCP SSE response contained no JSON-RPC data");
+        }
         return JSON.parse(data) as Record<string, unknown>;
     }
-    if (!text.trim())
+    if (!text.trim()) {
         throw new Error("MCP response contained no JSON-RPC data");
+    }
     return JSON.parse(text) as Record<string, unknown>;
 }
 
@@ -347,8 +348,9 @@ async function mcpRequest(
         );
     }
     const body = parseJsonRpc(text, response.headers.get("content-type") ?? "");
-    if (body.error)
+    if (body.error) {
         throw new Error(`MCP ${method} error: ${JSON.stringify(body.error)}`);
+    }
     return body;
 }
 
@@ -361,15 +363,17 @@ async function initialize(identity: Identity): Promise<Set<string>> {
     const server = (
         init.result as { serverInfo?: { name?: string } } | undefined
     )?.serverInfo?.name;
-    if (server !== "Munch")
+    if (server !== "Munch") {
         throw new Error(`Unexpected MCP server ${String(server)}`);
+    }
 
     const tools = await mcpRequest(identity, "tools/list", {});
     const records = (
         tools.result as { tools?: Array<{ name?: string }> } | undefined
     )?.tools;
-    if (!Array.isArray(records) || records.length === 0)
+    if (!Array.isArray(records) || records.length === 0) {
         throw new Error("MCP returned no tools");
+    }
     return new Set(
         records
             .map((tool) => tool.name)
@@ -621,8 +625,9 @@ async function runRecipePhase(): Promise<PhaseResult> {
             const identity = await createIdentity(`recipes-${shardIndex + 1}`);
             identities.push(identity);
             const tools = await initialize(identity);
-            if (!tools.has("parse_recipe_url"))
+            if (!tools.has("parse_recipe_url")) {
                 throw new Error("parse_recipe_url is missing");
+            }
 
             for (const entry of shard) {
                 try {
