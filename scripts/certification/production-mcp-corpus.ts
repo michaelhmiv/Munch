@@ -853,6 +853,7 @@ async function runMealPhase(): Promise<PhaseResult> {
     }
 }
 
+const startedAt = new Date();
 const phases: PhaseResult[] = [];
 try {
     phases.push(await runFoodPhase());
@@ -862,7 +863,8 @@ try {
     const report = {
         ok: phases.every((phase) => phase.ok),
         base_url: baseUrl,
-        started_at: new Date().toISOString(),
+        started_at: startedAt.toISOString(),
+        completed_at: new Date().toISOString(),
         phases,
     };
     console.log(`[production_mcp_corpus] ${JSON.stringify(report)}`);
