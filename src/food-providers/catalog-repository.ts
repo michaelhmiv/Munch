@@ -55,7 +55,9 @@ export function lexicalFoodSearchTsquery(value: string): string {
 
     let stem = last;
     if (last.length > 4 && last.endsWith("ies")) {
-        stem = `${last.slice(0, -3)}y`;
+        stem = last.slice(0, -3);
+    } else if (/[^aeiou]y$/u.test(last)) {
+        stem = last.slice(0, -1);
     } else if (last.length > 4 && last.endsWith("oes")) {
         stem = last.slice(0, -2);
     } else if (

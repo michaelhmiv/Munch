@@ -179,7 +179,6 @@ const PLAIN_INGREDIENT_FORM_TOKENS = new Set([
     "prepackaged",
     "honey",
     "roasted",
-    "dried",
     "yolk",
     "white",
     "pita",
@@ -210,6 +209,14 @@ const PLAIN_INGREDIENT_FORM_TOKENS = new Set([
     "pancake",
     "bagel",
     "gravy",
+    "juice",
+    "concentrate",
+    "canned",
+    "bit",
+    "glazed",
+    "spinach",
+    "tuna",
+    "chinese",
 ]);
 
 function plainIngredientFormQuality(query: string, name: string): boolean {

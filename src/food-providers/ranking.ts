@@ -76,6 +76,14 @@ const COMPOSITE_FOOD_TOKENS = new Set([
     "light",
     "cream",
     "beef",
+    "juice",
+    "concentrate",
+    "canned",
+    "bit",
+    "glazed",
+    "spinach",
+    "tuna",
+    "chinese",
 ]);
 
 export function normalizeFoodText(value: string): string {

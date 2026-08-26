@@ -98,6 +98,8 @@ describe("persistent food catalog helpers", () => {
     });
     test("creates indexed final-noun prefix queries", () => {
         expect(lexicalFoodSearchTsquery("onion")).toBe("onion:*");
+        expect(lexicalFoodSearchTsquery("strawberries")).toBe("strawberr:*");
+        expect(lexicalFoodSearchTsquery("strawberry")).toBe("strawberr:*");
         expect(lexicalFoodSearchTsquery("pistachios")).toBe("pistachio:*");
         expect(lexicalFoodSearchTsquery("sweet potato")).toBe(
             "sweet & potato:*",

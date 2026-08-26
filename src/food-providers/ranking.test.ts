@@ -173,4 +173,39 @@ describe("generic food ranking", () => {
             ]),
         ).toBe("Broccoli, cooked");
     });
+    test("demotes derived variants exposed by the USDA corpus", () => {
+        expect(
+            top("blueberries", [
+                food("Blueberry juice", { raw: { dataset: "survey" } }),
+                food("Blueberries, raw"),
+            ]),
+        ).toBe("Blueberries, raw");
+        expect(top("bacon", [food("Bacon bits"), food("Bacon")])).toBe("Bacon");
+        expect(
+            top("spaghetti", [
+                food("Spaghetti, spinach, cooked"),
+                food("Spaghetti, cooked"),
+            ]),
+        ).toBe("Spaghetti, cooked");
+        expect(
+            top("macaroni", [
+                food("Macaroni with tuna, Puerto Rican style", {
+                    raw: { dataset: "survey" },
+                }),
+                food("Macaroni, cooked"),
+            ]),
+        ).toBe("Macaroni, cooked");
+        expect(
+            top("walnuts", [
+                food("Nuts, walnuts, glazed"),
+                food("Nuts, walnuts, raw"),
+            ]),
+        ).toBe("Nuts, walnuts, raw");
+        expect(
+            top("cooked broccoli", [
+                food("Broccoli, Chinese, cooked"),
+                food("Broccoli, cooked"),
+            ]),
+        ).toBe("Broccoli, cooked");
+    });
 });
