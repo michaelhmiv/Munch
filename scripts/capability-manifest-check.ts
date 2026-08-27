@@ -7,8 +7,12 @@ import {
     CONDITIONAL_PREMIUM_MCP_TOOL_CAPABILITY_MAP,
     INVENTORY_CAPABILITY_CONTRACTS,
 } from "../src/inventory/capabilities.js";
+import { assertMobileCapabilityContracts } from "../src/mobile/capabilities.js";
 
-const errors = assertCapabilityManifest();
+const errors = [
+    ...assertCapabilityManifest(),
+    ...assertMobileCapabilityContracts(),
+];
 const discovered = new Set<string>();
 const sourceFiles = new Bun.Glob("src/**/*.ts");
 const conditionalToolMap =
@@ -90,5 +94,5 @@ if (errors.length > 0) {
 }
 
 console.log(
-    `Cross-surface capability manifest passed: ${discovered.size} MCP tools (${MCP_INFRASTRUCTURE_TOOLS.size} infrastructure, ${Object.keys(conditionalToolMap).length} conditional premium), ${new Set([...Object.values(MCP_TOOL_CAPABILITY_MAP), ...Object.values(conditionalToolMap)]).size} outcome capabilities.`,
+    `Cross-surface capability manifest passed: ${discovered.size} MCP tools (${MCP_INFRASTRUCTURE_TOOLS.size} infrastructure, ${Object.keys(conditionalToolMap).length} conditional premium), ${new Set([...Object.values(MCP_TOOL_CAPABILITY_MAP), ...Object.values(conditionalToolMap)]).size} outcome capabilities, Android/iOS parity declared.`,
 );
