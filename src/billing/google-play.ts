@@ -8,7 +8,9 @@ import {
 } from "./google-play-client.js";
 import { getGooglePlayBillingConfig } from "./google-play-config.js";
 import {
+    findStoreAccountBindingUser,
     findStoreSubscriptionOwner,
+    upsertStoreAccountBinding,
     upsertStoreSubscription,
 } from "./store-repository.js";
 
@@ -25,10 +27,25 @@ export interface NormalizedGooglePlaySubscription {
     testPurchase: boolean;
 }
 
-export interface VerifiedGooglePlaySubscription extends NormalizedGooglePlaySubscription {
+export interface VerifiedGooglePlaySubscription
+    extends NormalizedGooglePlaySubscription {
     provider: "google_play";
     productId: string;
 }
+
+type GooglePlayPurchaseWithOutOfApp = GooglePlaySubscriptionPurchaseV2 & {
+    outOfAppPurchaseContext?: {
+        expiredExternalAccountIdentifiers?: {
+            externalAccountId?: string;
+            obfuscatedExternalAccountId?: string;
+            obfuscatedExternalProfileId?: string;
+        };
+        expiredPurchaseToken?: string;
+    };
+    canceledStateContext?: {
+        userInitiatedCancellation?: { cancelTime?: string };
+    };
+};
 
 export class GooglePlayVerificationError extends Error {
     constructor(public readonly code: string) {
@@ -76,14 +93,31 @@ function latestOrderId(items: GooglePlaySubscriptionLineItem[]): string | null {
 function cancellationTime(
     purchase: GooglePlaySubscriptionPurchaseV2,
 ): Date | null {
-    const context = purchase as GooglePlaySubscriptionPurchaseV2 & {
-        canceledStateContext?: {
-            userInitiatedCancellation?: { cancelTime?: string };
-        };
-    };
     return parsedDate(
-        context.canceledStateContext?.userInitiatedCancellation?.cancelTime,
+        (purchase as GooglePlayPurchaseWithOutOfApp).canceledStateContext
+            ?.userInitiatedCancellation?.cancelTime,
     );
+}
+
+function accountIdentifiers(
+    purchase: GooglePlaySubscriptionPurchaseV2,
+): string[] {
+    const extended = purchase as GooglePlayPurchaseWithOutOfApp;
+    return [
+        purchase.externalAccountIdentifiers?.obfuscatedExternalAccountId,
+        extended.outOfAppPurchaseContext?.expiredExternalAccountIdentifiers
+            ?.obfuscatedExternalAccountId,
+    ].filter((value): value is string => Boolean(value?.trim()));
+}
+
+function linkedPurchaseTokens(
+    purchase: GooglePlaySubscriptionPurchaseV2,
+): string[] {
+    const extended = purchase as GooglePlayPurchaseWithOutOfApp;
+    return [
+        purchase.linkedPurchaseToken,
+        extended.outOfAppPurchaseContext?.expiredPurchaseToken,
+    ].filter((value): value is string => Boolean(value?.trim()));
 }
 
 export function normalizeGooglePlaySubscription(
@@ -177,9 +211,75 @@ function shouldAcknowledge(
     return normalized.status === "past_due";
 }
 
-export async function verifyGooglePlayPremium(input: {
+async function purchaseBelongsToUser(input: {
     userId: string;
     purchaseToken: string;
+    purchase: GooglePlaySubscriptionPurchaseV2;
+    packageName: string;
+}): Promise<boolean> {
+    const expectedAccountId = googlePlayObfuscatedAccountId(input.userId);
+    if (accountIdentifiers(input.purchase).includes(expectedAccountId)) {
+        return true;
+    }
+    const owner = await findStoreSubscriptionOwner({
+        provider: "google_play",
+        appId: input.packageName,
+        purchaseToken: input.purchaseToken,
+    });
+    if (owner === input.userId) return true;
+    for (const token of linkedPurchaseTokens(input.purchase)) {
+        const linkedOwner = await findStoreSubscriptionOwner({
+            provider: "google_play",
+            appId: input.packageName,
+            purchaseToken: token,
+        });
+        if (linkedOwner === input.userId) return true;
+    }
+    return false;
+}
+
+export async function resolveGooglePlayPurchaseUser(input: {
+    purchaseToken: string;
+    purchase: GooglePlaySubscriptionPurchaseV2;
+    packageName: string;
+}): Promise<string | null> {
+    const candidates = new Set<string>();
+    const currentOwner = await findStoreSubscriptionOwner({
+        provider: "google_play",
+        appId: input.packageName,
+        purchaseToken: input.purchaseToken,
+    });
+    if (currentOwner) candidates.add(currentOwner);
+
+    for (const accountId of accountIdentifiers(input.purchase)) {
+        const userId = await findStoreAccountBindingUser({
+            provider: "google_play",
+            appId: input.packageName,
+            externalAccountId: accountId,
+        });
+        if (userId) candidates.add(userId);
+    }
+    for (const token of linkedPurchaseTokens(input.purchase)) {
+        const userId = await findStoreSubscriptionOwner({
+            provider: "google_play",
+            appId: input.packageName,
+            purchaseToken: token,
+        });
+        if (userId) candidates.add(userId);
+    }
+
+    if (candidates.size > 1) {
+        throw new GooglePlayVerificationError(
+            "google_play_purchase_identity_conflict",
+        );
+    }
+    return candidates.values().next().value ?? null;
+}
+
+export async function persistGooglePlayPremiumForUser(input: {
+    userId: string;
+    purchaseToken: string;
+    purchase: GooglePlaySubscriptionPurchaseV2;
     now?: Date;
     fetchImpl?: typeof fetch;
 }): Promise<VerifiedGooglePlaySubscription> {
@@ -190,30 +290,21 @@ export async function verifyGooglePlayPremium(input: {
             "google_play_purchase_token_invalid",
         );
     }
-
-    const existingOwner = await findStoreSubscriptionOwner({
-        provider: "google_play",
-        appId: config.packageName,
-        purchaseToken,
-    });
-    if (existingOwner && existingOwner !== input.userId) {
-        throw new GooglePlayVerificationError(
-            "google_play_purchase_already_claimed",
-        );
+    if (
+        !(await purchaseBelongsToUser({
+            userId: input.userId,
+            purchaseToken,
+            purchase: input.purchase,
+            packageName: config.packageName,
+        }))
+    ) {
+        throw new GooglePlayVerificationError("google_play_account_mismatch");
     }
 
     const fetchImpl = input.fetchImpl ?? fetch;
     const now = input.now ?? new Date();
-    const purchase = await getGooglePlaySubscription(purchaseToken, fetchImpl);
-    const accountId =
-        purchase.externalAccountIdentifiers?.obfuscatedExternalAccountId;
-    const expectedAccountId = googlePlayObfuscatedAccountId(input.userId);
-    if (!accountId || accountId !== expectedAccountId) {
-        throw new GooglePlayVerificationError("google_play_account_mismatch");
-    }
-
     let normalized = normalizeGooglePlaySubscription(
-        purchase,
+        input.purchase,
         config.premiumProductId,
         config.premiumBasePlanId,
         now,
@@ -221,6 +312,19 @@ export async function verifyGooglePlayPremium(input: {
     if (shouldAcknowledge(normalized, now)) {
         await acknowledgeGooglePlaySubscription(purchaseToken, fetchImpl);
         normalized = { ...normalized, acknowledged: true };
+    }
+
+    const expectedAccountId = googlePlayObfuscatedAccountId(input.userId);
+    const bindingStored = await upsertStoreAccountBinding({
+        userId: input.userId,
+        provider: "google_play",
+        appId: config.packageName,
+        externalAccountId: expectedAccountId,
+    });
+    if (!bindingStored) {
+        throw new GooglePlayVerificationError(
+            "google_play_account_binding_conflict",
+        );
     }
 
     const storedForUser = await upsertStoreSubscription({
@@ -253,4 +357,40 @@ export async function verifyGooglePlayPremium(input: {
         productId: config.premiumProductId,
         ...normalized,
     };
+}
+
+export async function verifyGooglePlayPremium(input: {
+    userId: string;
+    purchaseToken: string;
+    now?: Date;
+    fetchImpl?: typeof fetch;
+}): Promise<VerifiedGooglePlaySubscription> {
+    const config = getGooglePlayBillingConfig();
+    const purchaseToken = input.purchaseToken.trim();
+    if (purchaseToken.length < 8 || purchaseToken.length > 4096) {
+        throw new GooglePlayVerificationError(
+            "google_play_purchase_token_invalid",
+        );
+    }
+
+    const existingOwner = await findStoreSubscriptionOwner({
+        provider: "google_play",
+        appId: config.packageName,
+        purchaseToken,
+    });
+    if (existingOwner && existingOwner !== input.userId) {
+        throw new GooglePlayVerificationError(
+            "google_play_purchase_already_claimed",
+        );
+    }
+
+    const fetchImpl = input.fetchImpl ?? fetch;
+    const purchase = await getGooglePlaySubscription(purchaseToken, fetchImpl);
+    return persistGooglePlayPremiumForUser({
+        userId: input.userId,
+        purchaseToken,
+        purchase,
+        now: input.now,
+        fetchImpl,
+    });
 }
