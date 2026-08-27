@@ -91,6 +91,67 @@ for (const required of [
     requireText(releaseWorkflow, required, "Play release workflow");
 }
 
+const buildMobileWeb = await readFile("scripts/build-mobile-web.ts", "utf8");
+const aiReportUi = await readFile("mobile/pantry-ai-report.js", "utf8");
+const aiReportRoutes = await readFile(
+    "src/inventory/ai-content-report-routes.ts",
+    "utf8",
+);
+const aiReportSchema = await readFile(
+    "db/schema/0031_ai_content_reports.sql",
+    "utf8",
+);
+requireText(
+    buildMobileWeb,
+    "pantry-ai-report.js",
+    "Installed AI reporting bundle",
+);
+requireText(
+    aiReportUi,
+    "Report AI suggestion",
+    "Installed AI reporting control",
+);
+requireText(
+    aiReportUi,
+    "/api/app/pantry/meal-ideas/report",
+    "Installed AI reporting endpoint",
+);
+requireText(
+    aiReportRoutes,
+    "requireSameOrigin",
+    "AI reporting mutation boundary",
+);
+requireText(
+    aiReportSchema,
+    "ai_content_reports_app_insert",
+    "AI report RLS policy",
+);
+requireText(
+    aiReportSchema,
+    "ai_content_reports_support_select",
+    "AI report support review policy",
+);
+if (/prompt|pantry contents|image/i.test(aiReportSchema.split("comment on table")[1] ?? "")) {
+    // The table comment should explicitly document excluded source context rather
+    // than silently expanding report storage later.
+    requireText(
+        aiReportSchema,
+        "source prompts, Pantry contents, and images are intentionally excluded",
+        "AI report privacy contract",
+    );
+}
+
+const privacy = await readFile("public/privacy.html", "utf8");
+const terms = await readFile("public/terms.html", "utf8");
+const deleteAccount = await readFile("public/delete-account.html", "utf8");
+requireText(privacy, "Google Play", "Play privacy disclosure");
+requireText(terms, "Google Play", "Play terms disclosure");
+requireText(
+    deleteAccount,
+    "Delete your Munch account",
+    "External account deletion resource",
+);
+
 console.log(
     `Mobile release contract passed: ${release.versionName} (Android ${release.androidVersionCode}, iOS build ${release.iosBuildNumber}).`,
 );
