@@ -16,6 +16,7 @@ import {
 import {
     installedAppRoute,
     installedLoginHref,
+    installedMagicLinkFromUrl,
     installedRouteFromUrl,
 } from "./navigation.js";
 
@@ -105,19 +106,95 @@ export async function hasStoredSession() {
     return Boolean(await storedToken());
 }
 
+async function completeInstalledMagicLink(value) {
+    const magicLink = installedMagicLinkFromUrl(value);
+    if (!magicLink) return null;
+
+    const verification = new URL(
+        "/api/auth/magic-link/verify",
+        API_BASE_URL,
+    );
+    verification.searchParams.set("token", magicLink.token);
+    const response = await fetch(verification, {
+        method: "GET",
+        credentials: "omit",
+        headers: { Accept: "application/json" },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(
+            payload?.message ||
+                payload?.error ||
+                "This Munch sign-in link is invalid or expired",
+        );
+    }
+
+    const token =
+        (typeof payload?.token === "string" && payload.token) ||
+        response.headers.get("set-auth-token");
+    if (!token) {
+        throw new Error("Munch did not return an installed-app session token");
+    }
+    await MunchSecureSession.setToken({ token });
+    return magicLink.returnTo;
+}
+
 export async function restoreInstalledEntryRoute(explicitRoute) {
     const requested = installedAppRoute(explicitRoute);
     if (requested) return navigateInstalledRoute(requested, true);
 
     try {
         const launch = await App.getLaunchUrl();
+        const magicRoute = await completeInstalledMagicLink(launch?.url);
+        if (magicRoute) return navigateInstalledRoute(magicRoute, true);
         const launchedRoute = installedRouteFromUrl(launch?.url);
         if (launchedRoute) return navigateInstalledRoute(launchedRoute, true);
-    } catch {
-        // A missing launch URL is a normal app start.
+    } catch (error) {
+        console.warn("Installed Munch launch URL could not be completed", {
+            errorName: error instanceof Error ? error.name : "unknown",
+        });
     }
 
     return installedAppRoute(location.pathname);
+}
+
+export async function requestInstalledMagicLink(email, returnTo = "/app") {
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    if (!normalizedEmail || !normalizedEmail.includes("@")) {
+        throw new Error("Enter a valid email address");
+    }
+    const route = installedReturnRoute(returnTo);
+    const response = await fetch(
+        new URL("/api/auth/sign-in/magic-link", API_BASE_URL),
+        {
+            method: "POST",
+            credentials: "omit",
+            headers: {
+                Accept: "application/json",
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                email: normalizedEmail,
+                name: "Munch user",
+                callbackURL: "/app",
+                newUserCallbackURL: "/app",
+                errorCallbackURL: "/connect/error",
+                metadata: {
+                    munch_mobile: true,
+                    return_to: route,
+                },
+            }),
+        },
+    );
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(
+            payload?.message ||
+                payload?.error ||
+                `Unable to send sign-in link (${response.status})`,
+        );
+    }
+    return payload;
 }
 
 export async function signInWithPassword(identifier, password) {
@@ -360,6 +437,33 @@ App.addListener("appStateChange", ({ isActive }) => {
 });
 
 App.addListener("appUrlOpen", ({ url }) => {
+    const magicLink = installedMagicLinkFromUrl(url);
+    if (magicLink) {
+        void completeInstalledMagicLink(url)
+            .then((route) => {
+                if (!route) return;
+                if (location.pathname === LOGIN_PATH) {
+                    location.replace(
+                        `/index.html?route=${encodeURIComponent(route)}`,
+                    );
+                    return;
+                }
+                navigateInstalledRoute(route, true);
+            })
+            .catch((error) => {
+                window.dispatchEvent(
+                    new CustomEvent("munch:magic-link-error", {
+                        detail: {
+                            message:
+                                error?.message ||
+                                "This Munch sign-in link is invalid or expired",
+                        },
+                    }),
+                );
+            });
+        return;
+    }
+
     const route = installedRouteFromUrl(url);
     if (!route) return;
     if (location.pathname === LOGIN_PATH) {
