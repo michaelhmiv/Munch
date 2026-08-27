@@ -21,8 +21,11 @@ import {
 
 const API_BASE_URL = "https://munch.business";
 const LOGIN_PATH = "/mobile-login.html";
+const FOREGROUND_SESSION_RECHECK_MS = 5 * 60 * 1000;
 
 const MunchSecureSession = registerPlugin("MunchSecureSession");
+let backgroundedAt = null;
+let foregroundSessionCheck = null;
 
 async function storedToken() {
     try {
@@ -41,6 +44,16 @@ async function clearStoredToken() {
     } catch {
         // A missing native plugin is treated as a signed-out state. The Android
         // build registers this plugin before BridgeActivity starts.
+    }
+}
+
+async function replaceStoredToken(token) {
+    if (typeof token !== "string" || !token) return;
+    try {
+        await MunchSecureSession.setToken({ token });
+    } catch {
+        // Keep the existing session in memory/storage if token refresh storage
+        // fails. A later authenticated API request will still validate it.
     }
 }
 
@@ -175,6 +188,46 @@ export async function signOutInstalledSession() {
     }
 }
 
+async function validateForegroundSession() {
+    if (location.pathname === LOGIN_PATH) return;
+    const token = await storedToken();
+    if (!token) {
+        moveToLogin(currentInstalledAppRoute());
+        return;
+    }
+
+    try {
+        const response = await fetch(
+            new URL("/api/auth/get-session", API_BASE_URL),
+            {
+                method: "GET",
+                credentials: "omit",
+                headers: {
+                    Accept: "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+            },
+        );
+        if (!response.ok && response.status !== 401 && response.status !== 403) {
+            return;
+        }
+        const session = response.ok ? await response.json().catch(() => null) : null;
+        if (!response.ok || !session?.session || !session?.user) {
+            const returnTo = currentInstalledAppRoute();
+            await clearStoredToken();
+            moveToLogin(returnTo);
+            return;
+        }
+        const refreshedToken = response.headers.get("set-auth-token");
+        if (refreshedToken && refreshedToken !== token) {
+            await replaceStoredToken(refreshedToken);
+        }
+    } catch {
+        // Network transitions are normal when an app returns to foreground.
+        // Existing credentials remain in place and the next API call can retry.
+    }
+}
+
 export async function takeInstalledPhoto() {
     return Camera.takePhoto({
         quality: 88,
@@ -211,6 +264,19 @@ export async function scanInstalledBarcode() {
         },
     });
 }
+
+App.addListener("appStateChange", ({ isActive }) => {
+    if (!isActive) {
+        backgroundedAt = Date.now();
+        return;
+    }
+    const elapsed = backgroundedAt == null ? 0 : Date.now() - backgroundedAt;
+    backgroundedAt = null;
+    if (elapsed < FOREGROUND_SESSION_RECHECK_MS || foregroundSessionCheck) return;
+    foregroundSessionCheck = validateForegroundSession().finally(() => {
+        foregroundSessionCheck = null;
+    });
+});
 
 App.addListener("appUrlOpen", ({ url }) => {
     const route = installedRouteFromUrl(url);
