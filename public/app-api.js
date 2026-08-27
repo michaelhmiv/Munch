@@ -57,8 +57,12 @@ export function resolveMunchApiUrl(path) {
 
 function shouldSetJsonContentType(body) {
     if (body === undefined || body === null) return false;
-    if (typeof FormData !== "undefined" && body instanceof FormData) return false;
-    if (typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams)
+    if (typeof FormData !== "undefined" && body instanceof FormData)
+        return false;
+    if (
+        typeof URLSearchParams !== "undefined" &&
+        body instanceof URLSearchParams
+    )
         return false;
     if (typeof Blob !== "undefined" && body instanceof Blob) return false;
     return true;
@@ -89,7 +93,9 @@ export async function requestJson(path, options = {}) {
     const token = await platform.getAccessToken();
     if (platform.kind === "mobile") {
         if (!token) {
-            await platform.onAuthenticationRequired({ reason: "missing_token" });
+            await platform.onAuthenticationRequired({
+                reason: "missing_token",
+            });
             throw new Error("Authentication required");
         }
         headers.set("Authorization", `Bearer ${token}`);

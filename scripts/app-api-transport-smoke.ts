@@ -50,10 +50,11 @@ try {
     await requestJson("/api/app/today?date=2026-08-27");
     if (
         !request ||
-        request.input !==
-            "https://munch.business/api/app/today?date=2026-08-27"
+        request.input !== "https://munch.business/api/app/today?date=2026-08-27"
     ) {
-        throw new Error("Mobile transport did not resolve the canonical API URL");
+        throw new Error(
+            "Mobile transport did not resolve the canonical API URL",
+        );
     }
     if (request.init?.credentials !== "omit") {
         throw new Error("Mobile transport attempted to use ambient cookies");
@@ -71,17 +72,23 @@ try {
     });
     const formHeaders = new Headers(request?.init?.headers);
     if (formHeaders.has("content-type")) {
-        throw new Error("Shared transport overrode multipart FormData boundary");
+        throw new Error(
+            "Shared transport overrode multipart FormData boundary",
+        );
     }
 
     globalThis.fetch = (async () =>
-        Response.json({ error: "authentication_required" }, { status: 401 })) as typeof fetch;
+        Response.json(
+            { error: "authentication_required" },
+            { status: 401 },
+        )) as typeof fetch;
     let rejected = false;
     try {
         await requestJson("/api/app/bootstrap");
     } catch (error) {
         rejected =
-            error instanceof Error && error.message === "Authentication required";
+            error instanceof Error &&
+            error.message === "Authentication required";
     }
     if (!rejected || authReason !== "unauthorized") {
         throw new Error("Mobile 401 did not invoke the platform auth boundary");
@@ -109,7 +116,9 @@ try {
         // Expected: a mobile request must not leave the device without a token.
     }
     if (fetchedWithoutToken || authReason !== "missing_token") {
-        throw new Error("Missing mobile token was not stopped before network I/O");
+        throw new Error(
+            "Missing mobile token was not stopped before network I/O",
+        );
     }
 
     let insecureRejected = false;
