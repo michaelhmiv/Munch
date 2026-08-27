@@ -37,6 +37,53 @@ export interface LatestStoreSubscriptionRecord {
     verifiedAt: Date;
 }
 
+export async function upsertStoreAccountBinding(input: {
+    userId: string;
+    provider: StoreBillingProvider;
+    appId: string;
+    externalAccountId: string;
+}): Promise<boolean> {
+    return withBillingDatabase(async (tx) => {
+        const rows = await tx<Array<{ user_id: string }>>`
+            insert into munch.store_account_bindings as existing (
+                user_id,
+                provider,
+                app_id,
+                external_account_id
+            ) values (
+                ${input.userId},
+                ${input.provider}::munch.store_billing_provider,
+                ${input.appId},
+                ${input.externalAccountId}
+            )
+            on conflict (provider, app_id, user_id) do update
+            set external_account_id = excluded.external_account_id,
+                updated_at = now()
+            where existing.external_account_id = excluded.external_account_id
+            returning user_id
+        `;
+        return rows[0]?.user_id === input.userId;
+    });
+}
+
+export async function findStoreAccountBindingUser(input: {
+    provider: StoreBillingProvider;
+    appId: string;
+    externalAccountId: string;
+}): Promise<string | null> {
+    return withBillingDatabase(async (tx) => {
+        const rows = await tx<Array<{ user_id: string }>>`
+            select user_id
+            from munch.store_account_bindings
+            where provider = ${input.provider}::munch.store_billing_provider
+              and app_id = ${input.appId}
+              and external_account_id = ${input.externalAccountId}
+            limit 1
+        `;
+        return rows[0]?.user_id ?? null;
+    });
+}
+
 export async function upsertStoreSubscription(
     subscription: StoreSubscriptionRecord,
 ): Promise<boolean> {
