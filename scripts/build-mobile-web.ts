@@ -45,10 +45,13 @@ pantryHtml = pantryHtml
     .replaceAll('href="/app/plan"', 'href="/index.html?route=%2Fapp%2Fplan"')
     .replace(
         '<script type="module" src="/pantry.js"></script>',
-        '<script type="module" src="/pantry.js"></script>\n        <script type="module" src="/pantry-native.js"></script>',
+        '<script type="module" src="/pantry.js"></script>\n        <script type="module" src="/pantry-native.js"></script>\n        <script type="module" src="/pantry-ai-report.js"></script>',
     );
 if (!pantryHtml.includes("/pantry-native.js")) {
     throw new Error("Native Pantry capture script injection failed");
+}
+if (!pantryHtml.includes("/pantry-ai-report.js")) {
+    throw new Error("AI suggestion report script injection failed");
 }
 await writeFile(join(output, "pantry.html"), pantryHtml);
 
@@ -56,6 +59,7 @@ await cp("mobile/mobile-entry.js", join(output, "mobile-entry.js"));
 await cp("mobile/mobile-login.html", join(output, "mobile-login.html"));
 await cp("mobile/mobile-login.js", join(output, "mobile-login.js"));
 await cp("mobile/pantry-native.js", join(output, "pantry-native.js"));
+await cp("mobile/pantry-ai-report.js", join(output, "pantry-ai-report.js"));
 await cp("mobile/billing-native.js", join(output, "billing-native.js"));
 
 const build = await Bun.build({
