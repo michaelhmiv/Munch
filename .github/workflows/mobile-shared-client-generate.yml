@@ -1,0 +1,125 @@
+name: Mobile shared client generator
+
+on:
+  push:
+    branches:
+      - mobile/03-shared-client
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: ${{ !contains(github.event.head_commit.message, '[shared-client-generated]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: mobile/03-shared-client
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - name: Migrate browser entry points to shared transport
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          app = Path('public/app.js')
+          source = app.read_text()
+          if 'from "./app-api.js"' not in source:
+              source = 'import { requestJson } from "./app-api.js";\n' + source
+          old = '''async function api(path, options = {}) {
+              if (state.controller) state.controller.abort();
+              const controller = new AbortController();
+              const isFormData = options.body instanceof FormData;
+              if (!options.keepPrevious) state.controller = controller;
+              const response = await fetch(path, {
+                  credentials: "same-origin",
+                  headers: {
+                      Accept: "application/json",
+                      ...(options.body && !isFormData
+                          ? { "Content-Type": "application/json" }
+                          : {}),
+                      ...options.headers,
+                  },
+                  ...options,
+                  signal: options.signal || controller.signal,
+              });
+              if (response.status === 401) {
+                  location.href = `/connect/sign-in?return_to=${encodeURIComponent(location.pathname + location.search)}`;
+                  throw new Error("Authentication required");
+              }
+              const data = await response.json().catch(() => ({}));
+              if (!response.ok)
+                  throw new Error(data.message || data.error || "Request failed");
+              return data;
+          }'''
+          new = '''async function api(path, options = {}) {
+              if (state.controller) state.controller.abort();
+              const controller = new AbortController();
+              if (!options.keepPrevious) state.controller = controller;
+              return requestJson(path, {
+                  ...options,
+                  signal: options.signal || controller.signal,
+              });
+          }'''
+          if old not in source:
+              raise SystemExit('app.js api helper shape changed; refusing blind migration')
+          app.write_text(source.replace(old, new, 1))
+
+          pantry = Path('public/pantry.js')
+          source = pantry.read_text()
+          if 'from "./app-api.js"' not in source:
+              source = 'import { requestJson as api } from "./app-api.js";\n\n' + source
+          start = source.find('async function api(path, options = {}) {')
+          if start == -1:
+              raise SystemExit('pantry.js api helper not found')
+          end_marker = '\n\nfunction currentScope() {'
+          end = source.find(end_marker, start)
+          if end == -1:
+              raise SystemExit('pantry.js api helper end not found')
+          source = source[:start] + source[end + 2:]
+          pantry.write_text(source)
+
+          pantry_html = Path('public/pantry.html')
+          source = pantry_html.read_text()
+          old = '<script src="/pantry.js" defer></script>'
+          new = '<script type="module" src="/pantry.js"></script>'
+          if old not in source:
+              raise SystemExit('pantry.html script tag shape changed')
+          pantry_html.write_text(source.replace(old, new, 1))
+
+          routes = Path('src/app/routes.ts')
+          source = routes.read_text()
+          marker = '''    app.get("/app.js", async (c) =>
+                  c.body(await Bun.file("./public/app.js").text(), 200, {
+                      "Content-Type": "text/javascript; charset=utf-8",
+                      "Cache-Control": "no-cache",
+                  }),
+              );
+          '''
+          addition = marker + '''    app.get("/app-api.js", async (c) =>
+                  c.body(await Bun.file("./public/app-api.js").text(), 200, {
+                      "Content-Type": "text/javascript; charset=utf-8",
+                      "Cache-Control": "no-cache",
+                  }),
+              );
+          '''
+          if marker not in source:
+              raise SystemExit('app route insertion point changed')
+          routes.write_text(source.replace(marker, addition, 1))
+          PY
+      - run: bunx prettier --write public/app-api.js public/app.js public/pantry.js public/pantry.html src/app/routes.ts scripts/app-api-transport-smoke.ts
+      - run: bun scripts/app-api-transport-smoke.ts
+      - run: bun scripts/ui-surface-smoke.ts
+      - name: Commit generated migration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/app-api.js public/app.js public/pantry.js public/pantry.html src/app/routes.ts scripts/app-api-transport-smoke.ts
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Use shared application API transport [shared-client-generated]"
+          git push
