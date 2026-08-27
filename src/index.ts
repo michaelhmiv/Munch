@@ -15,6 +15,7 @@ import {
     banRepeatAuthFailures,
     rateLimit,
 } from "./middleware.js";
+import { isAllowedApplicationCorsOrigin } from "./mobile/origins.js";
 import { maskIp } from "./net.js";
 import { validateStartupConfiguration } from "./operations/config.js";
 import { createOperationsRouter } from "./operations/routes.js";
@@ -63,16 +64,7 @@ app.use(
     cors({
         origin: (origin) => {
             if (!origin) return null;
-            if (
-                origin.match(/^https?:\/\/localhost(:\d+)?$/) ||
-                origin.match(/^https?:\/\/127\.0\.0\.1(:\d+)?$/)
-            )
-                return origin;
-            const allowed =
-                process.env.ALLOWED_ORIGINS?.split(",").map((value) =>
-                    value.trim(),
-                ) ?? [];
-            return allowed.includes(origin) ? origin : null;
+            return isAllowedApplicationCorsOrigin(origin) ? origin : null;
         },
         allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allowHeaders: [
