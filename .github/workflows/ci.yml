@@ -91,6 +91,10 @@ jobs:
         run: bun scripts/better-auth-oauth-http-smoke.ts
       - name: Exercise Better Auth connection listing and revocation
         run: bun scripts/better-auth-connections-smoke.ts
+      - name: Exercise mobile bearer authentication and browser CSRF separation
+        env:
+          NODE_ENV: test
+        run: bun scripts/better-auth-mobile-bearer-smoke.ts
       - name: Provision and exercise marketplace reviewer account
         env:
           NODE_ENV: test
