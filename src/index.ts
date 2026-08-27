@@ -8,6 +8,7 @@ import { registerBetterAuthRoutes } from "./auth/routes.js";
 import { createBillingRouter } from "./billing/routes.js";
 import { registerDiscoveryRoutes } from "./discovery.js";
 import { startExportCleanup } from "./export.js";
+import { createAiContentReportRouter } from "./inventory/ai-content-report-routes.js";
 import { createInventoryRouter } from "./inventory/routes.js";
 import { handleMcp } from "./mcp-runtime.js";
 import {
@@ -92,6 +93,7 @@ registerDiscoveryRoutes(app);
 registerBetterAuthRoutes(app);
 app.route("/", createAccountRouter());
 app.route("/", createBillingRouter());
+app.route("/", createAiContentReportRouter());
 // Pantry is mounted before the catch-all /app/* shell so /app/pantry can use a
 // purpose-built premium inventory UI without changing the existing SPA bundle.
 app.route("/", createInventoryRouter());
