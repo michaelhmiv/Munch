@@ -47,7 +47,7 @@ pantryHtml = pantryHtml
         '<script type="module" src="/pantry.js"></script>',
         '<script type="module" src="/pantry.js"></script>\n        <script type="module" src="/pantry-native.js"></script>',
     );
-if (!pantryHtml.includes('/pantry-native.js')) {
+if (!pantryHtml.includes("/pantry-native.js")) {
     throw new Error("Native Pantry capture script injection failed");
 }
 await writeFile(join(output, "pantry.html"), pantryHtml);

@@ -159,7 +159,8 @@ export async function scanInstalledBarcode() {
         torchButtonOnAccessibilityLabel: "Turn flashlight off",
         torchButtonOffAccessibilityLabel: "Turn flashlight on",
         android: {
-            scanningLibrary: CapacitorBarcodeScannerAndroidScanningLibrary.MLKIT,
+            scanningLibrary:
+                CapacitorBarcodeScannerAndroidScanningLibrary.MLKIT,
         },
     });
 }

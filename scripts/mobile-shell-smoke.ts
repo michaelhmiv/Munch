@@ -93,12 +93,12 @@ requireText(
 );
 requireText(
     pantryNative,
-    'food_provider: candidate.provider',
+    "food_provider: candidate.provider",
     "Native Pantry provider identity",
 );
 requireText(
     pantryNative,
-    'provider_food_id: candidate.provider_food_id',
+    "provider_food_id: candidate.provider_food_id",
     "Native Pantry provider food identity",
 );
 requireText(
@@ -116,11 +116,7 @@ requireText(
     "foodProvider:",
     "Pantry canonical identity parser",
 );
-requireText(
-    inventoryRoutes,
-    "providerFoodId:",
-    "Pantry provider food parser",
-);
+requireText(inventoryRoutes, "providerFoodId:", "Pantry provider food parser");
 requireText(inventoryRoutes, "barcode:", "Pantry barcode parser");
 requireText(
     appRoutes,

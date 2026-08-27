@@ -38,7 +38,8 @@ function mimeType(result, blob) {
 }
 
 async function fileFromNativeResult(result, label) {
-    if (!result?.webPath) throw new Error("The selected image was unavailable.");
+    if (!result?.webPath)
+        throw new Error("The selected image was unavailable.");
     const response = await fetch(result.webPath);
     if (!response.ok) throw new Error("The selected image could not be read.");
     const blob = await response.blob();
@@ -56,7 +57,10 @@ async function fileFromNativeResult(result, label) {
 async function handImageToPantry(result, mode) {
     const input = mode === "receipt" ? $("#receipt-photo") : $("#pantry-photo");
     const button = mode === "receipt" ? $("#scan-receipt") : $("#scan-pantry");
-    if (!(input instanceof HTMLInputElement) || !(button instanceof HTMLElement)) {
+    if (
+        !(input instanceof HTMLInputElement) ||
+        !(button instanceof HTMLElement)
+    ) {
         throw new Error("The Pantry image review surface is unavailable.");
     }
     const file = await fileFromNativeResult(
@@ -91,7 +95,9 @@ async function capture(mode, source) {
         }
         await handImageToPantry(result, mode);
     } catch (error) {
-        const message = String(error?.message || error || "Image capture failed.");
+        const message = String(
+            error?.message || error || "Image capture failed.",
+        );
         if (/cancel/i.test(message)) status("");
         else status(message, true);
     } finally {
@@ -171,43 +177,51 @@ function renderBarcodeReview(barcode, candidate) {
     actions.style.display = "grid";
     actions.style.gridTemplateColumns = "1fr 1fr";
     actions.style.gap = "0.6rem";
-    const add = createButton("Add to Pantry", async () => {
-        add.disabled = true;
-        status("Adding scanned product…");
-        try {
-            await api("/api/app/pantry/reconcile", {
-                method: "POST",
-                body: JSON.stringify({
-                    scope: currentScope(),
-                    source_type: "pantry_scan",
-                    idempotency_key: `mobile-barcode:${crypto.randomUUID()}`,
-                    operations: [
-                        {
-                            action: "acquire",
-                            name: candidate.name,
-                            location: locationValue(),
-                            quantity_mode: "presence_only",
-                            food_provider: candidate.provider || undefined,
-                            provider_food_id: candidate.provider_food_id || undefined,
-                            barcode,
-                            confidence:
-                                typeof candidate.confidence === "number"
-                                    ? candidate.confidence
-                                    : candidate.verified
-                                      ? 1
-                                      : undefined,
-                        },
-                    ],
-                }),
-            });
-            status(`${candidate.name} added to Pantry.`);
-            clearBarcodeReview();
-            $("#refresh")?.click();
-        } catch (error) {
-            status(error?.message || "Unable to add scanned product.", true);
-            add.disabled = false;
-        }
-    }, "");
+    const add = createButton(
+        "Add to Pantry",
+        async () => {
+            add.disabled = true;
+            status("Adding scanned product…");
+            try {
+                await api("/api/app/pantry/reconcile", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        scope: currentScope(),
+                        source_type: "pantry_scan",
+                        idempotency_key: `mobile-barcode:${crypto.randomUUID()}`,
+                        operations: [
+                            {
+                                action: "acquire",
+                                name: candidate.name,
+                                location: locationValue(),
+                                quantity_mode: "presence_only",
+                                food_provider: candidate.provider || undefined,
+                                provider_food_id:
+                                    candidate.provider_food_id || undefined,
+                                barcode,
+                                confidence:
+                                    typeof candidate.confidence === "number"
+                                        ? candidate.confidence
+                                        : candidate.verified
+                                          ? 1
+                                          : undefined,
+                            },
+                        ],
+                    }),
+                });
+                status(`${candidate.name} added to Pantry.`);
+                clearBarcodeReview();
+                $("#refresh")?.click();
+            } catch (error) {
+                status(
+                    error?.message || "Unable to add scanned product.",
+                    true,
+                );
+                add.disabled = false;
+            }
+        },
+        "",
+    );
     const cancel = createButton("Cancel", () => {
         clearBarcodeReview();
         status("");
@@ -246,7 +260,9 @@ async function scanBarcode() {
         renderBarcodeReview(barcode, candidate);
         status("Review the product before adding it to Pantry.");
     } catch (error) {
-        const message = String(error?.message || error || "Barcode scan failed.");
+        const message = String(
+            error?.message || error || "Barcode scan failed.",
+        );
         if (/cancel/i.test(message)) status("");
         else status(message, true);
     }
