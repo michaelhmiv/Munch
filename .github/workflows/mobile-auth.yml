@@ -1,0 +1,49 @@
+name: Mobile auth
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-auth-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bearer-session:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: munch_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d munch_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/munch_test
+      MUNCH_APP_BASE_URL: https://munch.example
+      BETTER_AUTH_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      RESEND_API_KEY: re_test_schema
+      MUNCH_EMAIL_FROM: Munch <support@munch.example>
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - run: bun run db:migrate
+      - name: Exercise bearer sessions and browser CSRF separation
+        run: bun scripts/better-auth-mobile-bearer-smoke.ts
