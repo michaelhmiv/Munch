@@ -24,6 +24,7 @@ const LOGIN_PATH = "/mobile-login.html";
 const FOREGROUND_SESSION_RECHECK_MS = 5 * 60 * 1000;
 
 const MunchSecureSession = registerPlugin("MunchSecureSession");
+const MunchPlayBilling = registerPlugin("MunchPlayBilling");
 let backgroundedAt = null;
 let foregroundSessionCheck = null;
 
@@ -232,6 +233,80 @@ async function validateForegroundSession() {
         // Network transitions are normal when an app returns to foreground.
         // Existing credentials remain in place and the next API call can retry.
     }
+}
+
+export async function getInstalledPlayBillingConfig() {
+    return requestJson("/billing/google-play/config");
+}
+
+function storeSubscriptionBlocksNewPurchase(subscription) {
+    return (
+        subscription?.provider &&
+        ["active", "trialing", "past_due"].includes(subscription.status)
+    );
+}
+
+async function verifyInstalledPlayPurchase(purchaseToken) {
+    if (typeof purchaseToken !== "string" || !purchaseToken) {
+        throw new Error("Google Play did not return a completed purchase token");
+    }
+    return requestJson("/billing/google-play/verify", {
+        method: "POST",
+        body: JSON.stringify({ purchase_token: purchaseToken }),
+    });
+}
+
+export async function getInstalledPremiumProduct() {
+    const config = await getInstalledPlayBillingConfig();
+    if (!config.configured) {
+        throw new Error("Google Play billing is not configured yet");
+    }
+    return MunchPlayBilling.getPremiumProduct({
+        productId: config.productId,
+        basePlanId: config.basePlanId,
+    });
+}
+
+export async function purchaseInstalledPremium() {
+    const config = await getInstalledPlayBillingConfig();
+    if (!config.configured) {
+        throw new Error("Google Play billing is not configured yet");
+    }
+    if (storeSubscriptionBlocksNewPurchase(config.currentSubscription)) {
+        return {
+            state: "already_subscribed",
+            provider: config.currentSubscription.provider,
+        };
+    }
+    const result = await MunchPlayBilling.purchasePremium({
+        productId: config.productId,
+        basePlanId: config.basePlanId,
+        obfuscatedAccountId: config.obfuscatedAccountId,
+    });
+    if (result?.state !== "purchased") return result;
+    const verified = await verifyInstalledPlayPurchase(result.purchaseToken);
+    return { state: "verified", subscription: verified };
+}
+
+export async function restoreInstalledPremium() {
+    const config = await getInstalledPlayBillingConfig();
+    if (!config.configured) {
+        throw new Error("Google Play billing is not configured yet");
+    }
+    const result = await MunchPlayBilling.restorePremium({
+        productId: config.productId,
+    });
+    if (result?.state !== "purchased") return result;
+    const verified = await verifyInstalledPlayPurchase(result.purchaseToken);
+    return { state: "verified", subscription: verified };
+}
+
+export async function openInstalledSubscriptionManagement() {
+    const config = await getInstalledPlayBillingConfig();
+    return MunchPlayBilling.openSubscriptionManagement({
+        productId: config.productId,
+        packageName: config.packageName,
+    });
 }
 
 export async function takeInstalledPhoto() {
