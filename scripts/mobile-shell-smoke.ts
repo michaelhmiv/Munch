@@ -24,6 +24,15 @@ const googlePlayClient = await readFile(
     "utf8",
 );
 const googlePlayVerifier = await readFile("src/billing/google-play.ts", "utf8");
+const googlePlayRtdn = await readFile("src/billing/google-play-rtdn.ts", "utf8");
+const googlePubSubAuth = await readFile(
+    "src/billing/google-pubsub-auth.ts",
+    "utf8",
+);
+const storeRepository = await readFile(
+    "src/billing/store-repository.ts",
+    "utf8",
+);
 const configure = await readFile("scripts/configure-mobile-android.ts", "utf8");
 const server = await readFile("src/index.ts", "utf8");
 const inventoryRoutes = await readFile("src/inventory/routes.ts", "utf8");
@@ -83,6 +92,11 @@ requireText(
     runtime,
     '"/api/auth/get-session"',
     "Foreground session validation",
+);
+requireText(
+    runtime,
+    "blocksNewPurchase === true",
+    "Server-owned duplicate purchase decision",
 );
 if (/App\.addListener\(["']backButton["']/.test(runtime)) {
     throw new Error(
@@ -163,6 +177,21 @@ requireText(
 );
 requireText(
     billingRoutes,
+    '"/webhooks/google-play"',
+    "Google Play RTDN endpoint",
+);
+requireText(
+    billingRoutes,
+    "verifyGooglePubSubPushAuthorization",
+    "Authenticated Google Pub/Sub webhook boundary",
+);
+requireText(
+    billingRoutes,
+    "upsertStoreAccountBinding",
+    "First-purchase RTDN account binding",
+);
+requireText(
+    billingRoutes,
     'munchAuthTransport") !== "bearer"',
     "Google Play installed bearer boundary",
 );
@@ -175,6 +204,41 @@ requireText(
     googlePlayVerifier,
     "googlePlayObfuscatedAccountId",
     "Google Play account hash",
+);
+requireText(
+    googlePlayVerifier,
+    "resolveGooglePlayPurchaseUser",
+    "RTDN purchase ownership resolution",
+);
+requireText(
+    googlePlayRtdn,
+    "recordStoreBillingEvent",
+    "RTDN idempotency ledger",
+);
+requireText(
+    googlePlayRtdn,
+    "getGooglePlaySubscription",
+    "RTDN source-of-truth refresh",
+);
+requireText(
+    googlePubSubAuth,
+    "https://www.googleapis.com/oauth2/v3/certs",
+    "Google Pub/Sub signing-key source",
+);
+requireText(
+    googlePubSubAuth,
+    "pushServiceAccountEmail",
+    "Google Pub/Sub service-account validation",
+);
+requireText(
+    googlePubSubAuth,
+    "pushAudience",
+    "Google Pub/Sub audience validation",
+);
+requireText(
+    storeRepository,
+    "store_account_bindings",
+    "Opaque app-store account binding repository",
 );
 requireText(
     buildMobileWeb,
