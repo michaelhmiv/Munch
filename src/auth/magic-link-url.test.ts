@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+    buildInstalledMagicLinkConfirmation,
+    buildInstalledMagicLinkDeepLink,
     buildScannerSafeMagicLink,
+    mobileMagicLinkRequest,
+    safeInstalledMagicLinkReturnPath,
     safeMagicLinkReturnPath,
 } from "./magic-link-url.js";
 
@@ -38,5 +42,61 @@ describe("scanner-safe magic links", () => {
                 baseUrl: "https://munch.example",
             }),
         ).toThrow("missing token");
+    });
+});
+
+describe("installed app magic links", () => {
+    test("accepts only installed app return routes", () => {
+        expect(safeInstalledMagicLinkReturnPath("/app/recipes")).toBe(
+            "/app/recipes",
+        );
+        expect(safeInstalledMagicLinkReturnPath("/account/portal")).toBe(
+            "/app",
+        );
+        expect(
+            safeInstalledMagicLinkReturnPath("https://evil.example/app"),
+        ).toBe("/app");
+    });
+
+    test("recognizes explicit mobile magic-link metadata", () => {
+        expect(
+            mobileMagicLinkRequest({
+                munch_mobile: true,
+                return_to: "/app/plan",
+            }),
+        ).toEqual({ requested: true, returnTo: "/app/plan" });
+        expect(mobileMagicLinkRequest({ return_to: "/app/plan" })).toEqual({
+            requested: false,
+            returnTo: "/app/plan",
+        });
+    });
+
+    test("builds scanner-safe HTTPS confirmation before the custom-scheme handoff", () => {
+        const confirmation = new URL(
+            buildInstalledMagicLinkConfirmation({
+                token: "abcdefghijklmnopqrstuvwxyz123456",
+                baseUrl: "https://munch.example",
+                returnTo: "/app/recipes",
+            }),
+        );
+        expect(confirmation.origin).toBe("https://munch.example");
+        expect(confirmation.pathname).toBe("/mobile/confirm");
+        expect(confirmation.searchParams.get("token")).toBe(
+            "abcdefghijklmnopqrstuvwxyz123456",
+        );
+        expect(confirmation.searchParams.get("return_to")).toBe(
+            "/app/recipes",
+        );
+
+        const deepLink = new URL(
+            buildInstalledMagicLinkDeepLink({
+                token: "abcdefghijklmnopqrstuvwxyz123456",
+                returnTo: "/app/recipes",
+            }),
+        );
+        expect(deepLink.protocol).toBe("munch:");
+        expect(deepLink.hostname).toBe("app");
+        expect(deepLink.pathname).toBe("/auth");
+        expect(deepLink.searchParams.get("return_to")).toBe("/app/recipes");
     });
 });
