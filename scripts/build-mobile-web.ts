@@ -56,6 +56,7 @@ await cp("mobile/mobile-entry.js", join(output, "mobile-entry.js"));
 await cp("mobile/mobile-login.html", join(output, "mobile-login.html"));
 await cp("mobile/mobile-login.js", join(output, "mobile-login.js"));
 await cp("mobile/pantry-native.js", join(output, "pantry-native.js"));
+await cp("mobile/billing-native.js", join(output, "billing-native.js"));
 
 const build = await Bun.build({
     entrypoints: ["mobile/runtime.js"],
@@ -78,6 +79,9 @@ if (!runtime.includes("https://munch.business")) {
 }
 if (!runtime.includes("MunchSecureSession")) {
     throw new Error("Installed-client runtime lost secure session integration");
+}
+if (!runtime.includes("MunchPlayBilling")) {
+    throw new Error("Installed-client runtime lost Google Play Billing integration");
 }
 if (!runtime.includes("CapacitorBarcodeScanner")) {
     throw new Error("Installed-client runtime lost native barcode integration");
