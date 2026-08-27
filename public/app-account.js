@@ -275,7 +275,10 @@ async function billingPage(data, ctx) {
         billingSummary = "Premium through household";
         detail = `Your household owner pays for your ${seatPrice}/month seat. You are not billed separately for this entitlement.`;
     } else if (directPremium) {
-        billingSummary = `Munch Premium · ${premiumPrice}/month`;
+        billingSummary =
+            provider === "google_play"
+                ? "Munch Premium · Google Play"
+                : `Munch Premium · ${premiumPrice}/month`;
         if (provider === "google_play") {
             detail = status
                 ? `Google Play subscription status: ${status}.`
@@ -295,9 +298,10 @@ async function billingPage(data, ctx) {
           policy.householdMemberPriceMonthlyCents *
               Number(ownerHousehold.activeNonOwnerCount || 0)
         : policy.premiumPriceMonthlyCents;
-    const chargeCard = directPremium
-        ? `<div class="billing-price"><span>Current Munch subscription</span><strong>${dollars(total)}<small>/month</small></strong>${ownerHousehold ? `<p>${premiumPrice} Premium + ${ownerHousehold.activeNonOwnerCount} household seat${ownerHousehold.activeNonOwnerCount === 1 ? "" : "s"} × ${seatPrice}.</p>` : `<p>Household members are ${seatPrice}/month each when added.</p>`}</div>`
-        : "";
+    const chargeCard =
+        directPremium && provider !== "google_play"
+            ? `<div class="billing-price"><span>Current Munch subscription</span><strong>${dollars(total)}<small>/month</small></strong>${ownerHousehold ? `<p>${premiumPrice} Premium + ${ownerHousehold.activeNonOwnerCount} household seat${ownerHousehold.activeNonOwnerCount === 1 ? "" : "s"} × ${seatPrice}.</p>` : `<p>Household members are ${seatPrice}/month each when added.</p>`}</div>`
+            : "";
     const action = householdProvided
         ? `<a class="button button-secondary" href="/app/household">View household</a>`
         : directPremium

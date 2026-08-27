@@ -9,10 +9,7 @@ const productId = "munch_premium_monthly";
 const basePlanId = "monthly";
 const now = new Date("2026-08-27T12:00:00.000Z");
 
-function purchase(
-    state: string,
-    expiry = "2026-09-27T12:00:00.000Z",
-) {
+function purchase(state: string, expiry = "2026-09-27T12:00:00.000Z") {
     return {
         startTime: "2026-08-27T12:00:00.000Z",
         subscriptionState: state,

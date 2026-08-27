@@ -211,6 +211,7 @@ public class MunchPlayBillingPlugin extends Plugin implements PurchasesUpdatedLi
         connect(call, () -> {
             QueryPurchasesParams params = QueryPurchasesParams.newBuilder()
                 .setProductType(BillingClient.ProductType.SUBS)
+                .includeSuspendedSubscriptions(true)
                 .build();
             billingClient.queryPurchasesAsync(params, (billingResult, purchases) -> {
                 if (billingResult.getResponseCode() != BillingClient.BillingResponseCode.OK) {
