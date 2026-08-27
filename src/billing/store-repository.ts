@@ -39,10 +39,10 @@ export interface LatestStoreSubscriptionRecord {
 
 export async function upsertStoreSubscription(
     subscription: StoreSubscriptionRecord,
-): Promise<void> {
-    await withBillingDatabase(async (tx) => {
-        await tx`
-            insert into munch.store_subscriptions (
+): Promise<boolean> {
+    return withBillingDatabase(async (tx) => {
+        const rows = await tx<Array<{ user_id: string }>>`
+            insert into munch.store_subscriptions as existing (
                 user_id,
                 provider,
                 app_id,
@@ -80,8 +80,7 @@ export async function upsertStoreSubscription(
                 ${subscription.verifiedAt}
             )
             on conflict (provider, app_id, purchase_token) do update
-            set user_id = excluded.user_id,
-                product_id = excluded.product_id,
+            set product_id = excluded.product_id,
                 obfuscated_account_id = excluded.obfuscated_account_id,
                 status = excluded.status,
                 current_period_start = excluded.current_period_start,
@@ -95,7 +94,10 @@ export async function upsertStoreSubscription(
                 test_purchase = excluded.test_purchase,
                 verified_at = excluded.verified_at,
                 updated_at = now()
+            where existing.user_id = excluded.user_id
+            returning user_id
         `;
+        return rows[0]?.user_id === subscription.userId;
     });
 }
 
