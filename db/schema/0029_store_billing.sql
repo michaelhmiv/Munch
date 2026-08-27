@@ -18,6 +18,22 @@ begin
 end
 $$;
 
+create table if not exists munch.store_account_bindings (
+    user_id uuid not null references munch.users(id) on delete cascade,
+    provider munch.store_billing_provider not null,
+    app_id text not null,
+    external_account_id text not null,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    primary key (provider, app_id, user_id),
+    constraint store_account_bindings_external_unique
+        unique (provider, app_id, external_account_id),
+    constraint store_account_bindings_app_id_nonempty
+        check (length(btrim(app_id)) between 3 and 255),
+    constraint store_account_bindings_external_id_length
+        check (length(external_account_id) between 1 and 64)
+);
+
 create table if not exists munch.store_subscriptions (
     id uuid primary key default gen_random_uuid(),
     user_id uuid not null references munch.users(id) on delete cascade,
@@ -75,10 +91,13 @@ create table if not exists munch.store_billing_events (
 );
 
 grant select, insert, update, delete on
+    munch.store_account_bindings,
     munch.store_subscriptions,
     munch.store_billing_events
     to munch_billing;
 
+comment on table munch.store_account_bindings is
+    'Opaque app-store account identifiers mapped to Munch users so authenticated server notifications can resolve ownership without exposing user identifiers to the store.';
 comment on table munch.store_subscriptions is
     'Verified app-store subscriptions; purchase tokens require provider credentials to query and are never exposed to application clients.';
 comment on table munch.store_billing_events is
