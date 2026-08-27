@@ -1,14 +1,22 @@
 import type { Context, Next } from "hono";
 import { getMunchBetterAuth } from "../auth/auth.js";
 
+export type MunchAuthTransport = "cookie" | "bearer";
+
 declare module "hono" {
     interface ContextVariableMap {
         munchUserId: string;
         munchUserEmail: string;
+        munchAuthTransport: MunchAuthTransport;
     }
 }
 
-export async function requireWebSession(c: Context, next: Next) {
+function requestAuthTransport(headers: Headers): MunchAuthTransport {
+    const authorization = headers.get("authorization")?.trim() ?? "";
+    return /^Bearer\s+\S+/i.test(authorization) ? "bearer" : "cookie";
+}
+
+export async function requireAppSession(c: Context, next: Next) {
     // The production provenance circuit breaker returns no user data. Older
     // browser contexts can call this path in a tight loop, so do not let that
     // disabled compatibility endpoint turn into repeated Better Auth/Postgres
@@ -27,10 +35,18 @@ export async function requireWebSession(c: Context, next: Next) {
 
     c.set("munchUserId", session.user.id);
     c.set("munchUserEmail", session.user.email);
+    c.set("munchAuthTransport", requestAuthTransport(c.req.raw.headers));
     await next();
 }
 
-export async function clearWebSession(c: Context): Promise<void> {
+/**
+ * Backwards-compatible name for existing website route modules. The middleware
+ * now supports both cookie-backed browser sessions and Better Auth bearer
+ * sessions used by installed clients.
+ */
+export const requireWebSession = requireAppSession;
+
+export async function clearAppSession(c: Context): Promise<void> {
     const response = await getMunchBetterAuth().api.signOut({
         headers: c.req.raw.headers,
         asResponse: true,
@@ -39,3 +55,5 @@ export async function clearWebSession(c: Context): Promise<void> {
         c.header("Set-Cookie", cookie, { append: true });
     }
 }
+
+export const clearWebSession = clearAppSession;
