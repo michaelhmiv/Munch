@@ -1,7 +1,4 @@
-import {
-    installedReturnRoute,
-    signInWithPassword,
-} from "./mobile-runtime.js";
+import { installedReturnRoute, signInWithPassword } from "./mobile-runtime.js";
 
 const form = document.getElementById("mobile-login-form");
 const status = document.getElementById("mobile-login-status");

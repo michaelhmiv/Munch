@@ -64,7 +64,11 @@ requireText(runtime, '"appRestoredResult"', "Android capture restoration");
 requireText(runtime, "App.getLaunchUrl", "Cold-start deep-link restoration");
 requireText(runtime, '"appUrlOpen"', "Warm deep-link routing");
 requireText(runtime, '"appStateChange"', "Foreground session lifecycle");
-requireText(runtime, '"/api/auth/get-session"', "Foreground session validation");
+requireText(
+    runtime,
+    '"/api/auth/get-session"',
+    "Foreground session validation",
+);
 if (/App\.addListener\(["']backButton["']/.test(runtime)) {
     throw new Error(
         "Installed runtime must retain Capacitor's default Android back handling",

@@ -208,10 +208,16 @@ async function validateForegroundSession() {
                 },
             },
         );
-        if (!response.ok && response.status !== 401 && response.status !== 403) {
+        if (
+            !response.ok &&
+            response.status !== 401 &&
+            response.status !== 403
+        ) {
             return;
         }
-        const session = response.ok ? await response.json().catch(() => null) : null;
+        const session = response.ok
+            ? await response.json().catch(() => null)
+            : null;
         if (!response.ok || !session?.session || !session?.user) {
             const returnTo = currentInstalledAppRoute();
             await clearStoredToken();
@@ -272,7 +278,8 @@ App.addListener("appStateChange", ({ isActive }) => {
     }
     const elapsed = backgroundedAt == null ? 0 : Date.now() - backgroundedAt;
     backgroundedAt = null;
-    if (elapsed < FOREGROUND_SESSION_RECHECK_MS || foregroundSessionCheck) return;
+    if (elapsed < FOREGROUND_SESSION_RECHECK_MS || foregroundSessionCheck)
+        return;
     foregroundSessionCheck = validateForegroundSession().finally(() => {
         foregroundSessionCheck = null;
     });
