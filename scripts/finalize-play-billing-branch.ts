@@ -72,16 +72,6 @@ smoke = smoke.replace(
 );
 await writeFile(smokePath, smoke);
 
-const gradlePath = "android/app/build.gradle";
-const gradle = await readFile(gradlePath, "utf8");
-await writeFile(
-    gradlePath,
-    gradle.replace(
-        "https://android.googlesource.com/platforms/base/+/","+
-"        "https://android.googlesource.com/platform/frameworks/base/+/",
-    ),
-);
-
 await rm(".github/workflows/play-billing-shared-helper.yml", { force: true });
 await rm("scripts/patch-play-billing-shared-ui.ts", { force: true });
 
