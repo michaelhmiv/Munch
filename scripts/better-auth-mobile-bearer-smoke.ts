@@ -60,7 +60,9 @@ const bearerSession = await auth.api.getSession({
     headers: new Headers({ Authorization: `Bearer ${bearerToken}` }),
 });
 if (bearerSession?.user.email !== email) {
-    throw new Error("Better Auth bearer token did not resolve the signed-in user");
+    throw new Error(
+        "Better Auth bearer token did not resolve the signed-in user",
+    );
 }
 
 const app = new Hono();
