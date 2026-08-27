@@ -1,3 +1,5 @@
+import { requestJson as api } from "./app-api.js";
+
 const $ = (selector) => document.querySelector(selector);
 const enabledToggle = $("#pantry-enabled");
 const workspace = $("#workspace");
@@ -28,35 +30,6 @@ function status(message, error = false) {
 function mealStatus(message, error = false) {
     mealIdeaStatusEl.textContent = message || "";
     mealIdeaStatusEl.style.color = error ? "#9b2c2c" : "#555";
-}
-
-async function api(path, options = {}) {
-    const response = await fetch(path, {
-        ...options,
-        headers: {
-            ...(options.body instanceof FormData
-                ? {}
-                : { "content-type": "application/json" }),
-            ...(options.headers || {}),
-        },
-    });
-    const text = await response.text();
-    let payload = {};
-    try {
-        payload = text ? JSON.parse(text) : {};
-    } catch {
-        payload = { error: text || "request_failed" };
-    }
-    if (!response.ok) {
-        const error = new Error(
-            payload.error ||
-                payload.message ||
-                `Request failed (${response.status})`,
-        );
-        error.status = response.status;
-        throw error;
-    }
-    return payload;
 }
 
 function currentScope() {

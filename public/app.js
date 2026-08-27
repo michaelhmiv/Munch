@@ -1,3 +1,4 @@
+import { requestJson } from "./app-api.js";
 import {
     displayWeightUnit,
     savedWeightUnit,
@@ -253,28 +254,11 @@ function toast(message, kind = "success") {
 async function api(path, options = {}) {
     if (state.controller) state.controller.abort();
     const controller = new AbortController();
-    const isFormData = options.body instanceof FormData;
     if (!options.keepPrevious) state.controller = controller;
-    const response = await fetch(path, {
-        credentials: "same-origin",
-        headers: {
-            Accept: "application/json",
-            ...(options.body && !isFormData
-                ? { "Content-Type": "application/json" }
-                : {}),
-            ...options.headers,
-        },
+    return requestJson(path, {
         ...options,
         signal: options.signal || controller.signal,
     });
-    if (response.status === 401) {
-        location.href = `/connect/sign-in?return_to=${encodeURIComponent(location.pathname + location.search)}`;
-        throw new Error("Authentication required");
-    }
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok)
-        throw new Error(data.message || data.error || "Request failed");
-    return data;
 }
 
 function setLoading(label = "Loading your Munch workspace…") {
