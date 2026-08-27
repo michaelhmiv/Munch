@@ -19,7 +19,6 @@ android/
 # formatting because they are executed/reviewed as operational artifacts.
 .github/workflows/ci.yml
 .github/workflows/mobile-android.yml
-.github/workflows/mobile-format-helper.yml
 docs/deployment/better-auth-cutover.md
 scripts/certification/public.ts
 
