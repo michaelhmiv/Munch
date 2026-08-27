@@ -60,14 +60,13 @@ async function decorateBillingPage() {
         );
         if (!actions) return;
 
-        const provider = config.currentSubscription?.provider || null;
-        const status = config.currentSubscription?.status || null;
-        const active = ["active", "trialing", "past_due"].includes(status);
+        const blocksNewPurchase =
+            config.currentSubscription?.blocksNewPurchase === true;
         const checkout = actions.querySelector(
             '[data-action="billing-checkout"]',
         );
 
-        if (!provider || !active) {
+        if (!blocksNewPurchase) {
             if (
                 !actions.querySelector('[data-action="billing-play-restore"]')
             ) {
