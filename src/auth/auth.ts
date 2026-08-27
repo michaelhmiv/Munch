@@ -1,6 +1,6 @@
 import { oauthProvider } from "@better-auth/oauth-provider";
 import { betterAuth } from "better-auth";
-import { jwt, magicLink, username } from "better-auth/plugins";
+import { bearer, jwt, magicLink, username } from "better-auth/plugins";
 import { Pool } from "pg";
 import { getBetterAuthRuntimeConfig } from "./config.js";
 import {
@@ -212,6 +212,7 @@ function createMunchBetterAuth() {
             },
         },
         plugins: [
+            bearer(),
             jwt({
                 disableSettingJwtHeader: true,
             }),
@@ -282,5 +283,4 @@ let instance: MunchBetterAuth | null = null;
 
 export function getMunchBetterAuth(): MunchBetterAuth {
     instance ??= createMunchBetterAuth();
-    return instance;
 }
