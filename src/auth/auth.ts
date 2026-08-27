@@ -9,7 +9,11 @@ import {
     sendBetterAuthPasswordReset,
     sendBetterAuthVerificationEmail,
 } from "./email.js";
-import { buildScannerSafeMagicLink } from "./magic-link-url.js";
+import {
+    buildInstalledMagicLinkConfirmation,
+    buildScannerSafeMagicLink,
+    mobileMagicLinkRequest,
+} from "./magic-link-url.js";
 import {
     MUNCH_DEFAULT_OAUTH_SCOPES,
     MUNCH_OAUTH_SCOPES,
@@ -19,8 +23,7 @@ import {
 function createMunchBetterAuth() {
     const config = getBetterAuthRuntimeConfig();
     const reviewerSeedMode = process.env.MUNCH_REVIEWER_SEED_MODE === "true";
-    const passwordSignupEnabled =
-        reviewerSeedMode || config.publicPasswordSignup;
+    const passwordSignupEnabled = reviewerSeedMode || config.publicPasswordSignup;
     const database = new Pool({
         connectionString: config.databaseUrl,
         max: config.databasePoolSize,
@@ -221,13 +224,21 @@ function createMunchBetterAuth() {
                 expiresIn: config.magicLinkExpiresIn,
                 disableSignUp: false,
                 storeToken: "hashed",
-                sendMagicLink: async ({ email, url }) => {
+                sendMagicLink: async ({ email, url, token, metadata }) => {
+                    const mobile = mobileMagicLinkRequest(metadata);
+                    const loginUrl = mobile.requested
+                        ? buildInstalledMagicLinkConfirmation({
+                              token,
+                              baseUrl: config.baseUrl,
+                              returnTo: mobile.returnTo,
+                          })
+                        : buildScannerSafeMagicLink({
+                              generatedUrl: url,
+                              baseUrl: config.baseUrl,
+                          });
                     await sendBetterAuthMagicLink({
                         email,
-                        loginUrl: buildScannerSafeMagicLink({
-                            generatedUrl: url,
-                            baseUrl: config.baseUrl,
-                        }),
+                        loginUrl,
                         expiresAt: new Date(
                             Date.now() + config.magicLinkExpiresIn * 1000,
                         ),
