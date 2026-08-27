@@ -5,6 +5,9 @@ import { readFile } from "node:fs/promises";
 const packageJson = JSON.parse(await readFile("package.json", "utf8"));
 const config = await readFile("capacitor.config.ts", "utf8");
 const runtime = await readFile("mobile/runtime.js", "utf8");
+const navigation = await readFile("mobile/navigation.js", "utf8");
+const mobileEntry = await readFile("mobile/mobile-entry.js", "utf8");
+const mobileLogin = await readFile("mobile/mobile-login.js", "utf8");
 const pantryNative = await readFile("mobile/pantry-native.js", "utf8");
 const buildMobileWeb = await readFile("scripts/build-mobile-web.ts", "utf8");
 const plugin = await readFile(
@@ -58,9 +61,44 @@ requireText(
     "Native barcode integration",
 );
 requireText(runtime, '"appRestoredResult"', "Android capture restoration");
+requireText(runtime, "App.getLaunchUrl", "Cold-start deep-link restoration");
+requireText(runtime, '"appUrlOpen"', "Warm deep-link routing");
+requireText(runtime, '"appStateChange"', "Foreground session lifecycle");
+requireText(
+    runtime,
+    '"/api/auth/get-session"',
+    "Foreground session validation",
+);
+if (/App\.addListener\(["']backButton["']/.test(runtime)) {
+    throw new Error(
+        "Installed runtime must retain Capacitor's default Android back handling",
+    );
+}
 if (/localStorage/.test(runtime)) {
     throw new Error("Installed bearer credentials must not use localStorage");
 }
+
+requireText(
+    navigation,
+    "^\\/app(?:\\/|$)",
+    "Strict installed application route boundary",
+);
+requireText(
+    mobileEntry,
+    "restoreInstalledEntryRoute",
+    "Installed cold-start bootstrap",
+);
+requireText(
+    mobileEntry,
+    "installedLoginUrl",
+    "Installed signed-out route preservation",
+);
+requireText(
+    mobileLogin,
+    "installedReturnRoute",
+    "Installed post-login return validation",
+);
+
 requireText(
     plugin,
     'KeyStore.getInstance("AndroidKeyStore")',

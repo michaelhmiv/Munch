@@ -1,4 +1,4 @@
-import { signInWithPassword } from "./mobile-runtime.js";
+import { installedReturnRoute, signInWithPassword } from "./mobile-runtime.js";
 
 const form = document.getElementById("mobile-login-form");
 const status = document.getElementById("mobile-login-status");
@@ -17,7 +17,7 @@ form?.addEventListener("submit", async (event) => {
     try {
         await signInWithPassword(data.get("identifier"), data.get("password"));
         const requested = new URLSearchParams(location.search).get("return_to");
-        const route = requested?.startsWith("/app") ? requested : "/app";
+        const route = installedReturnRoute(requested);
         location.replace(`/index.html?route=${encodeURIComponent(route)}`);
     } catch (error) {
         setStatus(error?.message || "Sign in failed", true);

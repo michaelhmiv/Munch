@@ -13,11 +13,19 @@ import {
     resolveMunchApiUrl,
     setMunchPlatformAdapter,
 } from "../public/app-api.js";
+import {
+    installedAppRoute,
+    installedLoginHref,
+    installedRouteFromUrl,
+} from "./navigation.js";
 
 const API_BASE_URL = "https://munch.business";
 const LOGIN_PATH = "/mobile-login.html";
+const FOREGROUND_SESSION_RECHECK_MS = 5 * 60 * 1000;
 
 const MunchSecureSession = registerPlugin("MunchSecureSession");
+let backgroundedAt = null;
+let foregroundSessionCheck = null;
 
 async function storedToken() {
     try {
@@ -39,8 +47,44 @@ async function clearStoredToken() {
     }
 }
 
-function moveToLogin() {
-    if (location.pathname !== LOGIN_PATH) location.replace(LOGIN_PATH);
+async function replaceStoredToken(token) {
+    if (typeof token !== "string" || !token) return;
+    try {
+        await MunchSecureSession.setToken({ token });
+    } catch {
+        // Keep the existing session in memory/storage if token refresh storage
+        // fails. A later authenticated API request will still validate it.
+    }
+}
+
+export function installedReturnRoute(value) {
+    return installedAppRoute(value) || "/app";
+}
+
+export function currentInstalledAppRoute() {
+    return installedReturnRoute(location.pathname);
+}
+
+export function installedLoginUrl(returnTo = currentInstalledAppRoute()) {
+    return installedLoginHref(returnTo);
+}
+
+function moveToLogin(returnTo = currentInstalledAppRoute()) {
+    const href = installedLoginHref(returnTo);
+    if (location.pathname === LOGIN_PATH) {
+        history.replaceState({}, "", href);
+        return;
+    }
+    location.replace(href);
+}
+
+function navigateInstalledRoute(route, replace = false) {
+    const safeRoute = installedAppRoute(route);
+    if (!safeRoute) return null;
+    if (replace) history.replaceState({}, "", safeRoute);
+    else history.pushState({}, "", safeRoute);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    return safeRoute;
 }
 
 setMunchPlatformAdapter({
@@ -48,8 +92,9 @@ setMunchPlatformAdapter({
     apiBaseUrl: API_BASE_URL,
     getAccessToken: storedToken,
     async onAuthenticationRequired() {
+        const returnTo = currentInstalledAppRoute();
         await clearStoredToken();
-        moveToLogin();
+        moveToLogin(returnTo);
     },
 });
 
@@ -57,6 +102,21 @@ export { getMunchPlatformKind, requestJson, resolveMunchApiUrl };
 
 export async function hasStoredSession() {
     return Boolean(await storedToken());
+}
+
+export async function restoreInstalledEntryRoute(explicitRoute) {
+    const requested = installedAppRoute(explicitRoute);
+    if (requested) return navigateInstalledRoute(requested, true);
+
+    try {
+        const launch = await App.getLaunchUrl();
+        const launchedRoute = installedRouteFromUrl(launch?.url);
+        if (launchedRoute) return navigateInstalledRoute(launchedRoute, true);
+    } catch {
+        // A missing launch URL is a normal app start.
+    }
+
+    return installedAppRoute(location.pathname);
 }
 
 export async function signInWithPassword(identifier, password) {
@@ -128,6 +188,52 @@ export async function signOutInstalledSession() {
     }
 }
 
+async function validateForegroundSession() {
+    if (location.pathname === LOGIN_PATH) return;
+    const token = await storedToken();
+    if (!token) {
+        moveToLogin(currentInstalledAppRoute());
+        return;
+    }
+
+    try {
+        const response = await fetch(
+            new URL("/api/auth/get-session", API_BASE_URL),
+            {
+                method: "GET",
+                credentials: "omit",
+                headers: {
+                    Accept: "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+            },
+        );
+        if (
+            !response.ok &&
+            response.status !== 401 &&
+            response.status !== 403
+        ) {
+            return;
+        }
+        const session = response.ok
+            ? await response.json().catch(() => null)
+            : null;
+        if (!response.ok || !session?.session || !session?.user) {
+            const returnTo = currentInstalledAppRoute();
+            await clearStoredToken();
+            moveToLogin(returnTo);
+            return;
+        }
+        const refreshedToken = response.headers.get("set-auth-token");
+        if (refreshedToken && refreshedToken !== token) {
+            await replaceStoredToken(refreshedToken);
+        }
+    } catch {
+        // Network transitions are normal when an app returns to foreground.
+        // Existing credentials remain in place and the next API call can retry.
+    }
+}
+
 export async function takeInstalledPhoto() {
     return Camera.takePhoto({
         quality: 88,
@@ -165,25 +271,28 @@ export async function scanInstalledBarcode() {
     });
 }
 
-export function installedRouteFromUrl(url) {
-    try {
-        const parsed = new URL(url);
-        if (parsed.protocol !== "munch:") return null;
-        const route = `/${[parsed.hostname, parsed.pathname]
-            .filter(Boolean)
-            .join("/")
-            .replace(/\/{2,}/g, "/")}`;
-        return route.startsWith("/app") ? route : null;
-    } catch {
-        return null;
+App.addListener("appStateChange", ({ isActive }) => {
+    if (!isActive) {
+        backgroundedAt = Date.now();
+        return;
     }
-}
+    const elapsed = backgroundedAt == null ? 0 : Date.now() - backgroundedAt;
+    backgroundedAt = null;
+    if (elapsed < FOREGROUND_SESSION_RECHECK_MS || foregroundSessionCheck)
+        return;
+    foregroundSessionCheck = validateForegroundSession().finally(() => {
+        foregroundSessionCheck = null;
+    });
+});
 
 App.addListener("appUrlOpen", ({ url }) => {
     const route = installedRouteFromUrl(url);
     if (!route) return;
-    history.pushState({}, "", route);
-    window.dispatchEvent(new PopStateEvent("popstate"));
+    if (location.pathname === LOGIN_PATH) {
+        history.replaceState({}, "", installedLoginHref(route));
+        return;
+    }
+    navigateInstalledRoute(route);
 });
 
 App.addListener("appRestoredResult", (event) => {
