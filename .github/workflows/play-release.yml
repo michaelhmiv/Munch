@@ -1,0 +1,215 @@
+name: Play release
+
+on:
+    workflow_dispatch:
+        inputs:
+            destination:
+                description: "Build only, or upload to a Google Play track"
+                required: true
+                default: "build-only"
+                type: choice
+                options:
+                    - build-only
+                    - internal
+                    - closed
+                    - production
+            closed_track:
+                description: "Closed testing track ID when destination=closed"
+                required: false
+                default: "alpha"
+                type: string
+            release_status:
+                description: "Google Play release status"
+                required: true
+                default: "completed"
+                type: choice
+                options:
+                    - completed
+                    - draft
+            release_name:
+                description: "Optional Play release name; defaults to version + commit"
+                required: false
+                type: string
+            production_confirmation:
+                description: "For production only, enter PUBLISH"
+                required: false
+                type: string
+
+permissions:
+    contents: read
+
+jobs:
+    build-and-release:
+        runs-on: ubuntu-latest
+        timeout-minutes: 45
+        env:
+            FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v5
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: "22"
+
+            - name: Setup JDK
+              uses: actions/setup-java@v5
+              with:
+                  distribution: "temurin"
+                  java-version: "21"
+
+            - name: Setup Android SDK
+              uses: android-actions/setup-android@v4
+
+            - name: Setup Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
+
+            - name: Verify mobile release contract
+              run: bun scripts/mobile-release-check.ts
+
+            - name: Build local mobile web bundle
+              run: bun run mobile:web
+
+            - name: Synchronize Capacitor Android project
+              run: |
+                  npx cap sync android
+                  bun scripts/configure-mobile-android.ts
+
+            - name: Verify native project is reproducible
+              run: git diff --exit-code -- android package.json bun.lock
+
+            - name: Validate Android upload-key secrets
+              env:
+                  ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+                  ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+                  ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+                  ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+              run: |
+                  required=(
+                    ANDROID_KEYSTORE_BASE64
+                    ANDROID_KEYSTORE_PASSWORD
+                    ANDROID_KEY_ALIAS
+                    ANDROID_KEY_PASSWORD
+                  )
+                  for name in "${required[@]}"; do
+                    if [ -z "${!name}" ]; then
+                      echo "::error::Missing required secret ${name}"
+                      exit 1
+                    fi
+                  done
+
+            - name: Decode Android upload keystore
+              env:
+                  ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+              run: |
+                  printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/upload-keystore.jks
+                  chmod 600 android/upload-keystore.jks
+
+            - name: Resolve release destination and metadata
+              env:
+                  INPUT_DESTINATION: ${{ inputs.destination }}
+                  INPUT_CLOSED_TRACK: ${{ inputs.closed_track }}
+                  INPUT_RELEASE_NAME: ${{ inputs.release_name }}
+                  INPUT_PRODUCTION_CONFIRMATION: ${{ inputs.production_confirmation }}
+              run: |
+                  VERSION_NAME="$(bun -e 'const r=await Bun.file("mobile/release.json").json(); process.stdout.write(String(r.versionName));')"
+                  VERSION_CODE="$(bun -e 'const r=await Bun.file("mobile/release.json").json(); process.stdout.write(String(r.androidVersionCode));')"
+                  SHORT_SHA="${GITHUB_SHA:0:7}"
+
+                  if [ -n "$INPUT_RELEASE_NAME" ]; then
+                    RELEASE_NAME="$(printf '%s' "$INPUT_RELEASE_NAME" | tr '\r\n' '-' | tr -cd '[:alnum:]._-' | cut -c1-50)"
+                    if [ -z "$RELEASE_NAME" ]; then
+                      echo "::error::release_name is empty after sanitization"
+                      exit 1
+                    fi
+                  else
+                    RELEASE_NAME="munch-${VERSION_NAME}-${SHORT_SHA}"
+                  fi
+
+                  case "$INPUT_DESTINATION" in
+                    build-only)
+                      PLAY_TRACK=""
+                      ;;
+                    internal)
+                      PLAY_TRACK="internal"
+                      ;;
+                    closed)
+                      PLAY_TRACK="$(printf '%s' "$INPUT_CLOSED_TRACK" | tr '\r\n' '-' | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]._-' | cut -c1-50)"
+                      if [ -z "$PLAY_TRACK" ]; then
+                        echo "::error::closed_track is empty after sanitization"
+                        exit 1
+                      fi
+                      ;;
+                    production)
+                      if [ "$INPUT_PRODUCTION_CONFIRMATION" != "PUBLISH" ]; then
+                        echo "::error::Production release requires production_confirmation=PUBLISH"
+                        exit 1
+                      fi
+                      PLAY_TRACK="production"
+                      ;;
+                    *)
+                      echo "::error::Unknown release destination"
+                      exit 1
+                      ;;
+                  esac
+
+                  echo "MOBILE_RELEASE_VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
+                  echo "MOBILE_RELEASE_VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+                  echo "PLAY_RELEASE_NAME=$RELEASE_NAME" >> "$GITHUB_ENV"
+                  echo "PLAY_TRACK=$PLAY_TRACK" >> "$GITHUB_ENV"
+
+            - name: Build and test signed Android App Bundle
+              working-directory: android
+              env:
+                  ANDROID_KEYSTORE_PATH: ../upload-keystore.jks
+                  ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+                  ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+                  ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+              run: ./gradlew lintRelease testDebugUnitTest bundleRelease
+
+            - name: Verify signed App Bundle
+              run: |
+                  AAB="android/app/build/outputs/bundle/release/app-release.aab"
+                  test -s "$AAB"
+                  jarsigner -verify -verbose -certs "$AAB" > /tmp/munch-aab-signature.txt
+                  sha256sum "$AAB" | tee /tmp/munch-aab-sha256.txt
+                  keytool -printcert -jarfile "$AAB" | tee /tmp/munch-aab-certificate.txt
+
+            - name: Upload signed App Bundle artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: munch-android-${{ env.MOBILE_RELEASE_VERSION_NAME }}-${{ env.MOBILE_RELEASE_VERSION_CODE }}
+                  path: |
+                      android/app/build/outputs/bundle/release/app-release.aab
+                      /tmp/munch-aab-sha256.txt
+                      /tmp/munch-aab-certificate.txt
+                  if-no-files-found: error
+                  retention-days: 30
+
+            - name: Validate Play publishing secret
+              if: ${{ inputs.destination != 'build-only' }}
+              env:
+                  PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+              run: |
+                  if [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
+                    echo "::error::Missing required secret PLAY_SERVICE_ACCOUNT_JSON"
+                    exit 1
+                  fi
+
+            - name: Upload bundle to Google Play
+              if: ${{ inputs.destination != 'build-only' }}
+              uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5
+              with:
+                  serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+                  packageName: business.munch.app
+                  releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
+                  tracks: ${{ env.PLAY_TRACK }}
+                  status: ${{ inputs.release_status }}
+                  releaseName: ${{ env.PLAY_RELEASE_NAME }}
