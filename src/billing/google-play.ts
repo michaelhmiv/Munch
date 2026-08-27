@@ -219,7 +219,7 @@ export async function verifyGooglePlayPremium(input: {
         normalized = { ...normalized, acknowledged: true };
     }
 
-    await upsertStoreSubscription({
+    const storedForUser = await upsertStoreSubscription({
         userId: input.userId,
         provider: "google_play",
         appId: config.packageName,
@@ -238,6 +238,9 @@ export async function verifyGooglePlayPremium(input: {
         testPurchase: normalized.testPurchase,
         verifiedAt: now,
     });
+    if (!storedForUser) {
+        throw new GooglePlayVerificationError("google_play_purchase_already_claimed");
+    }
 
     return {
         provider: "google_play",
