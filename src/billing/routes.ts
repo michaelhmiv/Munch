@@ -10,12 +10,22 @@ import {
     verifyCheckoutForUser,
 } from "./checkout-service.js";
 import { GooglePlayApiError } from "./google-play-client.js";
-import { googlePlayBillingConfigured } from "./google-play-config.js";
+import {
+    getGooglePlayRtdnConfig,
+    googlePlayBillingConfigured,
+    googlePlayRtdnConfigured,
+} from "./google-play-config.js";
+import {
+    GooglePlayRtdnError,
+    processGooglePlayRtdn,
+} from "./google-play-rtdn.js";
 import {
     googlePlayObfuscatedAccountId,
     GooglePlayVerificationError,
     verifyGooglePlayPremium,
 } from "./google-play.js";
+import { verifyGooglePubSubPushAuthorization } from "./google-pubsub-auth.js";
+import { upsertStoreAccountBinding } from "./store-repository.js";
 import { StripeRequestError } from "./stripe-client.js";
 import { getDirectSubscriptionSnapshot } from "./subscription-sources.js";
 import { verifyStripeWebhookSignature } from "./stripe-webhook.js";
@@ -74,11 +84,83 @@ export function createBillingRouter(): Hono {
         }
     });
 
+    billing.post("/webhooks/google-play", async (c) => {
+        if (!googlePlayRtdnConfigured()) {
+            return c.json({ error: "google_play_rtdn_not_configured" }, 503);
+        }
+        try {
+            await verifyGooglePubSubPushAuthorization({
+                authorization: c.req.header("authorization"),
+                config: getGooglePlayRtdnConfig(),
+            });
+        } catch {
+            return c.json({ error: "invalid_google_pubsub_authorization" }, 401);
+        }
+
+        const rawPayload = await c.req.text();
+        try {
+            await processGooglePlayRtdn({ rawPayload });
+            return c.json({ received: true });
+        } catch (error) {
+            if (error instanceof GooglePlayRtdnError) {
+                const retryable =
+                    error.code === "google_play_rtdn_owner_unresolved";
+                if (!retryable) {
+                    console.error(
+                        `[billing] google_play_rtdn_rejected code=${error.code}`,
+                    );
+                }
+                return c.json(
+                    { error: "google_play_rtdn_processing_failed" },
+                    retryable ? 503 : 400,
+                );
+            }
+            if (error instanceof GooglePlayApiError) {
+                console.error(
+                    `[billing] google_play_rtdn_api_failed status=${error.status} code=${error.code}`,
+                );
+                return c.json(
+                    { error: "google_play_rtdn_processing_unavailable" },
+                    503,
+                );
+            }
+            if (error instanceof GooglePlayVerificationError) {
+                console.error(
+                    `[billing] google_play_rtdn_verification_failed code=${error.code}`,
+                );
+                return c.json(
+                    { error: "google_play_rtdn_processing_failed" },
+                    409,
+                );
+            }
+            console.error("[billing] google_play_rtdn_processing_failed");
+            return c.json(
+                { error: "google_play_rtdn_processing_unavailable" },
+                503,
+            );
+        }
+    });
+
     billing.get("/billing/google-play/config", requireWebSession, async (c) => {
         if (c.get("munchAuthTransport") !== "bearer") {
             return c.json({ error: "installed_app_required" }, 403);
         }
         const userId = c.get("munchUserId");
+        const obfuscatedAccountId = googlePlayObfuscatedAccountId(userId);
+        if (googlePlayBillingConfigured()) {
+            const bound = await upsertStoreAccountBinding({
+                userId,
+                provider: "google_play",
+                appId: PRODUCT_CONFIG.googlePlayPackageName,
+                externalAccountId: obfuscatedAccountId,
+            });
+            if (!bound) {
+                return c.json(
+                    { error: "google_play_account_binding_conflict" },
+                    409,
+                );
+            }
+        }
         const subscription = await getDirectSubscriptionSnapshot(userId);
         return c.json(
             {
@@ -86,7 +168,7 @@ export function createBillingRouter(): Hono {
                 packageName: PRODUCT_CONFIG.googlePlayPackageName,
                 productId: PRODUCT_CONFIG.googlePlayPremiumProductId,
                 basePlanId: PRODUCT_CONFIG.googlePlayPremiumBasePlanId,
-                obfuscatedAccountId: googlePlayObfuscatedAccountId(userId),
+                obfuscatedAccountId,
                 currentSubscription: {
                     provider: subscription.provider,
                     status: subscription.status,
