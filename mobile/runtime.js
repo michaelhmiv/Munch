@@ -13,6 +13,11 @@ import {
     resolveMunchApiUrl,
     setMunchPlatformAdapter,
 } from "../public/app-api.js";
+import {
+    installedAppRoute,
+    installedLoginHref,
+    installedRouteFromUrl,
+} from "./navigation.js";
 
 const API_BASE_URL = "https://munch.business";
 const LOGIN_PATH = "/mobile-login.html";
@@ -39,8 +44,30 @@ async function clearStoredToken() {
     }
 }
 
-function moveToLogin() {
-    if (location.pathname !== LOGIN_PATH) location.replace(LOGIN_PATH);
+export function currentInstalledAppRoute() {
+    return installedAppRoute(location.pathname) || "/app";
+}
+
+export function installedLoginUrl(returnTo = currentInstalledAppRoute()) {
+    return installedLoginHref(returnTo);
+}
+
+function moveToLogin(returnTo = currentInstalledAppRoute()) {
+    const href = installedLoginHref(returnTo);
+    if (location.pathname === LOGIN_PATH) {
+        history.replaceState({}, "", href);
+        return;
+    }
+    location.replace(href);
+}
+
+function navigateInstalledRoute(route, replace = false) {
+    const safeRoute = installedAppRoute(route);
+    if (!safeRoute) return null;
+    if (replace) history.replaceState({}, "", safeRoute);
+    else history.pushState({}, "", safeRoute);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    return safeRoute;
 }
 
 setMunchPlatformAdapter({
@@ -48,8 +75,9 @@ setMunchPlatformAdapter({
     apiBaseUrl: API_BASE_URL,
     getAccessToken: storedToken,
     async onAuthenticationRequired() {
+        const returnTo = currentInstalledAppRoute();
         await clearStoredToken();
-        moveToLogin();
+        moveToLogin(returnTo);
     },
 });
 
@@ -57,6 +85,21 @@ export { getMunchPlatformKind, requestJson, resolveMunchApiUrl };
 
 export async function hasStoredSession() {
     return Boolean(await storedToken());
+}
+
+export async function restoreInstalledEntryRoute(explicitRoute) {
+    const requested = installedAppRoute(explicitRoute);
+    if (requested) return navigateInstalledRoute(requested, true);
+
+    try {
+        const launch = await App.getLaunchUrl();
+        const launchedRoute = installedRouteFromUrl(launch?.url);
+        if (launchedRoute) return navigateInstalledRoute(launchedRoute, true);
+    } catch {
+        // A missing launch URL is a normal app start.
+    }
+
+    return installedAppRoute(location.pathname);
 }
 
 export async function signInWithPassword(identifier, password) {
@@ -165,25 +208,14 @@ export async function scanInstalledBarcode() {
     });
 }
 
-export function installedRouteFromUrl(url) {
-    try {
-        const parsed = new URL(url);
-        if (parsed.protocol !== "munch:") return null;
-        const route = `/${[parsed.hostname, parsed.pathname]
-            .filter(Boolean)
-            .join("/")
-            .replace(/\/{2,}/g, "/")}`;
-        return route.startsWith("/app") ? route : null;
-    } catch {
-        return null;
-    }
-}
-
 App.addListener("appUrlOpen", ({ url }) => {
     const route = installedRouteFromUrl(url);
     if (!route) return;
-    history.pushState({}, "", route);
-    window.dispatchEvent(new PopStateEvent("popstate"));
+    if (location.pathname === LOGIN_PATH) {
+        history.replaceState({}, "", installedLoginHref(route));
+        return;
+    }
+    navigateInstalledRoute(route);
 });
 
 App.addListener("appRestoredResult", (event) => {
