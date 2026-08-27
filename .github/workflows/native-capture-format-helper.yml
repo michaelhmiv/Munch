@@ -1,0 +1,39 @@
+name: Native capture format helper
+
+on:
+  push:
+    branches:
+      - mobile/05-native-capture
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: ${{ !contains(github.event.head_commit.message, '[native-capture-formatted]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: mobile/05-native-capture
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - name: Apply repository formatting
+        run: |
+          bunx prettier --write \
+            mobile/pantry-native.js \
+            mobile/runtime.js \
+            scripts/build-mobile-web.ts \
+            scripts/mobile-shell-smoke.ts
+      - name: Commit formatting
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mobile/pantry-native.js mobile/runtime.js scripts/build-mobile-web.ts scripts/mobile-shell-smoke.ts
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Format native capture source [native-capture-formatted]"
+          git push
