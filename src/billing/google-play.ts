@@ -25,8 +25,7 @@ export interface NormalizedGooglePlaySubscription {
     testPurchase: boolean;
 }
 
-export interface VerifiedGooglePlaySubscription
-    extends NormalizedGooglePlaySubscription {
+export interface VerifiedGooglePlaySubscription extends NormalizedGooglePlaySubscription {
     provider: "google_play";
     productId: string;
 }
@@ -110,7 +109,8 @@ export function normalizeGooglePlaySubscription(
     }
 
     const currentPeriodEnd = latestExpiry(productItems);
-    const rawState = purchase.subscriptionState ?? "SUBSCRIPTION_STATE_UNSPECIFIED";
+    const rawState =
+        purchase.subscriptionState ?? "SUBSCRIPTION_STATE_UNSPECIFIED";
     let status: SubscriptionStatus;
     let graceExpiresAt: Date | null = null;
 
@@ -186,7 +186,9 @@ export async function verifyGooglePlayPremium(input: {
     const config = getGooglePlayBillingConfig();
     const purchaseToken = input.purchaseToken.trim();
     if (purchaseToken.length < 8 || purchaseToken.length > 4096) {
-        throw new GooglePlayVerificationError("google_play_purchase_token_invalid");
+        throw new GooglePlayVerificationError(
+            "google_play_purchase_token_invalid",
+        );
     }
 
     const existingOwner = await findStoreSubscriptionOwner({
@@ -195,7 +197,9 @@ export async function verifyGooglePlayPremium(input: {
         purchaseToken,
     });
     if (existingOwner && existingOwner !== input.userId) {
-        throw new GooglePlayVerificationError("google_play_purchase_already_claimed");
+        throw new GooglePlayVerificationError(
+            "google_play_purchase_already_claimed",
+        );
     }
 
     const fetchImpl = input.fetchImpl ?? fetch;
@@ -239,7 +243,9 @@ export async function verifyGooglePlayPremium(input: {
         verifiedAt: now,
     });
     if (!storedForUser) {
-        throw new GooglePlayVerificationError("google_play_purchase_already_claimed");
+        throw new GooglePlayVerificationError(
+            "google_play_purchase_already_claimed",
+        );
     }
 
     return {

@@ -13,7 +13,10 @@ export interface DirectSubscriptionSnapshot extends SubscriptionSnapshot {
 }
 
 function accessRank(subscription: SubscriptionSnapshot, now: Date): number {
-    if (subscription.status === "active" || subscription.status === "trialing") {
+    if (
+        subscription.status === "active" ||
+        subscription.status === "trialing"
+    ) {
         return 4;
     }
     if (

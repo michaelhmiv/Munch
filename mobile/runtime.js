@@ -248,7 +248,9 @@ function storeSubscriptionBlocksNewPurchase(subscription) {
 
 async function verifyInstalledPlayPurchase(purchaseToken) {
     if (typeof purchaseToken !== "string" || !purchaseToken) {
-        throw new Error("Google Play did not return a completed purchase token");
+        throw new Error(
+            "Google Play did not return a completed purchase token",
+        );
     }
     return requestJson("/billing/google-play/verify", {
         method: "POST",

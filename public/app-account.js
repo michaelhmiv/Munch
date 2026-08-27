@@ -175,7 +175,7 @@ function settingsIndex(data) {
         [
             "/app/settings/billing",
             "Plan & billing",
-            `${planLabel(data)} · manage website billing`,
+            `${planLabel(data)} · subscription & charges`,
             "Billing",
         ],
         [
@@ -268,6 +268,7 @@ async function billingPage(data, ctx) {
     const directPremium =
         data.capabilities?.tier === "premium" && !householdProvided;
     const status = data.subscription?.status || null;
+    const provider = data.subscription?.provider || null;
     let billingSummary = "Free";
     let detail = "Munch Free remains available without a subscription.";
     if (householdProvided) {
@@ -275,9 +276,17 @@ async function billingPage(data, ctx) {
         detail = `Your household owner pays for your ${seatPrice}/month seat. You are not billed separately for this entitlement.`;
     } else if (directPremium) {
         billingSummary = `Munch Premium · ${premiumPrice}/month`;
-        detail = status
-            ? `Stripe subscription status: ${status}.`
-            : "Your account currently has Premium capabilities.";
+        if (provider === "google_play") {
+            detail = status
+                ? `Google Play subscription status: ${status}.`
+                : "Your account currently has Google Play Premium capabilities.";
+        } else if (provider === "stripe") {
+            detail = status
+                ? `Stripe subscription status: ${status}.`
+                : "Your account currently has Premium capabilities.";
+        } else {
+            detail = "Your account currently has Premium capabilities.";
+        }
     }
     const ownerHousehold =
         household?.household?.role === "owner" ? household : null;
@@ -292,11 +301,13 @@ async function billingPage(data, ctx) {
     const action = householdProvided
         ? `<a class="button button-secondary" href="/app/household">View household</a>`
         : directPremium
-          ? `<button class="button button-primary" data-action="billing-portal">Manage billing in Stripe</button>`
+          ? provider === "google_play"
+              ? `<button class="button button-primary" data-action="billing-play-manage">Manage in Google Play</button>`
+              : `<button class="button button-primary" data-action="billing-portal">Manage billing in Stripe</button>`
           : `<button class="button button-primary" data-action="billing-checkout">Get Premium — ${premiumPrice}/month</button>`;
     return settingsShell(
         "settings-billing",
-        `${sectionHeading("Billing", "Plan & billing", "See exactly how your Munch access is funded. Payment methods, invoices and cancellation remain hosted by Stripe.")}<div class="settings-stack">${settingGroup("Current plan", detail, `<div class="plan-summary"><div><span>Plan</span><strong>${esc(billingSummary)}</strong></div>${statusPill(householdProvided ? "Household seat" : directPremium ? status || "Premium" : "Free", directPremium || householdProvided ? "success" : "neutral")}</div>${chargeCard}<div class="settings-actions">${action}</div>`)}${settingGroup("Household pricing", "Discounted seats are part of a collaborative household, not standalone Premium accounts.", `<div class="pricing-rule"><strong>${premiumPrice}</strong><span>Premium owner</span></div><div class="pricing-rule"><strong>+${seatPrice}</strong><span>per additional active household member</span></div><p class="settings-note">Household recipes, meal plans and grocery lists are shared automatically while a discounted seat is active. Personal meals, water, weight and goals remain private.</p><a class="text-link" href="/app/household">Manage household →</a>`)}</div>`,
+        `${sectionHeading("Billing", "Plan & billing", "See exactly how your Munch access is funded. Manage payment and cancellation with the provider that owns the active subscription.")}<div class="settings-stack">${settingGroup("Current plan", detail, `<div class="plan-summary"><div><span>Plan</span><strong>${esc(billingSummary)}</strong></div>${statusPill(householdProvided ? "Household seat" : directPremium ? status || "Premium" : "Free", directPremium || householdProvided ? "success" : "neutral")}</div>${chargeCard}<div class="settings-actions">${action}</div>`)}${settingGroup("Household pricing", "Discounted seats are part of a collaborative household, not standalone Premium accounts.", `<div class="pricing-rule"><strong>${premiumPrice}</strong><span>Premium owner</span></div><div class="pricing-rule"><strong>+${seatPrice}</strong><span>per additional active household member</span></div><p class="settings-note">Household recipes, meal plans and grocery lists are shared automatically while a discounted seat is active. Personal meals, water, weight and goals remain private.</p><a class="text-link" href="/app/household">Manage household →</a>`)}</div>`,
     );
 }
 
@@ -362,13 +373,14 @@ async function householdPage(ctx) {
     const premiumPrice = dollars(policy.premiumPriceMonthlyCents);
     const seatPrice = dollars(policy.householdMemberPriceMonthlyCents);
     if (!data.household) {
-        if (
-            data.tier === "premium" &&
-            data.entitlementSource !== "household_subscription"
-        ) {
+        if (data.tier === "premium" && data.canCreateHousehold === true) {
             return `${sectionHeading("Shared workspace", "Create a household", "Share recipes, meal plans and grocery lists while keeping personal nutrition records private.")}<div class="household-hero-grid"><section class="settings-group"><header><h3>Start your household</h3><p>Your Premium account is included. Each additional active member is ${seatPrice}/month after they accept.</p></header><form id="household-create-form" class="settings-group-body"><label class="settings-field"><span>Household name</span><input name="name" maxlength="120" placeholder="The Smith household" required></label><label class="settings-field"><span>Your display name</span><input name="display_name" maxlength="80" placeholder="Michael" required></label><button class="button button-primary" type="submit">Create household</button></form></section><aside class="household-privacy-card"><span class="settings-card-label">Privacy boundary</span><h3>Shared by default</h3><p>Recipes, meal plans and grocery lists are collaborative for household members.</p><h3>Still personal</h3><p>Meals, macros, water, weight, goals and personal nutrition history remain private.</p></aside></div>`;
         }
-        return `<div class="settings-empty household-empty"><span class="more-icon" aria-hidden="true">⌂</span><h2>No household is connected</h2><p>Premium owners can create a household and add additional members for ${seatPrice}/month each.</p><a class="button button-primary" href="/app/settings/billing">View plan & billing</a></div>`;
+        const householdMessage =
+            data.tier === "premium"
+                ? "Your current Premium subscription covers your personal features. Discounted household seats are currently available through Munch website billing."
+                : `Premium owners can create a household and add additional members for ${seatPrice}/month each.`;
+        return `<div class="settings-empty household-empty"><span class="more-icon" aria-hidden="true">⌂</span><h2>No household is connected</h2><p>${esc(householdMessage)}</p><a class="button button-primary" href="/app/settings/billing">View plan & billing</a></div>`;
     }
     const household = data.household;
     const owner = household.role === "owner";
@@ -555,6 +567,14 @@ export async function handleAccountSubmit(form, ctx) {
 
 export async function handleAccountAction(button, ctx) {
     const action = button.dataset.action;
+    if (action === "billing-play-manage") {
+        window.open(
+            "https://play.google.com/store/account/subscriptions",
+            "_blank",
+            "noopener,noreferrer",
+        );
+        return true;
+    }
     if (action === "connection-revoke") {
         const name = button.dataset.clientName || "this connection";
         if (!confirm(`Revoke ${name}?`)) return true;

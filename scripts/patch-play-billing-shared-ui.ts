@@ -11,7 +11,9 @@ async function replaceOnce(
     const source = await readFile(path, "utf8");
     const occurrences = source.split(before).length - 1;
     if (occurrences !== 1) {
-        throw new Error(`${label}: expected exactly one match, found ${occurrences}`);
+        throw new Error(
+            `${label}: expected exactly one match, found ${occurrences}`,
+        );
     }
     await writeFile(path, source.replace(before, after));
 }
@@ -45,8 +47,8 @@ await replaceOnce(
 const account = "public/app-account.js";
 await replaceOnce(
     account,
-    '            `${planLabel(data)} · manage website billing`,',
-    '            `${planLabel(data)} · subscription & charges`,',
+    "            `${planLabel(data)} · manage website billing`,",
+    "            `${planLabel(data)} · subscription & charges`,",
     "settings billing card copy",
 );
 await replaceOnce(

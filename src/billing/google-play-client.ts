@@ -118,7 +118,9 @@ async function googleAccessToken(
         },
         body,
     });
-    const payload = (await response.json().catch(() => ({}))) as AccessTokenResponse;
+    const payload = (await response
+        .json()
+        .catch(() => ({}))) as AccessTokenResponse;
     if (!response.ok || !payload.access_token) {
         throw new GooglePlayApiError(
             response.status,
@@ -160,7 +162,11 @@ export async function getGooglePlaySubscription(
         `${ANDROID_PUBLISHER_BASE_URL}/applications/` +
         `${encodeURIComponent(config.packageName)}/purchases/subscriptionsv2/tokens/` +
         encodeURIComponent(purchaseToken);
-    const response = await authorizedGoogleRequest(url, { method: "GET" }, fetchImpl);
+    const response = await authorizedGoogleRequest(
+        url,
+        { method: "GET" },
+        fetchImpl,
+    );
     const payload = (await response.json().catch(() => ({}))) as
         | GooglePlaySubscriptionPurchaseV2
         | { error?: { status?: string; message?: string } };

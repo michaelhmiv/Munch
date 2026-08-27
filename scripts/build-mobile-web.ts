@@ -81,7 +81,9 @@ if (!runtime.includes("MunchSecureSession")) {
     throw new Error("Installed-client runtime lost secure session integration");
 }
 if (!runtime.includes("MunchPlayBilling")) {
-    throw new Error("Installed-client runtime lost Google Play Billing integration");
+    throw new Error(
+        "Installed-client runtime lost Google Play Billing integration",
+    );
 }
 if (!runtime.includes("CapacitorBarcodeScanner")) {
     throw new Error("Installed-client runtime lost native barcode integration");

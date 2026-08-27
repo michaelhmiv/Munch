@@ -68,7 +68,9 @@ async function decorateBillingPage() {
         );
 
         if (!provider || !active) {
-            if (!actions.querySelector('[data-action="billing-play-restore"]')) {
+            if (
+                !actions.querySelector('[data-action="billing-play-restore"]')
+            ) {
                 const restore = document.createElement("button");
                 restore.type = "button";
                 restore.className = "button button-secondary";
@@ -162,7 +164,9 @@ async function handleRestore(button, silent = false) {
         }
     } catch (error) {
         if (!silent) {
-            setStatus(error?.message || "Unable to restore Google Play purchase.");
+            setStatus(
+                error?.message || "Unable to restore Google Play purchase.",
+            );
         }
     } finally {
         button.disabled = false;
@@ -210,7 +214,10 @@ queueDecoration();
 setTimeout(async () => {
     try {
         const config = await playConfig();
-        if (!config?.configured || config.currentSubscription?.provider === "stripe") {
+        if (
+            !config?.configured ||
+            config.currentSubscription?.provider === "stripe"
+        ) {
             return;
         }
         const result = await restoreInstalledPremium();
