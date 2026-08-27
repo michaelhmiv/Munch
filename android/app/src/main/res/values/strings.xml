@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Munch</string>
+    <string name="title_activity_main">Munch</string>
+    <string name="package_name">business.munch.app</string>
+    <string name="custom_url_scheme">business.munch.app</string>
+</resources>

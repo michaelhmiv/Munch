@@ -20,6 +20,7 @@
     "type": "module",
     "private": true,
     "devDependencies": {
+        "@capacitor/cli": "8.5.0",
         "@types/bun": "latest",
         "@types/node": "^26.1.2",
         "@types/pg": "8.15.5",
@@ -44,10 +45,19 @@
         "submission:generate": "bun scripts/generate-openai-submission.ts",
         "submission:audit": "bun scripts/openai-submission-audit.ts",
         "submission:check": "bun scripts/openai-submission-audit.ts && bun scripts/policy-consistency-check.ts && bun scripts/widget-csp-audit.ts && bun scripts/generate-openai-submission.ts --check",
-        "auth:schema": "bunx auth@1.6.25 generate --config src/auth/auth.ts --output .better-auth-schema.sql --yes"
+        "auth:schema": "bunx auth@1.6.25 generate --config src/auth/auth.ts --output .better-auth-schema.sql --yes",
+        "mobile:web": "bun scripts/build-mobile-web.ts",
+        "mobile:sync": "bun run mobile:web && npx cap sync",
+        "mobile:android": "bun run mobile:web && npx cap sync android",
+        "mobile:android:debug": "bun run mobile:android && cd android && ./gradlew assembleDebug"
     },
     "dependencies": {
         "@better-auth/oauth-provider": "1.6.25",
+        "@capacitor/android": "8.5.0",
+        "@capacitor/app": "8.1.1",
+        "@capacitor/barcode-scanner": "3.1.1",
+        "@capacitor/camera": "8.2.3",
+        "@capacitor/core": "8.5.0",
         "@modelcontextprotocol/sdk": "^1.29.0",
         "better-auth": "1.6.25",
         "cheerio": "1.2.0",

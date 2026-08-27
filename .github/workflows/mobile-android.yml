@@ -1,0 +1,53 @@
+name: Android
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Verify installed-app architecture
+        run: bun scripts/mobile-shell-smoke.ts
+      - name: Build local mobile web bundle
+        run: bun run mobile:web
+      - name: Synchronize Capacitor Android project
+        run: |
+          npx cap sync android
+          bun scripts/configure-mobile-android.ts
+      - name: Verify native project is reproducible
+        run: git diff --exit-code -- android package.json bun.lock
+      - name: Lint, unit test, and assemble Android debug app
+        working-directory: android
+        run: ./gradlew lintDebug testDebugUnitTest assembleDebug
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: munch-android-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7

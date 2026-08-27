@@ -80,6 +80,7 @@ app.use(
             "Mcp-Protocol-Version",
             "Content-Type",
             "WWW-Authenticate",
+            "set-auth-token",
         ],
         credentials: false,
         maxAge: 86400,
