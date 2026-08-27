@@ -5,12 +5,16 @@ import { readFile } from "node:fs/promises";
 const packageJson = JSON.parse(await readFile("package.json", "utf8"));
 const config = await readFile("capacitor.config.ts", "utf8");
 const runtime = await readFile("mobile/runtime.js", "utf8");
+const pantryNative = await readFile("mobile/pantry-native.js", "utf8");
+const buildMobileWeb = await readFile("scripts/build-mobile-web.ts", "utf8");
 const plugin = await readFile(
     "mobile/android/MunchSecureSessionPlugin.java",
     "utf8",
 );
 const configure = await readFile("scripts/configure-mobile-android.ts", "utf8");
 const server = await readFile("src/index.ts", "utf8");
+const inventoryRoutes = await readFile("src/inventory/routes.ts", "utf8");
+const appRoutes = await readFile("src/app/routes.ts", "utf8");
 
 function requireText(source: string, needle: string, label: string) {
     if (!source.includes(needle))
@@ -42,8 +46,20 @@ requireText(
 );
 requireText(runtime, 'registerPlugin("MunchSecureSession")', "Mobile runtime");
 requireText(runtime, 'credentials: "omit"', "Mobile runtime");
-if (/localStorage|sessionStorage/.test(runtime)) {
-    throw new Error("Installed bearer credentials must not use Web Storage");
+requireText(runtime, "Camera.takePhoto", "Native camera integration");
+requireText(
+    runtime,
+    "Camera.chooseFromGallery",
+    "Native photo picker integration",
+);
+requireText(
+    runtime,
+    "CapacitorBarcodeScanner.scanBarcode",
+    "Native barcode integration",
+);
+requireText(runtime, '"appRestoredResult"', "Android capture restoration");
+if (/localStorage/.test(runtime)) {
+    throw new Error("Installed bearer credentials must not use localStorage");
 }
 requireText(
     plugin,
@@ -64,5 +80,52 @@ requireText(
     "Android manifest policy",
 );
 requireText(server, '"set-auth-token"', "Installed auth CORS contract");
+
+requireText(
+    pantryNative,
+    '"/api/app/food-barcode?barcode=',
+    "Native barcode canonical lookup",
+);
+requireText(
+    pantryNative,
+    '"/api/app/pantry/reconcile"',
+    "Native Pantry write contract",
+);
+requireText(
+    pantryNative,
+    'food_provider: candidate.provider',
+    "Native Pantry provider identity",
+);
+requireText(
+    pantryNative,
+    'provider_food_id: candidate.provider_food_id',
+    "Native Pantry provider food identity",
+);
+requireText(
+    pantryNative,
+    "new DataTransfer()",
+    "Native image handoff to existing review flow",
+);
+requireText(
+    buildMobileWeb,
+    'src="/pantry-native.js"',
+    "Native Pantry bundle injection",
+);
+requireText(
+    inventoryRoutes,
+    "foodProvider:",
+    "Pantry canonical identity parser",
+);
+requireText(
+    inventoryRoutes,
+    "providerFoodId:",
+    "Pantry provider food parser",
+);
+requireText(inventoryRoutes, "barcode:", "Pantry barcode parser");
+requireText(
+    appRoutes,
+    'app.get("/api/app/food-barcode"',
+    "Canonical barcode API",
+);
 
 console.log("Installed Android architecture smoke checks passed.");
