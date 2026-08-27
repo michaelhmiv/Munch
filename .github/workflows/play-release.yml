@@ -120,7 +120,14 @@ jobs:
                   INPUT_PRODUCTION_CONFIRMATION: ${{ inputs.production_confirmation }}
               run: |
                   VERSION_NAME="$(bun -e 'const r=await Bun.file("mobile/release.json").json(); process.stdout.write(String(r.versionName));')"
-                  VERSION_CODE="$(bun -e 'const r=await Bun.file("mobile/release.json").json(); process.stdout.write(String(r.androidVersionCode));')"
+                  # Play rejects a reused versionCode. Reserve the first 100000
+                  # values for local/dev builds and derive every store build
+                  # from this workflow's monotonically increasing run number.
+                  VERSION_CODE=$((100000 + GITHUB_RUN_NUMBER))
+                  if [ "$VERSION_CODE" -gt 2100000000 ]; then
+                    echo "::error::Computed Android versionCode exceeds Google Play's limit"
+                    exit 1
+                  fi
                   SHORT_SHA="${GITHUB_SHA:0:7}"
 
                   if [ -n "$INPUT_RELEASE_NAME" ]; then
@@ -160,6 +167,8 @@ jobs:
                       ;;
                   esac
 
+                  echo "MOBILE_VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
+                  echo "MOBILE_VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
                   echo "MOBILE_RELEASE_VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
                   echo "MOBILE_RELEASE_VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
                   echo "PLAY_RELEASE_NAME=$RELEASE_NAME" >> "$GITHUB_ENV"
@@ -213,3 +222,5 @@ jobs:
                   tracks: ${{ env.PLAY_TRACK }}
                   status: ${{ inputs.release_status }}
                   releaseName: ${{ env.PLAY_RELEASE_NAME }}
+                  whatsNewDirectory: mobile/play/release-notes
+                  changesNotSentForReview: false
