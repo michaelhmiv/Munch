@@ -23,6 +23,11 @@ export function createAccountRouter(): Hono {
         );
     });
 
+    account.get("/delete-account", async (c) =>
+        c.html(await Bun.file("./public/delete-account.html").text()),
+    );
+    account.get("/delete-account/", (c) => c.redirect("/delete-account", 301));
+
     account.get("/account", requireWebSession, async (c) => {
         const userId = c.get("munchUserId");
         const subscription = await getSubscriptionSnapshot(userId);
