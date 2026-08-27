@@ -16,16 +16,31 @@ async function replaceOnce(
     await writeFile(path, source.replace(before, after));
 }
 
+async function includeSuspendedSubscriptionsInRestore(path: string) {
+    const source = await readFile(path, "utf8");
+    const methodStart = source.indexOf("public void restorePremium(PluginCall call)");
+    const methodEnd = source.indexOf("private Purchase matchingPurchase", methodStart);
+    if (methodStart < 0 || methodEnd < 0) {
+        throw new Error(`${path}: restorePremium method boundary not found`);
+    }
+    const beforeMethod = source.slice(0, methodStart);
+    let method = source.slice(methodStart, methodEnd);
+    const afterMethod = source.slice(methodEnd);
+    const needle = `.setProductType(BillingClient.ProductType.SUBS)\n                .build();`;
+    const replacement = `.setProductType(BillingClient.ProductType.SUBS)\n                .includeSuspendedSubscriptions(true)\n                .build();`;
+    const count = method.split(needle).length - 1;
+    if (count !== 1) {
+        throw new Error(`${path}: expected one restore query, found ${count}`);
+    }
+    method = method.replace(needle, replacement);
+    await writeFile(path, beforeMethod + method + afterMethod);
+}
+
 for (const path of [
     "mobile/android/MunchPlayBillingPlugin.java",
     "android/app/src/main/java/business/munch/app/MunchPlayBillingPlugin.java",
 ]) {
-    await replaceOnce(
-        path,
-        `.setProductType(BillingClient.ProductType.SUBS)\n                .build();`,
-        `.setProductType(BillingClient.ProductType.SUBS)\n                .includeSuspendedSubscriptions(true)\n                .build();`,
-        `${path} suspended subscription restore`,
-    );
+    await includeSuspendedSubscriptionsInRestore(path);
 }
 
 await replaceOnce(
@@ -62,8 +77,8 @@ const gradle = await readFile(gradlePath, "utf8");
 await writeFile(
     gradlePath,
     gradle.replace(
-        "https://android.googlesource.com/platforms/base/+/",
-        "https://android.googlesource.com/platform/frameworks/base/+/",
+        "https://android.googlesource.com/platforms/base/+/","+
+"        "https://android.googlesource.com/platform/frameworks/base/+/",
     ),
 );
 
