@@ -10,7 +10,7 @@ import {
 } from "../households/repository.js";
 import { requireSameOrigin } from "../accounts/csrf.js";
 import { requireWebSession } from "../accounts/session.js";
-import { getSubscriptionSnapshot } from "../billing/repository.js";
+import { getDirectSubscriptionSnapshot } from "../billing/subscription-sources.js";
 import { requirePlanningScope } from "../mcp-capability-guard.js";
 import { parseCsv } from "../csv.js";
 import {
@@ -1454,6 +1454,8 @@ export function createAppRouter(): Hono {
                 pendingInvitations: [],
                 tier: capabilities.tier,
                 entitlementSource: capabilities.entitlementSource,
+                canCreateHousehold:
+                    await ownerCanPurchaseHouseholdSeats(userId),
                 canInvite: false,
                 canWrite: false,
                 activeNonOwnerCount: 0,
@@ -1497,6 +1499,7 @@ export function createAppRouter(): Hono {
             pendingInvitations,
             tier: capabilities.tier,
             entitlementSource: capabilities.entitlementSource,
+            canCreateHousehold: false,
             canInvite,
             canWrite: capabilities.householdWrite,
             activeNonOwnerCount: coverage.activeNonOwnerCount,
@@ -1511,7 +1514,7 @@ export function createAppRouter(): Hono {
             [
                 getAppBootstrap(userId, c.get("munchUserEmail")),
                 getNutritionGoals(userId),
-                getSubscriptionSnapshot(userId),
+                getDirectSubscriptionSnapshot(userId),
                 listOAuthConnections(userId),
             ],
         );

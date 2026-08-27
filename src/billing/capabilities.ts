@@ -3,7 +3,7 @@ import { PRODUCT_CONFIG } from "../product-config.js";
 import type { SubscriptionSnapshot } from "./entitlements.js";
 import { getHouseholdSeatCoverage } from "./household-seats.js";
 import { hasActivePremiumOverride } from "./override.js";
-import { getSubscriptionSnapshot } from "./repository.js";
+import { getDirectSubscriptionSnapshot } from "./subscription-sources.js";
 
 // Backwards-compatible exports. Product policy lives in PRODUCT_CONFIG; these
 // aliases prevent older imports from becoming a second source of truth.
@@ -126,7 +126,7 @@ export async function resolveMunchCapabilities(
 ): Promise<MunchCapabilities> {
     const [directSubscription, household, explicitOverride] = await Promise.all(
         [
-            getSubscriptionSnapshot(userId),
+            getDirectSubscriptionSnapshot(userId),
             getActiveHouseholdContext(userId),
             hasActivePremiumOverride(userId),
         ],
@@ -151,7 +151,9 @@ export async function resolveMunchCapabilities(
         household.role === "owner" || household.role === "member";
     // Explicit overrides exist for trusted review/test accounts and preserve
     // their ability to exercise shared UI. Real paid households require both an
-    // active owner subscription and sufficient paid seat quantity.
+    // active owner subscription and sufficient paid seat quantity. App-store
+    // Premium is intentionally personal-only until a store-native seat model
+    // exists, so it does not satisfy this Stripe-specific shared billing gate.
     const sharedBillingActive =
         result.entitlementSource === "explicit_override" ||
         (coverage.ownerHasBillablePremium && coverage.covered);

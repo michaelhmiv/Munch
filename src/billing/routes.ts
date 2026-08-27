@@ -2,12 +2,32 @@ import { Hono } from "hono";
 import { requireSameOrigin } from "../accounts/csrf.js";
 import { safeLocalRedirectPath } from "../accounts/redirect.js";
 import { requireWebSession } from "../accounts/session.js";
+import { PRODUCT_CONFIG } from "../product-config.js";
+import { subscriptionProvidesPremium } from "./capabilities.js";
 import {
     createCheckoutForUser,
     createCustomerPortalForUser,
     verifyCheckoutForUser,
 } from "./checkout-service.js";
+import { GooglePlayApiError } from "./google-play-client.js";
+import {
+    getGooglePlayRtdnConfig,
+    googlePlayBillingConfigured,
+    googlePlayRtdnConfigured,
+} from "./google-play-config.js";
+import {
+    GooglePlayRtdnError,
+    processGooglePlayRtdn,
+} from "./google-play-rtdn.js";
+import {
+    googlePlayObfuscatedAccountId,
+    GooglePlayVerificationError,
+    verifyGooglePlayPremium,
+} from "./google-play.js";
+import { verifyGooglePubSubPushAuthorization } from "./google-pubsub-auth.js";
+import { upsertStoreAccountBinding } from "./store-repository.js";
 import { StripeRequestError } from "./stripe-client.js";
+import { getDirectSubscriptionSnapshot } from "./subscription-sources.js";
 import { verifyStripeWebhookSignature } from "./stripe-webhook.js";
 import { processStripeWebhook } from "./webhook-service.js";
 
@@ -32,6 +52,10 @@ function logCheckoutFailure(error: unknown, reason: string): void {
         return;
     }
     console.error(`[billing] checkout_failed reason=${reason}`);
+}
+
+function playVerificationStatus(error: GooglePlayVerificationError): 400 | 409 {
+    return error.code === "google_play_purchase_already_claimed" ? 409 : 400;
 }
 
 export function createBillingRouter(): Hono {
@@ -59,6 +83,182 @@ export function createBillingRouter(): Hono {
             return c.json({ error: "webhook_processing_failed" }, 500);
         }
     });
+
+    billing.post("/webhooks/google-play", async (c) => {
+        if (!googlePlayRtdnConfigured()) {
+            return c.json({ error: "google_play_rtdn_not_configured" }, 503);
+        }
+        try {
+            await verifyGooglePubSubPushAuthorization({
+                authorization: c.req.header("authorization"),
+                config: getGooglePlayRtdnConfig(),
+            });
+        } catch {
+            return c.json(
+                { error: "invalid_google_pubsub_authorization" },
+                401,
+            );
+        }
+
+        const rawPayload = await c.req.text();
+        try {
+            await processGooglePlayRtdn({ rawPayload });
+            return c.json({ received: true });
+        } catch (error) {
+            if (error instanceof GooglePlayRtdnError) {
+                const retryable =
+                    error.code === "google_play_rtdn_owner_unresolved";
+                if (!retryable) {
+                    console.error(
+                        `[billing] google_play_rtdn_rejected code=${error.code}`,
+                    );
+                }
+                return c.json(
+                    { error: "google_play_rtdn_processing_failed" },
+                    retryable ? 503 : 400,
+                );
+            }
+            if (error instanceof GooglePlayApiError) {
+                console.error(
+                    `[billing] google_play_rtdn_api_failed status=${error.status} code=${error.code}`,
+                );
+                return c.json(
+                    { error: "google_play_rtdn_processing_unavailable" },
+                    503,
+                );
+            }
+            if (error instanceof GooglePlayVerificationError) {
+                console.error(
+                    `[billing] google_play_rtdn_verification_failed code=${error.code}`,
+                );
+                return c.json(
+                    { error: "google_play_rtdn_processing_failed" },
+                    409,
+                );
+            }
+            console.error("[billing] google_play_rtdn_processing_failed");
+            return c.json(
+                { error: "google_play_rtdn_processing_unavailable" },
+                503,
+            );
+        }
+    });
+
+    billing.get("/billing/google-play/config", requireWebSession, async (c) => {
+        if (c.get("munchAuthTransport") !== "bearer") {
+            return c.json({ error: "installed_app_required" }, 403);
+        }
+        const userId = c.get("munchUserId");
+        const obfuscatedAccountId = googlePlayObfuscatedAccountId(userId);
+        if (googlePlayBillingConfigured()) {
+            const bound = await upsertStoreAccountBinding({
+                userId,
+                provider: "google_play",
+                appId: PRODUCT_CONFIG.googlePlayPackageName,
+                externalAccountId: obfuscatedAccountId,
+            });
+            if (!bound) {
+                return c.json(
+                    { error: "google_play_account_binding_conflict" },
+                    409,
+                );
+            }
+        }
+        const subscription = await getDirectSubscriptionSnapshot(userId);
+        return c.json(
+            {
+                configured: googlePlayRtdnConfigured(),
+                packageName: PRODUCT_CONFIG.googlePlayPackageName,
+                productId: PRODUCT_CONFIG.googlePlayPremiumProductId,
+                basePlanId: PRODUCT_CONFIG.googlePlayPremiumBasePlanId,
+                obfuscatedAccountId,
+                currentSubscription: {
+                    provider: subscription.provider,
+                    status: subscription.status,
+                    currentPeriodEnd:
+                        subscription.currentPeriodEnd?.toISOString() ?? null,
+                    blocksNewPurchase: subscriptionProvidesPremium(
+                        subscription,
+                        new Date(),
+                    ),
+                },
+            },
+            200,
+            { "Cache-Control": "no-store, private" },
+        );
+    });
+
+    billing.post(
+        "/billing/google-play/verify",
+        requireWebSession,
+        async (c) => {
+            if (c.get("munchAuthTransport") !== "bearer") {
+                return c.json({ error: "installed_app_required" }, 403);
+            }
+            if (!googlePlayBillingConfigured()) {
+                return c.json(
+                    { error: "google_play_billing_not_configured" },
+                    503,
+                );
+            }
+
+            let purchaseToken = "";
+            try {
+                const body = (await c.req.json()) as {
+                    purchase_token?: unknown;
+                };
+                purchaseToken =
+                    typeof body.purchase_token === "string"
+                        ? body.purchase_token.trim()
+                        : "";
+            } catch {
+                return c.json({ error: "invalid_request" }, 400);
+            }
+
+            try {
+                const verified = await verifyGooglePlayPremium({
+                    userId: c.get("munchUserId"),
+                    purchaseToken,
+                });
+                return c.json(
+                    {
+                        provider: verified.provider,
+                        productId: verified.productId,
+                        status: verified.status,
+                        currentPeriodEnd:
+                            verified.currentPeriodEnd?.toISOString() ?? null,
+                        graceExpiresAt:
+                            verified.graceExpiresAt?.toISOString() ?? null,
+                        acknowledged: verified.acknowledged,
+                        testPurchase: verified.testPurchase,
+                    },
+                    200,
+                    { "Cache-Control": "no-store, private" },
+                );
+            } catch (error) {
+                if (error instanceof GooglePlayVerificationError) {
+                    return c.json(
+                        { error: error.code },
+                        playVerificationStatus(error),
+                    );
+                }
+                if (error instanceof GooglePlayApiError) {
+                    console.error(
+                        `[billing] google_play_api_failed status=${error.status} code=${error.code}`,
+                    );
+                    return c.json(
+                        { error: "google_play_verification_unavailable" },
+                        502,
+                    );
+                }
+                console.error("[billing] google_play_verification_failed");
+                return c.json(
+                    { error: "google_play_verification_unavailable" },
+                    503,
+                );
+            }
+        },
+    );
 
     billing.post(
         "/billing/checkout",

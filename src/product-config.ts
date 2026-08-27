@@ -10,6 +10,9 @@ export const PRODUCT_CONFIG = Object.freeze({
     // the website moves food recall to structured meal history.
     freeSavedFoodLimit: 25,
     householdMemberLimit: 6,
+    googlePlayPackageName: "business.munch.app",
+    googlePlayPremiumProductId: "munch_premium_monthly",
+    googlePlayPremiumBasePlanId: "monthly",
     supportEmail: "support@munch.business",
     privacyEmail: "support@munch.business",
     legalEmail: "support@munch.business",

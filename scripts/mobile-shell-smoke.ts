@@ -14,6 +14,28 @@ const plugin = await readFile(
     "mobile/android/MunchSecureSessionPlugin.java",
     "utf8",
 );
+const playBillingPlugin = await readFile(
+    "mobile/android/MunchPlayBillingPlugin.java",
+    "utf8",
+);
+const billingRoutes = await readFile("src/billing/routes.ts", "utf8");
+const googlePlayClient = await readFile(
+    "src/billing/google-play-client.ts",
+    "utf8",
+);
+const googlePlayVerifier = await readFile("src/billing/google-play.ts", "utf8");
+const googlePlayRtdn = await readFile(
+    "src/billing/google-play-rtdn.ts",
+    "utf8",
+);
+const googlePubSubAuth = await readFile(
+    "src/billing/google-pubsub-auth.ts",
+    "utf8",
+);
+const storeRepository = await readFile(
+    "src/billing/store-repository.ts",
+    "utf8",
+);
 const configure = await readFile("scripts/configure-mobile-android.ts", "utf8");
 const server = await readFile("src/index.ts", "utf8");
 const inventoryRoutes = await readFile("src/inventory/routes.ts", "utf8");
@@ -48,6 +70,11 @@ requireText(
     "Mobile runtime",
 );
 requireText(runtime, 'registerPlugin("MunchSecureSession")', "Mobile runtime");
+requireText(
+    runtime,
+    'registerPlugin("MunchPlayBilling")',
+    "Play Billing runtime",
+);
 requireText(runtime, 'credentials: "omit"', "Mobile runtime");
 requireText(runtime, "Camera.takePhoto", "Native camera integration");
 requireText(
@@ -68,6 +95,11 @@ requireText(
     runtime,
     '"/api/auth/get-session"',
     "Foreground session validation",
+);
+requireText(
+    runtime,
+    "blocksNewPurchase === true",
+    "Server-owned duplicate purchase decision",
 );
 if (/App\.addListener\(["']backButton["']/.test(runtime)) {
     throw new Error(
@@ -118,6 +150,104 @@ requireText(
     "Android manifest policy",
 );
 requireText(server, '"set-auth-token"', "Installed auth CORS contract");
+requireText(
+    configure,
+    "com.android.billingclient:billing:9.1.0",
+    "Google Play Billing dependency",
+);
+requireText(
+    playBillingPlugin,
+    "setObfuscatedAccountId",
+    "Google Play account binding",
+);
+requireText(
+    playBillingPlugin,
+    "queryPurchasesAsync",
+    "Google Play purchase restore",
+);
+requireText(
+    playBillingPlugin,
+    "includeSuspendedSubscriptions(true)",
+    "Google Play suspended subscription reconciliation",
+);
+if (/acknowledgePurchase/.test(playBillingPlugin)) {
+    throw new Error("Google Play acknowledgement must remain server-owned");
+}
+requireText(
+    billingRoutes,
+    '"/billing/google-play/verify"',
+    "Google Play verification endpoint",
+);
+requireText(
+    billingRoutes,
+    '"/webhooks/google-play"',
+    "Google Play RTDN endpoint",
+);
+requireText(
+    billingRoutes,
+    "verifyGooglePubSubPushAuthorization",
+    "Authenticated Google Pub/Sub webhook boundary",
+);
+requireText(
+    billingRoutes,
+    "upsertStoreAccountBinding",
+    "First-purchase RTDN account binding",
+);
+requireText(
+    billingRoutes,
+    'munchAuthTransport") !== "bearer"',
+    "Google Play installed bearer boundary",
+);
+requireText(
+    googlePlayClient,
+    "/purchases/subscriptionsv2/tokens/",
+    "Google Play SubscriptionPurchaseV2 source of truth",
+);
+requireText(
+    googlePlayVerifier,
+    "googlePlayObfuscatedAccountId",
+    "Google Play account hash",
+);
+requireText(
+    googlePlayVerifier,
+    "resolveGooglePlayPurchaseUser",
+    "RTDN purchase ownership resolution",
+);
+requireText(
+    googlePlayRtdn,
+    "recordStoreBillingEvent",
+    "RTDN idempotency ledger",
+);
+requireText(
+    googlePlayRtdn,
+    "getGooglePlaySubscription",
+    "RTDN source-of-truth refresh",
+);
+requireText(
+    googlePubSubAuth,
+    "https://www.googleapis.com/oauth2/v3/certs",
+    "Google Pub/Sub signing-key source",
+);
+requireText(
+    googlePubSubAuth,
+    "pushServiceAccountEmail",
+    "Google Pub/Sub service-account validation",
+);
+requireText(
+    googlePubSubAuth,
+    "pushAudience",
+    "Google Pub/Sub audience validation",
+);
+requireText(
+    storeRepository,
+    "store_account_bindings",
+    "Opaque app-store account binding repository",
+);
+requireText(
+    buildMobileWeb,
+    "billing-native.js",
+    "Installed Play Billing UI bundle",
+);
 
 requireText(
     pantryNative,
