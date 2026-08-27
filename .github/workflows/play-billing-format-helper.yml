@@ -1,0 +1,42 @@
+name: Play billing formatter
+
+on:
+  push:
+    branches:
+      - mobile/07-play-billing
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: ${{ !contains(github.event.head_commit.message, '[play-formatted]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: mobile/07-play-billing
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - name: Format Play Billing source
+        run: |
+          bunx prettier --write \
+            scripts/mobile-shell-smoke.ts \
+            src/billing/google-play-rtdn.test.ts \
+            src/billing/google-play-rtdn.ts \
+            src/billing/google-play.ts \
+            src/billing/google-pubsub-auth.test.ts \
+            src/billing/google-pubsub-auth.ts \
+            src/billing/routes.ts
+      - name: Commit formatting
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Format Play billing lifecycle source [play-formatted]"
+          git push
