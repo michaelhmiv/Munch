@@ -7,6 +7,11 @@ dist
 *.tgz
 .mobile-web/
 
+# Android signing material (never commit private upload keys)
+*.jks
+*.keystore
+android/upload-keystore.jks
+
 # code coverage
 coverage
 *.lcov
