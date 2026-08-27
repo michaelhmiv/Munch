@@ -110,6 +110,16 @@
             .status.error {
                 color: #9d2f2f;
             }
+            details {
+                margin-top: 20px;
+                border-top: 1px solid #e3e9e5;
+                padding-top: 18px;
+            }
+            summary {
+                cursor: pointer;
+                color: #3f5e50;
+                font-weight: 700;
+            }
             .fine-print {
                 margin: 18px 4px 0;
                 font-size: 0.82rem;
@@ -125,38 +135,57 @@
             <section class="card">
                 <h1>Welcome back.</h1>
                 <p>
-                    Sign in to your Munch account. Your installed-app session is
-                    stored by Android Keystore, not browser storage.
+                    Use the same email as your Munch website or ChatGPT
+                    connection. New users can also create an account with this
+                    email-link flow.
                 </p>
-                <form id="mobile-login-form">
+                <form id="mobile-magic-link-form">
                     <label>
-                        Email or username
+                        Email address
                         <input
-                            name="identifier"
-                            autocomplete="username"
+                            name="email"
+                            type="email"
+                            inputmode="email"
+                            autocomplete="email"
                             autocapitalize="none"
                             spellcheck="false"
                             required
                         />
                     </label>
-                    <label>
-                        Password
-                        <input
-                            name="password"
-                            type="password"
-                            autocomplete="current-password"
-                            required
-                        />
-                    </label>
-                    <button type="submit">Sign in</button>
+                    <button type="submit">Email me a sign-in link</button>
                 </form>
                 <p id="mobile-login-status" class="status" role="status"></p>
+
+                <details>
+                    <summary>Use a password instead</summary>
+                    <form id="mobile-password-form">
+                        <label>
+                            Email or username
+                            <input
+                                name="identifier"
+                                autocomplete="username"
+                                autocapitalize="none"
+                                spellcheck="false"
+                                required
+                            />
+                        </label>
+                        <label>
+                            Password
+                            <input
+                                name="password"
+                                type="password"
+                                autocomplete="current-password"
+                                required
+                            />
+                        </label>
+                        <button type="submit">Sign in with password</button>
+                    </form>
+                </details>
             </section>
             <p class="fine-print">
-                This Android foundation uses the same Munch account and backend
-                as the website and ChatGPT connection. Magic-link app handoff is
-                being added as a separate authentication path before store
-                release.
+                Email links are single-use and expire automatically. Installed
+                sessions are stored with Android Keystore rather than browser
+                storage.
             </p>
         </main>
         <script type="module" src="/mobile-login.js"></script>
