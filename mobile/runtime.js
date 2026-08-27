@@ -60,10 +60,20 @@ export async function signInWithPassword(identifier, password) {
     }
 
     const usesEmail = normalizedIdentifier.includes("@");
-    const endpoint = usesEmail ? "/api/auth/sign-in/email" : "/api/auth/sign-in/username";
+    const endpoint = usesEmail
+        ? "/api/auth/sign-in/email"
+        : "/api/auth/sign-in/username";
     const body = usesEmail
-        ? { email: normalizedIdentifier.toLowerCase(), password: normalizedPassword, rememberMe: true }
-        : { username: normalizedIdentifier, password: normalizedPassword, rememberMe: true };
+        ? {
+              email: normalizedIdentifier.toLowerCase(),
+              password: normalizedPassword,
+              rememberMe: true,
+          }
+        : {
+              username: normalizedIdentifier,
+              password: normalizedPassword,
+              rememberMe: true,
+          };
 
     const response = await fetch(new URL(endpoint, API_BASE_URL), {
         method: "POST",
@@ -78,7 +88,9 @@ export async function signInWithPassword(identifier, password) {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
         throw new Error(
-            payload?.message || payload?.error || `Sign in failed (${response.status})`,
+            payload?.message ||
+                payload?.error ||
+                `Sign in failed (${response.status})`,
         );
     }
 

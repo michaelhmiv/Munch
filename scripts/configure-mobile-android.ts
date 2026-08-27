@@ -25,7 +25,10 @@ await cp(
 
 const manifestPath = "android/app/src/main/AndroidManifest.xml";
 let manifest = await readFile(manifestPath, "utf8");
-manifest = manifest.replace('android:allowBackup="true"', 'android:allowBackup="false"');
+manifest = manifest.replace(
+    'android:allowBackup="true"',
+    'android:allowBackup="false"',
+);
 if (!manifest.includes('android:usesCleartextTraffic="false"')) {
     manifest = manifest.replace(
         'android:theme="@style/AppTheme">',
@@ -34,14 +37,21 @@ if (!manifest.includes('android:usesCleartextTraffic="false"')) {
 }
 const deepLink = `            <intent-filter>\n                <action android:name="android.intent.action.VIEW" />\n                <category android:name="android.intent.category.DEFAULT" />\n                <category android:name="android.intent.category.BROWSABLE" />\n                <data android:scheme="munch" android:host="app" />\n            </intent-filter>\n`;
 if (!manifest.includes('android:scheme="munch"')) {
-    manifest = manifest.replace("        </activity>", `${deepLink}        </activity>`);
+    manifest = manifest.replace(
+        "        </activity>",
+        `${deepLink}        </activity>`,
+    );
 }
 if (!manifest.includes('android:allowBackup="false"')) {
-    throw new Error("Android backups were not disabled for installed credentials");
+    throw new Error(
+        "Android backups were not disabled for installed credentials",
+    );
 }
 if (!manifest.includes('android:usesCleartextTraffic="false"')) {
     throw new Error("Android cleartext traffic was not disabled");
 }
 await writeFile(manifestPath, manifest);
 
-console.log("Configured Android API 36 shell, deep links, and Keystore session plugin");
+console.log(
+    "Configured Android API 36 shell, deep links, and Keystore session plugin",
+);

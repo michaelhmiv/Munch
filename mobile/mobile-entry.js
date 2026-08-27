@@ -6,7 +6,9 @@ if (route?.startsWith("/app")) {
 }
 
 if (!(await hasStoredSession())) {
-    const returnTo = location.pathname.startsWith("/app") ? location.pathname : "/app";
+    const returnTo = location.pathname.startsWith("/app")
+        ? location.pathname
+        : "/app";
     location.replace(
         `/mobile-login.html?return_to=${encodeURIComponent(returnTo)}`,
     );

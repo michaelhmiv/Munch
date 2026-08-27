@@ -15,7 +15,7 @@ appHtml = appHtml.replace(
     '<script type="module" src="/app-integrity.js"></script>\n        <script type="module" src="/app.js"></script>\n        <script type="module" src="/app-patches.js"></script>',
     '<script type="module" src="/mobile-entry.js"></script>',
 );
-if (!appHtml.includes('/mobile-entry.js')) {
+if (!appHtml.includes("/mobile-entry.js")) {
     throw new Error("Mobile app shell script injection failed");
 }
 await writeFile(join(output, "index.html"), appHtml);
@@ -28,7 +28,9 @@ for (const file of ["app.js", "pantry.js"]) {
         'from "./mobile-runtime.js"',
     );
     if (migrated === source) {
-        throw new Error(`${file} no longer imports the shared application transport`);
+        throw new Error(
+            `${file} no longer imports the shared application transport`,
+        );
     }
     await writeFile(path, migrated);
 }
@@ -40,10 +42,7 @@ pantryHtml = pantryHtml
         'href="/app/recipes"',
         'href="/index.html?route=%2Fapp%2Frecipes"',
     )
-    .replaceAll(
-        'href="/app/plan"',
-        'href="/index.html?route=%2Fapp%2Fplan"',
-    );
+    .replaceAll('href="/app/plan"', 'href="/index.html?route=%2Fapp%2Fplan"');
 await writeFile(join(output, "pantry.html"), pantryHtml);
 
 await cp("mobile/mobile-entry.js", join(output, "mobile-entry.js"));
@@ -59,7 +58,10 @@ const build = await Bun.build({
     sourcemap: "none",
 });
 if (!build.success) {
-    throw new AggregateError(build.logs, "Unable to bundle installed-client runtime");
+    throw new AggregateError(
+        build.logs,
+        "Unable to bundle installed-client runtime",
+    );
 }
 
 const runtime = await readFile(join(output, "mobile-runtime.js"), "utf8");
