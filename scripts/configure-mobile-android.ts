@@ -27,20 +27,25 @@ await cp(
     `${javaDir}/MunchPlayBillingPlugin.java`,
 );
 
+// Keep all custom Gradle release/version/signing policy in a canonical source
+// outside the generated Android tree. A clean Capacitor sync can always be
+// repaired deterministically by this script.
+const canonicalBuildGradle = "mobile/android/app-build.gradle";
 const buildGradlePath = "android/app/build.gradle";
-let buildGradle = await readFile(buildGradlePath, "utf8");
-const billingDependency =
-    '    implementation "com.android.billingclient:billing:9.1.0"';
-if (!buildGradle.includes("com.android.billingclient:billing:9.1.0")) {
-    buildGradle = buildGradle.replace(
-        "dependencies {",
-        `dependencies {\n${billingDependency}`,
-    );
+await cp(canonicalBuildGradle, buildGradlePath);
+const buildGradle = await readFile(buildGradlePath, "utf8");
+for (const required of [
+    "com.android.billingclient:billing:9.1.0",
+    "../mobile/release.json",
+    "ANDROID_KEYSTORE_PATH",
+    "ANDROID_KEYSTORE_PASSWORD",
+    "ANDROID_KEY_ALIAS",
+    "ANDROID_KEY_PASSWORD",
+]) {
+    if (!buildGradle.includes(required)) {
+        throw new Error(`Android build.gradle missing required release contract: ${required}`);
+    }
 }
-if (!buildGradle.includes("com.android.billingclient:billing:9.1.0")) {
-    throw new Error("Google Play Billing 9.1.0 dependency was not configured");
-}
-await writeFile(buildGradlePath, buildGradle);
 
 const manifestPath = "android/app/src/main/AndroidManifest.xml";
 let manifest = await readFile(manifestPath, "utf8");
@@ -72,5 +77,5 @@ if (!manifest.includes('android:usesCleartextTraffic="false"')) {
 await writeFile(manifestPath, manifest);
 
 console.log(
-    "Configured Android API 36 shell, Play Billing 9.1.0, deep links, and native plugins",
+    "Configured Android API 36 shell, release versioning/signing, Play Billing 9.1.0, deep links, and native plugins",
 );
