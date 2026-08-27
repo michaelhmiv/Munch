@@ -1,4 +1,6 @@
 const APP_ROUTE_PATTERN = /^\/app(?:\/|$)/;
+const MAGIC_LINK_HOST = "app";
+const MAGIC_LINK_PATH = "/auth";
 
 export function installedAppRoute(value) {
     if (typeof value !== "string") return null;
@@ -14,10 +16,34 @@ export function installedAppRoute(value) {
     }
 }
 
+export function installedMagicLinkFromUrl(value) {
+    try {
+        const parsed = new URL(value);
+        if (
+            parsed.protocol !== "munch:" ||
+            parsed.hostname !== MAGIC_LINK_HOST ||
+            parsed.pathname !== MAGIC_LINK_PATH
+        ) {
+            return null;
+        }
+        const token = parsed.searchParams.get("token")?.trim() ?? "";
+        if (token.length < 20 || token.length > 2048) return null;
+        return {
+            token,
+            returnTo:
+                installedAppRoute(parsed.searchParams.get("return_to")) ||
+                "/app",
+        };
+    } catch {
+        return null;
+    }
+}
+
 export function installedRouteFromUrl(value) {
     try {
         const parsed = new URL(value);
         if (parsed.protocol !== "munch:") return null;
+        if (installedMagicLinkFromUrl(value)) return null;
         const route = `/${[parsed.hostname, parsed.pathname]
             .filter(Boolean)
             .join("/")
