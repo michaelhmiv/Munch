@@ -67,10 +67,20 @@ jobs:
           AAB="android/app/build/outputs/bundle/release/app-release.aab"
           test -s "$AAB"
           jarsigner -verify -verbose -certs "$AAB" > /tmp/munch-ci-aab-signature.txt
+          sha256sum "$AAB" > /tmp/munch-ci-aab-sha256.txt
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: munch-android-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload signed CI release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: munch-android-release-ci
+          path: |
+            android/app/build/outputs/bundle/release/app-release.aab
+            /tmp/munch-ci-aab-sha256.txt
           if-no-files-found: error
           retention-days: 7
