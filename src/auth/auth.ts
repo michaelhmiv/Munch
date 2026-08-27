@@ -2,6 +2,7 @@ import { oauthProvider } from "@better-auth/oauth-provider";
 import { betterAuth } from "better-auth";
 import { bearer, jwt, magicLink, username } from "better-auth/plugins";
 import { Pool } from "pg";
+import { betterAuthTrustedOrigins } from "../mobile/origins.js";
 import { getBetterAuthRuntimeConfig } from "./config.js";
 import {
     sendBetterAuthMagicLink,
@@ -47,7 +48,7 @@ function createMunchBetterAuth() {
         basePath: "/api/auth",
         secret: config.secret,
         database,
-        trustedOrigins: [config.baseUrl],
+        trustedOrigins: [...betterAuthTrustedOrigins(config.baseUrl)],
         emailAndPassword: {
             enabled: true,
             disableSignUp: !passwordSignupEnabled,
