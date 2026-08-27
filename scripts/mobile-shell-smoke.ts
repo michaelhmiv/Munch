@@ -83,7 +83,7 @@ requireText(server, '"set-auth-token"', "Installed auth CORS contract");
 
 requireText(
     pantryNative,
-    '"/api/app/food-barcode?barcode=',
+    "/api/app/food-barcode?barcode=",
     "Native barcode canonical lookup",
 );
 requireText(
