@@ -70,6 +70,15 @@ export function requestHasSameOriginEvidence(input: {
 }
 
 export async function requireSameOrigin(c: Context, next: Next) {
+    // Installed clients authenticate with a Better Auth bearer session instead
+    // of ambient cookies. `requireAppSession` must have authenticated the token
+    // and set this transport before a bearer request may bypass browser-origin
+    // CSRF checks. Cookie-backed browser mutations remain unchanged.
+    if (c.get("munchAuthTransport") === "bearer") {
+        await next();
+        return;
+    }
+
     const configuredBaseUrl = process.env.MUNCH_APP_BASE_URL?.trim();
     if (!configuredBaseUrl) {
         return c.json({ error: "application_not_configured" }, 503);
