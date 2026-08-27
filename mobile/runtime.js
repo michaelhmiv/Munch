@@ -240,10 +240,7 @@ export async function getInstalledPlayBillingConfig() {
 }
 
 function storeSubscriptionBlocksNewPurchase(subscription) {
-    return (
-        subscription?.provider &&
-        ["active", "trialing", "past_due"].includes(subscription.status)
-    );
+    return subscription?.blocksNewPurchase === true;
 }
 
 async function verifyInstalledPlayPurchase(purchaseToken) {
@@ -293,7 +290,7 @@ export async function purchaseInstalledPremium() {
 export async function restoreInstalledPremium() {
     const config = await getInstalledPlayBillingConfig();
     if (!config.configured) {
-        throw new Error("Google Play billing is not configured yet");
+        return { state: "unavailable" };
     }
     const result = await MunchPlayBilling.restorePremium({
         productId: config.productId,
