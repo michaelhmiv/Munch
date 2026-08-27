@@ -14,4 +14,5 @@ if (!(await hasStoredSession())) {
     await import("./app-integrity.js");
     await import("./app.js");
     await import("./app-patches.js");
+    await import("./billing-native.js");
 }
