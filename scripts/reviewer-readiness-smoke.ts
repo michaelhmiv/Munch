@@ -21,6 +21,12 @@ const { getGroceryList, getMealPlan, searchRecipes } =
     await import("../src/planning/repository.js");
 const { closePlatformDatabase } = await import("../src/platform/database.js");
 
+function dateAfterDays(days: number): string {
+    const value = new Date();
+    value.setUTCDate(value.getUTCDate() + days);
+    return value.toISOString().slice(0, 10);
+}
+
 const auth = getMunchBetterAuth();
 const signIn = username
     ? await auth.api.signInUsername({
@@ -87,8 +93,8 @@ if (
 }
 const plan = await getMealPlan({
     userId,
-    startDate: "2026-08-01",
-    endDate: "2026-08-31",
+    startDate: dateAfterDays(0),
+    endDate: dateAfterDays(7),
     scope: "all",
 });
 if (plan.length < 2) {
