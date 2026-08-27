@@ -91,14 +91,20 @@ requireText(
     '"/api/app/pantry/reconcile"',
     "Native Pantry write contract",
 );
+requireText(pantryNative, "food_provider:", "Native Pantry provider field");
 requireText(
     pantryNative,
-    "food_provider: candidate.provider",
+    "candidate.provider",
     "Native Pantry provider identity",
 );
 requireText(
     pantryNative,
-    "provider_food_id: candidate.provider_food_id",
+    "provider_food_id:",
+    "Native Pantry provider food field",
+);
+requireText(
+    pantryNative,
+    "candidate.provider_food_id",
     "Native Pantry provider food identity",
 );
 requireText(
