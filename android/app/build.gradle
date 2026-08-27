@@ -1,14 +1,60 @@
+import groovy.json.JsonSlurper
+
 apply plugin: 'com.android.application'
 
 android {
     namespace = "business.munch.app"
     compileSdk = rootProject.ext.compileSdkVersion
+
+    def releaseMetadataFile = rootProject.file('../mobile/release.json')
+    if (!releaseMetadataFile.exists()) {
+        throw new GradleException("Missing mobile/release.json")
+    }
+    def releaseMetadata = new JsonSlurper().parse(releaseMetadataFile)
+
+    def versionCodeEnv = System.getenv("MOBILE_VERSION_CODE")
+    def versionNameEnv = System.getenv("MOBILE_VERSION_NAME")
+    def parsedVersionCode
+    if (versionCodeEnv) {
+        try {
+            parsedVersionCode = Integer.parseInt(versionCodeEnv)
+        } catch (Exception ignored) {
+            throw new GradleException("MOBILE_VERSION_CODE must be an integer, got '${versionCodeEnv}'")
+        }
+    } else {
+        parsedVersionCode = (releaseMetadata.androidVersionCode as Number).intValue()
+    }
+    if (parsedVersionCode < 1 || parsedVersionCode > 2100000000) {
+        throw new GradleException("Android versionCode must be between 1 and 2100000000")
+    }
+
+    def parsedVersionName = versionNameEnv ?: releaseMetadata.versionName
+    if (!(parsedVersionName instanceof String) || !parsedVersionName.trim()) {
+        throw new GradleException("Android versionName must be non-empty")
+    }
+
+    def releaseKeystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+    def releaseKeystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+    def releaseKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
+    def releaseKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+    def releaseSigningValues = [
+        releaseKeystorePath,
+        releaseKeystorePassword,
+        releaseKeyAlias,
+        releaseKeyPassword,
+    ]
+    def suppliedReleaseSigningValues = releaseSigningValues.count { it }
+    if (suppliedReleaseSigningValues > 0 && suppliedReleaseSigningValues < releaseSigningValues.size()) {
+        throw new GradleException("Android release signing configuration is incomplete")
+    }
+    def hasReleaseSigning = suppliedReleaseSigningValues == releaseSigningValues.size()
+
     defaultConfig {
         applicationId "business.munch.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode parsedVersionCode
+        versionName parsedVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +62,30 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(releaseKeystorePath)
+                storePassword releaseKeystorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            versionNameSuffix "-debug"
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            } else {
+                logger.lifecycle("Android release signing env vars are missing; generating an unsigned release artifact.")
+            }
         }
     }
 }
