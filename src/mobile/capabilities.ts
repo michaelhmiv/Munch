@@ -2,10 +2,7 @@ import { CAPABILITY_MANIFEST } from "../capability-manifest.js";
 import { INVENTORY_CAPABILITY_CONTRACTS } from "../inventory/capabilities.js";
 
 export type MobileCoverage =
-    | "complete"
-    | "partial"
-    | "planned"
-    | "not_applicable";
+    "complete" | "partial" | "planned" | "not_applicable";
 
 export interface MobileCapabilityStatus {
     android: MobileCoverage;
@@ -118,7 +115,9 @@ export function assertMobileCapabilityContracts(): string[] {
         }
         mobileIds.add(id);
         if (!sourceIds.has(id)) {
-            errors.push(`Mobile capability ${id} has no canonical product contract`);
+            errors.push(
+                `Mobile capability ${id} has no canonical product contract`,
+            );
         }
 
         const status = MOBILE_CAPABILITY_STATUS[id];
