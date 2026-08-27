@@ -3,6 +3,7 @@ import { requireSameOrigin } from "../accounts/csrf.js";
 import { safeLocalRedirectPath } from "../accounts/redirect.js";
 import { requireWebSession } from "../accounts/session.js";
 import { PRODUCT_CONFIG } from "../product-config.js";
+import { subscriptionProvidesPremium } from "./capabilities.js";
 import {
     createCheckoutForUser,
     createCustomerPortalForUser,
@@ -91,6 +92,10 @@ export function createBillingRouter(): Hono {
                     status: subscription.status,
                     currentPeriodEnd:
                         subscription.currentPeriodEnd?.toISOString() ?? null,
+                    blocksNewPurchase: subscriptionProvidesPremium(
+                        subscription,
+                        new Date(),
+                    ),
                 },
             },
             200,
