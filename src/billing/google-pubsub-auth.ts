@@ -1,8 +1,4 @@
-import {
-    createPublicKey,
-    verify as verifySignature,
-    type JsonWebKey,
-} from "node:crypto";
+import { createPublicKey, verify as verifySignature } from "node:crypto";
 import type { GooglePlayRtdnConfig } from "./google-play-config.js";
 
 const GOOGLE_OIDC_JWKS_URL = "https://www.googleapis.com/oauth2/v3/certs";
@@ -28,8 +24,16 @@ export interface GooglePubSubPushClaims {
     exp: number;
 }
 
+interface GoogleJwk {
+    kid?: string;
+    alg?: string;
+    use?: string;
+    kty?: string;
+    [key: string]: unknown;
+}
+
 interface JwksResponse {
-    keys?: Array<JsonWebKey & { kid?: string; alg?: string; use?: string }>;
+    keys?: GoogleJwk[];
 }
 
 interface CachedJwks {
@@ -143,7 +147,12 @@ export async function verifyGooglePubSubPushAuthorization(input: {
     const token = match[1];
     const parts = token.split(".");
     if (parts.length !== 3) throw new Error("google_pubsub_jwt_invalid");
-    const [headerPart, claimsPart, signaturePart] = parts;
+    const headerPart = parts[0];
+    const claimsPart = parts[1];
+    const signaturePart = parts[2];
+    if (!headerPart || !claimsPart || !signaturePart) {
+        throw new Error("google_pubsub_jwt_invalid");
+    }
     const header = parseJsonPart<GoogleOidcHeader>(headerPart);
     const claims = parseJsonPart<Partial<GooglePubSubPushClaims>>(claimsPart);
     if (header.alg !== "RS256" || !header.kid) {
@@ -165,7 +174,10 @@ export async function verifyGooglePubSubPushAuthorization(input: {
 
     const signingInput = Buffer.from(`${headerPart}.${claimsPart}`, "utf8");
     const signature = decodeBase64Url(signaturePart);
-    const publicKey = createPublicKey({ key: jwk, format: "jwk" });
+    const publicKey = createPublicKey({
+        key: jwk,
+        format: "jwk",
+    } as Parameters<typeof createPublicKey>[0]);
     if (!verifySignature("RSA-SHA256", signingInput, publicKey, signature)) {
         throw new Error("google_pubsub_jwt_signature_invalid");
     }
