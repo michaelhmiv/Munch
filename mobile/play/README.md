@@ -1,6 +1,8 @@
 # Munch Google Play release runbook
 
-This runbook is the canonical Google Play setup for the Android app. It separates code-owned configuration from console-owned credentials so future Android features can ship without changing the billing or signing architecture.
+This runbook is the canonical Google Play setup for the Android app. It separates code-owned configuration from console-owned credentials so future Android features can ship without changing billing, authentication, or signing architecture.
+
+For the shortest operator checklist, use [`HANDOFF.md`](./HANDOFF.md). The other files in this directory are working sources for Play Console declarations and metadata.
 
 ## Fixed application identity
 
@@ -19,29 +21,39 @@ This runbook is the canonical Google Play setup for the Android app. It separate
 | Base plan | `monthly` |
 | RTDN push endpoint / audience | `https://munch.business/webhooks/google-play` |
 
-`mobile/release.json` is the mobile version source of truth. Every Play upload must use a new `androidVersionCode`; `versionName` is the user-visible mobile version and is intentionally shared with the future iOS target.
+`mobile/release.json` is the user-visible mobile release source of truth. The manual Play release workflow derives a unique, monotonically increasing Play `versionCode` from the GitHub workflow run number, so internal/closed release retries do not require source edits. `versionName` is intentionally shared with the future iOS target.
 
-## Account eligibility checkpoint
+## Developer account checkpoint
 
-Munch is a nutrition and weight-management app and therefore falls under Google Play's Health apps policy. Current Play guidance says developers providing Health apps should use an **Organization** developer account, and the Play Console Requirements policy effective September 30, 2026 makes Organization registration mandatory for Health apps.
+Google offers Personal and Organization developer accounts. Its account-type guidance says developers providing Health apps such as Medical apps and Human Subjects Research apps should use an Organization account, while its separate Health categories include general consumer Health & Fitness products such as Nutrition and Weight Management.
 
-If the existing developer account is Personal, use Play Console's current personal-to-organization conversion flow before Munch submission:
+Munch is a consumer Nutrition and Weight Management app, not a Medical app or Human Subjects Research app. Use the existing Play developer account if Play Console accepts this Health declaration/account combination. Do not create a second Munch package solely for account-type experimentation.
 
-1. Obtain or confirm the organization's D-U-N-S record.
-2. Create and verify an organization Google Payments profile.
-3. In Play Console, open **Developer account > About you** and link the verified organization payments profile.
-4. Complete the organization details/identity transition.
-5. Google currently recommends allowing at least 72 hours after the transition completes before submitting a new app so account details can propagate.
+If Play Console explicitly requires Organization verification for Munch, use Google's current personal-to-organization transition and complete the required organization payments profile / D-U-N-S verification before review. This is an account-verification task and does not require any Munch code or package-ID change.
 
-This account transition is independent of Munch code and does not change the package ID.
+If the existing Personal account was created after November 13, 2023 and is subject to Google's production-access testing rule, run the required closed test (currently at least 12 continuously opted-in testers for 14 days) before applying for production access.
 
 ## Create the Play app
 
-1. Create a new app named **Munch** with package `business.munch.app`.
-2. Select app (not game), Free, and Health & Fitness.
-3. Complete required developer/app declarations.
-4. Enroll in **Play App Signing**. Google should hold the app-signing key; Munch CI uses a separate upload key.
-5. Do not create a second package ID for testing. Internal and closed testing use the same package and signing lineage.
+1. In Play Console create a new app named **Munch**.
+2. Default language: English (United States).
+3. Select app (not game) and Free. Munch Premium is an in-app subscription; the Play app itself remains free to install.
+4. Use package `business.munch.app` when the first AAB establishes the application identity.
+5. Add `support@munch.business` as the store contact email and `https://munch.business` as the website.
+6. Accept Play App Signing. Google holds the app-signing key; Munch CI uses a separate upload key.
+7. Do not create a second package for internal/closed testing. All tracks share the package/signing lineage.
+
+### First AAB bootstrap
+
+The pinned GitHub Play-upload action requires the package to already exist in Play Console and documents that the first APK/AAB should be uploaded through Play Console manually. Therefore the first release has one deliberate bootstrap step:
+
+1. Configure the real upload-key GitHub secrets.
+2. Run **Play release** with `destination=build-only`.
+3. Download the signed AAB artifact from that workflow.
+4. Create the first Play internal-test release manually with that AAB.
+5. After Play knows package `business.munch.app`, future internal/closed/production uploads can use the GitHub workflow directly.
+
+This is the only artifact-upload step that should require a manual file handoff.
 
 ## Upload key and GitHub Actions secrets
 
@@ -72,26 +84,28 @@ Configure these GitHub repository secrets:
 - `ANDROID_KEY_PASSWORD` — private-key password
 - `PLAY_SERVICE_ACCOUNT_JSON` — Google service-account JSON used by GitHub Actions to upload releases
 
-The repository ignores `*.jks` and `*.keystore`. CI also uses a disposable test key on every PR to prove that `bundleRelease` and signature verification work without requiring production secrets.
+The repository ignores `*.jks` and `*.keystore`. Ordinary PR CI uses a disposable test key to prove that `bundleRelease` and signature verification work without production credentials.
+
+Back up the real Munch upload key and passwords in the developer's secure credential manager. Do not rely on a GitHub secret as the only copy.
 
 ## Play Developer API service account for subscriptions
 
-Munch's backend verifies Google Play subscriptions server-side. Create a Google Cloud project and enable the **Google Play Android Developer API**. Create a server-to-server service account, then invite that service-account email in Play Console with access to Munch.
+Munch's backend verifies Google Play subscriptions server-side. Create a Google Cloud project, enable the **Google Play Android Developer API**, create a server-to-server service account, then grant that identity access to Munch in Play Console.
 
-For the billing API, Google's current setup guidance requires these Play permissions:
+For billing operations, grant the Play permissions currently required for Purchases API / subscription management, including:
 
-- **View financial data, orders, and cancellation survey responses** / app-level equivalent that grants Purchases API access
-- **Manage orders and subscriptions**
+- view financial data, orders, and cancellation responses (or the current app-level equivalent that grants Purchases API access)
+- manage orders and subscriptions
 
-Use least privilege and scope access to Munch where Play Console permits it.
+Use least privilege and scope the account to Munch where Play Console permits it.
 
-Download the service-account JSON once and set it directly as this Railway variable:
+Download the runtime billing service-account JSON once and set it directly as this Railway variable:
 
 - `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`
 
 Munch also supports the older split variables `GOOGLE_PLAY_SERVICE_ACCOUNT_EMAIL` and `GOOGLE_PLAY_SERVICE_ACCOUNT_PRIVATE_KEY`, but the single JSON variable is the preferred operational path.
 
-The Play-upload service account in GitHub and the runtime billing service account in Railway may be the same identity if it has the union of required permissions, but separate identities are easier to least-privilege and rotate independently.
+The Play-upload service account in GitHub and runtime billing service account in Railway may be the same identity if it has the union of required permissions. Separate identities are preferable for least privilege and independent rotation.
 
 ## Premium subscription
 
@@ -114,75 +128,92 @@ Use authenticated Google Cloud Pub/Sub push delivery so cancellations, renewals,
 1. Create a Pub/Sub topic for Munch Play billing notifications.
 2. Configure that topic in Play Console's real-time developer notifications settings.
 3. Create a dedicated Pub/Sub push-auth service account.
-4. Create a push subscription pointing to:
-   `https://munch.business/webhooks/google-play`
+4. Create a push subscription pointing to `https://munch.business/webhooks/google-play`.
 5. Enable authenticated push with an OIDC token.
-6. Set the OIDC audience exactly to:
-   `https://munch.business/webhooks/google-play`
+6. Set the OIDC audience exactly to `https://munch.business/webhooks/google-play`.
 7. Set these Railway variables:
    - `GOOGLE_PLAY_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL=<push-auth service-account email>`
    - `GOOGLE_PLAY_PUBSUB_PUSH_AUDIENCE=https://munch.business/webhooks/google-play`
-8. Use Play Console's **Send Test Message** function after deployment.
+8. Use Play Console's **Send Test Message** after deployment/configuration.
 
-Munch rejects unauthenticated notifications. For accepted notifications, the payload is treated only as a change signal; Munch re-queries `purchases.subscriptionsv2.get` before changing entitlement.
+Munch rejects unauthenticated notifications. For accepted notifications, the RTDN body is treated only as a change signal; Munch re-queries `purchases.subscriptionsv2.get` before changing entitlement.
 
 Android purchase UI remains fail-closed until Developer API credentials **and** authenticated RTDN configuration are both present.
 
+## Authentication and reviewer access
+
+Ordinary Android users can use Munch's normal passwordless account model. The installed sign-in screen requests an email link; the email opens a scanner-safe HTTPS confirmation page, and the explicit **Open Munch** action hands the still-unused one-time token to the installed app. The app redeems it directly with Better Auth and stores the resulting bearer session using Android Keystore.
+
+Password sign-in remains available as a secondary option and gives Play reviewers deterministic access without needing your email inbox. The repository already contains `scripts/provision-reviewer.ts`, which creates a verified, time-bounded Premium reviewer account with representative sample data. Use [`review-access.md`](./review-access.md) for the exact Play App access text.
+
+Never commit reviewer credentials.
+
 ## Health apps declaration
 
-Complete the Health apps declaration for closed testing and later tracks. Select:
+Use [`health-declaration.md`](./health-declaration.md). Munch's applicable category is:
 
-- **Health and fitness > Nutrition and weight management**
+- **Health and fitness > Nutrition and Weight Management**
 
-Munch tracks dietary intake, nutrition, meal planning, weight, water, goals, and related consumer wellness records. Munch does not currently request Health Connect permissions and should not declare Health Connect access unless that feature is deliberately added later.
+Munch tracks dietary intake, nutrition, meal planning, weight, water, goals, and related consumer wellness records. Munch does not currently request Health Connect permissions and should not declare Health Connect unless that feature is deliberately added later.
 
-The store listing includes the required consumer-health disclaimer and the public Privacy Policy comprehensively describes nutrition/weight data, image processing, providers, billing, export, and deletion.
+The store listing contains the consumer-health disclaimer. Keep the app positioned as consumer wellness; do not make medical diagnosis/treatment or guaranteed outcome claims.
 
-## Data safety
+## Data safety and app content
 
-Use `mobile/play/data-safety.md` as the reviewed working draft. Complete the Play Console form from the actual release behavior and merged manifest/SDK set, not from assumptions. Closed/open/production tracks require the form; internal-only testing is exempt until the app moves beyond internal testing.
+Use these code-reviewed working sources when completing Play Console:
 
-The public account-deletion URL for the Data safety form is:
+- [`data-safety.md`](./data-safety.md)
+- [`health-declaration.md`](./health-declaration.md)
+- [`content-rating.md`](./content-rating.md)
+- [`review-access.md`](./review-access.md)
+- [`listing/en-US.md`](./listing/en-US.md)
+- [`assets.md`](./assets.md)
+
+The public account-deletion resource is:
 
 `https://munch.business/delete-account`
 
-The installed app also exposes authenticated account deletion from Munch Settings.
+The installed app also exposes authenticated deletion from Munch Settings.
 
-## Store listing and review
+Munch's Pantry meal-idea feature uses generative AI. The Android release therefore includes an in-app **Report AI suggestion** control and an authenticated, privacy-scoped report endpoint/storage path to satisfy the applicable AI-generated-content reporting requirement.
 
-Use:
+## Store listing and assets
 
-- `mobile/play/listing/en-US.md` for title/short/full description
-- `mobile/play/release-notes/en-US.txt` for the first release notes
-- `mobile/play/review-access.md` for reviewer-access preparation
+Use `mobile/play/listing/en-US.md` for title/short/full description and `mobile/play/release-notes/whatsnew-en-US` for the first release notes.
 
-Before submission, add Play screenshots and a 512×512 high-resolution icon / 1024×500 feature graphic that match the production UI. Do not use mock functionality in screenshots.
+Visual assets cannot be honestly completed in source alone. Capture them from a real signed internal/closed Munch build using the demo/reviewer account. The exact dimensions/content/hygiene checklist is in [`assets.md`](./assets.md).
 
 ## Internal and closed release workflow
 
 The manual **Play release** GitHub Actions workflow supports:
 
-- `build-only` — builds/signs/verifies an AAB and stores it as an artifact; no Play mutation
-- `internal` — uploads to Play's internal track
+- `build-only` — signs/verifies an AAB and stores it as an artifact; no Play mutation
+- `internal` — uploads a new unique-versionCode bundle to Play's internal track
 - `closed` — uploads to the supplied closed-testing track (default `alpha`)
-- `production` — requires the explicit confirmation text `PUBLISH`
+- `production` — requires explicit confirmation text `PUBLISH`
+
+Each workflow run derives a fresh Play `versionCode` from its monotonically increasing workflow run number. Re-running a failed internal/closed release therefore does not require editing `mobile/release.json` just to satisfy Play's versionCode uniqueness rule.
 
 Recommended progression:
 
-1. Run `build-only` after the real upload-key secrets are configured.
-2. Upload to `internal` and verify install/sign-in/billing/device behavior.
-3. Upload the same or newer version to `closed`.
-4. Add at least 12 testers and keep at least 12 continuously opted in for 14 days if the account is subject to the new-personal-account testing rule.
-5. Apply for production access when Play Console unlocks it.
-6. Ship production only from a green `main` commit and a new versionCode.
+1. Configure the GitHub signing secrets.
+2. Run `build-only` and manually bootstrap the first AAB in Play Console.
+3. Configure `PLAY_SERVICE_ACCOUNT_JSON` and validate an automated `internal` upload.
+4. Complete required Play declarations/listing/reviewer access.
+5. Configure the Railway Google Play runtime/RTDN variables and send an RTDN test message.
+6. Test real Play subscription purchase, restore, cancellation/grace/expiry behavior with Play license testers.
+7. Run `closed` and add the tester list/group.
+8. If your account is subject to the personal-account rule, maintain at least 12 continuously opted-in testers for the required 14 days, then apply for production access.
+9. Ship production only from green `main`, after production access is granted, using `production_confirmation=PUBLISH`.
 
 ## What must never be committed
 
-- Upload keystore or private keys
-- Keystore passwords
+- upload keystore or private keys
+- keystore passwords
 - Google service-account JSON
 - Pub/Sub credentials
-- Purchase tokens
-- User bearer/session credentials
+- purchase tokens
+- reviewer passwords
+- user bearer/session credentials
 
-The checked-in release configuration contains identifiers and policy only; secrets live in GitHub Actions, Railway, Google Cloud, and Play Console.
+The checked-in release configuration contains identifiers, declarations, and policy only; secrets live in GitHub Actions, Railway, Google Cloud, Play Console, and the developer's credential manager.
