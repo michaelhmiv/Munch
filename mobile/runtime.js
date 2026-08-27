@@ -44,8 +44,12 @@ async function clearStoredToken() {
     }
 }
 
+export function installedReturnRoute(value) {
+    return installedAppRoute(value) || "/app";
+}
+
 export function currentInstalledAppRoute() {
-    return installedAppRoute(location.pathname) || "/app";
+    return installedReturnRoute(location.pathname);
 }
 
 export function installedLoginUrl(returnTo = currentInstalledAppRoute()) {
