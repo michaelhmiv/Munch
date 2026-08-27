@@ -50,7 +50,8 @@ export function isAllowedApplicationCorsOrigin(
     const configured = options.configuredOrigins ?? configuredCorsOrigins();
     if (configured.includes(origin)) return true;
 
-    const production = options.production ?? process.env.NODE_ENV === "production";
+    const production =
+        options.production ?? process.env.NODE_ENV === "production";
     if (production) return false;
 
     return DEVELOPMENT_LOOPBACK_ORIGINS.some((pattern) => pattern.test(origin));
