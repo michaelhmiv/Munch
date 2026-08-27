@@ -1,4 +1,11 @@
 import { App } from "@capacitor/app";
+import {
+    CapacitorBarcodeScanner,
+    CapacitorBarcodeScannerAndroidScanningLibrary,
+    CapacitorBarcodeScannerCameraDirection,
+    CapacitorBarcodeScannerTypeHintALLOption,
+} from "@capacitor/barcode-scanner";
+import { Camera } from "@capacitor/camera";
 import { registerPlugin } from "@capacitor/core";
 import {
     getMunchPlatformKind,
@@ -121,6 +128,43 @@ export async function signOutInstalledSession() {
     }
 }
 
+export async function takeInstalledPhoto() {
+    return Camera.takePhoto({
+        quality: 88,
+        correctOrientation: true,
+        saveToGallery: false,
+        includeMetadata: true,
+        editable: "no",
+    });
+}
+
+export async function chooseInstalledPhoto() {
+    const result = await Camera.chooseFromGallery({
+        quality: 88,
+        correctOrientation: true,
+        allowMultipleSelection: false,
+        includeMetadata: true,
+        editable: "no",
+    });
+    return result.results?.[0] ?? null;
+}
+
+export async function scanInstalledBarcode() {
+    return CapacitorBarcodeScanner.scanBarcode({
+        hint: CapacitorBarcodeScannerTypeHintALLOption.ALL,
+        scanInstructions: "Center the food barcode in the frame",
+        scanButton: false,
+        cameraDirection: CapacitorBarcodeScannerCameraDirection.BACK,
+        cancelButtonAccessibilityLabel: "Cancel barcode scan",
+        torchButtonOnAccessibilityLabel: "Turn flashlight off",
+        torchButtonOffAccessibilityLabel: "Turn flashlight on",
+        android: {
+            scanningLibrary:
+                CapacitorBarcodeScannerAndroidScanningLibrary.MLKIT,
+        },
+    });
+}
+
 export function installedRouteFromUrl(url) {
     try {
         const parsed = new URL(url);
@@ -140,4 +184,24 @@ App.addListener("appUrlOpen", ({ url }) => {
     if (!route) return;
     history.pushState({}, "", route);
     window.dispatchEvent(new PopStateEvent("popstate"));
+});
+
+App.addListener("appRestoredResult", (event) => {
+    if (
+        event?.success !== true ||
+        event.pluginId !== "Camera" ||
+        !["takePhoto", "chooseFromGallery", "getPhoto"].includes(
+            event.methodName,
+        )
+    ) {
+        return;
+    }
+    const data =
+        event.methodName === "chooseFromGallery"
+            ? event.data?.results?.[0]
+            : event.data;
+    if (!data?.webPath) return;
+    window.dispatchEvent(
+        new CustomEvent("munch:camera-restored", { detail: data }),
+    );
 });

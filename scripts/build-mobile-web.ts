@@ -42,12 +42,20 @@ pantryHtml = pantryHtml
         'href="/app/recipes"',
         'href="/index.html?route=%2Fapp%2Frecipes"',
     )
-    .replaceAll('href="/app/plan"', 'href="/index.html?route=%2Fapp%2Fplan"');
+    .replaceAll('href="/app/plan"', 'href="/index.html?route=%2Fapp%2Fplan"')
+    .replace(
+        '<script type="module" src="/pantry.js"></script>',
+        '<script type="module" src="/pantry.js"></script>\n        <script type="module" src="/pantry-native.js"></script>',
+    );
+if (!pantryHtml.includes("/pantry-native.js")) {
+    throw new Error("Native Pantry capture script injection failed");
+}
 await writeFile(join(output, "pantry.html"), pantryHtml);
 
 await cp("mobile/mobile-entry.js", join(output, "mobile-entry.js"));
 await cp("mobile/mobile-login.html", join(output, "mobile-login.html"));
 await cp("mobile/mobile-login.js", join(output, "mobile-login.js"));
+await cp("mobile/pantry-native.js", join(output, "pantry-native.js"));
 
 const build = await Bun.build({
     entrypoints: ["mobile/runtime.js"],
@@ -70,6 +78,12 @@ if (!runtime.includes("https://munch.business")) {
 }
 if (!runtime.includes("MunchSecureSession")) {
     throw new Error("Installed-client runtime lost secure session integration");
+}
+if (!runtime.includes("CapacitorBarcodeScanner")) {
+    throw new Error("Installed-client runtime lost native barcode integration");
+}
+if (!runtime.includes("takePhoto")) {
+    throw new Error("Installed-client runtime lost native camera integration");
 }
 
 console.log("Built local mobile bundle in .mobile-web");
