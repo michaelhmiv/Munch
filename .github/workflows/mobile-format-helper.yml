@@ -6,11 +6,10 @@ on:
       - mobile/02-bearer-auth-clean
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   format:
-    if: ${{ !contains(github.event.head_commit.message, '[mobile-format]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,20 +19,10 @@ jobs:
         with:
           bun-version: 1
       - run: bun install --frozen-lockfile
-      - run: >-
-          bunx prettier --write
-          src/auth/auth.ts
-          src/accounts/session.ts
-          src/accounts/csrf.ts
-          scripts/better-auth-mobile-bearer-smoke.ts
-          .github/workflows/mobile-auth.yml
-      - name: Commit formatted files
+      - name: Format and print changed files
         run: |
-          if git diff --quiet; then
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/auth/auth.ts src/accounts/session.ts src/accounts/csrf.ts scripts/better-auth-mobile-bearer-smoke.ts .github/workflows/mobile-auth.yml
-          git commit -m "Format mobile bearer authentication [mobile-format]"
-          git push
+          bunx prettier --write scripts/better-auth-mobile-bearer-smoke.ts .github/workflows/mobile-auth.yml
+          echo '---SMOKE---'
+          cat scripts/better-auth-mobile-bearer-smoke.ts
+          echo '---WORKFLOW---'
+          cat .github/workflows/mobile-auth.yml
