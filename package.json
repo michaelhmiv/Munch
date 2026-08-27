@@ -48,8 +48,10 @@
         "auth:schema": "bunx auth@1.6.25 generate --config src/auth/auth.ts --output .better-auth-schema.sql --yes",
         "mobile:web": "bun scripts/build-mobile-web.ts",
         "mobile:sync": "bun run mobile:web && npx cap sync",
-        "mobile:android": "bun run mobile:web && npx cap sync android",
-        "mobile:android:debug": "bun run mobile:android && cd android && ./gradlew assembleDebug"
+        "mobile:release:check": "bun scripts/mobile-release-check.ts",
+        "mobile:android": "bun run mobile:web && npx cap sync android && bun scripts/configure-mobile-android.ts",
+        "mobile:android:debug": "bun run mobile:android && cd android && ./gradlew assembleDebug",
+        "mobile:android:release": "bun run mobile:android && bun run mobile:release:check && cd android && ./gradlew bundleRelease"
     },
     "dependencies": {
         "@better-auth/oauth-provider": "1.6.25",
