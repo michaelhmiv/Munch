@@ -283,4 +283,5 @@ let instance: MunchBetterAuth | null = null;
 
 export function getMunchBetterAuth(): MunchBetterAuth {
     instance ??= createMunchBetterAuth();
+    return instance;
 }
