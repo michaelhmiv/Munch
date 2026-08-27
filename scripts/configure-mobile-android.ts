@@ -22,6 +22,25 @@ await cp(
     "mobile/android/MunchSecureSessionPlugin.java",
     `${javaDir}/MunchSecureSessionPlugin.java`,
 );
+await cp(
+    "mobile/android/MunchPlayBillingPlugin.java",
+    `${javaDir}/MunchPlayBillingPlugin.java`,
+);
+
+const buildGradlePath = "android/app/build.gradle";
+let buildGradle = await readFile(buildGradlePath, "utf8");
+const billingDependency =
+    '    implementation "com.android.billingclient:billing:9.1.0"';
+if (!buildGradle.includes("com.android.billingclient:billing:9.1.0")) {
+    buildGradle = buildGradle.replace(
+        "dependencies {",
+        `dependencies {\n${billingDependency}`,
+    );
+}
+if (!buildGradle.includes("com.android.billingclient:billing:9.1.0")) {
+    throw new Error("Google Play Billing 9.1.0 dependency was not configured");
+}
+await writeFile(buildGradlePath, buildGradle);
 
 const manifestPath = "android/app/src/main/AndroidManifest.xml";
 let manifest = await readFile(manifestPath, "utf8");
@@ -53,5 +72,5 @@ if (!manifest.includes('android:usesCleartextTraffic="false"')) {
 await writeFile(manifestPath, manifest);
 
 console.log(
-    "Configured Android API 36 shell, deep links, and Keystore session plugin",
+    "Configured Android API 36 shell, Play Billing 9.1.0, deep links, and native plugins",
 );
