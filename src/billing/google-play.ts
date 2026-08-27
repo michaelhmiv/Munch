@@ -27,8 +27,7 @@ export interface NormalizedGooglePlaySubscription {
     testPurchase: boolean;
 }
 
-export interface VerifiedGooglePlaySubscription
-    extends NormalizedGooglePlaySubscription {
+export interface VerifiedGooglePlaySubscription extends NormalizedGooglePlaySubscription {
     provider: "google_play";
     productId: string;
 }

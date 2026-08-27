@@ -94,7 +94,10 @@ export function createBillingRouter(): Hono {
                 config: getGooglePlayRtdnConfig(),
             });
         } catch {
-            return c.json({ error: "invalid_google_pubsub_authorization" }, 401);
+            return c.json(
+                { error: "invalid_google_pubsub_authorization" },
+                401,
+            );
         }
 
         const rawPayload = await c.req.text();

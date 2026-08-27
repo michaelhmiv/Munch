@@ -7,7 +7,8 @@ import {
 
 const now = new Date("2026-08-27T13:00:00.000Z");
 const config = {
-    pushServiceAccountEmail: "play-rtdn@example-project.iam.gserviceaccount.com",
+    pushServiceAccountEmail:
+        "play-rtdn@example-project.iam.gserviceaccount.com",
     pushAudience: "https://munch.business/webhooks/google-play",
 };
 

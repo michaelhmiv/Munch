@@ -24,7 +24,10 @@ const googlePlayClient = await readFile(
     "utf8",
 );
 const googlePlayVerifier = await readFile("src/billing/google-play.ts", "utf8");
-const googlePlayRtdn = await readFile("src/billing/google-play-rtdn.ts", "utf8");
+const googlePlayRtdn = await readFile(
+    "src/billing/google-play-rtdn.ts",
+    "utf8",
+);
 const googlePubSubAuth = await readFile(
     "src/billing/google-pubsub-auth.ts",
     "utf8",

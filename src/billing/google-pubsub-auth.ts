@@ -74,7 +74,11 @@ async function googleJwks(
         headers: { Accept: "application/json" },
     });
     const payload = (await response.json().catch(() => ({}))) as JwksResponse;
-    if (!response.ok || !Array.isArray(payload.keys) || payload.keys.length === 0) {
+    if (
+        !response.ok ||
+        !Array.isArray(payload.keys) ||
+        payload.keys.length === 0
+    ) {
         throw new Error("google_pubsub_jwks_unavailable");
     }
     cachedJwks = {

@@ -81,7 +81,9 @@ export function parseGooglePlayRtdn(rawPayload: string): ParsedGooglePlayRtdn {
 
     let payload: GooglePlayRtdnPayload;
     try {
-        payload = JSON.parse(decodePubSubData(encodedData)) as GooglePlayRtdnPayload;
+        payload = JSON.parse(
+            decodePubSubData(encodedData),
+        ) as GooglePlayRtdnPayload;
     } catch (error) {
         if (error instanceof GooglePlayRtdnError) throw error;
         throw new GooglePlayRtdnError("google_play_rtdn_payload_invalid");
@@ -141,7 +143,10 @@ function processingErrorCode(error: unknown): string {
     if (error instanceof GooglePlayRtdnError) return error.code;
     if (error instanceof GooglePlayVerificationError) return error.code;
     if (error instanceof Error) {
-        return error.name.replace(/[^a-z0-9_-]/gi, "_").toLowerCase().slice(0, 120);
+        return error.name
+            .replace(/[^a-z0-9_-]/gi, "_")
+            .toLowerCase()
+            .slice(0, 120);
     }
     return "unknown_error";
 }

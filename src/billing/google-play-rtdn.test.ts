@@ -5,7 +5,9 @@ function envelope(payload: unknown, messageId = "message-1") {
     return JSON.stringify({
         message: {
             messageId,
-            data: Buffer.from(JSON.stringify(payload), "utf8").toString("base64"),
+            data: Buffer.from(JSON.stringify(payload), "utf8").toString(
+                "base64",
+            ),
         },
     });
 }
