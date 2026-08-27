@@ -164,7 +164,7 @@ export function createBillingRouter(): Hono {
         const subscription = await getDirectSubscriptionSnapshot(userId);
         return c.json(
             {
-                configured: googlePlayBillingConfigured(),
+                configured: googlePlayRtdnConfigured(),
                 packageName: PRODUCT_CONFIG.googlePlayPackageName,
                 productId: PRODUCT_CONFIG.googlePlayPremiumProductId,
                 basePlanId: PRODUCT_CONFIG.googlePlayPremiumBasePlanId,
