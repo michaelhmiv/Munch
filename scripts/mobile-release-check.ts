@@ -86,12 +86,40 @@ for (const required of [
     "business.munch.app",
     "ANDROID_KEYSTORE_BASE64",
     "PLAY_SERVICE_ACCOUNT_JSON",
+    "100000 + GITHUB_RUN_NUMBER",
+    "MOBILE_VERSION_CODE=$VERSION_CODE",
+    "whatsNewDirectory: mobile/play/release-notes",
     "e738b9dd8f2476ea806d921b64aacd24f34515a5",
 ]) {
     requireText(releaseWorkflow, required, "Play release workflow");
 }
 
 const buildMobileWeb = await readFile("scripts/build-mobile-web.ts", "utf8");
+const runtime = await readFile("mobile/runtime.js", "utf8");
+const navigation = await readFile("mobile/navigation.js", "utf8");
+const mobileLoginHtml = await readFile("mobile/mobile-login.html", "utf8");
+const mobileLoginJs = await readFile("mobile/mobile-login.js", "utf8");
+const mobileMagicLinkRoutes = await readFile(
+    "src/auth/mobile-magic-link-routes.ts",
+    "utf8",
+);
+const auth = await readFile("src/auth/auth.ts", "utf8");
+for (const [source, needle, label] of [
+    [runtime, "requestInstalledMagicLink", "Installed passwordless runtime"],
+    [runtime, '"/api/auth/magic-link/verify"', "Installed token redemption"],
+    [runtime, '"munch:magic-link-error"', "Installed magic-link error path"],
+    [navigation, "installedMagicLinkFromUrl", "Installed magic-link parser"],
+    [mobileLoginHtml, "mobile-magic-link-form", "Installed passwordless login UI"],
+    [mobileLoginJs, "requestInstalledMagicLink", "Installed passwordless login wiring"],
+    [mobileMagicLinkRoutes, '"/mobile/confirm"', "Scanner-safe mobile confirmation"],
+    [auth, "buildInstalledMagicLinkConfirmation", "Better Auth mobile handoff"],
+] as const) {
+    requireText(source, needle, label);
+}
+if (/Magic-link app handoff is being added/i.test(mobileLoginHtml)) {
+    throw new Error("Mobile login still contains a pre-release magic-link TODO");
+}
+
 const aiReportUi = await readFile("mobile/pantry-ai-report.js", "utf8");
 const aiReportRoutes = await readFile(
     "src/inventory/ai-content-report-routes.ts",
@@ -132,8 +160,6 @@ requireText(
     "AI report support review policy",
 );
 if (/prompt|pantry contents|image/i.test(aiReportSchema.split("comment on table")[1] ?? "")) {
-    // The table comment should explicitly document excluded source context rather
-    // than silently expanding report storage later.
     requireText(
         aiReportSchema,
         "source prompts, Pantry contents, and images are intentionally excluded",
@@ -152,6 +178,41 @@ requireText(
     "External account deletion resource",
 );
 
+const requiredPlayFiles = [
+    "mobile/play/README.md",
+    "mobile/play/HANDOFF.md",
+    "mobile/play/data-safety.md",
+    "mobile/play/health-declaration.md",
+    "mobile/play/content-rating.md",
+    "mobile/play/review-access.md",
+    "mobile/play/assets.md",
+    "mobile/play/listing/en-US.md",
+    "mobile/play/release-notes/whatsnew-en-US",
+];
+for (const path of requiredPlayFiles) {
+    const contents = await readFile(path, "utf8");
+    if (!contents.trim()) throw new Error(`Play submission file is empty: ${path}`);
+}
+
+const listing = await readFile("mobile/play/listing/en-US.md", "utf8");
+requireText(
+    listing,
+    "It is not a medical device",
+    "Health listing disclaimer",
+);
+const dataSafety = await readFile("mobile/play/data-safety.md", "utf8");
+requireText(
+    dataSafety,
+    "https://munch.business/delete-account",
+    "Data safety deletion resource",
+);
+const reviewerAccess = await readFile("mobile/play/review-access.md", "utf8");
+requireText(
+    reviewerAccess,
+    "Use a password instead",
+    "Deterministic Play reviewer login",
+);
+
 console.log(
-    `Mobile release contract passed: ${release.versionName} (Android ${release.androidVersionCode}, iOS build ${release.iosBuildNumber}).`,
+    `Mobile release contract passed: ${release.versionName} (local Android ${release.androidVersionCode}, iOS build ${release.iosBuildNumber}).`,
 );
