@@ -11,6 +11,10 @@
 # inflates the payload ~58% and gets undone by the next regeneration anyway.
 public/map-data.json
 
+# Native Android project files are generated and maintained by Capacitor/Gradle;
+# Java, Groovy, XML, and generated native metadata are validated by Android CI.
+android/
+
 # Workflow and deployment assets are maintained separately from application
 # formatting because they are executed/reviewed as operational artifacts.
 .github/workflows/ci.yml
