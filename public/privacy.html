@@ -39,7 +39,7 @@
                         and Pantry inventory service designed to work through
                         ChatGPT and compatible MCP clients.
                     </p>
-                    <p class="tiny spacer-top">Last updated: August 25, 2026</p>
+                    <p class="tiny spacer-top">Last updated: August 27, 2026</p>
                 </div>
             </section>
             <div class="container legal-layout">
@@ -113,11 +113,14 @@
                                 showing who created or changed shared records.
                             </li>
                             <li>
-                                Stripe customer, subscription, entitlement,
-                                renewal, cancellation, payment-status,
+                                Stripe and app-store subscription, entitlement,
+                                renewal, cancellation, payment-status, purchase,
                                 seat-quantity, and household billing metadata.
-                                Munch does not store raw card numbers or payment
-                                credentials.
+                                Google Play purchase tokens are retained only in
+                                the billing backend so Munch can verify
+                                lifecycle state; they are not returned to the
+                                app UI. Munch does not store raw card numbers or
+                                payment credentials.
                             </li>
                             <li>
                                 Short-lived exports, deletion requests, bounded
@@ -139,17 +142,20 @@
                         <h3>Pantry and receipt images</h3>
                         <p>
                             When an eligible Premium user uploads a Pantry,
-                            refrigerator, freezer, or grocery-receipt image
-                            through the Munch website, Munch sends that image
-                            transiently to its configured AI processor to
-                            extract structured food or purchase candidates. The
-                            raw image is not written to the Munch PostgreSQL
-                            database or account export. Uncertain detections are
-                            presented for review before they can change Pantry
-                            inventory. Images uploaded directly to ChatGPT are
-                            handled by ChatGPT under OpenAI's policies; Munch
-                            receives only the structured tool arguments ChatGPT
-                            sends to the connected Munch app.
+                            refrigerator, freezer, meal, or grocery-receipt
+                            image through the Munch website or installed mobile
+                            app, including through the mobile camera or photo
+                            picker, Munch sends that image transiently to its
+                            configured AI processor when AI-assisted extraction
+                            is used to extract structured food or purchase
+                            candidates. The raw image is not written to the
+                            Munch PostgreSQL database or account export.
+                            Uncertain detections are presented for review before
+                            they can change Pantry inventory. Images uploaded
+                            directly to ChatGPT are handled by ChatGPT under
+                            OpenAI's policies; Munch receives only the
+                            structured tool arguments ChatGPT sends to the
+                            connected Munch app.
                         </p>
                         <h3>Pantry meal planning</h3>
                         <p>
@@ -238,7 +244,16 @@
                                 <strong>Stripe</strong> processes Premium
                                 checkout, recurring billing, payment methods,
                                 invoices, cancellations, and subscription
-                                recovery on the Munch website.
+                                recovery on the Munch website, including
+                                household-seat billing.
+                            </li>
+                            <li>
+                                <strong>Google Play</strong> processes Android
+                                in-app Premium purchases, recurring billing,
+                                localized pricing and taxes, cancellations, and
+                                subscription lifecycle events. Munch verifies
+                                Android subscription state with Google before
+                                granting or changing Premium access.
                             </li>
                             <li>
                                 <strong>Resend</strong> processes email
@@ -256,18 +271,19 @@
                                 used.
                             </li>
                             <li>
-                                <strong>OpenRouter</strong> receives Pantry or
-                                receipt images uploaded through the Munch
-                                website when AI-assisted extraction is enabled,
-                                and receives relevant structured Pantry and
-                                saved-recipe context when an eligible user asks
-                                the website for AI-assisted Pantry meal ideas.
-                                Munch requests routing with provider data
-                                collection disabled. That routing preference is
-                                not a promise of zero retention, and the
-                                processors selected through OpenRouter remain
-                                subject to their applicable privacy and
-                                retention practices.
+                                <strong>OpenRouter</strong> receives Pantry,
+                                meal, or receipt images uploaded through the
+                                Munch website or installed mobile app when
+                                AI-assisted extraction is enabled, and receives
+                                relevant structured Pantry and saved-recipe
+                                context when an eligible user asks the website
+                                for AI-assisted Pantry meal ideas. Munch
+                                requests routing with provider data collection
+                                disabled. That routing preference is not a
+                                promise of zero retention, and the processors
+                                selected through OpenRouter remain subject to
+                                their applicable privacy and retention
+                                practices.
                             </li>
                             <li>
                                 <strong>OpenAI/ChatGPT</strong> processes the
@@ -287,7 +303,9 @@
                         <p>
                             Munch uses HTTPS in production, signed and expiring
                             sessions, OAuth authorization with PKCE, verified
-                            Stripe webhook signatures, rate limiting, bounded
+                            Stripe webhook signatures, server-side Google Play
+                            purchase verification, authenticated Google Pub/Sub
+                            subscription notifications, rate limiting, bounded
                             request bodies, hashed invitation and export tokens,
                             and forced PostgreSQL row-level security for
                             personal and household records.
@@ -314,10 +332,10 @@
                         </p>
                         <p>
                             You can revoke individual ChatGPT/MCP connections,
-                            manage website billing through Stripe, leave a
-                            household, transfer ownership, dissolve a household,
-                            and permanently delete your Munch account through
-                            available controls.
+                            manage subscription billing through the applicable
+                            provider, leave a household, transfer ownership,
+                            dissolve a household, and permanently delete your
+                            Munch account through available controls.
                         </p>
                         <p>
                             Account deletion removes active Munch account data,
@@ -326,9 +344,9 @@
                             application database. Shared display-name
                             attribution may remain as described above. Limited
                             records may also remain temporarily in security
-                            logs, database backups, Stripe records, or records
-                            Munch must retain for fraud, accounting, legal, or
-                            dispute purposes.
+                            logs, database backups, Stripe or Google Play
+                            records, or records Munch must retain for fraud,
+                            accounting, legal, or dispute purposes.
                         </p>
                         <p>
                             Deleting Munch data does not delete conversation
@@ -357,9 +375,10 @@
                             place nutrition-record contents in ordinary access
                             logs. Database backups may retain deleted data until
                             the hosting provider's configured backup rotation
-                            overwrites them. Stripe may retain billing,
-                            accounting, fraud, dispute, and tax records for the
-                            periods required by law and its own policies.
+                            overwrites them. Stripe and Google Play may retain
+                            billing, accounting, fraud, dispute, and tax records
+                            for the periods required by law and their own
+                            policies.
                         </p>
                     </section>
                     <section id="limits">
