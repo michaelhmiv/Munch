@@ -190,7 +190,7 @@ function searchPlan(ingredient: RecipeNutritionIngredientPayload): SearchPlan {
     const preparation = normalizeText(ingredient.preparation ?? "");
     const assumptions: string[] = [];
 
-    if (/\bpie crust\b/.test(name)) {
+    if (/\bpie crusts?\b/.test(name)) {
         assumptions.push(
             "Unspecified pie crust resolved as a standard refrigerated regular unbaked pie crust.",
         );
@@ -201,7 +201,7 @@ function searchPlan(ingredient: RecipeNutritionIngredientPayload): SearchPlan {
         return { query: "milk whole", assumptions };
     }
     if (
-        /\bmixed vegetable\b/.test(name) &&
+        /\bmixed vegetables?\b/.test(name) &&
         /\bfrozen\b/.test(`${name} ${preparation}`)
     ) {
         assumptions.push(
@@ -213,7 +213,7 @@ function searchPlan(ingredient: RecipeNutritionIngredientPayload): SearchPlan {
         };
     }
     if (
-        /\bchicken breast\b/.test(name) &&
+        /\bchicken breasts?\b/.test(name) &&
         /\bcooked\b/.test(`${name} ${preparation}`)
     ) {
         assumptions.push(

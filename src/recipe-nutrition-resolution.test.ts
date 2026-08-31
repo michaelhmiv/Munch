@@ -296,10 +296,10 @@ describe("recipe nutrition resolution", () => {
         expect(result.providerMatches).toBe(8);
         expect(result.lowImpactEstimates).toBe(2);
         expect(result.unresolved).toBe(0);
-        expect(sum(result.recipe, "calories")).toBe(3726.21);
+        expect(sum(result.recipe, "calories")).toBe(3726.22);
         expect(sum(result.recipe, "protein_g")).toBe(154.78);
-        expect(sum(result.recipe, "carbs_g")).toBe(336.47);
-        expect(sum(result.recipe, "fat_g")).toBe(195.84);
+        expect(sum(result.recipe, "carbs_g")).toBe(336.46);
+        expect(sum(result.recipe, "fat_g")).toBe(195.85);
         expect(Number((sum(result.recipe, "calories") / 6).toFixed(2))).toBe(
             621.04,
         );
