@@ -20,6 +20,18 @@ jobs:
         with:
           bun-version: 1
       - run: bun install --frozen-lockfile
+      - name: Extend safety net to recipe updates
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/recipe-nutrition-resolution.ts')
+          text = path.read_text()
+          old = '''                    if (\n                        name !== "save_recipe" &&\n                        name !== "save_recipe_and_plan"\n                    ) {'''
+          new = '''                    if (\n                        name !== "save_recipe" &&\n                        name !== "save_recipe_and_plan" &&\n                        name !== "update_recipe"\n                    ) {'''
+          if old not in text:
+              raise SystemExit('target recipe tool guard not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
       - run: bunx prettier --write src/recipe-nutrition-resolution.ts src/recipe-nutrition-resolution.test.ts
       - name: Commit formatting
         run: |
@@ -29,5 +41,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/recipe-nutrition-resolution.ts src/recipe-nutrition-resolution.test.ts
-          git commit -m "Format recipe nutrition resolver [recipe-nutrition-format]"
+          git commit -m "Resolve nutrition on recipe updates [recipe-nutrition-update]"
           git push origin HEAD:fix/recipe-save-auto-nutrition
