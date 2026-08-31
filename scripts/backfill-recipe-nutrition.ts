@@ -11,6 +11,7 @@ import {
     type RecipeInput,
 } from "../src/planning/repository.js";
 
+// Auth access discovers ownership only; all recipe reads/writes re-enter normal user RLS.
 const recipeIds = (process.env.MUNCH_RECIPE_NUTRITION_BACKFILL_IDS ?? "")
     .split(",")
     .map((value) => value.trim())
