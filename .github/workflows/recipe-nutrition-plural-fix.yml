@@ -1,0 +1,49 @@
+name: Recipe nutrition plural fix
+
+on:
+  push:
+    branches:
+      - fix/recipe-save-auto-nutrition
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/recipe-save-auto-nutrition
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - name: Make assumption rules plural-aware
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/recipe-nutrition-resolution.ts')
+          text = path.read_text()
+          replacements = {
+              r'/\\bpie crust\\b/.test(name)': r'/\\bpie crusts?\\b/.test(name)',
+              r'/\\bmixed vegetable\\b/.test(name)': r'/\\bmixed vegetables?\\b/.test(name)',
+              r'/\\bchicken breast\\b/.test(name)': r'/\\bchicken breasts?\\b/.test(name)',
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f'target not found: {old}')
+              text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+      - run: bunx prettier --write src/recipe-nutrition-resolution.ts
+      - run: bun test src/recipe-nutrition-resolution.test.ts
+      - name: Commit tested fix and remove temporary workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/recipe-nutrition-resolution.ts
+          git rm .github/workflows/recipe-nutrition-plural-fix.yml
+          git commit -m "Handle plural recipe ingredient defaults [recipe-nutrition-plurals]"
+          git push origin HEAD:fix/recipe-save-auto-nutrition
