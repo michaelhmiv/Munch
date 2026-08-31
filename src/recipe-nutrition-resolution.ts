@@ -626,7 +626,8 @@ export function withRecipeNutritionResolution(server: McpServer): McpServer {
                 ) => {
                     if (
                         name !== "save_recipe" &&
-                        name !== "save_recipe_and_plan"
+                        name !== "save_recipe_and_plan" &&
+                        name !== "update_recipe"
                     ) {
                         return originalRegisterTool(name, config, handler);
                     }
