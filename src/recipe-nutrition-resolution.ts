@@ -608,6 +608,79 @@ export async function resolveRecipeNutrition(
     };
 }
 
+export interface PlanningRecipeNutritionIngredientPayload {
+    name: string;
+    quantity?: number;
+    unit?: string;
+    preparation?: string;
+    optional?: boolean;
+    gramWeight?: number;
+    nutrients?: RecipeNutrientFacts;
+    provider?: string;
+    providerFoodId?: string;
+    sourceType: string;
+    sourceUrl?: string;
+    confidence?: number;
+    sourceSnapshot?: Record<string, unknown>;
+}
+
+export interface PlanningRecipeNutritionPayload {
+    name: string;
+    servings: number;
+    ingredients: PlanningRecipeNutritionIngredientPayload[];
+}
+
+export async function resolvePlanningRecipeNutrition<
+    T extends PlanningRecipeNutritionPayload,
+>(
+    recipe: T,
+    dependencies: RecipeNutritionResolutionDependencies = {},
+): Promise<T> {
+    const resolution = await resolveRecipeNutrition(
+        {
+            name: recipe.name,
+            servings: recipe.servings,
+            ingredients: recipe.ingredients.map((ingredient) => ({
+                name: ingredient.name,
+                quantity: ingredient.quantity,
+                unit: ingredient.unit,
+                preparation: ingredient.preparation,
+                optional: ingredient.optional,
+                gram_weight: ingredient.gramWeight,
+                nutrients: ingredient.nutrients,
+                provider: ingredient.provider,
+                provider_food_id: ingredient.providerFoodId,
+                source_type: ingredient.sourceType,
+                source_url: ingredient.sourceUrl,
+                confidence: ingredient.confidence,
+                source_snapshot: ingredient.sourceSnapshot,
+            })),
+        },
+        dependencies,
+    );
+    return {
+        ...recipe,
+        ingredients: resolution.recipe.ingredients.map(
+            (ingredient, position) => ({
+                ...recipe.ingredients[position]!,
+                name: ingredient.name,
+                quantity: ingredient.quantity,
+                unit: ingredient.unit,
+                preparation: ingredient.preparation,
+                optional: ingredient.optional,
+                gramWeight: ingredient.gram_weight,
+                nutrients: ingredient.nutrients,
+                provider: ingredient.provider,
+                providerFoodId: ingredient.provider_food_id,
+                sourceType: ingredient.source_type,
+                sourceUrl: ingredient.source_url,
+                confidence: ingredient.confidence,
+                sourceSnapshot: ingredient.source_snapshot,
+            }),
+        ),
+    } as T;
+}
+
 function enhancedDescription(description: string): string {
     return `${description} If an ordinary ingredient arrives without nutrient facts, Munch automatically attempts provider-backed nutrition resolution before persistence. It preserves explicit nutrition, uses the existing Munch food catalog/USDA/Open Food Facts pipeline, records gram weights, provider IDs, confidence, and assumptions in source_snapshot, and treats unmeasured low-impact seasonings as zero core macros. Ordinary ambiguity should produce an estimate rather than blank nutrition; truly unresolved material ingredients may still produce partial or unavailable nutrition.`;
 }
