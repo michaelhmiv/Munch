@@ -27,9 +27,9 @@ jobs:
           path = Path('src/recipe-nutrition-resolution.ts')
           text = path.read_text()
           replacements = {
-              r'/\\bpie crust\\b/.test(name)': r'/\\bpie crusts?\\b/.test(name)',
-              r'/\\bmixed vegetable\\b/.test(name)': r'/\\bmixed vegetables?\\b/.test(name)',
-              r'/\\bchicken breast\\b/.test(name)': r'/\\bchicken breasts?\\b/.test(name)',
+              r'/\bpie crust\b/.test(name)': r'/\bpie crusts?\b/.test(name)',
+              r'/\bmixed vegetable\b/.test(name)': r'/\bmixed vegetables?\b/.test(name)',
+              r'/\bchicken breast\b/.test(name)': r'/\bchicken breasts?\b/.test(name)',
           }
           for old, new in replacements.items():
               if old not in text:
