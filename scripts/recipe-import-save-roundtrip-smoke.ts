@@ -37,10 +37,8 @@ function sourceSnapshotBeforeAutomaticNutrition(value: unknown): unknown {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
         return value;
     }
-    const { automatic_nutrition: _automaticNutrition, ...original } = value as Record<
-        string,
-        unknown
-    >;
+    const { automatic_nutrition: _automaticNutrition, ...original } =
+        value as Record<string, unknown>;
     return original;
 }
 
