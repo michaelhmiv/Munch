@@ -54,7 +54,10 @@ function storedNumber(
     return Math.abs(actual - expected) <= 0.5 * 10 ** -scale + Number.EPSILON;
 }
 
-function sourceTypeMatchesResolvedNutrition(actual: any, expected: any): boolean {
+function sourceTypeMatchesResolvedNutrition(
+    actual: any,
+    expected: any,
+): boolean {
     const automaticNutrition = actual.source_snapshot?.automatic_nutrition;
     if (automaticNutrition?.resolution === "low_impact_zero") {
         return actual.source_type === "model_estimate";
