@@ -54,6 +54,14 @@ function storedNumber(
     return Math.abs(actual - expected) <= 0.5 * 10 ** -scale + Number.EPSILON;
 }
 
+function sourceTypeMatchesResolvedNutrition(actual: any, expected: any): boolean {
+    const automaticNutrition = actual.source_snapshot?.automatic_nutrition;
+    if (automaticNutrition?.resolution === "low_impact_zero") {
+        return actual.source_type === "model_estimate";
+    }
+    return actual.source_type === expected.source_type;
+}
+
 const sourceUrl = "https://example.com/roundtrip-lemon-pasta";
 const html = `
     <html><head>
@@ -207,7 +215,7 @@ for (let index = 0; index < draft.recipe.ingredients.length; index += 1) {
         actual.unit !== (expected.unit ?? null) ||
         actual.preparation !== (expected.preparation ?? null) ||
         actual.optional !== (expected.optional ?? false) ||
-        actual.source_type !== expected.source_type ||
+        !sourceTypeMatchesResolvedNutrition(actual, expected) ||
         actual.source_url !== (expected.source_url ?? null)
     ) {
         throw new Error(
