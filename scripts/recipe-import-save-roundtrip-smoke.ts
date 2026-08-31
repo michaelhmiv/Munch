@@ -33,6 +33,15 @@ function equalJson(actual: unknown, expected: unknown): boolean {
     );
 }
 
+function sourceSnapshotBeforeAutomaticNutrition(value: unknown): unknown {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return value;
+    }
+    const { automatic_nutrition: _automaticNutrition, ...original } =
+        value as Record<string, unknown>;
+    return original;
+}
+
 function storedNumber(
     actual: unknown,
     expected: unknown,
@@ -43,6 +52,17 @@ function storedNumber(
         return false;
     }
     return Math.abs(actual - expected) <= 0.5 * 10 ** -scale + Number.EPSILON;
+}
+
+function sourceTypeMatchesResolvedNutrition(
+    actual: any,
+    expected: any,
+): boolean {
+    const automaticNutrition = actual.source_snapshot?.automatic_nutrition;
+    if (automaticNutrition?.resolution === "low_impact_zero") {
+        return actual.source_type === "model_estimate";
+    }
+    return actual.source_type === expected.source_type;
 }
 
 const sourceUrl = "https://example.com/roundtrip-lemon-pasta";
@@ -198,7 +218,7 @@ for (let index = 0; index < draft.recipe.ingredients.length; index += 1) {
         actual.unit !== (expected.unit ?? null) ||
         actual.preparation !== (expected.preparation ?? null) ||
         actual.optional !== (expected.optional ?? false) ||
-        actual.source_type !== expected.source_type ||
+        !sourceTypeMatchesResolvedNutrition(actual, expected) ||
         actual.source_url !== (expected.source_url ?? null)
     ) {
         throw new Error(
@@ -210,8 +230,15 @@ for (let index = 0; index < draft.recipe.ingredients.length; index += 1) {
             `Recipe ingredient ${index} quantity changed beyond database precision`,
         );
     }
-    if (!equalJson(actual.source_snapshot, expected.source_snapshot)) {
-        throw new Error(`Recipe ingredient ${index} source snapshot changed`);
+    if (
+        !equalJson(
+            sourceSnapshotBeforeAutomaticNutrition(actual.source_snapshot),
+            expected.source_snapshot,
+        )
+    ) {
+        throw new Error(
+            `Recipe ingredient ${index} source snapshot changed beyond additive nutrition provenance`,
+        );
     }
     if (typeof actual.source_snapshot?.raw_ingredient !== "string") {
         throw new Error(`Recipe ingredient ${index} lost its raw source text`);

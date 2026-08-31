@@ -1,4 +1,5 @@
 import type { DatabaseTransaction } from "../platform/database.js";
+import { resolvePlanningRecipeNutrition } from "../recipe-nutrition-resolution.js";
 import { withUserDatabase } from "../platform/database.js";
 import { insertStructuredMeal } from "../structured-meals/repository.js";
 import type {
@@ -501,8 +502,10 @@ export async function saveRecipe(input: {
     recipe: RecipeInput;
     idempotencyKey?: string;
 }): Promise<SavedRecipeResult> {
+    const resolvedRecipe = await resolvePlanningRecipeNutrition(input.recipe);
+    validateRecipe(resolvedRecipe);
     return withUserDatabase(input.userId, (tx) =>
-        saveRecipeInTransaction(tx, input),
+        saveRecipeInTransaction(tx, { ...input, recipe: resolvedRecipe }),
     );
 }
 
@@ -791,6 +794,8 @@ export async function updateRecipe(input: {
     if (!input.idempotencyKey.trim()) {
         throw new Error("Recipe update idempotency key is required");
     }
+    const resolvedRecipe = await resolvePlanningRecipeNutrition(input.recipe);
+    validateRecipe(resolvedRecipe);
 
     return withUserDatabase(input.userId, async (tx) => {
         const owner = ownerValues(input.scope, input.userId);
@@ -834,12 +839,12 @@ export async function updateRecipe(input: {
             userId: input.userId,
             recipeId: input.recipeId,
             revisionNumber: nextRevisionNumber,
-            recipe: input.recipe,
+            recipe: resolvedRecipe,
             idempotencyKey: input.idempotencyKey,
         });
         const updated = await tx<Array<{ version: number }>>`
             update munch.recipes
-            set name = ${input.recipe.name.trim()},
+            set name = ${resolvedRecipe.name.trim()},
                 current_revision_number = ${nextRevisionNumber},
                 updated_by_user_id = ${input.userId},
                 updated_at = now(),
@@ -1529,11 +1534,13 @@ export async function saveRecipeAndPlan(input: {
     groceryItems: GroceryItemInput[];
     idempotencyKey: string;
 }) {
+    const resolvedRecipe = await resolvePlanningRecipeNutrition(input.recipe);
+    validateRecipe(resolvedRecipe);
     return withUserDatabase(input.userId, async (tx) => {
         const recipe = await saveRecipeInTransaction(tx, {
             userId: input.userId,
             scope: input.scope,
-            recipe: input.recipe,
+            recipe: resolvedRecipe,
             idempotencyKey: `${input.idempotencyKey}:recipe`,
         });
         const planned = await scheduleRecipeInTransaction(tx, {

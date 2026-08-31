@@ -1,0 +1,11 @@
+# Recipe nutrition resolution
+
+Recipe writes use a server-side nutrition safety net before persistence. The invariant lives in the shared planning write layer used by MCP and the website/manual API, covering recipe creation, recipe updates/backfills, and save-and-plan composition. MCP also performs an early resolution pass so its tool response can report what was estimated; the shared write layer is the final guard that prevents any supported write surface from silently bypassing nutrition resolution.
+
+The resolver preserves complete caller-supplied ingredient nutrition. Otherwise it reuses Munch's existing food-provider search and portion infrastructure (local catalog first, then USDA/Open Food Facts), ranks defensible ingredient matches, scales provider portions to the recipe quantity, and persists supported nutrient values, normalized gram weight, provider identity, confidence, and provenance.
+
+Common ambiguity is represented as estimated nutrition rather than absence. Bounded defaults such as generic whole milk or a standard refrigerated pie crust are recorded under `source_snapshot.automatic_nutrition` with `estimated: true` and the assumptions used. Unmeasured low-impact seasonings may carry zero core macros while unknown sodium remains unasserted. A substantive ingredient is left unresolved only when there is no defensible quantity, food match, or compatible portion.
+
+Nutrition provenance is additive. Existing source/import provenance such as raw ingredient text and parser metadata remains intact when `automatic_nutrition` is added, so enriching a recipe does not erase or reinterpret the evidence captured by the original parser. Low-impact exclusions set the ingredient nutrition `source_type` to `model_estimate`; the original parser/source evidence remains in `source_snapshot`, making the nutrition source explicit without losing import provenance.
+
+The existing recipe-level `nutrition_status` contract remains `complete`, `partial`, or `unavailable`. Estimated-vs-exact meaning is retained at ingredient provenance level; `unavailable` therefore continues to mean that usable nutrition could not be established, not merely that an ingredient required a reasonable assumption.
