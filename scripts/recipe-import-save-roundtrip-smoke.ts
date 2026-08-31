@@ -33,6 +33,17 @@ function equalJson(actual: unknown, expected: unknown): boolean {
     );
 }
 
+function sourceSnapshotBeforeAutomaticNutrition(value: unknown): unknown {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return value;
+    }
+    const { automatic_nutrition: _automaticNutrition, ...original } = value as Record<
+        string,
+        unknown
+    >;
+    return original;
+}
+
 function storedNumber(
     actual: unknown,
     expected: unknown,
@@ -210,8 +221,15 @@ for (let index = 0; index < draft.recipe.ingredients.length; index += 1) {
             `Recipe ingredient ${index} quantity changed beyond database precision`,
         );
     }
-    if (!equalJson(actual.source_snapshot, expected.source_snapshot)) {
-        throw new Error(`Recipe ingredient ${index} source snapshot changed`);
+    if (
+        !equalJson(
+            sourceSnapshotBeforeAutomaticNutrition(actual.source_snapshot),
+            expected.source_snapshot,
+        )
+    ) {
+        throw new Error(
+            `Recipe ingredient ${index} source snapshot changed beyond additive nutrition provenance`,
+        );
     }
     if (typeof actual.source_snapshot?.raw_ingredient !== "string") {
         throw new Error(`Recipe ingredient ${index} lost its raw source text`);
