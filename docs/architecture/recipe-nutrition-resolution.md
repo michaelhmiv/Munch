@@ -1,6 +1,6 @@
 # Recipe nutrition resolution
 
-MCP recipe writes use a server-side nutrition safety net before persistence. The safety net applies to `save_recipe`, `save_recipe_and_plan`, and `update_recipe` so ordinary photo/manual saves and later backfills cannot silently bypass nutrition resolution.
+Recipe writes use a server-side nutrition safety net before persistence. The invariant lives in the shared planning write layer used by MCP and the website/manual API, covering recipe creation, recipe updates/backfills, and save-and-plan composition. MCP also performs an early resolution pass so its tool response can report what was estimated; the shared write layer is the final guard that prevents any supported write surface from silently bypassing nutrition resolution.
 
 The resolver preserves complete caller-supplied ingredient nutrition. Otherwise it reuses Munch's existing food-provider search and portion infrastructure (local catalog first, then USDA/Open Food Facts), ranks defensible ingredient matches, scales provider portions to the recipe quantity, and persists supported nutrient values, normalized gram weight, provider identity, confidence, and provenance.
 
