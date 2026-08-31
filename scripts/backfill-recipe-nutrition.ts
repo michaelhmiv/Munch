@@ -141,7 +141,9 @@ async function backfillRecipe(recipeId: string) {
     });
     const after = await getRecipe(userId, recipeId, updated.revisionId);
     if (!after) {
-        throw new Error(`Recipe ${recipeId} backfill revision could not be read`);
+        throw new Error(
+            `Recipe ${recipeId} backfill revision could not be read`,
+        );
     }
     return {
         recipe_id: recipeId,
