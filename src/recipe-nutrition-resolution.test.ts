@@ -50,7 +50,7 @@ const fixtures: Record<string, FoodCandidate[]> = {
             id: "167932",
             name: "Pie crust, refrigerated, regular, unbaked",
             portions: [
-                onePortion("82238", '1 pie crust (average weight)', 229, {
+                onePortion("82238", "1 pie crust (average weight)", 229, {
                     calories: 1019.05,
                     protein_g: 6.8,
                     carbs_g: 117.02,
@@ -214,14 +214,56 @@ const potPie: RecipeNutritionPayload = {
     source_type: "user_entered",
     instructions: ["Bake until golden."],
     ingredients: [
-        { name: "pie crusts", quantity: 2, unit: "crusts", source_type: "user_supplied" },
-        { name: "butter", quantity: 1 / 3, unit: "cup", source_type: "user_supplied" },
-        { name: "onion", quantity: 1 / 3, unit: "cup", preparation: "chopped", source_type: "user_supplied" },
-        { name: "all-purpose flour", quantity: 1 / 3, unit: "cup", source_type: "user_supplied" },
-        { name: "chicken broth", quantity: 1.75, unit: "cups", source_type: "user_supplied" },
-        { name: "milk", quantity: 0.5, unit: "cup", source_type: "user_supplied" },
-        { name: "frozen mixed vegetables", quantity: 2.5, unit: "cups", source_type: "user_supplied" },
-        { name: "chicken breasts", quantity: 2, unit: "breasts", preparation: "cooked shredded", source_type: "user_supplied" },
+        {
+            name: "pie crusts",
+            quantity: 2,
+            unit: "crusts",
+            source_type: "user_supplied",
+        },
+        {
+            name: "butter",
+            quantity: 1 / 3,
+            unit: "cup",
+            source_type: "user_supplied",
+        },
+        {
+            name: "onion",
+            quantity: 1 / 3,
+            unit: "cup",
+            preparation: "chopped",
+            source_type: "user_supplied",
+        },
+        {
+            name: "all-purpose flour",
+            quantity: 1 / 3,
+            unit: "cup",
+            source_type: "user_supplied",
+        },
+        {
+            name: "chicken broth",
+            quantity: 1.75,
+            unit: "cups",
+            source_type: "user_supplied",
+        },
+        {
+            name: "milk",
+            quantity: 0.5,
+            unit: "cup",
+            source_type: "user_supplied",
+        },
+        {
+            name: "frozen mixed vegetables",
+            quantity: 2.5,
+            unit: "cups",
+            source_type: "user_supplied",
+        },
+        {
+            name: "chicken breasts",
+            quantity: 2,
+            unit: "breasts",
+            preparation: "cooked shredded",
+            source_type: "user_supplied",
+        },
         { name: "salt", source_type: "user_supplied" },
         { name: "black pepper", source_type: "user_supplied" },
     ],
@@ -233,7 +275,11 @@ function sum(
 ): number {
     return Number(
         recipe.ingredients
-            .reduce((total, ingredient) => total + (ingredient.nutrients?.[key] ?? 0), 0)
+            .reduce(
+                (total, ingredient) =>
+                    total + (ingredient.nutrients?.[key] ?? 0),
+                0,
+            )
             .toFixed(2),
     );
 }
@@ -254,22 +300,35 @@ describe("recipe nutrition resolution", () => {
         expect(sum(result.recipe, "protein_g")).toBe(154.78);
         expect(sum(result.recipe, "carbs_g")).toBe(336.47);
         expect(sum(result.recipe, "fat_g")).toBe(195.84);
-        expect(Number((sum(result.recipe, "calories") / 6).toFixed(2))).toBe(621.04);
-        expect(Number((sum(result.recipe, "protein_g") / 6).toFixed(2))).toBe(25.8);
-        expect(Number((sum(result.recipe, "carbs_g") / 6).toFixed(2))).toBe(56.08);
-        expect(Number((sum(result.recipe, "fat_g") / 6).toFixed(2))).toBe(32.64);
+        expect(Number((sum(result.recipe, "calories") / 6).toFixed(2))).toBe(
+            621.04,
+        );
+        expect(Number((sum(result.recipe, "protein_g") / 6).toFixed(2))).toBe(
+            25.8,
+        );
+        expect(Number((sum(result.recipe, "carbs_g") / 6).toFixed(2))).toBe(
+            56.08,
+        );
+        expect(Number((sum(result.recipe, "fat_g") / 6).toFixed(2))).toBe(
+            32.64,
+        );
 
         expect(result.recipe.ingredients[0]?.provider_food_id).toBe("167932");
         expect(result.recipe.ingredients[0]?.gram_weight).toBe(458);
         expect(result.recipe.ingredients[2]?.provider_food_id).toBe("2709795");
         expect(result.recipe.ingredients[5]?.provider_food_id).toBe("2705385");
         expect(result.recipe.ingredients[7]?.gram_weight).toBe(362);
-        expect(result.recipe.ingredients[8]?.source_type).toBe("model_estimate");
+        expect(result.recipe.ingredients[8]?.source_type).toBe(
+            "model_estimate",
+        );
         expect(result.recipe.ingredients[8]?.nutrients?.calories).toBe(0);
         expect(
-            (result.recipe.ingredients[5]?.source_snapshot?.automatic_nutrition as {
-                assumptions?: string[];
-            })?.assumptions?.[0],
+            (
+                result.recipe.ingredients[5]?.source_snapshot
+                    ?.automatic_nutrition as {
+                    assumptions?: string[];
+                }
+            )?.assumptions?.[0],
         ).toContain("whole milk");
     });
 
@@ -318,7 +377,13 @@ describe("recipe nutrition resolution", () => {
                     },
                 ],
             },
-            { foodSearch: { async search() { return { candidates: [], failures: [] }; } } },
+            {
+                foodSearch: {
+                    async search() {
+                        return { candidates: [], failures: [] };
+                    },
+                },
+            },
         );
         expect(result.unresolved).toBe(1);
         expect(result.recipe.ingredients[0]?.nutrients).toBeUndefined();

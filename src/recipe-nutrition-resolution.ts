@@ -1,5 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { getFoodSearchService, type FoodSearchService } from "./food-providers/service.js";
+import {
+    getFoodSearchService,
+    type FoodSearchService,
+} from "./food-providers/service.js";
 import { scaleNutrients } from "./food-providers/nutrients.js";
 import type {
     FoodCandidate,
@@ -104,7 +107,8 @@ function normalizeText(value: string): string {
 }
 
 function singularToken(token: string): string {
-    if (token.endsWith("ies") && token.length > 4) return `${token.slice(0, -3)}y`;
+    if (token.endsWith("ies") && token.length > 4)
+        return `${token.slice(0, -3)}y`;
     if (token.endsWith("ses") && token.length > 4) return token.slice(0, -2);
     if (token.endsWith("s") && !token.endsWith("ss") && token.length > 3) {
         return token.slice(0, -1);
@@ -114,10 +118,7 @@ function singularToken(token: string): string {
 
 function tokens(value: string): Set<string> {
     return new Set(
-        normalizeText(value)
-            .split(" ")
-            .filter(Boolean)
-            .map(singularToken),
+        normalizeText(value).split(" ").filter(Boolean).map(singularToken),
     );
 }
 
@@ -199,7 +200,10 @@ function searchPlan(ingredient: RecipeNutritionIngredientPayload): SearchPlan {
         assumptions.push("Unspecified milk resolved as generic whole milk.");
         return { query: "milk whole", assumptions };
     }
-    if (/\bmixed vegetable\b/.test(name) && /\bfrozen\b/.test(`${name} ${preparation}`)) {
+    if (
+        /\bmixed vegetable\b/.test(name) &&
+        /\bfrozen\b/.test(`${name} ${preparation}`)
+    ) {
         assumptions.push(
             "Frozen mixed vegetables resolved as a generic classic frozen mix cooked without added fat.",
         );
@@ -208,7 +212,10 @@ function searchPlan(ingredient: RecipeNutritionIngredientPayload): SearchPlan {
             assumptions,
         };
     }
-    if (/\bchicken breast\b/.test(name) && /\bcooked\b/.test(`${name} ${preparation}`)) {
+    if (
+        /\bchicken breast\b/.test(name) &&
+        /\bcooked\b/.test(`${name} ${preparation}`)
+    ) {
         assumptions.push(
             "Unspecified cooked chicken breasts resolved as generic cooked boneless skinless chicken breast pieces.",
         );
@@ -218,11 +225,15 @@ function searchPlan(ingredient: RecipeNutritionIngredientPayload): SearchPlan {
         };
     }
     if (/\bchicken broth\b/.test(name)) {
-        assumptions.push("Chicken broth resolved as generic ready-to-serve chicken broth.");
+        assumptions.push(
+            "Chicken broth resolved as generic ready-to-serve chicken broth.",
+        );
         return { query: "chicken broth ready to serve", assumptions };
     }
     if (/\ball purpose flour\b/.test(name)) {
-        assumptions.push("All-purpose flour resolved as generic enriched white all-purpose flour.");
+        assumptions.push(
+            "All-purpose flour resolved as generic enriched white all-purpose flour.",
+        );
         return { query: "wheat flour white all-purpose enriched", assumptions };
     }
     if (/^onions?$/.test(name)) {
@@ -230,7 +241,9 @@ function searchPlan(ingredient: RecipeNutritionIngredientPayload): SearchPlan {
         return { query: "onions raw", assumptions };
     }
 
-    const form = preparation.match(/\b(raw|cooked|grilled|roasted|boiled|frozen)\b/)?.[1];
+    const form = preparation.match(
+        /\b(raw|cooked|grilled|roasted|boiled|frozen)\b/,
+    )?.[1];
     return {
         query: [ingredient.name, form].filter(Boolean).join(" "),
         assumptions,
@@ -247,17 +260,39 @@ function candidateScore(query: string, candidate: FoodCandidate): number {
     }
     const recall = overlap / queryTokens.size;
     const precision = overlap / candidateTokens.size;
-    const lexical = recall + precision === 0 ? 0 : (2 * recall * precision) / (recall + precision);
-    const exact = normalizeText(query) === normalizeText(candidate.name) ? 0.2 : 0;
+    const lexical =
+        recall + precision === 0
+            ? 0
+            : (2 * recall * precision) / (recall + precision);
+    const exact =
+        normalizeText(query) === normalizeText(candidate.name) ? 0.2 : 0;
     const generic = candidate.dataKind === "generic" ? 0.14 : 0;
-    const packagedPenalty = candidate.dataKind === "packaged" || candidate.dataKind === "branded" ? 0.08 : 0;
-    return lexical + exact + generic + candidate.confidence * 0.08 - packagedPenalty;
+    const packagedPenalty =
+        candidate.dataKind === "packaged" || candidate.dataKind === "branded"
+            ? 0.08
+            : 0;
+    return (
+        lexical +
+        exact +
+        generic +
+        candidate.confidence * 0.08 -
+        packagedPenalty
+    );
 }
 
-function chooseCandidate(query: string, candidates: FoodCandidate[]): FoodCandidate | undefined {
+function chooseCandidate(
+    query: string,
+    candidates: FoodCandidate[],
+): FoodCandidate | undefined {
     return candidates
-        .map((candidate) => ({ candidate, score: candidateScore(query, candidate) }))
-        .filter(({ candidate, score }) => score >= MIN_CANDIDATE_SCORE && candidate.confidence >= 0.75)
+        .map((candidate) => ({
+            candidate,
+            score: candidateScore(query, candidate),
+        }))
+        .filter(
+            ({ candidate, score }) =>
+                score >= MIN_CANDIDATE_SCORE && candidate.confidence >= 0.75,
+        )
         .sort((left, right) => right.score - left.score)[0]?.candidate;
 }
 
@@ -265,16 +300,23 @@ function portionText(portion: FoodPortion): string {
     return normalizeText(`${portion.unit} ${portion.label}`);
 }
 
-function portionForUnit(portions: FoodPortion[], unit: string): FoodPortion | undefined {
+function portionForUnit(
+    portions: FoodPortion[],
+    unit: string,
+): FoodPortion | undefined {
     if (!unit) {
         return portions.find((portion) => portion.id !== "100g") ?? portions[0];
     }
     const terms = unitTerms(unit);
-    const exact = portions.find((portion) => normalizeUnit(portion.unit) === unit);
+    const exact = portions.find(
+        (portion) => normalizeUnit(portion.unit) === unit,
+    );
     if (exact) return exact;
     const labelMatch = portions.find((portion) => {
         const text = portionText(portion);
-        return terms.some((term) => text.split(" ").includes(singularToken(term)));
+        return terms.some((term) =>
+            text.split(" ").includes(singularToken(term)),
+        );
     });
     if (labelMatch) return labelMatch;
     if (COUNT_UNITS.has(unit)) {
@@ -295,7 +337,10 @@ function resolvePortion(
         return {
             gramWeight: ingredient.gram_weight,
             nutrients: supportedNutrients(
-                scaleNutrients(candidate.nutrientsPer100g, ingredient.gram_weight / 100),
+                scaleNutrients(
+                    candidate.nutrientsPer100g,
+                    ingredient.gram_weight / 100,
+                ),
             ),
             portionId: "100g",
             portionLabel: `${ingredient.gram_weight} g`,
@@ -328,9 +373,12 @@ function resolvePortion(
     }
 
     const portion = portionForUnit(candidate.portions, unit);
-    if (!portion || !Number.isFinite(portion.amount) || portion.amount <= 0) return null;
+    if (!portion || !Number.isFinite(portion.amount) || portion.amount <= 0)
+        return null;
     const factor = quantity / portion.amount;
-    const scaled = supportedNutrients(scaleNutrients(portion.nutrients, factor));
+    const scaled = supportedNutrients(
+        scaleNutrients(portion.nutrients, factor),
+    );
     if (!hasCoreNutrition(scaled)) return null;
     return {
         gramWeight:
@@ -387,10 +435,19 @@ async function resolveIngredient(
     if (hasCoreNutrition(ingredient.nutrients)) {
         return { ingredient, kind: "preserved" };
     }
-    if (ingredient.quantity === undefined && LOW_IMPACT_PATTERN.test(ingredient.name)) {
-        return { ingredient: lowImpactEstimate(ingredient), kind: "low_impact" };
+    if (
+        ingredient.quantity === undefined &&
+        LOW_IMPACT_PATTERN.test(ingredient.name)
+    ) {
+        return {
+            ingredient: lowImpactEstimate(ingredient),
+            kind: "low_impact",
+        };
     }
-    if (ingredient.quantity === undefined && ingredient.gram_weight === undefined) {
+    if (
+        ingredient.quantity === undefined &&
+        ingredient.gram_weight === undefined
+    ) {
         return {
             ingredient: {
                 ...ingredient,
@@ -470,7 +527,10 @@ async function resolveIngredient(
                     ...(ingredient.source_snapshot ?? {}),
                     automatic_nutrition: {
                         resolver_version: RESOLVER_VERSION,
-                        resolution: assumptions.length > 0 ? "assumed_provider_match" : "provider_match",
+                        resolution:
+                            assumptions.length > 0
+                                ? "assumed_provider_match"
+                                : "provider_match",
                         estimated: true,
                         query: plan.query,
                         provider: selected.provider,
@@ -498,7 +558,8 @@ async function resolveIngredient(
                         resolution: "unresolved",
                         query: plan.query,
                         reason: "provider_resolution_error",
-                        error_name: error instanceof Error ? error.name : "unknown",
+                        error_name:
+                            error instanceof Error ? error.name : "unknown",
                     },
                 },
             },
@@ -513,7 +574,9 @@ export async function resolveRecipeNutrition(
 ): Promise<RecipeNutritionResolution> {
     const foodSearch = dependencies.foodSearch ?? getFoodSearchService();
     const settled = await Promise.all(
-        recipe.ingredients.map((ingredient) => resolveIngredient(ingredient, foodSearch)),
+        recipe.ingredients.map((ingredient) =>
+            resolveIngredient(ingredient, foodSearch),
+        ),
     );
     let providerMatches = 0;
     let lowImpactEstimates = 0;
@@ -550,7 +613,9 @@ function enhancedDescription(description: string): string {
 }
 
 export function withRecipeNutritionResolution(server: McpServer): McpServer {
-    const originalRegisterTool = (server as unknown as ToolServer).registerTool.bind(server);
+    const originalRegisterTool = (
+        server as unknown as ToolServer
+    ).registerTool.bind(server);
     return new Proxy(server, {
         get(target, property) {
             if (property === "registerTool") {
@@ -559,14 +624,19 @@ export function withRecipeNutritionResolution(server: McpServer): McpServer {
                     config: Record<string, any>,
                     handler: (args: Record<string, any>) => Promise<any> | any,
                 ) => {
-                    if (name !== "save_recipe" && name !== "save_recipe_and_plan") {
+                    if (
+                        name !== "save_recipe" &&
+                        name !== "save_recipe_and_plan"
+                    ) {
                         return originalRegisterTool(name, config, handler);
                     }
                     return originalRegisterTool(
                         name,
                         {
                             ...config,
-                            description: enhancedDescription(String(config.description ?? "Save a recipe.")),
+                            description: enhancedDescription(
+                                String(config.description ?? "Save a recipe."),
+                            ),
                         },
                         async (args: Record<string, any>) => {
                             const startedAt = performance.now();
@@ -580,9 +650,14 @@ export function withRecipeNutritionResolution(server: McpServer): McpServer {
                             console.info(
                                 `[recipe_nutrition] operation=${name} provider_matches=${resolution.providerMatches} low_impact_estimates=${resolution.lowImpactEstimates} unresolved=${resolution.unresolved} estimated_positions=${resolution.estimatedPositions.join(",") || "none"} unresolved_positions=${resolution.unresolvedPositions.join(",") || "none"} total_ms=${Math.round(performance.now() - startedAt)}`,
                             );
-                            if (Array.isArray(result?.content) && resolution.estimatedPositions.length > 0) {
+                            if (
+                                Array.isArray(result?.content) &&
+                                resolution.estimatedPositions.length > 0
+                            ) {
                                 const textItem = result.content.find(
-                                    (item: any) => item?.type === "text" && typeof item.text === "string",
+                                    (item: any) =>
+                                        item?.type === "text" &&
+                                        typeof item.text === "string",
                                 );
                                 if (textItem) {
                                     textItem.text = `${textItem.text}\n\nNutrition: Munch automatically resolved ${resolution.providerMatches} ingredient${resolution.providerMatches === 1 ? "" : "s"} from verified food data and applied ${resolution.lowImpactEstimates} low-impact seasoning estimate${resolution.lowImpactEstimates === 1 ? "" : "s"}. Assumptions and provider provenance are stored with the recipe ingredients.`;
