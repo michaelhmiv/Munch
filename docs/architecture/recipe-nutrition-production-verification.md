@@ -6,4 +6,4 @@ When supplied, it is a JSON object keyed by recipe ID. A recipe entry may assert
 
 The runner still performs ownership discovery with auth access only, then reads and updates recipes through the normal user-scoped planning repository. Assertions run against the revision read back through that same path. Any mismatch exits non-zero so a controlled deployment can fail closed instead of treating an unverified backfill as successful.
 
-This guard is intended for targeted production certification and should not be left configured during ordinary service startup.
+This guard is intended for targeted production certification and should not be left configured during ordinary service startup. After certification, restore the standard Munch start command and clear the backfill target and expected-value environment variables.
