@@ -11,14 +11,45 @@ import {
     type RecipeInput,
 } from "../src/planning/repository.js";
 
+type ExpectedRecipeNutrition = {
+    nutrition_status?: "complete" | "partial" | "unavailable";
+    nutrition_total?: Record<string, number>;
+    nutrition_per_serving?: Record<string, number>;
+    tolerance?: number;
+    require_ingredient_core_nutrients?: boolean;
+};
+
+type ExpectedRecipeNutritionMap = Record<string, ExpectedRecipeNutrition>;
+
 // Auth access discovers ownership only; all recipe reads/writes re-enter normal user RLS.
 const recipeIds = (process.env.MUNCH_RECIPE_NUTRITION_BACKFILL_IDS ?? "")
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
 
+function parseExpectedNutrition(): ExpectedRecipeNutritionMap {
+    const raw = process.env.MUNCH_RECIPE_NUTRITION_BACKFILL_EXPECTED_JSON?.trim();
+    if (!raw) {
+        return {};
+    }
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error(
+            "MUNCH_RECIPE_NUTRITION_BACKFILL_EXPECTED_JSON must be a JSON object keyed by recipe ID",
+        );
+    }
+    return parsed as ExpectedRecipeNutritionMap;
+}
+
+const expectedNutrition = parseExpectedNutrition();
+
 if (recipeIds.length === 0) {
-    console.log(
+    if (Object.keys(expectedNutrition).length > 0) {
+        throw new Error(
+            "Recipe nutrition expectations were provided without any backfill recipe IDs",
+        );
+    }
+    console.error(
         "No recipe nutrition backfill requested; MUNCH_RECIPE_NUTRITION_BACKFILL_IDS is empty.",
     );
     process.exit(0);
@@ -111,6 +142,29 @@ async function ownershipForRecipe(recipeId: string): Promise<{
     };
 }
 
+function summarizeRecipe(
+    stored: NonNullable<Awaited<ReturnType<typeof getRecipe>>>,
+) {
+    return {
+        revision_id: stored.revision_id,
+        revision_number: stored.revision_number,
+        nutrition_status: stored.nutrition_status,
+        nutrition_total: stored.nutrition_total,
+        nutrition_per_serving: stored.nutrition_per_serving,
+        ingredients: stored.ingredients.map((ingredient) => ({
+            name: ingredient.name,
+            gram_weight: ingredient.gram_weight,
+            nutrients: ingredient.nutrients,
+            provider: ingredient.provider,
+            provider_food_id: ingredient.provider_food_id,
+            source_type: ingredient.source_type,
+            confidence: ingredient.confidence,
+            automatic_nutrition:
+                ingredient.source_snapshot?.automatic_nutrition ?? null,
+        })),
+    };
+}
+
 async function backfillRecipe(recipeId: string) {
     const { userId, scope } = await ownershipForRecipe(recipeId);
     const before = await getRecipe(userId, recipeId);
@@ -124,11 +178,7 @@ async function backfillRecipe(recipeId: string) {
             recipe_id: recipeId,
             skipped: true,
             reason: "nutrition_already_complete",
-            revision_id: before.revision_id,
-            revision_number: before.revision_number,
-            nutrition_status: before.nutrition_status,
-            nutrition_total: before.nutrition_total,
-            nutrition_per_serving: before.nutrition_per_serving,
+            ...summarizeRecipe(before),
         };
     }
 
@@ -152,29 +202,86 @@ async function backfillRecipe(recipeId: string) {
         prior_revision_id: before.revision_id,
         prior_revision_number: before.revision_number,
         prior_nutrition_status: before.nutrition_status,
-        revision_id: after.revision_id,
-        revision_number: after.revision_number,
-        nutrition_status: after.nutrition_status,
-        nutrition_total: after.nutrition_total,
-        nutrition_per_serving: after.nutrition_per_serving,
-        ingredients: after.ingredients.map((ingredient) => ({
-            name: ingredient.name,
-            gram_weight: ingredient.gram_weight,
-            nutrients: ingredient.nutrients,
-            provider: ingredient.provider,
-            provider_food_id: ingredient.provider_food_id,
-            source_type: ingredient.source_type,
-            confidence: ingredient.confidence,
-            automatic_nutrition:
-                ingredient.source_snapshot?.automatic_nutrition ?? null,
-        })),
+        ...summarizeRecipe(after),
     };
+}
+
+function assertNumberMap(
+    recipeId: string,
+    label: string,
+    actual: Record<string, unknown>,
+    expected: Record<string, number>,
+    tolerance: number,
+) {
+    for (const [key, expectedValue] of Object.entries(expected)) {
+        const actualValue = actual[key];
+        if (
+            typeof actualValue !== "number" ||
+            Math.abs(actualValue - expectedValue) > tolerance
+        ) {
+            throw new Error(
+                `Recipe ${recipeId} ${label}.${key} expected ${expectedValue} ± ${tolerance}, got ${String(actualValue)}`,
+            );
+        }
+    }
+}
+
+function assertExpectedNutrition(
+    result: Awaited<ReturnType<typeof backfillRecipe>>,
+) {
+    const expected = expectedNutrition[result.recipe_id];
+    if (!expected) {
+        return;
+    }
+    const tolerance = expected.tolerance ?? 0.01;
+    if (
+        expected.nutrition_status &&
+        result.nutrition_status !== expected.nutrition_status
+    ) {
+        throw new Error(
+            `Recipe ${result.recipe_id} nutrition_status expected ${expected.nutrition_status}, got ${result.nutrition_status}`,
+        );
+    }
+    if (expected.nutrition_total) {
+        assertNumberMap(
+            result.recipe_id,
+            "nutrition_total",
+            result.nutrition_total as Record<string, unknown>,
+            expected.nutrition_total,
+            tolerance,
+        );
+    }
+    if (expected.nutrition_per_serving) {
+        assertNumberMap(
+            result.recipe_id,
+            "nutrition_per_serving",
+            result.nutrition_per_serving as Record<string, unknown>,
+            expected.nutrition_per_serving,
+            tolerance,
+        );
+    }
+    if (expected.require_ingredient_core_nutrients) {
+        const missing = result.ingredients
+            .filter((ingredient) => {
+                const nutrients = ingredient.nutrients as Record<string, unknown>;
+                return ["calories", "protein_g", "carbs_g", "fat_g"].some(
+                    (key) => typeof nutrients[key] !== "number",
+                );
+            })
+            .map((ingredient) => ingredient.name);
+        if (missing.length > 0) {
+            throw new Error(
+                `Recipe ${result.recipe_id} is missing core nutrients for: ${missing.join(", ")}`,
+            );
+        }
+    }
 }
 
 try {
     for (const recipeId of recipeIds) {
         const result = await backfillRecipe(recipeId);
-        console.log(JSON.stringify(result));
+        assertExpectedNutrition(result);
+        console.error(`[recipe_nutrition_backfill] ${JSON.stringify(result)}`);
     }
 } finally {
     await closePlatformDatabase();
