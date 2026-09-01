@@ -28,7 +28,8 @@ const recipeIds = (process.env.MUNCH_RECIPE_NUTRITION_BACKFILL_IDS ?? "")
     .filter(Boolean);
 
 function parseExpectedNutrition(): ExpectedRecipeNutritionMap {
-    const raw = process.env.MUNCH_RECIPE_NUTRITION_BACKFILL_EXPECTED_JSON?.trim();
+    const raw =
+        process.env.MUNCH_RECIPE_NUTRITION_BACKFILL_EXPECTED_JSON?.trim();
     if (!raw) {
         return {};
     }
@@ -263,7 +264,10 @@ function assertExpectedNutrition(
     if (expected.require_ingredient_core_nutrients) {
         const missing = result.ingredients
             .filter((ingredient) => {
-                const nutrients = ingredient.nutrients as Record<string, unknown>;
+                const nutrients = ingredient.nutrients as Record<
+                    string,
+                    unknown
+                >;
                 return ["calories", "protein_g", "carbs_g", "fat_g"].some(
                     (key) => typeof nutrients[key] !== "number",
                 );
