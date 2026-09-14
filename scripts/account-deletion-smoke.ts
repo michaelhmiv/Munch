@@ -54,7 +54,7 @@ try {
             id, cook_id, update_id, sha256, mime_type, file_size, bytes,
             created_by_user_id
         ) values (
-            ${cookMediaId}, ${cookId}, ${"a".repeat(64)}, 'image/jpeg', 3,
+            ${cookMediaId}, ${cookId}, ${cookUpdateId}, ${"a".repeat(64)}, 'image/jpeg', 3,
             decode('ffd8ff', 'hex'), ${userId}
         )
     `;
