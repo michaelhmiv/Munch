@@ -464,7 +464,10 @@ function temperatureFields(
         const setpointDistance = nearest(
             /setpoint|set to|heated|heat|preheat/g,
         );
-        if (
+        if (eventType === "preheat") {
+            fields.setpointTemperature ??= temperature;
+            fields.setpointUnit ??= unit;
+        } else if (
             internalDistance !== null &&
             (ambientDistance === null || internalDistance <= ambientDistance) &&
             (setpointDistance === null || internalDistance <= setpointDistance)
@@ -478,7 +481,6 @@ function temperatureFields(
             fields.ambientTemperature ??= temperature;
             fields.ambientUnit ??= unit;
         } else if (
-            eventType === "preheat" ||
             eventType === "temperature_change" ||
             setpointDistance !== null ||
             /setpoint|set to|heated .* to|heat .* to/.test(lower)
