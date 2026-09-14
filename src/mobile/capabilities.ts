@@ -84,6 +84,13 @@ export const MOBILE_CAPABILITY_IDS = [
     "inventory.read",
     "inventory.reconcile",
     "purchase.reconcile",
+    "cook.create",
+    "cook.read",
+    "cook.update",
+    "cook.lifecycle",
+    "cook.iterate",
+    "cook.recipe",
+    "cook.nutrition",
 ] as const;
 
 export type MobileCapabilityId = (typeof MOBILE_CAPABILITY_IDS)[number];

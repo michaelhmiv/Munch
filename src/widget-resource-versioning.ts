@@ -19,6 +19,8 @@ const WIDGET_DESCRIPTIONS: Record<string, string> = {
         "A Munch weight-trend view showing the latest reading, change over time, and optional target context.",
     "ui://widget/import-meals.html":
         "A Munch meal-history importer that lets the user map, preview, validate, and confirm an uploaded export before anything is saved.",
+    "ui://widget/cook-summary.html":
+        "A compact Munch cook-history card showing saved photos, dishes, timeline events, and user-authored results with expandable detail.",
 };
 
 export function versionWidgetResourceUri(uri: string): string {

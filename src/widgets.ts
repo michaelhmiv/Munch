@@ -18,6 +18,7 @@ export const USER_WIDGET_TEMPLATES: Record<string, string> = {
     trends: "trends.html",
     "weight-trends": "weight-trends.html",
     "import-meals": "import-meals.html",
+    "cook-summary": "cook-summary.html",
 };
 
 export const DEVELOPMENT_WIDGET_TEMPLATES: Record<string, string> = {

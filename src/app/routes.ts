@@ -108,6 +108,34 @@ import {
     getRecipeWorkspace,
     getTodayWorkspace,
 } from "./repository.js";
+import {
+    addCookUpdate,
+    compareCooks,
+    correctCookEvent,
+    createCook,
+    deleteCook,
+    finishCook,
+    getCook,
+    parseNaturalCookUpdate,
+    prepareCookRecipeDraft,
+    recordCookOutcome,
+    reopenCook,
+    repeatCook,
+    saveCookAsRecipe,
+    searchCooks,
+    setPreferredCook,
+    updateCook,
+    updateCookDish,
+    type CookDishInput,
+    type CookEventInput,
+    type CookMediaInput,
+    type CookScope,
+} from "../cooks/repository.js";
+import {
+    normalizeCookMediaMimeType,
+    validateCookMediaUpload,
+    type CookMediaFailure,
+} from "../cooks/media.js";
 
 function requiredQuery(value: string | undefined, name: string): string {
     if (!value) throw new Error(`${name} is required`);
@@ -129,6 +157,14 @@ function numberOrNull(value: unknown): number | null | undefined {
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed < 0) {
         throw new Error("Invalid number");
+    }
+    return parsed;
+}
+
+function positiveInteger(value: unknown, label: string): number {
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+        throw new Error(`${label} must be a positive integer`);
     }
     return parsed;
 }
@@ -156,6 +192,214 @@ function privateJson(c: Context, data: unknown) {
         "Cache-Control": "no-store, private",
         Pragma: "no-cache",
     });
+}
+
+function cookScopeFromBody(
+    body: Record<string, unknown>,
+    capabilities: Awaited<ReturnType<typeof resolveMunchCapabilities>>,
+): CookScope {
+    if (body.scope === undefined || body.scope === "personal") {
+        return { type: "personal" };
+    }
+    if (body.scope !== "household") throw new Error("Invalid cook scope");
+    const household = capabilities.household;
+    if (!capabilities.householdWrite || !household) {
+        throw new Error("Household cook capability is unavailable");
+    }
+    return { type: "household", householdId: household.householdId };
+}
+
+function cookDateValue(value: unknown): string | undefined {
+    if (value === undefined || value === null || value === "") return undefined;
+    if (typeof value !== "string") throw new Error("Cook date is invalid");
+    return value;
+}
+
+function cookEventInput(value: unknown): CookEventInput {
+    const body = recordValue(value, "Cook event");
+    const temperature = (key: string): number | null | undefined => {
+        if (body[key] === undefined || body[key] === null || body[key] === "") {
+            return body[key] === null ? null : undefined;
+        }
+        const parsed = Number(body[key]);
+        if (!Number.isFinite(parsed))
+            throw new Error("Cook temperature is invalid");
+        return parsed;
+    };
+    const unit = (key: string): "F" | "C" | null | undefined => {
+        if (body[key] === undefined) return undefined;
+        if (body[key] === null || body[key] === "") return null;
+        if (body[key] !== "F" && body[key] !== "C")
+            throw new Error("Cook temperature unit is invalid");
+        return body[key] as "F" | "C";
+    };
+    if (typeof body.event_type !== "string")
+        throw new Error("Cook event type is required");
+    return {
+        eventType: body.event_type as CookEventInput["eventType"],
+        eventAt: typeof body.event_at === "string" ? body.event_at : undefined,
+        eventTimezone:
+            typeof body.event_timezone === "string"
+                ? body.event_timezone
+                : undefined,
+        timePrecision: body.time_precision as CookEventInput["timePrecision"],
+        relativePhrase:
+            typeof body.relative_phrase === "string"
+                ? body.relative_phrase
+                : null,
+        setpointTemperature: temperature("setpoint_temperature"),
+        setpointUnit: unit("setpoint_unit"),
+        ambientTemperature: temperature("ambient_temperature"),
+        ambientUnit: unit("ambient_unit"),
+        internalTemperature: temperature("internal_temperature"),
+        internalUnit: unit("internal_unit"),
+        note: typeof body.note === "string" ? body.note : null,
+        originalMessage:
+            typeof body.original_message === "string"
+                ? body.original_message
+                : null,
+        dishId: typeof body.dish_id === "string" ? body.dish_id : null,
+        idempotencyKey:
+            typeof body.idempotency_key === "string"
+                ? body.idempotency_key
+                : undefined,
+        correctionOfEventId:
+            typeof body.correction_of_event_id === "string"
+                ? body.correction_of_event_id
+                : null,
+    };
+}
+
+function cookDishInput(value: unknown): CookDishInput {
+    const body = recordValue(value, "Cook dish");
+    const name = typeof body.name === "string" ? body.name : "";
+    if (!name.trim()) throw new Error("Dish name is required");
+    const actualIngredients = body.actual_ingredients;
+    if (actualIngredients !== undefined && !Array.isArray(actualIngredients)) {
+        throw new Error("Actual ingredients must be an array");
+    }
+    return {
+        name,
+        ingredientOrCut:
+            typeof body.ingredient_or_cut === "string"
+                ? body.ingredient_or_cut
+                : null,
+        method: typeof body.method === "string" ? body.method : null,
+        flavor: typeof body.flavor === "string" ? body.flavor : null,
+        equipment: typeof body.equipment === "string" ? body.equipment : null,
+        notes: typeof body.notes === "string" ? body.notes : null,
+        actualIngredients: actualIngredients as unknown[] | undefined,
+        dishId: typeof body.id === "string" ? body.id : undefined,
+        recipeId: typeof body.recipe_id === "string" ? body.recipe_id : null,
+        recipeRevisionId:
+            typeof body.recipe_revision_id === "string"
+                ? body.recipe_revision_id
+                : null,
+    };
+}
+
+function jsonField(body: Record<string, unknown>, key: string): unknown {
+    const value = body[key];
+    if (typeof value !== "string") return value;
+    if (!value.trim()) return undefined;
+    try {
+        return JSON.parse(value);
+    } catch {
+        throw new Error(`${key} must be valid JSON`);
+    }
+}
+
+async function cookRequest(c: Context): Promise<{
+    body: Record<string, unknown>;
+    photos: CookMediaInput[];
+    mediaFailures: CookMediaFailure[];
+}> {
+    const contentType = c.req.header("content-type") ?? "";
+    if (!contentType.toLowerCase().includes("multipart/form-data")) {
+        return {
+            body: recordValue(await c.req.json(), "Cook request"),
+            photos: [],
+            mediaFailures: [],
+        };
+    }
+    const form = await c.req.raw.formData();
+    const body: Record<string, unknown> = {};
+    for (const [key, value] of form.entries()) {
+        if (typeof value === "string") body[key] = value;
+    }
+    for (const key of [
+        "dishes",
+        "events",
+        "setup_snapshot",
+        "characteristics",
+        "ai_suggestions",
+        "recipe",
+    ]) {
+        if (body[key] !== undefined) body[key] = jsonField(body, key);
+    }
+    const photos: CookMediaInput[] = [];
+    const mediaFailures: CookMediaFailure[] = [];
+    for (const value of form.getAll("photos")) {
+        if (!(value instanceof File)) continue;
+        try {
+            const bytes = new Uint8Array(await value.arrayBuffer());
+            const photo = validateCookMediaUpload({
+                bytes,
+                mimeType: normalizeCookMediaMimeType(value.type),
+                fileName: value.name,
+            });
+            photos.push(photo);
+        } catch (error) {
+            const message =
+                error instanceof Error ? error.message : "Photo upload failed";
+            mediaFailures.push({
+                fileName: value.name || undefined,
+                code: /too large/i.test(message)
+                    ? "too_large"
+                    : /empty/i.test(message)
+                      ? "empty"
+                      : "invalid_type",
+                message,
+            });
+        }
+    }
+    return { body, photos, mediaFailures };
+}
+
+function cookEventsFromBody(
+    body: Record<string, unknown>,
+    message: string | undefined,
+    submittedAt: string | undefined,
+    timezone: string,
+): CookEventInput[] {
+    const rawEvents = jsonField(body, "events");
+    if (Array.isArray(rawEvents)) return rawEvents.map(cookEventInput);
+    if (!message) return [];
+    return parseNaturalCookUpdate(message, submittedAt, timezone).events;
+}
+
+function cookDishesFromBody(
+    body: Record<string, unknown>,
+): CookDishInput[] | undefined {
+    const rawDishes = jsonField(body, "dishes");
+    if (rawDishes === undefined || rawDishes === null || rawDishes === "")
+        return undefined;
+    if (!Array.isArray(rawDishes))
+        throw new Error("Cook dishes must be an array");
+    return rawDishes.map(cookDishInput);
+}
+
+function cookPhotosFromBody(
+    photos: CookMediaInput[],
+    body: Record<string, unknown>,
+): CookMediaInput[] {
+    const dishId = typeof body.dish_id === "string" ? body.dish_id : null;
+    const eventId = typeof body.event_id === "string" ? body.event_id : null;
+    return photos.map((photo) => ({
+        ...photo,
+        dishId: photo.dishId ?? dishId,
+        eventId: photo.eventId ?? eventId,
+    }));
 }
 
 function mealType(value: unknown) {
@@ -1335,6 +1579,438 @@ export function createAppRouter(): Hono {
         return privateJson(c, { planned_meal: result });
     });
 
+    app.get("/api/app/cooks", async (c) =>
+        privateJson(c, {
+            cooks: await searchCooks(c.get("munchUserId"), {
+                query: c.req.query("q"),
+                dish: c.req.query("dish"),
+                method: c.req.query("method"),
+                flavor: c.req.query("flavor"),
+                dateFrom: c.req.query("from"),
+                dateTo: c.req.query("to"),
+                status:
+                    (c.req.query("status") as
+                        "active" | "finished" | "all" | undefined) ?? "all",
+                limit: optionalLimit(c.req.query("limit")),
+            }),
+        }),
+    );
+
+    app.get("/api/app/cooks/compare", async (c) => {
+        const ids = (c.req.query("ids") ?? "")
+            .split(",")
+            .map((id) => id.trim())
+            .filter(Boolean);
+        return privateJson(c, {
+            comparison: await compareCooks(c.get("munchUserId"), ids),
+        });
+    });
+
+    app.post("/api/app/cooks", requireSameOrigin, async (c) => {
+        const userId = c.get("munchUserId");
+        const request = await cookRequest(c);
+        const body = request.body;
+        const timezone =
+            typeof body.timezone === "string" ? body.timezone : "UTC";
+        const submittedAt =
+            typeof body.started_at === "string" ? body.started_at : undefined;
+        const message =
+            typeof body.message === "string" ? body.message.trim() : undefined;
+        const parsed = message
+            ? parseNaturalCookUpdate(
+                  message,
+                  submittedAt
+                      ? new Date(submittedAt).toISOString()
+                      : new Date().toISOString(),
+                  timezone,
+              )
+            : null;
+        const dishes =
+            cookDishesFromBody(body) ??
+            (parsed?.suggestions.dish
+                ? [
+                      {
+                          name: parsed.suggestions.dish,
+                          method: parsed.suggestions.method,
+                          flavor: parsed.suggestions.flavor,
+                          equipment: parsed.suggestions.equipment,
+                          ingredientOrCut: parsed.suggestions.ingredientOrCut,
+                      },
+                  ]
+                : undefined);
+        const capabilities = await resolveMunchCapabilities(userId);
+        const result = await createCook(userId, {
+            scope: cookScopeFromBody(body, capabilities),
+            title:
+                typeof body.title === "string"
+                    ? body.title
+                    : parsed?.suggestions.dish,
+            cookDate: cookDateValue(body.cook_date),
+            timezone,
+            startedAt: submittedAt,
+            status: body.status === "finished" ? "finished" : "active",
+            notes: typeof body.notes === "string" ? body.notes : null,
+            setupSnapshot:
+                body.setup_snapshot &&
+                typeof body.setup_snapshot === "object" &&
+                !Array.isArray(body.setup_snapshot)
+                    ? (body.setup_snapshot as Record<string, unknown>)
+                    : undefined,
+            sourceCookId:
+                typeof body.source_cook_id === "string"
+                    ? body.source_cook_id
+                    : null,
+            originalMessage: message,
+            message,
+            events: Array.isArray(jsonField(body, "events"))
+                ? (jsonField(body, "events") as unknown[]).map(cookEventInput)
+                : parsed?.events,
+            photos: cookPhotosFromBody(request.photos, body),
+            mediaFailures: request.mediaFailures,
+            idempotencyKey:
+                typeof body.idempotency_key === "string"
+                    ? body.idempotency_key
+                    : crypto.randomUUID(),
+            source: "website",
+            dishes,
+        });
+        return privateJson(c, {
+            ...result,
+            cook: await getCook(userId, result.cookId),
+        });
+    });
+
+    app.get("/api/app/cooks/:id", async (c) => {
+        const cook = await getCook(c.get("munchUserId"), c.req.param("id")!);
+        if (!cook) throw new Error("Cook not found");
+        return privateJson(c, cook);
+    });
+
+    app.patch("/api/app/cooks/:id", requireSameOrigin, async (c) => {
+        const body = recordValue(await c.req.json(), "Cook update");
+        const result = await updateCook(
+            c.get("munchUserId"),
+            c.req.param("id")!,
+            {
+                title: typeof body.title === "string" ? body.title : undefined,
+                cookDate: cookDateValue(body.cook_date),
+                timezone:
+                    typeof body.timezone === "string"
+                        ? body.timezone
+                        : undefined,
+                status:
+                    body.status === "active" || body.status === "finished"
+                        ? body.status
+                        : undefined,
+                notes:
+                    body.notes === null || typeof body.notes === "string"
+                        ? body.notes
+                        : undefined,
+                setupSnapshot:
+                    body.setup_snapshot &&
+                    typeof body.setup_snapshot === "object" &&
+                    !Array.isArray(body.setup_snapshot)
+                        ? (body.setup_snapshot as Record<string, unknown>)
+                        : undefined,
+                expectedVersion:
+                    body.expected_version === undefined
+                        ? undefined
+                        : positiveInteger(
+                              body.expected_version,
+                              "Cook expected_version",
+                          ),
+            },
+        );
+        return privateJson(c, {
+            cook: await getCook(c.get("munchUserId"), result.id),
+        });
+    });
+
+    app.patch(
+        "/api/app/cooks/:cookId/dishes/:dishId",
+        requireSameOrigin,
+        async (c) => {
+            const body = recordValue(await c.req.json(), "Cook dish update");
+            const actualIngredients = body.actual_ingredients;
+            if (
+                actualIngredients !== undefined &&
+                !Array.isArray(actualIngredients)
+            ) {
+                throw new Error("Actual ingredients must be an array");
+            }
+            const result = await updateCookDish(
+                c.get("munchUserId"),
+                c.req.param("cookId")!,
+                c.req.param("dishId")!,
+                {
+                    name: typeof body.name === "string" ? body.name : undefined,
+                    ingredientOrCut:
+                        body.ingredient_or_cut === null ||
+                        typeof body.ingredient_or_cut === "string"
+                            ? body.ingredient_or_cut
+                            : undefined,
+                    method:
+                        body.method === null || typeof body.method === "string"
+                            ? body.method
+                            : undefined,
+                    flavor:
+                        body.flavor === null || typeof body.flavor === "string"
+                            ? body.flavor
+                            : undefined,
+                    equipment:
+                        body.equipment === null ||
+                        typeof body.equipment === "string"
+                            ? body.equipment
+                            : undefined,
+                    notes:
+                        body.notes === null || typeof body.notes === "string"
+                            ? body.notes
+                            : undefined,
+                    actualIngredients: actualIngredients as
+                        unknown[] | undefined,
+                    expectedVersion:
+                        body.expected_version === undefined
+                            ? undefined
+                            : positiveInteger(
+                                  body.expected_version,
+                                  "Cook expected_version",
+                              ),
+                },
+            );
+            return privateJson(c, {
+                ...result,
+                cook: await getCook(
+                    c.get("munchUserId"),
+                    c.req.param("cookId")!,
+                ),
+            });
+        },
+    );
+
+    app.delete("/api/app/cooks/:id", requireSameOrigin, async (c) => {
+        const deleted = await deleteCook(
+            c.get("munchUserId"),
+            c.req.param("id")!,
+        );
+        if (!deleted) throw new Error("Cook not found");
+        return privateJson(c, { deleted: true });
+    });
+
+    app.post("/api/app/cooks/:id/updates", requireSameOrigin, async (c) => {
+        const userId = c.get("munchUserId");
+        const request = await cookRequest(c);
+        const body = request.body;
+        const timezone =
+            typeof body.timezone === "string" ? body.timezone : "UTC";
+        const submittedAt =
+            typeof body.submitted_at === "string"
+                ? body.submitted_at
+                : undefined;
+        const message =
+            typeof body.message === "string" ? body.message.trim() : undefined;
+        const explicitEvents = jsonField(body, "events");
+        const events = Array.isArray(explicitEvents)
+            ? explicitEvents.map(cookEventInput)
+            : cookEventsFromBody(
+                  body,
+                  message,
+                  submittedAt ? new Date(submittedAt).toISOString() : undefined,
+                  timezone,
+              );
+        const update = await addCookUpdate(userId, c.req.param("id")!, {
+            source: "website",
+            message,
+            dishId: typeof body.dish_id === "string" ? body.dish_id : null,
+            timezone,
+            submittedAt,
+            events,
+            photos: cookPhotosFromBody(request.photos, body),
+            mediaFailures: request.mediaFailures,
+            idempotencyKey:
+                typeof body.idempotency_key === "string"
+                    ? body.idempotency_key
+                    : crypto.randomUUID(),
+        });
+        return privateJson(c, {
+            update,
+            cook: await getCook(userId, c.req.param("id")!),
+        });
+    });
+
+    app.patch(
+        "/api/app/cooks/:cookId/events/:eventId",
+        requireSameOrigin,
+        async (c) => {
+            const body = recordValue(
+                await c.req.json(),
+                "Cook event correction",
+            );
+            const event = await correctCookEvent(
+                c.get("munchUserId"),
+                c.req.param("cookId")!,
+                c.req.param("eventId")!,
+                cookEventInput(body),
+                positiveInteger(
+                    body.expected_version,
+                    "Cook event expected_version",
+                ),
+            );
+            return privateJson(c, { event });
+        },
+    );
+
+    app.post("/api/app/cooks/:id/finish", requireSameOrigin, async (c) => {
+        const body = recordValue(
+            await c.req.json().catch(() => ({})),
+            "Finish cook",
+        );
+        return privateJson(c, {
+            cook: await finishCook(
+                c.get("munchUserId"),
+                c.req.param("id")!,
+                body.expected_version === undefined
+                    ? undefined
+                    : positiveInteger(
+                          body.expected_version,
+                          "Cook expected_version",
+                      ),
+            ),
+        });
+    });
+
+    app.post("/api/app/cooks/:id/reopen", requireSameOrigin, async (c) => {
+        const body = recordValue(
+            await c.req.json().catch(() => ({})),
+            "Reopen cook",
+        );
+        return privateJson(c, {
+            cook: await reopenCook(
+                c.get("munchUserId"),
+                c.req.param("id")!,
+                body.expected_version === undefined
+                    ? undefined
+                    : positiveInteger(
+                          body.expected_version,
+                          "Cook expected_version",
+                      ),
+            ),
+        });
+    });
+
+    app.post("/api/app/cooks/:id/repeat", requireSameOrigin, async (c) => {
+        const body = recordValue(
+            await c.req.json().catch(() => ({})),
+            "Repeat cook",
+        );
+        const result = await repeatCook(
+            c.get("munchUserId"),
+            c.req.param("id")!,
+            typeof body.idempotency_key === "string"
+                ? body.idempotency_key
+                : crypto.randomUUID(),
+        );
+        return privateJson(c, {
+            ...result,
+            cook: await getCook(c.get("munchUserId"), result.cookId),
+        });
+    });
+
+    app.post("/api/app/cooks/:id/outcome", requireSameOrigin, async (c) => {
+        const body = recordValue(await c.req.json(), "Cook result");
+        const result = await recordCookOutcome(
+            c.get("munchUserId"),
+            c.req.param("id")!,
+            {
+                dishId: typeof body.dish_id === "string" ? body.dish_id : null,
+                writtenFeedback:
+                    typeof body.written_feedback === "string"
+                        ? body.written_feedback
+                        : null,
+                overallAssessment:
+                    body.overall_assessment === undefined ||
+                    body.overall_assessment === ""
+                        ? null
+                        : Number(body.overall_assessment),
+                characteristics:
+                    body.characteristics &&
+                    typeof body.characteristics === "object" &&
+                    !Array.isArray(body.characteristics)
+                        ? (body.characteristics as Record<string, unknown>)
+                        : {},
+                worked: typeof body.worked === "string" ? body.worked : null,
+                disappointed:
+                    typeof body.disappointed === "string"
+                        ? body.disappointed
+                        : null,
+                nextTimeNotes:
+                    typeof body.next_time_notes === "string"
+                        ? body.next_time_notes
+                        : null,
+                aiSuggestions: Array.isArray(body.ai_suggestions)
+                    ? body.ai_suggestions
+                    : [],
+                isPreferred: body.is_preferred === true,
+                expectedVersion:
+                    body.expected_version === undefined
+                        ? undefined
+                        : positiveInteger(
+                              body.expected_version,
+                              "Cook result expected_version",
+                          ),
+            },
+        );
+        return privateJson(c, {
+            outcome: result,
+            cook: await getCook(c.get("munchUserId"), c.req.param("id")!),
+        });
+    });
+
+    app.post("/api/app/cooks/:id/preferred", requireSameOrigin, async (c) =>
+        privateJson(
+            c,
+            await setPreferredCook(c.get("munchUserId"), c.req.param("id")!),
+        ),
+    );
+
+    app.post(
+        "/api/app/cooks/:id/recipe-draft",
+        requireSameOrigin,
+        async (c) => {
+            const body = recordValue(
+                await c.req.json().catch(() => ({})),
+                "Cook recipe draft",
+            );
+            return privateJson(c, {
+                draft: await prepareCookRecipeDraft(
+                    c.get("munchUserId"),
+                    c.req.param("id")!,
+                    typeof body.dish_id === "string" ? body.dish_id : undefined,
+                ),
+            });
+        },
+    );
+
+    app.post("/api/app/cooks/:id/save-recipe", requireSameOrigin, async (c) => {
+        const userId = c.get("munchUserId");
+        const body = recordValue(await c.req.json(), "Cook recipe save");
+        const capabilities = await resolveMunchCapabilities(userId);
+        const result = await saveCookAsRecipe({
+            userId,
+            cookId: c.req.param("id")!,
+            dishId: typeof body.dish_id === "string" ? body.dish_id : undefined,
+            scope: recipeScopeForCreation(body, capabilities),
+            recipe: recipeInputFromBody(body.recipe),
+            idempotencyKey:
+                typeof body.idempotency_key === "string"
+                    ? body.idempotency_key
+                    : crypto.randomUUID(),
+        });
+        return privateJson(c, {
+            ...result,
+            cook: await getCook(userId, c.req.param("id")!),
+        });
+    });
+
     app.post("/api/app/groceries/items", requireSameOrigin, async (c) => {
         const body = recordValue(await c.req.json(), "Grocery items");
         const capabilities = await resolveMunchCapabilities(
@@ -1978,7 +2654,7 @@ export function createAppRouter(): Hono {
         const knownMessage =
             error instanceof Error &&
             (recipeImportError !== null ||
-                /^(Invalid|Connection not found|Date range|Weight|Water|Target weight|Meal item|Meal |Meal$|Meal not found|Food |Nutrition|Add at least|A meal|Structured meal|A structured meal|Draft |Grocery |Import |Recipe import|Recipe capability)/.test(
+                /^(Invalid|Connection not found|Date range|Weight|Water|Target weight|Meal item|Meal |Meal$|Meal not found|Food |Nutrition|Add at least|A meal|Structured meal|A structured meal|Draft |Grocery |Import |Recipe import|Recipe capability|Cook|Dish|Cook event|Cook photo|Source cook|Recipe saved)/.test(
                     error.message,
                 ))
                 ? error.message

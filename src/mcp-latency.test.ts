@@ -44,7 +44,7 @@ describe("MCP latency catalog optimization", () => {
     });
 
     test("keeps only the direct conversational surface model-visible", () => {
-        expect(directModelToolCount()).toBe(30);
+        expect(directModelToolCount()).toBe(44);
         expect(isModelPrivateTool("get_grocery_list")).toBe(false);
         expect(isModelPrivateTool("confirm_meal_draft")).toBe(false);
         expect(isModelPrivateTool("get_meals_by_date_range")).toBe(false);
@@ -169,7 +169,7 @@ describe("MCP latency catalog optimization", () => {
             action: "set_timezone",
             args: { timezone: "America/Chicago" },
         });
-        expect(received).toEqual({ timezone: "America/Chicago" });
+        expect(received as unknown).toEqual({ timezone: "America/Chicago" });
     });
 
     test("gateway validates private action arguments before invoking handlers", async () => {

@@ -50,6 +50,12 @@ export async function exportAccountData(
             waterLogs,
             weightLogs,
             savedFoods,
+            cooks,
+            cookDishes,
+            cookUpdates,
+            cookEvents,
+            cookOutcomes,
+            cookMedia,
             household,
             householdMembers,
             recipes,
@@ -106,6 +112,85 @@ export async function exportAccountData(
                 select * from munch.saved_foods
                 where user_id = ${userId}
                 order by created_at, id
+            `,
+            tx<JsonRecord[]>`
+                select * from munch.cooks
+                where personal_owner_user_id = ${userId}
+                   or household_id in (
+                       select membership.household_id
+                       from munch.household_memberships membership
+                       where membership.user_id = ${userId}
+                         and membership.status = 'active'
+                   )
+                order by cook_date, id
+            `,
+            tx<JsonRecord[]>`
+                select dish.*
+                from munch.cook_dishes dish
+                join munch.cooks cook on cook.id = dish.cook_id
+                where cook.personal_owner_user_id = ${userId}
+                   or cook.household_id in (
+                       select membership.household_id
+                       from munch.household_memberships membership
+                       where membership.user_id = ${userId}
+                         and membership.status = 'active'
+                   )
+                order by dish.cook_id, dish.position, dish.id
+            `,
+            tx<JsonRecord[]>`
+                select update_record.*
+                from munch.cook_updates update_record
+                join munch.cooks cook on cook.id = update_record.cook_id
+                where cook.personal_owner_user_id = ${userId}
+                   or cook.household_id in (
+                       select membership.household_id
+                       from munch.household_memberships membership
+                       where membership.user_id = ${userId}
+                         and membership.status = 'active'
+                   )
+                order by update_record.cook_id, update_record.submitted_at, update_record.id
+            `,
+            tx<JsonRecord[]>`
+                select event.*
+                from munch.cook_events event
+                join munch.cooks cook on cook.id = event.cook_id
+                where cook.personal_owner_user_id = ${userId}
+                   or cook.household_id in (
+                       select membership.household_id
+                       from munch.household_memberships membership
+                       where membership.user_id = ${userId}
+                         and membership.status = 'active'
+                   )
+                order by event.cook_id, event.event_at, event.id
+            `,
+            tx<JsonRecord[]>`
+                select outcome.*
+                from munch.cook_outcomes outcome
+                join munch.cooks cook on cook.id = outcome.cook_id
+                where cook.personal_owner_user_id = ${userId}
+                   or cook.household_id in (
+                       select membership.household_id
+                       from munch.household_memberships membership
+                       where membership.user_id = ${userId}
+                         and membership.status = 'active'
+                   )
+                order by outcome.cook_id, outcome.updated_at, outcome.id
+            `,
+            tx<JsonRecord[]>`
+                select media.id, media.cook_id, media.dish_id, media.update_id,
+                       media.event_id, media.sha256, media.mime_type, media.file_name,
+                       media.file_size, encode(media.bytes, 'base64') as bytes_base64,
+                       media.openai_file_id, media.caption, media.created_at
+                from munch.cook_media media
+                join munch.cooks cook on cook.id = media.cook_id
+                where cook.personal_owner_user_id = ${userId}
+                   or cook.household_id in (
+                       select membership.household_id
+                       from munch.household_memberships membership
+                       where membership.user_id = ${userId}
+                         and membership.status = 'active'
+                   )
+                order by media.cook_id, media.created_at, media.id
             `,
             tx<JsonRecord[]>`
                 select household.id, household.name, household.version,
@@ -296,7 +381,7 @@ export async function exportAccountData(
         ]);
 
         return {
-            schema_version: 3,
+            schema_version: 4,
             exported_at: new Date().toISOString(),
             account: account[0] ?? null,
             preferences: preferences[0] ?? null,
@@ -306,6 +391,12 @@ export async function exportAccountData(
             water_logs: stripInternalFields(waterLogs),
             weight_logs: stripInternalFields(weightLogs),
             saved_foods: stripInternalFields(savedFoods),
+            cooks: stripInternalFields(cooks),
+            cook_dishes: stripInternalFields(cookDishes),
+            cook_updates: stripInternalFields(cookUpdates),
+            cook_events: stripInternalFields(cookEvents),
+            cook_outcomes: stripInternalFields(cookOutcomes),
+            cook_media: stripInternalFields(cookMedia),
             household: household[0] ?? null,
             household_members: stripInternalFields(householdMembers),
             recipes: stripInternalFields(recipes),

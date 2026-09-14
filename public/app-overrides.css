@@ -100,6 +100,239 @@ dialog .auth-card {
     font-size: 0.74rem;
 }
 
+.cook-list {
+    display: grid;
+    gap: 10px;
+}
+
+.cook-create-dishes {
+    display: grid;
+    gap: 10px;
+}
+
+.cook-create-dish {
+    display: grid;
+    gap: 8px;
+    border: 1px solid var(--ink-100);
+    border-radius: 12px;
+    padding: 10px;
+}
+
+.cook-search-panel .inline-form {
+    display: grid;
+    grid-template-columns:
+        minmax(180px, 2fr) repeat(3, minmax(100px, 1fr))
+        auto auto auto auto;
+    gap: 8px;
+    align-items: end;
+}
+
+.cook-search-panel .inline-form label {
+    display: grid;
+    gap: 3px;
+}
+
+.cook-card {
+    border: 1px solid var(--ink-100);
+    border-radius: 14px;
+    background: white;
+    overflow: hidden;
+}
+
+.cook-card-main {
+    display: flex;
+    gap: 12px;
+    padding: 12px;
+}
+
+.cook-card-photo {
+    width: 76px;
+    height: 76px;
+    flex: 0 0 76px;
+    object-fit: cover;
+    border-radius: 10px;
+    background: var(--surface-muted);
+    display: grid;
+    place-items: center;
+    color: var(--green-600);
+    font-size: 1.6rem;
+}
+
+.cook-card-copy {
+    min-width: 0;
+    flex: 1;
+}
+
+.cook-card-head,
+.cook-detail-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.cook-card-head h3 {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.cook-card-meta {
+    margin: 4px 0 8px;
+    color: var(--ink-500);
+    font-size: 0.82rem;
+    overflow-wrap: anywhere;
+}
+
+.cook-select {
+    color: var(--ink-500);
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+
+.cook-select input {
+    accent-color: var(--green-700);
+}
+
+.cook-detail-view {
+    display: grid;
+    gap: 14px;
+}
+
+.cook-detail-section {
+    border-top: 1px solid var(--ink-100);
+    padding-top: 12px;
+}
+
+.cook-dishes {
+    display: grid;
+    gap: 7px;
+}
+
+.cook-dish {
+    display: grid;
+    gap: 2px;
+    border: 1px solid var(--ink-100);
+    border-radius: 10px;
+    padding: 9px 10px;
+}
+
+.cook-dish span,
+.cook-dish small,
+.cook-event-row small {
+    color: var(--ink-500);
+    font-size: 0.78rem;
+}
+
+.cook-gallery,
+.cook-compare-photos {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+}
+
+.cook-gallery figure {
+    margin: 0;
+    min-width: 120px;
+}
+
+.cook-gallery img {
+    width: 120px;
+    height: 120px;
+    object-fit: cover;
+    border-radius: 10px;
+    display: block;
+}
+
+.cook-gallery figcaption {
+    margin-top: 4px;
+    color: var(--ink-500);
+    font-size: 0.72rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cook-timeline {
+    display: grid;
+    gap: 8px;
+}
+
+.cook-event-row {
+    display: grid;
+    grid-template-columns: minmax(130px, 0.8fr) minmax(0, 2fr) auto;
+    gap: 9px;
+    align-items: start;
+    border-bottom: 1px solid var(--ink-100);
+    padding-bottom: 8px;
+}
+
+.cook-event-row p {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.cook-original {
+    border: 1px solid var(--ink-100);
+    border-radius: 10px;
+    padding: 9px 10px;
+}
+
+.cook-original summary {
+    cursor: pointer;
+    font-weight: 650;
+}
+
+.cook-original p {
+    margin: 8px 0 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.cook-comparison {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+}
+
+.cook-compare-column {
+    border: 1px solid var(--ink-100);
+    border-radius: 12px;
+    padding: 10px;
+}
+
+.cook-compare-column h3,
+.cook-compare-column h4 {
+    margin: 0 0 5px;
+}
+
+.cook-compare-column p {
+    margin: 0 0 10px;
+    overflow-wrap: anywhere;
+}
+
+.cook-compare-photos img {
+    width: 56px;
+    height: 56px;
+    object-fit: cover;
+    border-radius: 7px;
+}
+
+.error-text {
+    color: var(--danger-700);
+}
+
+@media (max-width: 700px) {
+    .cook-search-panel .inline-form {
+        grid-template-columns: 1fr 1fr;
+    }
+    .cook-event-row {
+        grid-template-columns: 1fr;
+    }
+    .cook-detail-head {
+        flex-direction: column;
+    }
+}
+
 .app-content .food-items {
     margin-top: 8px;
     border-top: 1px solid var(--ink-100);

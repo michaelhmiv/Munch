@@ -9,6 +9,7 @@ import { createBillingRouter } from "./billing/routes.js";
 import { registerDiscoveryRoutes } from "./discovery.js";
 import { startExportCleanup } from "./export.js";
 import { createInventoryRouter } from "./inventory/routes.js";
+import { getCookMediaBytes, verifyCookMediaToken } from "./cooks/media.js";
 import { handleMcp } from "./mcp-runtime.js";
 import {
     authenticateBearer,
@@ -52,8 +53,9 @@ app.use("*", async (c, next) => {
 app.use(
     "*",
     bodyLimit({
-        // Receipt/Pantry images are accepted transiently by premium endpoints.
-        // Individual handlers enforce stricter 8 MB image limits.
+        // Receipt/Pantry images remain transient; Cook photos are validated and
+        // persisted by the Cook media service. Individual handlers enforce
+        // stricter 8 MB image limits.
         maxSize: 10 * 1024 * 1024,
         onError: (c) => c.json({ error: "payload_too_large" }, 413),
     }),
@@ -104,6 +106,28 @@ app.all(
     rateLimit,
     handleMcp,
 );
+
+app.get("/media/cooks/:id", async (c) => {
+    const mediaId = c.req.param("id");
+    const token = c.req.query("token");
+    if (!token) return c.json({ error: "cook_media_token_required" }, 401);
+    const verified = verifyCookMediaToken(token, mediaId);
+    if (!verified) return c.json({ error: "cook_media_not_found" }, 404);
+    const media = await getCookMediaBytes(verified.userId, mediaId);
+    if (!media) return c.json({ error: "cook_media_not_found" }, 404);
+    const body = media.bytes.buffer.slice(
+        media.bytes.byteOffset,
+        media.bytes.byteOffset + media.bytes.byteLength,
+    ) as ArrayBuffer;
+    return c.body(body, 200, {
+        "Content-Type": media.mimeType,
+        "Content-Disposition": media.fileName
+            ? `inline; filename="${media.fileName.replace(/[^a-zA-Z0-9._ -]/g, "_")}"`
+            : "inline",
+        "Cache-Control": "private, max-age=3600",
+        "X-Content-Type-Options": "nosniff",
+    });
+});
 
 const STATS_TTL_MS = 5 * 60 * 1000;
 let statsCache: { data: LandingStats; expiresAt: number } | null = null;

@@ -222,6 +222,8 @@ export async function getAppBootstrap(userId: string, email: string) {
             recipeWrite: capabilities.personalRecipesWrite,
             householdRecipeWrite:
                 Boolean(capabilities.household) && capabilities.householdWrite,
+            householdCookWrite:
+                Boolean(capabilities.household) && capabilities.householdWrite,
             planning:
                 capabilities.personalPlanningRead || capabilities.householdRead,
             household: capabilities.householdRead,
