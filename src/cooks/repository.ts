@@ -1517,6 +1517,7 @@ export async function recordCookOutcome(
                 ${cleanText(input.worked, "What worked")}, ${cleanText(input.disappointed, "What disappointed you")},
                 ${cleanText(input.nextTimeNotes, "Next-time notes")}, ${safeJson(input.aiSuggestions, [])}::jsonb,
                 ${input.isPreferred ?? false}, ${userId}, ${userId}
+            )
             returning *
         `;
         if (!rows[0])
