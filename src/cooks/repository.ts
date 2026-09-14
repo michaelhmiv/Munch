@@ -229,11 +229,20 @@ function escapeLike(value: string): string {
     return `%${value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
 }
 
-function safeJson(value: unknown, fallback: unknown): string {
+function safeJson(value: unknown, fallback: unknown): unknown {
+    const candidate = value ?? fallback;
+    const expectsArray = Array.isArray(fallback);
+    const hasExpectedShape = expectsArray
+        ? Array.isArray(candidate)
+        : candidate !== null &&
+          typeof candidate === "object" &&
+          !Array.isArray(candidate);
+    if (!hasExpectedShape) return fallback;
     try {
-        return JSON.stringify(value ?? fallback);
+        JSON.stringify(candidate);
+        return candidate;
     } catch {
-        return JSON.stringify(fallback);
+        return fallback;
     }
 }
 
