@@ -135,7 +135,7 @@ const updated = await addCookUpdate(owner.userId, started.cookId, {
     photos: [photo("wrapped-wings.jpg", 2)],
     idempotencyKey: "cooks-update-mcp",
 });
-if (updated.eventIds.length !== 2 || updated.mediaIds.length !== 1) {
+if (updated.eventIds.length !== 3 || updated.mediaIds.length !== 1) {
     throw new Error(
         "MCP-style cook update did not persist multiple events/photo",
     );
