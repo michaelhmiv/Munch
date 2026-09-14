@@ -478,6 +478,7 @@ function temperatureFields(
             fields.ambientTemperature ??= temperature;
             fields.ambientUnit ??= unit;
         } else if (
+            eventType === "preheat" ||
             eventType === "temperature_change" ||
             setpointDistance !== null ||
             /setpoint|set to|heated .* to|heat .* to/.test(lower)
