@@ -1396,6 +1396,7 @@ export async function searchCooks(userId: string, input: CookSearchInput = {}) {
               ),
           ].slice(0, 8)
         : [];
+    const queryTokenString = queryTokens.join(" ");
     const dishPattern = dish ? escapeLike(dish) : null;
     const methodPattern = method ? escapeLike(method) : null;
     const flavorPattern = flavor ? escapeLike(flavor) : null;
@@ -1434,7 +1435,7 @@ export async function searchCooks(userId: string, input: CookSearchInput = {}) {
                           or exists (select 1 from munch.cook_events e where e.cook_id = cook.id and lower(coalesce(e.note, '') || ' ' || coalesce(e.original_message, '')) like '%' || token || '%')
                           or exists (select 1 from munch.cook_outcomes o where o.cook_id = cook.id and lower(coalesce(o.written_feedback, '') || ' ' || coalesce(o.worked, '') || ' ' || coalesce(o.disappointed, '') || ' ' || coalesce(o.next_time_notes, '')) like '%' || token || '%')
                       ), false)
-                      from unnest(${queryTokens}::text[]) as query_token(token)
+                      from unnest(string_to_array(${queryTokenString}::text, ' ')) as query_token(token)
                   )
               )
               and (${dishPattern}::text is null or exists (select 1 from munch.cook_dishes d where d.cook_id = cook.id and lower(d.name || ' ' || coalesce(d.ingredient_or_cut, '')) like ${dishPattern} escape '\\'))
