@@ -17,6 +17,7 @@ const expectedWidgetKeys = [
     "trends",
     "weight-trends",
     "import-meals",
+    "cook-summary",
 ];
 
 assert(

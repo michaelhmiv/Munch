@@ -11,12 +11,12 @@ describe("cross-surface capability manifest", () => {
     });
 
     test("documents every currently exposed MCP tool", () => {
-        expect(Object.keys(MCP_TOOL_CAPABILITY_MAP)).toHaveLength(74);
+        expect(Object.keys(MCP_TOOL_CAPABILITY_MAP)).toHaveLength(90);
         expect(
             CAPABILITY_MANIFEST.flatMap(
                 (capability) => capability.mcp.entryPoints,
             ),
-        ).toHaveLength(74);
+        ).toHaveLength(90);
     });
 
     test("does not mistake channel-specific website capabilities for parity gaps", () => {

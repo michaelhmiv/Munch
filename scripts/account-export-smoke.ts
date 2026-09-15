@@ -11,6 +11,7 @@ const {
 const { reconcilePantry, setPantryPreference } =
     await import("../src/inventory/repository.js");
 const { saveRecipeAndPlan } = await import("../src/planning/repository.js");
+const { createCook } = await import("../src/cooks/repository.js");
 const { closePlatformDatabase, withUserDatabase } =
     await import("../src/platform/database.js");
 const { consumeExportFile } =
@@ -108,6 +109,23 @@ await withUserDatabase(owner.userId, async (tx) => {
     `;
 });
 
+await createCook(owner.userId, {
+    scope: { type: "household", householdId: household.householdId },
+    title: "Smoked export wings",
+    cookDate: "2026-09-14",
+    message: "Export smoke cook with a retained photo.",
+    dishes: [{ name: "Wings", flavor: "lemon pepper" }],
+    photos: [
+        {
+            bytes: new Uint8Array([0xff, 0xd8, 0xff]),
+            mimeType: "image/jpeg",
+            fileName: "export-wings.jpg",
+        },
+    ],
+    source: "website",
+    idempotencyKey: "export-cook",
+});
+
 const exported = await exportAccountData(member.userId);
 const token = new URL(exported.url).searchParams.get("token");
 if (!token) throw new Error("Account export returned no download token");
@@ -139,6 +157,12 @@ if (!serialized.includes('"name":"Cottage cheese"')) {
         "Account export omitted accessible shared Pantry inventory",
     );
 }
+if (!serialized.includes('"title":"Smoked export wings"')) {
+    throw new Error("Account export omitted accessible Cooks history");
+}
+if (!serialized.includes('"bytes_base64":"/9j/"')) {
+    throw new Error("Account export omitted retained Cook photo bytes");
+}
 if (!serialized.includes('"inventory_events"')) {
     throw new Error("Account export omitted Pantry event history");
 }
@@ -155,9 +179,9 @@ if (!cottageProfile || Number(cottageProfile.protein_g) !== 12) {
 if (serialized.includes('"actor_user_id"')) {
     throw new Error("Account export leaked Pantry actor user IDs");
 }
-if (document.schema_version !== 3) {
+if (document.schema_version !== 4) {
     throw new Error(
-        "Account export schema version was not advanced for Pantry Intelligence",
+        "Account export schema version was not advanced for persistent Cooks",
     );
 }
 if (exported.recordCount < 7) {

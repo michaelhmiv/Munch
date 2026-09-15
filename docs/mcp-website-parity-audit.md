@@ -1,9 +1,17 @@
 # Munch MCP ↔ Website Parity Audit
 
-**Audit date:** 2026-08-21  
-**Release status:** Source-complete for the audited customer workflows; URL-import deployment pending merge
+**Audit date:** 2026-09-14
+**Release status:** Historical parity baseline plus Cooks review-branch addendum; Cooks production deployment pending merge
 
 ## Executive summary
+
+The Cooks addendum below is a separate release slice from the historical
+recipe/meal parity audit. It adds persistent cooking occasions, durable photos,
+editable timelines, results, iteration, direct cook-history search, website
+controls, and the corresponding MCP tools/widgets. The implementation shares
+the authenticated database/service layer and deliberately does not log
+nutrition or deduct pantry inventory unless the user explicitly starts those
+separate workflows.
 
 The original parity program is implemented and deployed. This implementation slice adds recipe URL import with the same read-only preview contract on MCP and the website: `parse_recipe_url` and `POST /api/app/recipes/import-preview` feed the existing reviewed recipe save path. The capability registry now assigns all 73 registered MCP tools to 61 outcome contracts. Of those contracts, 54 are complete on both MCP and the website; the remaining 7 are explicitly website-only product workflows, not unresolved gaps. There are no `partial` contracts, no non-null `gap` fields, and no outstanding target PRs in the manifest.
 
@@ -191,4 +199,28 @@ Operationally, the deployment runbook still calls for an isolated backup restore
 
 ## Final verdict
 
-**Implemented in source: yes.** All audited cross-surface outcomes are complete, all 73 registered MCP tools are assigned and covered by documented evidence, and the seven channel-specific exceptions are intentional and encoded. **Unresolved parity gaps: none; production rollout is pending the draft PR merge.**
+**Historical baseline verdict:** implemented in source for the recipe/meal release slice; its 73 registered MCP tools were assigned and covered by the evidence available at that time. The Cooks release is tracked separately below, with its own 95-tool submission inventory and production rollout state.
+
+## Cooks release addendum (review branch)
+
+This section is intentionally release-scoped. It must be updated with the PR,
+CI run, and Railway deployment identifiers after review; it is not evidence
+that the current production deployment contains Cooks.
+
+| Outcome                                                      | Website                                                                                                                                | MCP / widget                                                                                                   | Shared evidence target                                            |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Start an independent cook with optional recipe-revision link | Cooks tab, `POST /api/app/cooks` (JSON or multipart)                                                                                   | `start_cook`, top-level `files`, compact cook card                                                             | `cooks`, `cook_dishes`, idempotency, RLS                          |
+| Continue one cook with message/photo                         | active-cook update form and manual controls                                                                                            | `update_cook`; widget upload via `uploadFile` → `getFileDownloadUrl` → `callTool` when host capabilities exist | raw update, durable bytes, retry failures                         |
+| Edit dish labels and actual ingredients                      | dish editor, `PATCH /api/app/cooks/:cookId/dishes/:dishId`                                                                             | `update_cook_dish`                                                                                             | optimistic cook version and ownership                             |
+| Recall across sessions                                       | direct cook search/detail, no recipe dependency                                                                                        | `search_cooks`, `get_cook`                                                                                     | dish/method/flavor/date/notes search and signed media             |
+| Timeline/corrections                                         | editable event form with optimistic version                                                                                            | explicit event payloads and shared correction service                                                          | event vs submitted time, relative precision, temperature channels |
+| Results and iteration                                        | result form, compare, repeat, preferred attempt                                                                                        | `record_cook_result`, `compare_cooks`, `repeat_cook`, `set_preferred_cook`                                     | user observations separate from AI suggestions                    |
+| Reviewed recipe creation                                     | draft → review → existing immutable recipe/nutrition path                                                                              | `prepare_cook_recipe_draft`, `save_cook_as_recipe`                                                             | source cook retained; no automatic meal/pantry write              |
+| Optional eaten portion                                       | linked dish's exact recipe revision via the existing recipe-log dialog                                                                 | `log_cook_portion` after explicit user confirmation                                                            | idempotent meal log; pantry unchanged                             |
+| Explicit ingredient usage                                    | existing Pantry controls                                                                                                               | `reconcile_pantry` with `source_entity_id` set to the cook                                                     | explicit confirmation and source attribution                      |
+| Privacy lifecycle                                            | account export includes cook rows and actual media bytes; account deletion cascades personal history and retains shared history safely | shared authorization/persistence                                                                               | ownership restrictions, nullable actor retention                  |
+
+The OpenAI file contract was checked against the current reference: file
+schemas declare `download_url`, `file_id`, optional `mime_type`/`file_name`, and
+tools list the top-level file field in `_meta["openai/fileParams"]`. See the
+[OpenAI file API reference](https://developers.openai.com/plugins/reference#file-apis).

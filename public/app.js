@@ -20,6 +20,15 @@ const state = {
     mealHistoryDays: 1,
     mealHistoryQuery: "",
     insightsDays: 30,
+    cookQuery: "",
+    cookFilters: {
+        dish: "",
+        method: "",
+        flavor: "",
+        dateFrom: "",
+        dateTo: "",
+        status: "all",
+    },
     waterEntries: [],
     weightEntries: [],
     controller: null,
@@ -122,6 +131,7 @@ const routes = {
     "/app/insights": "insights",
     "/app/foods": "foods",
     "/app/recipes": "recipes",
+    "/app/cooks": "cooks",
     "/app/plan": "plan",
     "/app/groceries": "groceries",
     ...accountRoutes,
@@ -133,6 +143,7 @@ const titles = {
     insights: ["Patterns and progress", "Insights"],
     foods: ["Reusable nutrition data", "Foods"],
     recipes: ["Structured cooking memory", "Recipes"],
+    cooks: ["Cooking sessions", "Cooks"],
     plan: ["Personal and household", "Meal Plan"],
     groceries: ["Shopping workspace", "Groceries"],
     ...accountTitles,
@@ -1250,6 +1261,316 @@ async function renderGroceries() {
     content.innerHTML = `<div class="page-heading"><div><h2>Groceries</h2><p>Explicit shopping lists only. Munch does not infer pantry inventory.</p></div><div class="auth-actions"><button class="button button-secondary button-small" data-action="shopping-mode">Shopping mode</button></div></div><div class="dashboard-grid">${lists}</div>`;
 }
 
+function cookSummaryCard(cook) {
+    const photo = cook.latest_photo_url
+        ? '<img class="cook-card-photo" src="' +
+          escapeHtml(cook.latest_photo_url) +
+          '" alt="Saved photo from ' +
+          escapeHtml(cook.title) +
+          '" loading="lazy" />'
+        : '<div class="cook-card-photo cook-card-photo-empty" aria-hidden="true">♨</div>';
+    const sourceNote = cook.source_cook_id
+        ? " · based on an earlier attempt"
+        : "";
+    const statusAction =
+        cook.status === "active"
+            ? '<button class="button button-quiet button-small" type="button" data-action="finish-cook" data-id="' +
+              escapeHtml(cook.id) +
+              '">Finish</button>'
+            : '<button class="button button-quiet button-small" type="button" data-action="reopen-cook" data-id="' +
+              escapeHtml(cook.id) +
+              '">Reopen</button>';
+    const note = cook.notes ? " · " + escapeHtml(cook.notes) : "";
+    return `<article class="cook-card" data-cook-id="${escapeHtml(cook.id)}"><div class="cook-card-main">${photo}<div class="cook-card-copy"><div class="cook-card-head"><div><h3>${escapeHtml(cook.title)}</h3><p class="tiny">${escapeHtml(formatDate(cook.cook_date, { year: true }))} · ${escapeHtml(cook.status)}${sourceNote}</p></div><label class="cook-select"><input type="checkbox" data-cook-select="${escapeHtml(cook.id)}" aria-label="Select ${escapeHtml(cook.title)} for comparison" /> Compare</label></div><p class="cook-card-meta">${number(cook.photo_count)} saved photo${Number(cook.photo_count) === 1 ? "" : "s"}${note}</p><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="open-cook" data-id="${escapeHtml(cook.id)}">Open cook</button>${statusAction}</div></div></div></article>`;
+}
+
+async function renderCooks() {
+    setLoading("Loading cook history…");
+    const query = state.cookQuery.trim();
+    const filters = state.cookFilters;
+    const params = new URLSearchParams({
+        status: filters.status || "all",
+    });
+    if (query) params.set("q", query);
+    if (filters.dish) params.set("dish", filters.dish);
+    if (filters.method) params.set("method", filters.method);
+    if (filters.flavor) params.set("flavor", filters.flavor);
+    if (filters.dateFrom) params.set("from", filters.dateFrom);
+    if (filters.dateTo) params.set("to", filters.dateTo);
+    const data = await api("/api/app/cooks?" + params.toString());
+    const cooks = data.cooks || [];
+    const active = cooks.filter((cook) => cook.status === "active");
+    const finished = cooks.filter((cook) => cook.status !== "active");
+    const activeMarkup = active.length
+        ? '<section class="panel"><div class="panel-title"><div><h3>Active cooks</h3><span>Continue an in-progress session</span></div><span class="source-chip source-saved">Live</span></div><div class="cook-list">' +
+          active.map(cookSummaryCard).join("") +
+          "</div></section>"
+        : "";
+    const historyMarkup =
+        finished.length || active.length
+            ? '<div class="cook-list">' +
+              finished.map(cookSummaryCard).join("") +
+              "</div>"
+            : '<div class="empty-state"><div><h3>No cooks yet</h3><p>Start before cooking, add a photo and message while cooking, or record a past attempt.</p><button class="button button-primary button-small spacer-top" type="button" data-action="new-cook">Start your first cook</button></div></div>';
+    content.innerHTML = `<div class="page-heading"><div><h2>Cooks</h2><p>Persistent cooking sessions with photos, timeline, results, and attempts—separate from food logging.</p></div><div class="auth-actions"><button class="button button-primary button-small" type="button" data-action="new-cook">Start cook</button><button class="button button-secondary button-small" type="button" data-action="compare-cooks">Compare selected</button></div></div><section class="panel cook-search-panel"><form id="cook-search-form" class="inline-form"><input class="input" name="query" type="search" value="${escapeHtml(state.cookQuery)}" placeholder="Search wings, notes, updates…" /><input class="input" name="dish" value="${escapeHtml(filters.dish)}" placeholder="Dish" /><input class="input" name="method" value="${escapeHtml(filters.method)}" placeholder="Method" /><input class="input" name="flavor" value="${escapeHtml(filters.flavor)}" placeholder="Flavor / seasoning" /><label class="tiny">From <input name="date_from" type="date" value="${escapeHtml(filters.dateFrom)}" /></label><label class="tiny">To <input name="date_to" type="date" value="${escapeHtml(filters.dateTo)}" /></label><select name="status" aria-label="Cook status"><option value="all" ${filters.status === "all" ? "selected" : ""}>All statuses</option><option value="active" ${filters.status === "active" ? "selected" : ""}>Active</option><option value="finished" ${filters.status === "finished" ? "selected" : ""}>Finished</option></select><button class="button button-secondary button-small" type="submit">Search history</button></form><p class="tiny">Searches cook history directly, including original updates, timeline notes, results, dish labels, seasoning, method, and date.</p></section>${activeMarkup}<section class="panel"><div class="panel-title"><div><h3>${query || filters.dish || filters.method || filters.flavor || filters.dateFrom || filters.dateTo ? "Matching history" : "Recent history"}</h3><span>${cooks.length} cook${cooks.length === 1 ? "" : "s"}</span></div></div>${historyMarkup}</section>`;
+}
+
+function cookDishFormMarkup() {
+    return `<div class="cook-create-dish" data-cook-dish><div class="panel-title"><h3>Dish</h3><span>Labels and actual ingredients are editable later.</span></div><label class="field"><span>Dish name</span><input name="dish_name" maxlength="200" placeholder="Wings, mac and cheese…" required /></label><div class="meal-composer-grid"><label class="field"><span>Method</span><input name="method" maxlength="500" placeholder="Smoked, grilled…" /></label><label class="field"><span>Flavor</span><input name="flavor" maxlength="500" placeholder="Lemon pepper, spicy…" /></label><label class="field"><span>Cut / ingredient</span><input name="ingredient_or_cut" maxlength="500" placeholder="Bone-in thighs…" /></label><label class="field"><span>Equipment</span><input name="equipment" maxlength="500" placeholder="Pellet smoker…" /></label></div><label class="field"><span>Actual ingredients (optional, one per line)</span><textarea name="actual_ingredients" rows="2" maxlength="6000" placeholder="Chicken wings\nLemon pepper\nOil"></textarea></label></div>`;
+}
+
+function openCookCreate() {
+    const scopeOptions = state.bootstrap?.capabilities?.householdCookWrite
+        ? '<label class="field"><span>Save to</span><select name="scope"><option value="personal">Personal cooks</option><option value="household">Household cooks</option></select></label>'
+        : '<input type="hidden" name="scope" value="personal" />';
+    openDialog(
+        "Start a cook",
+        `<form id="cook-create-form" class="auth-form" enctype="multipart/form-data"><p>Create a cook before, during, or after the fact. This does not log a meal or change pantry inventory.</p>${scopeOptions}<label class="field"><span>Cook title</span><input name="title" maxlength="200" placeholder="Smoked lemon pepper wings" required /></label><div class="meal-composer-grid"><label class="field"><span>Date</span><input name="cook_date" type="date" value="${escapeHtml(state.date)}" required /></label><label class="field"><span>Timezone</span><input name="timezone" value="${escapeHtml(state.bootstrap?.profile?.timezone || "UTC")}" maxlength="100" /></label></div><section id="cook-create-dishes" class="cook-create-dishes">${cookDishFormMarkup()}</section><button class="button button-quiet button-small" type="button" data-action="add-cook-dish">Add another dish</button><label class="field"><span>What are you doing?</span><textarea name="message" rows="3" maxlength="20000" placeholder="I’m starting these wings. I heated the grill to 250°F a couple minutes ago."></textarea></label><label class="field"><span>Photos</span><input name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple /><small class="tiny">JPEG, PNG, or WebP; up to 8 MB each. Notes are kept if a photo transfer fails.</small></label><button class="button button-primary" type="submit">Create cook</button></form>`,
+    );
+}
+
+function cookTimelineMarkup(detail) {
+    if (!detail.events?.length)
+        return '<div class="empty-state"><div><strong>No timeline events yet.</strong><p>Describe what happened in the update box and Munch will append supported events.</p></div></div>';
+    const rows = detail.events
+        .map(
+            (event) =>
+                '<article class="cook-event-row"><div><strong>' +
+                escapeHtml(String(event.event_type).replaceAll("_", " ")) +
+                "</strong><small>" +
+                escapeHtml(formatTime(event.event_at)) +
+                " · submitted " +
+                escapeHtml(formatTime(event.submitted_at)) +
+                (event.time_precision === "approximate"
+                    ? " · approximate"
+                    : "") +
+                "</small></div><p>" +
+                escapeHtml(event.note || event.original_message || "No note") +
+                (event.relative_phrase
+                    ? ' <span class="tiny">(' +
+                      escapeHtml(event.relative_phrase) +
+                      ")</span>"
+                    : "") +
+                (event.setpoint_temperature != null
+                    ? " · setpoint " +
+                      number(event.setpoint_temperature, 1) +
+                      "°" +
+                      escapeHtml(event.setpoint_unit || "")
+                    : "") +
+                (event.ambient_temperature != null
+                    ? " · environment " +
+                      number(event.ambient_temperature, 1) +
+                      "°" +
+                      escapeHtml(event.ambient_unit || "")
+                    : "") +
+                (event.internal_temperature != null
+                    ? " · internal " +
+                      number(event.internal_temperature, 1) +
+                      "°" +
+                      escapeHtml(event.internal_unit || "")
+                    : "") +
+                '</p><button class="button button-quiet button-small" type="button" data-action="edit-cook-event" data-id="' +
+                escapeHtml(event.id) +
+                '" data-cook-id="' +
+                escapeHtml(detail.cook.id) +
+                '">Correct</button></article>',
+        )
+        .join("");
+    return '<div class="cook-timeline">' + rows + "</div>";
+}
+
+function cookDetailMarkup(detail) {
+    const cook = detail.cook;
+    const photoMarkup = detail.media?.length
+        ? '<div class="cook-gallery">' +
+          detail.media
+              .map(
+                  (photo) =>
+                      '<figure><img src="' +
+                      escapeHtml(photo.url) +
+                      '" alt="' +
+                      escapeHtml(
+                          photo.caption || photo.file_name || "Cook photo",
+                      ) +
+                      '" loading="lazy" /><figcaption>' +
+                      escapeHtml(photo.file_name || "Saved photo") +
+                      "</figcaption></figure>",
+              )
+              .join("") +
+          "</div>"
+        : '<p class="tiny">No saved photos yet.</p>';
+    const dishes = detail.dishes
+        .map(
+            (dish) =>
+                '<article class="cook-dish"><strong>' +
+                escapeHtml(dish.name) +
+                "</strong><span>" +
+                escapeHtml(
+                    [
+                        dish.method,
+                        dish.flavor,
+                        dish.equipment,
+                        dish.ingredient_or_cut,
+                    ]
+                        .filter(Boolean)
+                        .join(" · ") || "No labels yet",
+                ) +
+                "</span>" +
+                '<button class="button button-quiet button-small" type="button" data-action="edit-cook-dish" data-id="' +
+                escapeHtml(dish.id) +
+                '" data-cook-id="' +
+                escapeHtml(detail.cook.id) +
+                '" data-cook-version="' +
+                escapeHtml(detail.cook.version) +
+                '">Edit dish</button>' +
+                (dish.recipe_id
+                    ? "<small>Linked recipe revision " +
+                      escapeHtml(dish.recipe_revision_id || "") +
+                      '</small><button class="button button-quiet button-small" type="button" data-action="log-cook-dish" data-id="' +
+                      escapeHtml(dish.recipe_id) +
+                      '" data-revision="' +
+                      escapeHtml(dish.recipe_revision_id || "") +
+                      '">Log eaten portion</button>'
+                    : "") +
+                "</article>",
+        )
+        .join("");
+    const outcome =
+        (detail.outcomes || []).find((item) => item.dish_id == null) ||
+        detail.outcomes?.[0];
+    const updateMarkup = detail.updates?.length
+        ? '<details class="cook-original"><summary>Original updates (' +
+          detail.updates.length +
+          ")</summary>" +
+          detail.updates
+              .map(
+                  (update) =>
+                      "<p><strong>" +
+                      escapeHtml(formatTime(update.submitted_at)) +
+                      "</strong> · " +
+                      escapeHtml(update.source) +
+                      " · " +
+                      escapeHtml(update.raw_message) +
+                      (update.media_status === "failed"
+                          ? ' <span class="error-text">Photo needs retry</span>'
+                          : "") +
+                      "</p>",
+              )
+              .join("") +
+          "</details>"
+        : "";
+    const lifecycle =
+        cook.status === "active"
+            ? '<button class="button button-secondary button-small" type="button" data-action="finish-cook" data-id="' +
+              escapeHtml(cook.id) +
+              '">Finish</button>'
+            : '<button class="button button-secondary button-small" type="button" data-action="reopen-cook" data-id="' +
+              escapeHtml(cook.id) +
+              '">Reopen</button>';
+    return `<div class="cook-detail-view"><div class="cook-detail-head"><div><p class="section-kicker">${escapeHtml(cook.status === "active" ? "Active cook" : "Completed cook")}</p><h2>${escapeHtml(cook.title)}</h2><p class="tiny">${escapeHtml(formatDate(cook.cook_date, { year: true }))} · ${escapeHtml(cook.timezone)} · version ${number(cook.version)}</p></div><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="edit-cook" data-id="${escapeHtml(cook.id)}">Edit details</button>${lifecycle}<button class="button button-quiet button-small" type="button" data-action="repeat-cook" data-id="${escapeHtml(cook.id)}">Cook again</button><button class="button button-quiet button-small" type="button" data-action="delete-cook" data-id="${escapeHtml(cook.id)}">Delete</button></div></div>${cook.original_message ? '<details class="cook-original"><summary>Original context</summary><p>' + escapeHtml(cook.original_message) + "</p></details>" : ""}<section class="cook-detail-section"><div class="panel-title"><div><h3>Dishes</h3><span>${detail.dishes.length} recorded</span></div></div><div class="cook-dishes">${dishes}</div></section><section class="cook-detail-section"><div class="panel-title"><div><h3>Photos</h3><span>${detail.media.length} saved</span></div></div>${photoMarkup}</section><section class="cook-detail-section"><div class="panel-title"><div><h3>Timeline</h3><span>${detail.events.length} event${detail.events.length === 1 ? "" : "s"}</span></div></div>${cookTimelineMarkup(detail)}</section><section class="cook-detail-section"><div class="panel-title"><div><h3>Record an update</h3><span>One message can add multiple events and photos.</span></div></div><form id="cook-update-form" class="auth-form" data-id="${escapeHtml(cook.id)}" enctype="multipart/form-data"><label class="field"><span>What happened?</span><textarea name="message" rows="3" maxlength="20000" placeholder="A couple minutes ago I wrapped the wings. Internal temp was 155°F."></textarea></label><label class="field"><span>Add photos</span><input name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple /></label><button class="button button-primary" type="submit">Record update</button></form></section><section class="cook-detail-section"><div class="panel-title"><div><h3>Result</h3><span>User observations stay separate from suggestions.</span></div></div><form id="cook-outcome-form" class="auth-form" data-id="${escapeHtml(cook.id)}" data-version="${escapeHtml(outcome?.version || "")}"><label class="field"><span>Feedback</span><textarea name="written_feedback" rows="3" maxlength="20000" placeholder="What did it taste and feel like?">${escapeHtml(outcome?.written_feedback || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Overall assessment (1–5)</span><input name="overall_assessment" type="number" min="1" max="5" step="0.1" value="${escapeHtml(outcome?.overall_assessment || "")}" /></label><label class="field"><span>Characteristics JSON</span><input name="characteristics" value="${escapeHtml(JSON.stringify(outcome?.characteristics || {}))}" placeholder='{"smoke_intensity":"medium"}' /></label></div><label class="field"><span>What worked</span><textarea name="worked" rows="2" maxlength="10000">${escapeHtml(outcome?.worked || "")}</textarea></label><label class="field"><span>What disappointed you</span><textarea name="disappointed" rows="2" maxlength="10000">${escapeHtml(outcome?.disappointed || "")}</textarea></label><label class="field"><span>Change next time</span><textarea name="next_time_notes" rows="2" maxlength="10000">${escapeHtml(outcome?.next_time_notes || "")}</textarea></label><label class="checkbox-row"><input name="is_preferred" type="checkbox" ${outcome?.is_preferred ? "checked" : ""} /> Preferred attempt</label><button class="button button-primary" type="submit">Save result</button></form></section><section class="cook-detail-section"><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="cook-recipe-draft" data-id="${escapeHtml(cook.id)}">Save as recipe</button><button class="button button-secondary button-small" type="button" data-action="set-preferred-cook" data-id="${escapeHtml(cook.id)}">Choose preferred attempt</button></div>${updateMarkup}</section></div>`;
+}
+
+function openCookDishEditor(dish, cookId, cookVersion) {
+    openDialog(
+        "Edit cook dish",
+        `<form id="cook-dish-edit-form" class="auth-form" data-id="${escapeHtml(dish.id)}" data-cook-id="${escapeHtml(cookId)}" data-cook-version="${escapeHtml(cookVersion)}"><p>Update the actual dish and labels without changing a linked recipe revision.</p><label class="field"><span>Dish name</span><input name="name" maxlength="200" value="${escapeHtml(dish.name)}" required /></label><div class="meal-composer-grid"><label class="field"><span>Method</span><input name="method" maxlength="500" value="${escapeHtml(dish.method || "")}" /></label><label class="field"><span>Flavor</span><input name="flavor" maxlength="500" value="${escapeHtml(dish.flavor || "")}" /></label><label class="field"><span>Cut / ingredient</span><input name="ingredient_or_cut" maxlength="500" value="${escapeHtml(dish.ingredient_or_cut || "")}" /></label><label class="field"><span>Equipment</span><input name="equipment" maxlength="500" value="${escapeHtml(dish.equipment || "")}" /></label></div><label class="field"><span>Dish notes</span><textarea name="notes" rows="3" maxlength="20000">${escapeHtml(dish.notes || "")}</textarea></label><label class="field"><span>Actual ingredients JSON</span><textarea name="actual_ingredients" rows="6" maxlength="20000">${escapeHtml(JSON.stringify(dish.actual_ingredients || [], null, 2))}</textarea></label><button class="button button-primary" type="submit">Save dish</button></form>`,
+    );
+}
+
+async function openCook(id) {
+    const detail = await api("/api/app/cooks/" + encodeURIComponent(id));
+    openDialog(detail.cook.title, cookDetailMarkup(detail));
+}
+
+function openCookEdit(cook) {
+    openDialog(
+        "Edit cook details",
+        `<form id="cook-edit-form" class="auth-form" data-id="${escapeHtml(cook.id)}" data-version="${escapeHtml(cook.version)}"><label class="field"><span>Title</span><input name="title" maxlength="200" value="${escapeHtml(cook.title)}" required /></label><div class="meal-composer-grid"><label class="field"><span>Date</span><input name="cook_date" type="date" value="${escapeHtml(cook.cook_date)}" required /></label><label class="field"><span>Status</span><select name="status"><option value="active" ${cook.status === "active" ? "selected" : ""}>Active</option><option value="finished" ${cook.status === "finished" ? "selected" : ""}>Finished</option></select></label></div><label class="field"><span>Notes</span><textarea name="notes" rows="4" maxlength="20000">${escapeHtml(cook.notes || "")}</textarea></label><button class="button button-primary" type="submit">Save details</button></form>`,
+    );
+}
+
+function openCookEventEditor(eventRecord, cookId) {
+    const localTime = eventRecord.event_at
+        ? new Date(eventRecord.event_at).toISOString().slice(0, 16)
+        : "";
+    const types = [
+        "preparation",
+        "preheat",
+        "food_on",
+        "temperature_change",
+        "wrap",
+        "sauce",
+        "remove",
+        "rest",
+        "taste",
+        "note",
+        "custom",
+    ];
+    openDialog(
+        "Correct timeline event",
+        `<form id="cook-event-edit-form" class="auth-form" data-id="${escapeHtml(eventRecord.id)}" data-cook-id="${escapeHtml(cookId)}" data-version="${escapeHtml(eventRecord.version)}"><label class="field"><span>Event</span><select name="event_type">${types.map((type) => '<option value="' + type + '" ' + (eventRecord.event_type === type ? "selected" : "") + ">" + type.replaceAll("_", " ") + "</option>").join("")}</select></label><label class="field"><span>Event time</span><input name="event_at" type="datetime-local" value="${escapeHtml(localTime)}" required /></label><label class="field"><span>Note</span><textarea name="note" rows="3" maxlength="20000">${escapeHtml(eventRecord.note || eventRecord.original_message || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Setpoint</span><input name="setpoint_temperature" type="number" step="0.1" value="${escapeHtml(eventRecord.setpoint_temperature ?? "")}" /></label><label class="field"><span>Setpoint unit</span><select name="setpoint_unit"><option value="F" ${eventRecord.setpoint_unit === "F" ? "selected" : ""}>°F</option><option value="C" ${eventRecord.setpoint_unit === "C" ? "selected" : ""}>°C</option></select></label><label class="field"><span>Cooking environment</span><input name="ambient_temperature" type="number" step="0.1" value="${escapeHtml(eventRecord.ambient_temperature ?? "")}" /></label><label class="field"><span>Environment unit</span><select name="ambient_unit"><option value="F" ${eventRecord.ambient_unit === "F" ? "selected" : ""}>°F</option><option value="C" ${eventRecord.ambient_unit === "C" ? "selected" : ""}>°C</option></select></label><label class="field"><span>Internal</span><input name="internal_temperature" type="number" step="0.1" value="${escapeHtml(eventRecord.internal_temperature ?? "")}" /></label><label class="field"><span>Internal unit</span><select name="internal_unit"><option value="F" ${eventRecord.internal_unit === "F" ? "selected" : ""}>°F</option><option value="C" ${eventRecord.internal_unit === "C" ? "selected" : ""}>°C</option></select></label></div><button class="button button-primary" type="submit">Save correction</button></form>`,
+    );
+}
+
+async function openCookRecipeDraft(cookId) {
+    const data = await api(
+        "/api/app/cooks/" + encodeURIComponent(cookId) + "/recipe-draft",
+        { method: "POST", body: JSON.stringify({}), keepPrevious: true },
+    );
+    const draft = data.draft;
+    const recipe = draft.draft;
+    openDialog(
+        "Review recipe from cook",
+        `<form id="cook-recipe-form" class="auth-form" data-cook-id="${escapeHtml(cookId)}" data-dish-id="${escapeHtml(draft.source_dish_id)}"><p>${escapeHtml(draft.review_note)}</p>${draft.missing_fields?.length ? '<p class="notice warning">Still needed: ' + escapeHtml(draft.missing_fields.join(", ")) + "</p>" : ""}<label class="field"><span>Name</span><input name="name" maxlength="200" value="${escapeHtml(recipe.name)}" required /></label><label class="field"><span>Servings</span><input name="servings" type="number" min="0.01" step="0.01" value="${escapeHtml(recipe.servings || 1)}" required /></label><label class="field"><span>Actual ingredients JSON</span><textarea name="ingredients_json" rows="7" required>${escapeHtml(JSON.stringify(recipe.ingredients || [], null, 2))}</textarea><small class="tiny">Edit this before saving; Munch will resolve nutrition only at save time.</small></label><label class="field"><span>Instructions</span><textarea name="instructions" rows="7" required>${escapeHtml((recipe.instructions || []).join("\n"))}</textarea><small class="tiny">One step per line.</small></label><button class="button button-primary" type="submit">Save reviewed recipe</button></form>`,
+    );
+}
+
+function openCookComparison(comparison) {
+    const cooks = comparison.cooks || [];
+    const columns = cooks
+        .map((cook, index) => {
+            const outcomes = comparison.outcomes?.[index] || [];
+            const photos = comparison.photos?.[index] || [];
+            const notes =
+                outcomes
+                    .map(
+                        (outcome) =>
+                            outcome.written_feedback || outcome.next_time_notes,
+                    )
+                    .filter(Boolean)
+                    .join(" · ") || "No result recorded";
+            return (
+                '<article class="cook-compare-column"><h3>' +
+                escapeHtml(cook.title) +
+                '</h3><p class="tiny">' +
+                escapeHtml(cook.cook_date) +
+                " · " +
+                escapeHtml(cook.status) +
+                "</p><h4>Timeline</h4><p>" +
+                number((comparison.timelines?.[index] || []).length) +
+                " events</p><h4>Result</h4><p>" +
+                escapeHtml(notes) +
+                '</p><h4>Photos</h4><div class="cook-compare-photos">' +
+                (photos
+                    .map(
+                        (photo) =>
+                            '<img src="' +
+                            escapeHtml(photo.url) +
+                            '" alt="Cook photo" loading="lazy" />',
+                    )
+                    .join("") || '<span class="tiny">None</span>') +
+                "</div></article>"
+            );
+        })
+        .join("");
+    openDialog(
+        "Compare cook attempts",
+        '<p class="tiny">Selected attempts remain separate histories. Use the individual result forms to record or change a preferred attempt.</p><div class="cook-comparison">' +
+            columns +
+            "</div>",
+    );
+}
+
 function grocerySourceLabel(item) {
     const sources = [];
     if (item.source_recipe_id) sources.push("From recipe");
@@ -1306,6 +1627,7 @@ async function renderRoute() {
             insights: renderInsights,
             foods: renderFoods,
             recipes: renderRecipes,
+            cooks: renderCooks,
             plan: renderPlan,
             groceries: renderGroceries,
             more: () => renderAccountRoute("more", accountContext()),
@@ -2505,6 +2827,125 @@ async function handleAction(button) {
         return renderRoute();
     if (action === "add-meal") return openMealComposer();
     if (action === "start-meal-draft") return openMealDraftComposer();
+    if (action === "new-cook") return openCookCreate();
+    if (action === "add-cook-dish") {
+        document
+            .getElementById("cook-create-dishes")
+            ?.insertAdjacentHTML("beforeend", cookDishFormMarkup());
+        return;
+    }
+    if (action === "open-cook") {
+        await openCook(button.dataset.id);
+        return;
+    }
+    if (action === "edit-cook") {
+        const detail = await api(
+            `/api/app/cooks/${encodeURIComponent(button.dataset.id)}`,
+        );
+        openCookEdit(detail.cook);
+        return;
+    }
+    if (action === "edit-cook-dish") {
+        const detail = await api(
+            `/api/app/cooks/${encodeURIComponent(button.dataset.cookId)}`,
+        );
+        const dish = detail.dishes.find(
+            (item) => item.id === button.dataset.id,
+        );
+        if (!dish) throw new Error("Cook dish is no longer available");
+        openCookDishEditor(dish, button.dataset.cookId, detail.cook.version);
+        return;
+    }
+    if (action === "finish-cook" || action === "reopen-cook") {
+        const verb = action === "finish-cook" ? "finish" : "reopen";
+        await api(
+            `/api/app/cooks/${encodeURIComponent(button.dataset.id)}/${verb}`,
+            {
+                method: "POST",
+                body: JSON.stringify({}),
+                keepPrevious: true,
+            },
+        );
+        toast(verb === "finish" ? "Cook finished." : "Cook reopened.");
+        if (dialog.open) await openCook(button.dataset.id);
+        else await renderRoute();
+        return;
+    }
+    if (action === "delete-cook") {
+        if (
+            !confirm(
+                "Delete this cook, its timeline, results, and saved photos? This cannot be undone.",
+            )
+        )
+            return;
+        await api(`/api/app/cooks/${encodeURIComponent(button.dataset.id)}`, {
+            method: "DELETE",
+            body: "{}",
+            keepPrevious: true,
+        });
+        toast("Cook deleted.");
+        if (dialog.open) dialog.close();
+        await renderRoute();
+        return;
+    }
+    if (action === "repeat-cook") {
+        const result = await api(
+            `/api/app/cooks/${encodeURIComponent(button.dataset.id)}/repeat`,
+            {
+                method: "POST",
+                body: JSON.stringify({ idempotency_key: crypto.randomUUID() }),
+                keepPrevious: true,
+            },
+        );
+        toast("Fresh cook created from the prior attempt.");
+        if (dialog.open && result.cook?.cook?.id)
+            await openCook(result.cook.cook.id);
+        else await renderRoute();
+        return;
+    }
+    if (action === "cook-recipe-draft") {
+        await openCookRecipeDraft(button.dataset.id);
+        return;
+    }
+    if (action === "set-preferred-cook") {
+        await api(
+            `/api/app/cooks/${encodeURIComponent(button.dataset.id)}/preferred`,
+            {
+                method: "POST",
+                body: "{}",
+                keepPrevious: true,
+            },
+        );
+        toast("Preferred attempt updated.");
+        await openCook(button.dataset.id);
+        return;
+    }
+    if (action === "edit-cook-event") {
+        const detail = await api(
+            `/api/app/cooks/${encodeURIComponent(button.dataset.cookId)}`,
+        );
+        const eventRecord = detail.events.find(
+            (event) => event.id === button.dataset.id,
+        );
+        if (!eventRecord) throw new Error("Cook event is no longer available");
+        openCookEventEditor(eventRecord, button.dataset.cookId);
+        return;
+    }
+    if (action === "compare-cooks") {
+        const ids = [...document.querySelectorAll("[data-cook-select]:checked")]
+            .map((input) => input.dataset.cookSelect)
+            .filter(Boolean);
+        if (ids.length < 2) {
+            toast("Select at least two cooks to compare.", "error");
+            return;
+        }
+        const data = await api(
+            `/api/app/cooks/compare?ids=${encodeURIComponent(ids.join(","))}`,
+            { keepPrevious: true },
+        );
+        openCookComparison(data.comparison);
+        return;
+    }
     if (action === "open-meal-draft") {
         await openMealDraft(button.dataset.id);
         return;
@@ -2787,6 +3228,8 @@ async function handleAction(button) {
     }
     if (action === "view-recipe") return openRecipe(button.dataset.id);
     if (action === "log-recipe")
+        return openRecipeLog(button.dataset.id, button.dataset.revision);
+    if (action === "log-cook-dish")
         return openRecipeLog(button.dataset.id, button.dataset.revision);
     if (action === "plan-recipe") return openRecipePlan(button.dataset.id);
     if (action === "archive-recipe") {
@@ -3180,6 +3623,24 @@ document.addEventListener("submit", async (event) => {
         await renderLog();
         return;
     }
+    if (form.id === "cook-search-form") {
+        event.preventDefault();
+        state.cookQuery = String(form.elements.query?.value || "").trim();
+        state.cookFilters = {
+            dish: String(form.elements.dish?.value || "").trim(),
+            method: String(form.elements.method?.value || "").trim(),
+            flavor: String(form.elements.flavor?.value || "").trim(),
+            dateFrom: String(form.elements.date_from?.value || "").trim(),
+            dateTo: String(form.elements.date_to?.value || "").trim(),
+            status: ["all", "active", "finished"].includes(
+                form.elements.status?.value,
+            )
+                ? form.elements.status.value
+                : "all",
+        };
+        await renderCooks();
+        return;
+    }
     if (form.id === "saved-food-search-form") {
         event.preventDefault();
         try {
@@ -3208,6 +3669,13 @@ document.addEventListener("submit", async (event) => {
             "grocery-add-form",
             "grocery-edit-form",
             "saved-food-form",
+            "cook-create-form",
+            "cook-update-form",
+            "cook-edit-form",
+            "cook-dish-edit-form",
+            "cook-event-edit-form",
+            "cook-outcome-form",
+            "cook-recipe-form",
         ].includes(form.id)
     )
         return;
@@ -3216,6 +3684,247 @@ document.addEventListener("submit", async (event) => {
     const submit = form.querySelector("button[type='submit']");
     submit.disabled = true;
     try {
+        if (form.id === "cook-create-form") {
+            const formData = new FormData(form);
+            const dishes = [...form.querySelectorAll("[data-cook-dish]")].map(
+                (dish) => {
+                    const value = (name) =>
+                        dish.querySelector(`[name="${name}"]`)?.value?.trim() ||
+                        "";
+                    const actualIngredients = value("actual_ingredients")
+                        .split("\n")
+                        .map((name) => name.trim())
+                        .filter(Boolean)
+                        .map((name) => ({ name }));
+                    return {
+                        name: value("dish_name"),
+                        method: value("method") || null,
+                        flavor: value("flavor") || null,
+                        ingredient_or_cut: value("ingredient_or_cut") || null,
+                        equipment: value("equipment") || null,
+                        actual_ingredients: actualIngredients,
+                    };
+                },
+            );
+            if (dishes.some((dish) => !dish.name)) {
+                throw new Error("Every cook dish needs a name");
+            }
+            formData.set("dishes", JSON.stringify(dishes));
+            for (const field of [
+                "dish_name",
+                "method",
+                "flavor",
+                "ingredient_or_cut",
+                "equipment",
+                "actual_ingredients",
+            ]) {
+                formData.delete(field);
+            }
+            formData.set("idempotency_key", crypto.randomUUID());
+            const result = await api("/api/app/cooks", {
+                method: "POST",
+                body: formData,
+                keepPrevious: true,
+            });
+            toast(
+                result.mediaFailures?.length
+                    ? "Cook created; one or more photos need retry."
+                    : "Cook created.",
+            );
+            dialog.close();
+            await renderRoute();
+            return;
+        }
+        if (form.id === "cook-update-form") {
+            const formData = new FormData(form);
+            formData.set("idempotency_key", crypto.randomUUID());
+            const result = await api(
+                `/api/app/cooks/${encodeURIComponent(form.dataset.id)}/updates`,
+                {
+                    method: "POST",
+                    body: formData,
+                    keepPrevious: true,
+                },
+            );
+            toast(
+                result.update?.mediaFailures?.length
+                    ? "Update saved; one or more photos need retry."
+                    : "Cook update recorded.",
+            );
+            await openCook(form.dataset.id);
+            return;
+        }
+        if (form.id === "cook-edit-form") {
+            await api(`/api/app/cooks/${encodeURIComponent(form.dataset.id)}`, {
+                method: "PATCH",
+                body: JSON.stringify({
+                    title: values.title,
+                    cook_date: values.cook_date,
+                    status: values.status,
+                    notes: values.notes || null,
+                    expected_version: Number(form.dataset.version),
+                }),
+                keepPrevious: true,
+            });
+            toast("Cook details updated.");
+            await openCook(form.dataset.id);
+            return;
+        }
+        if (form.id === "cook-dish-edit-form") {
+            let actualIngredients = [];
+            try {
+                actualIngredients = values.actual_ingredients
+                    ? JSON.parse(values.actual_ingredients)
+                    : [];
+            } catch {
+                throw new Error("Actual ingredients must be valid JSON");
+            }
+            if (!Array.isArray(actualIngredients)) {
+                throw new Error("Actual ingredients must be an array");
+            }
+            await api(
+                `/api/app/cooks/${encodeURIComponent(form.dataset.cookId)}/dishes/${encodeURIComponent(form.dataset.id)}`,
+                {
+                    method: "PATCH",
+                    body: JSON.stringify({
+                        name: values.name,
+                        method: values.method || null,
+                        flavor: values.flavor || null,
+                        ingredient_or_cut: values.ingredient_or_cut || null,
+                        equipment: values.equipment || null,
+                        notes: values.notes || null,
+                        actual_ingredients: actualIngredients,
+                        expected_version: Number(form.dataset.cookVersion),
+                    }),
+                    keepPrevious: true,
+                },
+            );
+            toast("Cook dish updated.");
+            await openCook(form.dataset.cookId);
+            return;
+        }
+        if (form.id === "cook-event-edit-form") {
+            const eventBody = {
+                event_type: values.event_type,
+                event_at: new Date(values.event_at).toISOString(),
+                time_precision: "exact",
+                note: values.note || null,
+                setpoint_temperature:
+                    values.setpoint_temperature === ""
+                        ? null
+                        : Number(values.setpoint_temperature),
+                setpoint_unit:
+                    values.setpoint_temperature === ""
+                        ? null
+                        : values.setpoint_unit,
+                ambient_temperature:
+                    values.ambient_temperature === ""
+                        ? null
+                        : Number(values.ambient_temperature),
+                ambient_unit:
+                    values.ambient_temperature === ""
+                        ? null
+                        : values.ambient_unit,
+                internal_temperature:
+                    values.internal_temperature === ""
+                        ? null
+                        : Number(values.internal_temperature),
+                internal_unit:
+                    values.internal_temperature === ""
+                        ? null
+                        : values.internal_unit,
+            };
+            await api(
+                `/api/app/cooks/${encodeURIComponent(form.dataset.cookId)}/events/${encodeURIComponent(form.dataset.id)}`,
+                {
+                    method: "PATCH",
+                    body: JSON.stringify({
+                        ...eventBody,
+                        expected_version: Number(form.dataset.version),
+                    }),
+                    keepPrevious: true,
+                },
+            );
+            toast("Timeline correction saved.");
+            await openCook(form.dataset.cookId);
+            return;
+        }
+        if (form.id === "cook-outcome-form") {
+            let characteristics = {};
+            try {
+                characteristics = values.characteristics
+                    ? JSON.parse(values.characteristics)
+                    : {};
+            } catch {
+                throw new Error("Characteristics must be valid JSON");
+            }
+            await api(
+                `/api/app/cooks/${encodeURIComponent(form.dataset.id)}/outcome`,
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        written_feedback: values.written_feedback || null,
+                        overall_assessment:
+                            values.overall_assessment === ""
+                                ? null
+                                : Number(values.overall_assessment),
+                        characteristics,
+                        worked: values.worked || null,
+                        disappointed: values.disappointed || null,
+                        next_time_notes: values.next_time_notes || null,
+                        is_preferred: form.elements.is_preferred.checked,
+                        expected_version: form.dataset.version
+                            ? Number(form.dataset.version)
+                            : undefined,
+                    }),
+                    keepPrevious: true,
+                },
+            );
+            toast("Cook result saved.");
+            await openCook(form.dataset.id);
+            return;
+        }
+        if (form.id === "cook-recipe-form") {
+            let ingredients;
+            try {
+                ingredients = JSON.parse(values.ingredients_json);
+            } catch {
+                throw new Error("Ingredients must be valid JSON");
+            }
+            if (!Array.isArray(ingredients) || !ingredients.length)
+                throw new Error("Add at least one actual ingredient");
+            const recipe = {
+                name: values.name,
+                servings: Number(values.servings),
+                instructions: String(values.instructions || "")
+                    .split("\n")
+                    .map((line) => line.trim())
+                    .filter(Boolean),
+                source_type: "user_entered",
+                ingredients: ingredients.map((ingredient) => ({
+                    ...ingredient,
+                    source_type: ingredient.source_type || "user_supplied",
+                })),
+            };
+            const result = await api(
+                `/api/app/cooks/${encodeURIComponent(form.dataset.cookId)}/save-recipe`,
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        dish_id: form.dataset.dishId,
+                        recipe,
+                        scope: "personal",
+                        idempotency_key: crypto.randomUUID(),
+                    }),
+                    keepPrevious: true,
+                },
+            );
+            toast(
+                `Recipe saved at revision ${result.result?.revisionId || "1"}; cook history preserved.`,
+            );
+            await openCook(form.dataset.cookId);
+            return;
+        }
         if (form.id === "saved-food-form") {
             const result = await api("/api/app/foods", {
                 method: "POST",

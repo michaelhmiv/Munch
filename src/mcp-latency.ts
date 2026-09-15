@@ -28,6 +28,20 @@ const KNOWN_MUNCH_TOOLS = new Set(Object.keys(MCP_TOOL_CAPABILITY_MAP));
  * for compatibility but is discovered on demand through the advanced gateway.
  */
 const DIRECT_MODEL_TOOLS = new Set([
+    "start_cook",
+    "update_cook",
+    "update_cook_dish",
+    "get_cook",
+    "correct_cook_event",
+    "search_cooks",
+    "finish_cook",
+    "reopen_cook",
+    "repeat_cook",
+    "record_cook_result",
+    "compare_cooks",
+    "prepare_cook_recipe_draft",
+    "save_cook_as_recipe",
+    "log_cook_portion",
     "get_grocery_list",
     "add_grocery_items",
     "log_meal",
@@ -83,6 +97,34 @@ const advancedActionSchema = z.object({
  * guidance for the host model.
  */
 const FAST_TOOL_DESCRIPTIONS: Record<string, string> = {
+    start_cook:
+        "Create a persistent cook before, during, or after cooking. Preserve the original message and uploaded photos; do not log nutrition or deduct pantry inventory.",
+    update_cook:
+        "Append an explicit cook observation, one or more timeline events, and durable photos to the current cook; questions and hypotheticals do not become factual events.",
+    update_cook_dish:
+        "Edit one cook dish's labels or actual ingredients without changing recipe history or nutrition logs.",
+    get_cook:
+        "Return one cook with dishes, original updates, editable timeline, user-authored result, and durable photos.",
+    correct_cook_event:
+        "Correct one cook timeline event with optimistic versioning while preserving the original cook history relationship.",
+    search_cooks:
+        "Search persistent cook history directly by dish, method, flavor, date, timeline notes, messages, and results.",
+    finish_cook:
+        "Finish a cook record without logging consumption or changing pantry inventory.",
+    reopen_cook:
+        "Reopen a finished cook for corrections or additional updates.",
+    repeat_cook:
+        "Create a fresh cook based on a prior attempt while carrying forward setup and next-time notes only.",
+    record_cook_result:
+        "Save user-authored cook feedback, characteristics, assessment, and next-time notes separately from AI suggestions.",
+    compare_cooks:
+        "Compare selected cook attempts by setup, timeline, photos, and outcomes.",
+    prepare_cook_recipe_draft:
+        "Prepare a reviewable recipe draft from a selected cook or dish without changing cook history.",
+    save_cook_as_recipe:
+        "Save a reviewed cook or dish as a new immutable recipe revision and link the exact revision back to the cook.",
+    log_cook_portion:
+        "Log an explicitly eaten portion from a cook's exact saved recipe revision; never infer consumption or deduct pantry inventory.",
     get_grocery_list:
         "Return the active grocery list. Use directly for requests to show, list, or read groceries; use personal scope unless the user explicitly asks for household.",
     add_grocery_items:

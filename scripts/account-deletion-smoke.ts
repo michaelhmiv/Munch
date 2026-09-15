@@ -8,6 +8,10 @@ if (!databaseUrl) throw new Error("DATABASE_URL is required");
 const sql = new SQL({ url: databaseUrl, max: 1 });
 const userId = crypto.randomUUID();
 const mealId = crypto.randomUUID();
+const cookId = crypto.randomUUID();
+const cookDishId = crypto.randomUUID();
+const cookUpdateId = crypto.randomUUID();
+const cookMediaId = crypto.randomUUID();
 const sessionId = crypto.randomUUID();
 const clientId = `delete-smoke-${crypto.randomUUID()}`;
 const consentId = crypto.randomUUID();
@@ -24,6 +28,35 @@ try {
     await sql`
         insert into munch.meals (id, user_id, description, calories)
         values (${mealId}, ${userId}, 'Disposable deletion smoke meal', 100)
+    `;
+    await sql`
+        insert into munch.cooks (
+            id, personal_owner_user_id, title, cook_date, created_by_user_id,
+            updated_by_user_id
+        ) values (
+            ${cookId}, ${userId}, 'Disposable deletion smoke cook', '2026-09-14',
+            ${userId}, ${userId}
+        )
+    `;
+    await sql`
+        insert into munch.cook_dishes (id, cook_id, position, name)
+        values (${cookDishId}, ${cookId}, 0, 'Disposable wings')
+    `;
+    await sql`
+        insert into munch.cook_updates (
+            id, cook_id, source, raw_message, created_by_user_id
+        ) values (
+            ${cookUpdateId}, ${cookId}, 'website', 'Disposable cook update', ${userId}
+        )
+    `;
+    await sql`
+        insert into munch.cook_media (
+            id, cook_id, update_id, sha256, mime_type, file_size, bytes,
+            created_by_user_id
+        ) values (
+            ${cookMediaId}, ${cookId}, ${cookUpdateId}, ${"a".repeat(64)}, 'image/jpeg', 3,
+            decode('ffd8ff', 'hex'), ${userId}
+        )
     `;
     await sql`
         insert into munch.auth_sessions (id, user_id, token, expires_at)
@@ -47,6 +80,8 @@ try {
         Array<{
             users: number;
             meals: number;
+            cooks: number;
+            cook_media: number;
             preferences: number;
             sessions: number;
             consents: number;
@@ -55,6 +90,8 @@ try {
         select
             (select count(*)::integer from munch.users where id = ${userId}) as users,
             (select count(*)::integer from munch.meals where user_id = ${userId}) as meals,
+            (select count(*)::integer from munch.cooks where personal_owner_user_id = ${userId}) as cooks,
+            (select count(*)::integer from munch.cook_media where cook_id = ${cookId}) as cook_media,
             (select count(*)::integer from munch.account_preferences where user_id = ${userId}) as preferences,
             (select count(*)::integer from munch.auth_sessions where user_id = ${userId}) as sessions,
             (select count(*)::integer from munch."oauthConsent" where "userId" = ${userId}) as consents
