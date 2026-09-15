@@ -1,8 +1,15 @@
 # Munch
 
-> Munch is a privacy-conscious, ChatGPT-first nutrition service. ChatGPT provides the conversation and reasoning; Munch provides persistent nutrition records, verified food search, saved foods, immutable reusable recipes, goals, water and weight history, trends, exports, deletion, billing entitlements, and OAuth-protected MCP tools.
+> Munch is a privacy-conscious, ChatGPT-first nutrition and cooking-history service. ChatGPT provides the conversation and reasoning; Munch provides persistent nutrition records, independent cooking-session history with durable photos and timelines, verified food search, saved foods, immutable reusable recipes, goals, water and weight history, trends, exports, deletion, billing entitlements, and OAuth-protected MCP tools.
 
-Munch is designed for use through ChatGPT and compatible MCP clients rather than as a standalone nutrition application. Users can describe meals naturally, search USDA FoodData Central and Open Food Facts, look up barcodes, save single foods or multi-ingredient recipes, log exact recipe servings with historical source snapshots, review daily progress and longer-term trends, and manage their account through conversation.
+Munch is designed for use through ChatGPT and compatible MCP clients rather than as a standalone nutrition application. Users can describe meals and cooking sessions naturally, attach cooking photos, record editable timelines and results, search history across conversations, repeat and compare attempts, search USDA FoodData Central and Open Food Facts, look up barcodes, save single foods or multi-ingredient recipes, log exact recipe servings with historical source snapshots, review daily progress and longer-term trends, and manage their account through conversation.
+
+## Cooking sessions
+
+- Cooks are persistent records independent of recipes, nutrition logs, and pantry deductions.
+- A cook can contain multiple dishes, recipe-revision links, actual ingredients, deviations, original messages, durable photos, timeline events, results, and next-time notes.
+- Users can start, update, finish, reopen, correct, delete, search, compare, repeat, and save a reviewed cook as a recipe through the Cooks website surface and MCP tools.
+- Completing a cook does not imply that food was eaten or that pantry inventory was used. Those are separate, explicit actions.
 
 Munch does not train a Munch model on nutrition records, sell nutrition data, or use Google Analytics or advertising trackers. OpenAI separately controls ChatGPT conversation processing, retention, and training choices according to the user's ChatGPT plan, settings, and OpenAI policies.
 
