@@ -1,7 +1,7 @@
 # Munch MCP ↔ Website Parity Audit
 
-**Audit date:** 2026-09-14
-**Release status:** Historical parity baseline plus Cooks review-branch addendum; Cooks production deployment pending merge
+**Audit date:** 2026-09-15
+**Release status:** Cooks merged and deployed to Railway production; authenticated website and external MCP photo workflows remain explicitly unverified in this environment
 
 ## Executive summary
 
@@ -12,6 +12,17 @@ controls, and the corresponding MCP tools/widgets. The implementation shares
 the authenticated database/service layer and deliberately does not log
 nutrition or deduct pantry inventory unless the user explicitly starts those
 separate workflows.
+
+PR #145 merged to `main` at
+[`bd3f029`](https://github.com/michaelhmiv/Munch/commit/bd3f029dee9e292a27f17f60010cd4af0fcae0ef).
+Railway production deployment
+`147787ec-f405-448d-85f2-00eb15f44e8c` is `SUCCESS` and applied
+`0031_cooks.sql`. The public `/app/cooks` route and Cooks navigation are live.
+The public shell correctly requires authentication; no production account or
+photo was created during verification. The connected MCP catalog in the
+existing conversation reached the new deployment but retained its pre-release
+tool list, so a fresh external-client session is still required to certify the
+new direct Cooks tool list and the supported photo-plus-message upload path.
 
 The original parity program is implemented and deployed. This implementation slice adds recipe URL import with the same read-only preview contract on MCP and the website: `parse_recipe_url` and `POST /api/app/recipes/import-preview` feed the existing reviewed recipe save path. The capability registry now assigns all 73 registered MCP tools to 61 outcome contracts. Of those contracts, 54 are complete on both MCP and the website; the remaining 7 are explicitly website-only product workflows, not unresolved gaps. There are no `partial` contracts, no non-null `gap` fields, and no outstanding target PRs in the manifest.
 
@@ -201,11 +212,12 @@ Operationally, the deployment runbook still calls for an isolated backup restore
 
 **Historical baseline verdict:** implemented in source for the recipe/meal release slice; its 73 registered MCP tools were assigned and covered by the evidence available at that time. The Cooks release is tracked separately below, with its own 95-tool submission inventory and production rollout state.
 
-## Cooks release addendum (review branch)
+## Cooks release addendum (deployed)
 
-This section is intentionally release-scoped. It must be updated with the PR,
-CI run, and Railway deployment identifiers after review; it is not evidence
-that the current production deployment contains Cooks.
+This section is intentionally release-scoped. Source, CI, and deployment
+evidence are recorded above; authenticated end-to-end client evidence is kept
+separate so a public route or server registration is not mistaken for a
+completed user journey.
 
 | Outcome                                                      | Website                                                                                                                                | MCP / widget                                                                                                   | Shared evidence target                                            |
 | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
