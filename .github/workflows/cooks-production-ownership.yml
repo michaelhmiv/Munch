@@ -1,0 +1,26 @@
+name: Cooks production ownership certification
+on:
+    push:
+        branches: [test/cooks-production-ownership-20260916]
+        paths:
+            - scripts/certification/cooks-production-ownership.ts
+            - .github/workflows/cooks-production-ownership.yml
+permissions:
+    contents: read
+concurrency:
+    group: cooks-production-ownership-certification
+    cancel-in-progress: false
+jobs:
+    ownership:
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - run: bun install --frozen-lockfile
+            - name: Create isolated account, verify ownership, and remove account
+              env:
+                  DATABASE_URL: ${{ secrets.MUNCH_PRODUCTION_DATABASE_URL }}
+              run: bun scripts/certification/cooks-production-ownership.ts
