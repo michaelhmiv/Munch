@@ -591,7 +591,7 @@ export async function handleAccountAction(button, ctx) {
         return true;
     }
     if (action === "export-account") {
-        const data = await ctx.api("/account/portal/export", {
+        const data = await ctx.api("/api/app/export", {
             method: "POST",
             body: "{}",
             keepPrevious: true,

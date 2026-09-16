@@ -309,7 +309,7 @@ function jsonField(body: Record<string, unknown>, key: string): unknown {
     }
 }
 
-async function cookRequest(c: Context): Promise<{
+export async function cookRequest(c: Context): Promise<{
     body: Record<string, unknown>;
     photos: CookMediaInput[];
     mediaFailures: CookMediaFailure[];
@@ -341,6 +341,8 @@ async function cookRequest(c: Context): Promise<{
     const mediaFailures: CookMediaFailure[] = [];
     for (const value of form.getAll("photos")) {
         if (!(value instanceof File)) continue;
+        // Browsers include an unnamed empty File for an unselected file input.
+        if (!value.name && value.size === 0) continue;
         try {
             const bytes = new Uint8Array(await value.arrayBuffer());
             const photo = validateCookMediaUpload({
