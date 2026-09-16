@@ -58,6 +58,22 @@ jobs:
                       rows=cur.fetchall()
                       print(json.dumps({"reviewer_accounts":rows},default=str))
           except Exception as exc:
-              print("BLOCKED: database inspection failed (" + type(exc).__name__ + "). Connection details suppressed.")
+              message = str(exc).lower()
+              categories = {
+                  "dns_failure": ("could not translate host name", "name or service not known", "failed to resolve"),
+                  "password_rejected": ("password authentication failed",),
+                  "connection_refused": ("connection refused",),
+                  "timeout": ("timeout", "timed out"),
+                  "ssl_error": ("ssl", "certificate"),
+                  "invalid_connection_string": ("invalid dsn", "missing", "invalid uri", "invalid connection"),
+                  "database_missing": ("does not exist",),
+                  "network_unreachable": ("network is unreachable",),
+              }
+              matches = [key for key, phrases in categories.items() if any(p in message for p in phrases)]
+              from urllib.parse import urlparse
+              value = os.environ.get("MUNCH_PRODUCTION_DATABASE_URL") or os.environ.get("DATABASE_URL", "")
+              parsed = urlparse(value)
+              print(json.dumps({"error_type":type(exc).__name__, "categories":matches, "postgres_scheme":parsed.scheme in ("postgres","postgresql"), "has_host":bool(parsed.hostname), "internal_host":bool(parsed.hostname and parsed.hostname.endswith(".railway.internal")), "unresolved_reference": "${{" in value, "outer_whitespace": value != value.strip(), "sqlstate":getattr(exc,"sqlstate",None)}))
+              print("BLOCKED: database connection failed; secret values suppressed.")
               raise SystemExit(1)
           PY
