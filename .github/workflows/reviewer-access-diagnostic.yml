@@ -73,7 +73,7 @@ jobs:
               from urllib.parse import urlparse
               value = os.environ.get("MUNCH_PRODUCTION_DATABASE_URL") or os.environ.get("DATABASE_URL", "")
               parsed = urlparse(value)
-              print(json.dumps({"error_type":type(exc).__name__, "categories":matches, "postgres_scheme":parsed.scheme in ("postgres","postgresql"), "has_host":bool(parsed.hostname), "internal_host":bool(parsed.hostname and parsed.hostname.endswith(".railway.internal")), "unresolved_reference": "${{" in value, "outer_whitespace": value != value.strip(), "sqlstate":getattr(exc,"sqlstate",None)}))
+              print(json.dumps({"error_type":type(exc).__name__, "categories":matches, "postgres_scheme":parsed.scheme in ("postgres","postgresql"), "has_host":bool(parsed.hostname), "internal_host":bool(parsed.hostname and parsed.hostname.endswith(".railway.internal")), "unresolved_reference": ("$" + "{{") in value, "outer_whitespace": value != value.strip(), "sqlstate":getattr(exc,"sqlstate",None)}))
               print("BLOCKED: database connection failed; secret values suppressed.")
               raise SystemExit(1)
           PY
