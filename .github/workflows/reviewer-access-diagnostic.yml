@@ -1,0 +1,63 @@
+name: Reviewer production access diagnostic
+
+on:
+  push:
+    branches: ["diagnostics/reviewer-access-20260916"]
+    paths: [".github/workflows/reviewer-access-diagnostic.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 5
+    steps:
+      - name: Inspect configured access without exposing values
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MUNCH_PRODUCTION_DATABASE_URL: ${{ secrets.MUNCH_PRODUCTION_DATABASE_URL }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          MUNCH_REVIEWER_EMAIL: ${{ secrets.MUNCH_REVIEWER_EMAIL }}
+          MUNCH_REVIEWER_USERNAME: ${{ secrets.MUNCH_REVIEWER_USERNAME }}
+          MUNCH_REVIEWER_PASSWORD: ${{ secrets.MUNCH_REVIEWER_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import os
+          for name in ("DATABASE_URL", "MUNCH_PRODUCTION_DATABASE_URL", "RAILWAY_TOKEN", "MUNCH_REVIEWER_EMAIL", "MUNCH_REVIEWER_USERNAME", "MUNCH_REVIEWER_PASSWORD"):
+              print(name + ": " + ("available" if os.environ.get(name) else "unavailable"))
+          if not (os.environ.get("MUNCH_PRODUCTION_DATABASE_URL") or os.environ.get("DATABASE_URL")):
+              raise SystemExit("BLOCKED: no production database connection is available to this workflow. No account changes made.")
+          PY
+      - name: Install PostgreSQL client
+        run: python3 -m pip install 'psycopg[binary]==3.2.10'
+      - name: Read reviewer status
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MUNCH_PRODUCTION_DATABASE_URL: ${{ secrets.MUNCH_PRODUCTION_DATABASE_URL }}
+        run: |
+          python3 - <<'PY'
+          import os, json, psycopg
+          from psycopg.rows import dict_row
+          try:
+              with psycopg.connect(os.environ.get("MUNCH_PRODUCTION_DATABASE_URL") or os.environ["DATABASE_URL"], connect_timeout=15, options="-c default_transaction_read_only=on -c statement_timeout=15000", row_factory=dict_row) as conn:
+                  with conn.cursor() as cur:
+                      cur.execute("""
+                          SELECT u.id, u.username, u.status, u.email_verified, u.created_at,
+                            EXISTS (SELECT 1 FROM munch.auth_accounts a WHERE a.user_id=u.id AND a.provider_id='credential' AND a.password IS NOT NULL) AS has_password_credential,
+                            e.active AS premium_override_active, e.expires_at,
+                            (SELECT max(a.created_at) FROM munch.audit_events a WHERE a.subject_user_id=u.id AND a.action='reviewer_sample_data_provisioned') AS provisioned_at
+                          FROM munch.users u
+                          LEFT JOIN munch.entitlements e ON e.user_id=u.id AND e.feature_key='premium_access'
+                          WHERE e.source='reviewer'
+                            OR EXISTS (SELECT 1 FROM munch.audit_events a WHERE a.subject_user_id=u.id AND a.action='reviewer_sample_data_provisioned')
+                          ORDER BY u.created_at LIMIT 20
+                      """)
+                      rows=cur.fetchall()
+                      print(json.dumps({"reviewer_accounts":rows},default=str))
+          except Exception as exc:
+              print("BLOCKED: database inspection failed (" + type(exc).__name__ + "). Connection details suppressed.")
+              raise SystemExit(1)
+          PY
