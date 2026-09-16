@@ -1802,8 +1802,12 @@ export function createAppRouter(): Hono {
         const userId = c.get("munchUserId");
         const request = await cookRequest(c);
         const body = request.body;
+        const detail = await getCook(userId, c.req.param("id")!);
+        if (!detail) throw new Error("Cook not found");
         const timezone =
-            typeof body.timezone === "string" ? body.timezone : "UTC";
+            typeof body.timezone === "string"
+                ? body.timezone
+                : detail.cook.timezone;
         const submittedAt =
             typeof body.submitted_at === "string"
                 ? body.submitted_at

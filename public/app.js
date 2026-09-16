@@ -212,12 +212,12 @@ function formatDate(date, options = {}) {
     }).format(new Date(`${date}T12:00:00Z`));
 }
 
-function formatTime(value) {
+function formatTime(value, timezone) {
     if (!value) return "Time not recorded";
     return new Intl.DateTimeFormat("en-US", {
         hour: "numeric",
         minute: "2-digit",
-        timeZone: state.bootstrap?.profile?.timezone || "UTC",
+        timeZone: timezone || state.bootstrap?.profile?.timezone || "UTC",
     }).format(new Date(value));
 }
 
@@ -1338,9 +1338,11 @@ function cookTimelineMarkup(detail) {
                 '<article class="cook-event-row"><div><strong>' +
                 escapeHtml(String(event.event_type).replaceAll("_", " ")) +
                 "</strong><small>" +
-                escapeHtml(formatTime(event.event_at)) +
+                escapeHtml(formatTime(event.event_at, detail.cook.timezone)) +
                 " · submitted " +
-                escapeHtml(formatTime(event.submitted_at)) +
+                escapeHtml(
+                    formatTime(event.submitted_at, detail.cook.timezone),
+                ) +
                 (event.time_precision === "approximate"
                     ? " · approximate"
                     : "") +
@@ -1386,13 +1388,15 @@ function cookDetailMarkup(detail) {
           detail.media
               .map(
                   (photo) =>
-                      '<figure><img src="' +
+                      '<figure><a href="' +
+                      escapeHtml(photo.url) +
+                      '" target="_blank" rel="noopener noreferrer" aria-label="Open original cook photo"><img src="' +
                       escapeHtml(photo.url) +
                       '" alt="' +
                       escapeHtml(
                           photo.caption || photo.file_name || "Cook photo",
                       ) +
-                      '" loading="lazy" /><figcaption>' +
+                      '" loading="lazy" /></a><figcaption>' +
                       escapeHtml(photo.file_name || "Saved photo") +
                       "</figcaption></figure>",
               )
@@ -1446,7 +1450,9 @@ function cookDetailMarkup(detail) {
               .map(
                   (update) =>
                       "<p><strong>" +
-                      escapeHtml(formatTime(update.submitted_at)) +
+                      escapeHtml(
+                          formatTime(update.submitted_at, cook.timezone),
+                      ) +
                       "</strong> · " +
                       escapeHtml(update.source) +
                       " · " +
@@ -1467,7 +1473,7 @@ function cookDetailMarkup(detail) {
             : '<button class="button button-secondary button-small" type="button" data-action="reopen-cook" data-id="' +
               escapeHtml(cook.id) +
               '">Reopen</button>';
-    return `<div class="cook-detail-view"><div class="cook-detail-head"><div><p class="section-kicker">${escapeHtml(cook.status === "active" ? "Active cook" : "Completed cook")}</p><h2>${escapeHtml(cook.title)}</h2><p class="tiny">${escapeHtml(formatDate(cook.cook_date, { year: true }))} · ${escapeHtml(cook.timezone)} · version ${number(cook.version)}</p></div><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="edit-cook" data-id="${escapeHtml(cook.id)}">Edit details</button>${lifecycle}<button class="button button-quiet button-small" type="button" data-action="repeat-cook" data-id="${escapeHtml(cook.id)}">Cook again</button><button class="button button-quiet button-small" type="button" data-action="delete-cook" data-id="${escapeHtml(cook.id)}">Delete</button></div></div>${cook.original_message ? '<details class="cook-original"><summary>Original context</summary><p>' + escapeHtml(cook.original_message) + "</p></details>" : ""}<section class="cook-detail-section"><div class="panel-title"><div><h3>Dishes</h3><span>${detail.dishes.length} recorded</span></div></div><div class="cook-dishes">${dishes}</div></section><section class="cook-detail-section"><div class="panel-title"><div><h3>Photos</h3><span>${detail.media.length} saved</span></div></div>${photoMarkup}</section><section class="cook-detail-section"><div class="panel-title"><div><h3>Timeline</h3><span>${detail.events.length} event${detail.events.length === 1 ? "" : "s"}</span></div></div>${cookTimelineMarkup(detail)}</section><section class="cook-detail-section"><div class="panel-title"><div><h3>Record an update</h3><span>One message can add multiple events and photos.</span></div></div><form id="cook-update-form" class="auth-form" data-id="${escapeHtml(cook.id)}" enctype="multipart/form-data"><label class="field"><span>What happened?</span><textarea name="message" rows="3" maxlength="20000" placeholder="A couple minutes ago I wrapped the wings. Internal temp was 155°F."></textarea></label><label class="field"><span>Add photos</span><input name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple /></label><button class="button button-primary" type="submit">Record update</button></form></section><section class="cook-detail-section"><div class="panel-title"><div><h3>Result</h3><span>User observations stay separate from suggestions.</span></div></div><form id="cook-outcome-form" class="auth-form" data-id="${escapeHtml(cook.id)}" data-version="${escapeHtml(outcome?.version || "")}"><label class="field"><span>Feedback</span><textarea name="written_feedback" rows="3" maxlength="20000" placeholder="What did it taste and feel like?">${escapeHtml(outcome?.written_feedback || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Overall assessment (1–5)</span><input name="overall_assessment" type="number" min="1" max="5" step="0.1" value="${escapeHtml(outcome?.overall_assessment || "")}" /></label><label class="field"><span>Characteristics JSON</span><input name="characteristics" value="${escapeHtml(JSON.stringify(outcome?.characteristics || {}))}" placeholder='{"smoke_intensity":"medium"}' /></label></div><label class="field"><span>What worked</span><textarea name="worked" rows="2" maxlength="10000">${escapeHtml(outcome?.worked || "")}</textarea></label><label class="field"><span>What disappointed you</span><textarea name="disappointed" rows="2" maxlength="10000">${escapeHtml(outcome?.disappointed || "")}</textarea></label><label class="field"><span>Change next time</span><textarea name="next_time_notes" rows="2" maxlength="10000">${escapeHtml(outcome?.next_time_notes || "")}</textarea></label><label class="checkbox-row"><input name="is_preferred" type="checkbox" ${outcome?.is_preferred ? "checked" : ""} /> Preferred attempt</label><button class="button button-primary" type="submit">Save result</button></form></section><section class="cook-detail-section"><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="cook-recipe-draft" data-id="${escapeHtml(cook.id)}">Save as recipe</button><button class="button button-secondary button-small" type="button" data-action="set-preferred-cook" data-id="${escapeHtml(cook.id)}">Choose preferred attempt</button></div>${updateMarkup}</section></div>`;
+    return `<div class="cook-detail-view"><div class="cook-detail-head"><div><p class="section-kicker">${escapeHtml(cook.status === "active" ? "Active cook" : "Completed cook")}</p><h2>${escapeHtml(cook.title)}</h2><p class="tiny">${escapeHtml(formatDate(cook.cook_date, { year: true }))} · ${escapeHtml(cook.timezone)} · version ${number(cook.version)}</p></div><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="edit-cook" data-id="${escapeHtml(cook.id)}">Edit details</button>${lifecycle}<button class="button button-quiet button-small" type="button" data-action="repeat-cook" data-id="${escapeHtml(cook.id)}">Cook again</button><button class="button button-quiet button-small" type="button" data-action="delete-cook" data-id="${escapeHtml(cook.id)}">Delete</button></div></div>${cook.original_message ? '<details class="cook-original"><summary>Original context</summary><p>' + escapeHtml(cook.original_message) + "</p></details>" : ""}<section class="cook-detail-section"><div class="panel-title"><div><h3>Dishes</h3><span>${detail.dishes.length} recorded</span></div></div><div class="cook-dishes">${dishes}</div></section><section class="cook-detail-section"><div class="panel-title"><div><h3>Photos</h3><span>${detail.media.length} saved</span></div></div>${photoMarkup}</section><section class="cook-detail-section"><div class="panel-title"><div><h3>Timeline</h3><span>${detail.events.length} event${detail.events.length === 1 ? "" : "s"}</span></div></div>${cookTimelineMarkup(detail)}</section><section class="cook-detail-section"><div class="panel-title"><div><h3>Record an update</h3><span>One message can add multiple events and photos.</span></div></div><form id="cook-update-form" class="auth-form" data-id="${escapeHtml(cook.id)}" enctype="multipart/form-data"><input type="hidden" name="timezone" value="${escapeHtml(cook.timezone)}" /><label class="field"><span>What happened?</span><textarea name="message" rows="3" maxlength="20000" placeholder="A couple minutes ago I wrapped the wings. Internal temp was 155°F."></textarea></label><label class="field"><span>Add photos</span><input name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple /></label><button class="button button-primary" type="submit">Record update</button></form></section><section class="cook-detail-section"><div class="panel-title"><div><h3>Result</h3><span>User observations stay separate from suggestions.</span></div></div><form id="cook-outcome-form" class="auth-form" data-id="${escapeHtml(cook.id)}" data-version="${escapeHtml(outcome?.version || "")}"><label class="field"><span>Feedback</span><textarea name="written_feedback" rows="3" maxlength="20000" placeholder="What did it taste and feel like?">${escapeHtml(outcome?.written_feedback || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Overall assessment (1–5)</span><input name="overall_assessment" type="number" min="1" max="5" step="0.1" value="${escapeHtml(outcome?.overall_assessment || "")}" /></label><label class="field"><span>Characteristics JSON</span><input name="characteristics" value="${escapeHtml(JSON.stringify(outcome?.characteristics || {}))}" placeholder='{"smoke_intensity":"medium"}' /></label></div><label class="field"><span>What worked</span><textarea name="worked" rows="2" maxlength="10000">${escapeHtml(outcome?.worked || "")}</textarea></label><label class="field"><span>What disappointed you</span><textarea name="disappointed" rows="2" maxlength="10000">${escapeHtml(outcome?.disappointed || "")}</textarea></label><label class="field"><span>Change next time</span><textarea name="next_time_notes" rows="2" maxlength="10000">${escapeHtml(outcome?.next_time_notes || "")}</textarea></label><label class="checkbox-row"><input name="is_preferred" type="checkbox" ${outcome?.is_preferred ? "checked" : ""} /> Preferred attempt</label><button class="button button-primary" type="submit">Save result</button></form></section><section class="cook-detail-section"><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="cook-recipe-draft" data-id="${escapeHtml(cook.id)}">Save as recipe</button><button class="button button-secondary button-small" type="button" data-action="set-preferred-cook" data-id="${escapeHtml(cook.id)}">Choose preferred attempt</button></div>${updateMarkup}</section></div>`;
 }
 
 function openCookDishEditor(dish, cookId, cookVersion) {
@@ -1508,7 +1514,7 @@ function openCookEventEditor(eventRecord, cookId) {
     ];
     openDialog(
         "Correct timeline event",
-        `<form id="cook-event-edit-form" class="auth-form" data-id="${escapeHtml(eventRecord.id)}" data-cook-id="${escapeHtml(cookId)}" data-version="${escapeHtml(eventRecord.version)}"><label class="field"><span>Event</span><select name="event_type">${types.map((type) => '<option value="' + type + '" ' + (eventRecord.event_type === type ? "selected" : "") + ">" + type.replaceAll("_", " ") + "</option>").join("")}</select></label><label class="field"><span>Event time</span><input name="event_at" type="datetime-local" value="${escapeHtml(localTime)}" required /></label><label class="field"><span>Note</span><textarea name="note" rows="3" maxlength="20000">${escapeHtml(eventRecord.note || eventRecord.original_message || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Setpoint</span><input name="setpoint_temperature" type="number" step="0.1" value="${escapeHtml(eventRecord.setpoint_temperature ?? "")}" /></label><label class="field"><span>Setpoint unit</span><select name="setpoint_unit"><option value="F" ${eventRecord.setpoint_unit === "F" ? "selected" : ""}>°F</option><option value="C" ${eventRecord.setpoint_unit === "C" ? "selected" : ""}>°C</option></select></label><label class="field"><span>Cooking environment</span><input name="ambient_temperature" type="number" step="0.1" value="${escapeHtml(eventRecord.ambient_temperature ?? "")}" /></label><label class="field"><span>Environment unit</span><select name="ambient_unit"><option value="F" ${eventRecord.ambient_unit === "F" ? "selected" : ""}>°F</option><option value="C" ${eventRecord.ambient_unit === "C" ? "selected" : ""}>°C</option></select></label><label class="field"><span>Internal</span><input name="internal_temperature" type="number" step="0.1" value="${escapeHtml(eventRecord.internal_temperature ?? "")}" /></label><label class="field"><span>Internal unit</span><select name="internal_unit"><option value="F" ${eventRecord.internal_unit === "F" ? "selected" : ""}>°F</option><option value="C" ${eventRecord.internal_unit === "C" ? "selected" : ""}>°C</option></select></label></div><button class="button button-primary" type="submit">Save correction</button></form>`,
+        `<form id="cook-event-edit-form" class="auth-form" data-id="${escapeHtml(eventRecord.id)}" data-cook-id="${escapeHtml(cookId)}" data-version="${escapeHtml(eventRecord.version)}"><label class="field"><span>Event</span><select name="event_type">${types.map((type) => '<option value="' + type + '" ' + (eventRecord.event_type === type ? "selected" : "") + ">" + type.replaceAll("_", " ") + "</option>").join("")}</select></label><label class="field"><span>Event time (UTC)</span><input name="event_at" type="datetime-local" value="${escapeHtml(localTime)}" required /></label><label class="field"><span>Note</span><textarea name="note" rows="3" maxlength="20000">${escapeHtml(eventRecord.note || eventRecord.original_message || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Setpoint</span><input name="setpoint_temperature" type="number" step="0.1" value="${escapeHtml(eventRecord.setpoint_temperature ?? "")}" /></label><label class="field"><span>Setpoint unit</span><select name="setpoint_unit"><option value="F" ${eventRecord.setpoint_unit === "F" ? "selected" : ""}>°F</option><option value="C" ${eventRecord.setpoint_unit === "C" ? "selected" : ""}>°C</option></select></label><label class="field"><span>Cooking environment</span><input name="ambient_temperature" type="number" step="0.1" value="${escapeHtml(eventRecord.ambient_temperature ?? "")}" /></label><label class="field"><span>Environment unit</span><select name="ambient_unit"><option value="F" ${eventRecord.ambient_unit === "F" ? "selected" : ""}>°F</option><option value="C" ${eventRecord.ambient_unit === "C" ? "selected" : ""}>°C</option></select></label><label class="field"><span>Internal</span><input name="internal_temperature" type="number" step="0.1" value="${escapeHtml(eventRecord.internal_temperature ?? "")}" /></label><label class="field"><span>Internal unit</span><select name="internal_unit"><option value="F" ${eventRecord.internal_unit === "F" ? "selected" : ""}>°F</option><option value="C" ${eventRecord.internal_unit === "C" ? "selected" : ""}>°C</option></select></label></div><button class="button button-primary" type="submit">Save correction</button></form>`,
     );
 }
 
@@ -3810,7 +3816,7 @@ document.addEventListener("submit", async (event) => {
         if (form.id === "cook-event-edit-form") {
             const eventBody = {
                 event_type: values.event_type,
-                event_at: new Date(values.event_at).toISOString(),
+                event_at: new Date(values.event_at + "Z").toISOString(),
                 time_precision: "exact",
                 note: values.note || null,
                 setpoint_temperature:
