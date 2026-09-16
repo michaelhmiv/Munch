@@ -294,12 +294,15 @@ function serializeMedia(row: Record<string, unknown>, userId: string) {
     };
 }
 
-function serializeCookRow(row: Record<string, unknown>, userId: string) {
+export function serializeCookRow(row: Record<string, unknown>, userId: string) {
     return {
         id: String(row.id),
         title: String(row.title),
         status: String(row.status) as CookStatus,
-        cook_date: String(row.cook_date),
+        cook_date:
+            row.cook_date instanceof Date
+                ? row.cook_date.toISOString().slice(0, 10)
+                : String(row.cook_date).slice(0, 10),
         timezone: String(row.timezone),
         started_at:
             row.started_at == null
@@ -390,16 +393,48 @@ function validateEventInput(input: CookEventInput): CookEventInput {
     };
 }
 
+const TIME_NUMBER_WORDS: Record<string, number> = {
+    a: 1,
+    an: 1,
+    one: 1,
+    two: 2,
+    three: 3,
+    four: 4,
+    five: 5,
+    six: 6,
+    seven: 7,
+    eight: 8,
+    nine: 9,
+    ten: 10,
+    eleven: 11,
+    twelve: 12,
+    fifteen: 15,
+    twenty: 20,
+    thirty: 30,
+    "a couple": 2,
+    "a couple of": 2,
+    "a few": 3,
+};
+const RELATIVE_TIME_RE = new RegExp(
+    `(?:about\\s+|approximately\\s+)?(?:${Object.keys(TIME_NUMBER_WORDS)
+        .sort((a, b) => b.length - a.length)
+        .join(
+            "|",
+        )}|\\d+(?:\\.\\d+)?)\\s+(?:minutes?|hours?)\\s+ago|\\b(?:just now|just|now)\\b`,
+    "i",
+);
+
 function phraseOffset(phrase: string): number | null {
-    const normalized = phrase.toLowerCase();
-    const minutes = normalized.match(/(\d+)\s+minutes?\s+ago/);
-    if (minutes) return Number(minutes[1]) * 60_000;
-    if (/a couple of minutes ago|a couple minutes ago/.test(normalized))
-        return 2 * 60_000;
-    if (/a few minutes ago|few minutes ago/.test(normalized)) return 3 * 60_000;
-    const hours = normalized.match(/(\d+)\s+hours?\s+ago/);
-    if (hours) return Number(hours[1]) * 3_600_000;
-    return null;
+    const normalized = phrase
+        .toLowerCase()
+        .replace(/^(?:about|approximately)\s+/, "");
+    if (/^(?:just now|just|now)$/.test(normalized)) return 0;
+    const match = normalized.match(/^(.+?)\s+(minutes?|hours?)\s+ago$/);
+    if (!match) return null;
+    const amount = TIME_NUMBER_WORDS[match[1]!] ?? Number(match[1]);
+    return Number.isFinite(amount)
+        ? amount * (match[2]!.startsWith("hour") ? 3_600_000 : 60_000)
+        : null;
 }
 
 function temperatureFields(
@@ -496,6 +531,9 @@ function temperatureFields(
         ) {
             fields.setpointTemperature ??= temperature;
             fields.setpointUnit ??= unit;
+        } else if (eventType === "wrap") {
+            fields.internalTemperature ??= temperature;
+            fields.internalUnit ??= unit;
         } else {
             fields.ambientTemperature ??= temperature;
             fields.ambientUnit ??= unit;
@@ -525,8 +563,10 @@ function detectedEvent(
         relativePhrase,
         originalMessage: message,
         note: note ?? message,
-        ...(eventType === "preheat" || eventType === "temperature_change"
-            ? temperatureFields(message, eventType)
+        ...(eventType === "preheat" ||
+        eventType === "temperature_change" ||
+        eventType === "wrap"
+            ? temperatureFields(note ?? message, eventType)
             : {}),
     };
 }
@@ -545,7 +585,6 @@ export function parseNaturalCookUpdate(
     const isQuestion = /\?\s*$/.test(text) || questionOnly;
     const factualText =
         advisoryIndex > 0 ? text.slice(0, advisoryIndex).trim() : text;
-    const factualLower = factualText.toLowerCase();
     const suggestions: ParsedCookUpdate["suggestions"] = {};
     const method = lower.match(
         /\b(smok(?:e|ed|ing)|grill(?:ed|ing)?|roast(?:ed|ing)?|bake(?:d|ing)?|fry(?:ing|ied)?|sear(?:ed|ing)?)\b/,
@@ -577,71 +616,94 @@ export function parseNaturalCookUpdate(
         };
     }
 
-    const relativeMatch = factualLower.match(
-        /(?:a couple(?: of)?|a few|\d+)\s+(?:minutes?|hours?)\s+ago/,
+    // Associate time and temperature with the action clause, not the whole update.
+    // Keep the untouched message on every event for audit/history.
+    const clauses = factualText.split(
+        /(?<=[.!?;])\s+|,\s*(?:and\s+)?(?=(?:I\s+)?(?:just\s+)?(?:put|placed|preheated|heated|wrapped|sauced|removed|rested)\b)|\s+and\s+(?=(?:I\s+)?(?:just\s+)?(?:put|placed|preheated|heated|wrapped|sauced|removed|rested)\b)/i,
     );
-    const relativePhrase = relativeMatch?.[0] ?? null;
     const events: CookEventInput[] = [];
-    const add = (eventType: CookEventType, note?: string) =>
+    for (const clause of clauses) {
+        if (/\?\s*$/.test(clause)) continue;
+        const lowerClause = clause.toLowerCase();
+        const relativePhrase = clause.match(RELATIVE_TIME_RE)?.[0] ?? null;
+        const types: CookEventType[] = [];
+        if (
+            /\b(preheat|pre-heated|preheated|heated|heating)\b/.test(
+                lowerClause,
+            ) &&
+            /\b(grill|smoker|oven|pit|kamado|to\s+\d)/.test(lowerClause)
+        )
+            types.push("preheat");
+        if (
+            /\b(put|placed|place|on the grill|on the smoker|food on|went on|goes on)\b/.test(
+                lowerClause,
+            )
+        )
+            types.push("food_on");
+        if (/\b(wrap|wrapped|wrapping|foil|paper)\b/.test(lowerClause))
+            types.push("wrap");
+        if (
+            /\b(sauce|sauced|saucing|glaze|glazed|baste|basted)\b/.test(
+                lowerClause,
+            )
+        )
+            types.push("sauce");
+        if (
+            /\b(remove|removed|take off|taken off|pulled|pulling)\b/.test(
+                lowerClause,
+            )
+        )
+            types.push("remove");
+        if (/\b(rest|rested|resting)\b/.test(lowerClause)) types.push("rest");
+        if (/\b(tast(?:e|ed|ing)|bite|bit into)\b/.test(lowerClause))
+            types.push("taste");
+        if (
+            /\b(temp|temperature|setpoint|set to|internal|ambient|environment)\b/.test(
+                lowerClause,
+            ) &&
+            /(-?\d+(?:\.\d+)?)\s*°?\s*[fFcC]\b/.test(clause) &&
+            !types.includes("preheat") &&
+            !types.includes("wrap")
+        )
+            types.push("temperature_change");
+        if (
+            !types.length &&
+            /\b(start|starting|prep|prepped|season|seasoned|marinat|chop|mix|trim)\b/.test(
+                lowerClause,
+            )
+        )
+            types.push("preparation");
+        for (const type of types)
+            events.push(
+                detectedEvent(
+                    type,
+                    text,
+                    submittedAt,
+                    relativePhrase,
+                    timezone,
+                    clause.trim(),
+                ),
+            );
+    }
+    if (events.some((event) => event.eventType !== "preparation")) {
+        for (let i = events.length - 1; i >= 0; i--) {
+            if (
+                events[i]!.eventType === "preparation" &&
+                /\bstarting\b/i.test(events[i]!.note ?? "")
+            )
+                events.splice(i, 1);
+        }
+    }
+    if (!events.length && !isQuestion) {
         events.push(
             detectedEvent(
-                eventType,
+                "note",
                 text,
                 submittedAt,
-                relativePhrase,
+                null,
                 timezone,
-                note,
+                factualText,
             ),
-        );
-
-    if (
-        /\b(preheat|pre-heated|preheated|heated|heating)\b/.test(
-            factualLower,
-        ) &&
-        /\b(grill|smoker|oven|pit|kamado|to\s+\d)/.test(factualLower)
-    ) {
-        add("preheat");
-    }
-    if (
-        /\b(put|placed|place|on the grill|on the smoker|food on|went on|goes on)\b/.test(
-            factualLower,
-        )
-    ) {
-        add("food_on");
-    }
-    if (/\b(wrap|wrapped|wrapping|foil|paper)\b/.test(factualLower))
-        add("wrap");
-    if (
-        /\b(sauce|sauced|saucing|glaze|glazed|baste|basted)\b/.test(
-            factualLower,
-        )
-    )
-        add("sauce");
-    if (
-        /\b(remove|removed|take off|taken off|pulled|pulling)\b/.test(
-            factualLower,
-        )
-    )
-        add("remove");
-    if (/\b(rest|rested|resting)\b/.test(factualLower)) add("rest");
-    if (/\b(tast(?:e|ed|ing)|bite|bit into)\b/.test(factualLower)) add("taste");
-    if (
-        /\b(temp|temperature|setpoint|set to|internal|ambient)\b/.test(
-            factualLower,
-        ) &&
-        TEMPERATURE_RE.test(text)
-    ) {
-        TEMPERATURE_RE.lastIndex = 0;
-        if (!events.some((event) => event.eventType === "preheat"))
-            add("temperature_change");
-    }
-    if (events.length === 0) {
-        add(
-            /\b(start|prep|prepped|season|seasoned|marinat|chop|mix|trim)\b/.test(
-                factualLower,
-            )
-                ? "preparation"
-                : "note",
         );
     }
     return {
@@ -1639,6 +1701,14 @@ export async function prepareCookRecipeDraft(
 ) {
     const detail = await getCook(userId, cookId);
     if (!detail) throw new Error("Cook not found");
+    return buildCookRecipeDraft(detail, dishId);
+}
+
+export function buildCookRecipeDraft(
+    detail: NonNullable<Awaited<ReturnType<typeof getCook>>>,
+    dishId?: string,
+) {
+    const cookId = detail.cook.id;
     const dish = dishId
         ? detail.dishes.find((item) => item.id === dishId)
         : detail.dishes[0];
@@ -1654,27 +1724,41 @@ export async function prepareCookRecipeDraft(
                   source_type: ingredient.source_type ?? "user_supplied",
               },
     );
-    const instructions = detail.events
-        .filter((event) => event.dish_id === null || event.dish_id === dish.id)
-        .map((event) => event.note || event.original_message)
-        .filter((value): value is string => Boolean(value));
+    const instructions = [
+        ...new Set(
+            detail.events
+                .filter(
+                    (event) =>
+                        event.dish_id === null || event.dish_id === dish.id,
+                )
+                .map((event) => event.note || event.original_message)
+                .filter((value): value is string => Boolean(value))
+                .map((value) => value.trim()),
+        ),
+    ];
     return {
         source_cook_id: cookId,
         source_dish_id: dish.id,
         draft: {
             name: dish.name,
-            servings: 1,
+            servings: null,
             description: detail.cook.notes ?? undefined,
             instructions,
             source_type: "user_entered" as const,
             ingredients,
         },
         missing_fields: [
+            "servings",
+            ...ingredients.flatMap((ingredient, index) =>
+                Number(ingredient.quantity) > 0 && ingredient.unit
+                    ? []
+                    : [`ingredients[${index}].quantity/unit`],
+            ),
             ...(ingredients.length ? [] : ["ingredients"]),
             ...(instructions.length ? [] : ["instructions"]),
         ],
         review_note:
-            "Review the actual ingredients and instructions before saving. Munch will run its existing nutrition-resolution pipeline only after you save.",
+            "Specify servings and review ingredient quantities and instructions before saving. Timeline observations are draft material, not a complete recipe. Munch will run its existing nutrition-resolution pipeline only after you save.",
     };
 }
 

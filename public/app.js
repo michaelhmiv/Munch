@@ -1521,7 +1521,7 @@ async function openCookRecipeDraft(cookId) {
     const recipe = draft.draft;
     openDialog(
         "Review recipe from cook",
-        `<form id="cook-recipe-form" class="auth-form" data-cook-id="${escapeHtml(cookId)}" data-dish-id="${escapeHtml(draft.source_dish_id)}"><p>${escapeHtml(draft.review_note)}</p>${draft.missing_fields?.length ? '<p class="notice warning">Still needed: ' + escapeHtml(draft.missing_fields.join(", ")) + "</p>" : ""}<label class="field"><span>Name</span><input name="name" maxlength="200" value="${escapeHtml(recipe.name)}" required /></label><label class="field"><span>Servings</span><input name="servings" type="number" min="0.01" step="0.01" value="${escapeHtml(recipe.servings || 1)}" required /></label><label class="field"><span>Actual ingredients JSON</span><textarea name="ingredients_json" rows="7" required>${escapeHtml(JSON.stringify(recipe.ingredients || [], null, 2))}</textarea><small class="tiny">Edit this before saving; Munch will resolve nutrition only at save time.</small></label><label class="field"><span>Instructions</span><textarea name="instructions" rows="7" required>${escapeHtml((recipe.instructions || []).join("\n"))}</textarea><small class="tiny">One step per line.</small></label><button class="button button-primary" type="submit">Save reviewed recipe</button></form>`,
+        `<form id="cook-recipe-form" class="auth-form" data-cook-id="${escapeHtml(cookId)}" data-dish-id="${escapeHtml(draft.source_dish_id)}"><p>${escapeHtml(draft.review_note)}</p>${draft.missing_fields?.length ? '<p class="notice warning">Still needed: ' + escapeHtml(draft.missing_fields.join(", ")) + "</p>" : ""}<label class="field"><span>Name</span><input name="name" maxlength="200" value="${escapeHtml(recipe.name)}" required /></label><label class="field"><span>Servings</span><input name="servings" type="number" min="0.01" step="0.01" value="${escapeHtml(recipe.servings ?? "")}" required /></label><label class="field"><span>Actual ingredients JSON</span><textarea name="ingredients_json" rows="7" required>${escapeHtml(JSON.stringify(recipe.ingredients || [], null, 2))}</textarea><small class="tiny">Edit this before saving; Munch will resolve nutrition only at save time.</small></label><label class="field"><span>Instructions</span><textarea name="instructions" rows="7" required>${escapeHtml((recipe.instructions || []).join("\n"))}</textarea><small class="tiny">One step per line.</small></label><button class="button button-primary" type="submit">Save reviewed recipe</button></form>`,
     );
 }
 
@@ -1665,6 +1665,14 @@ async function renderRoute() {
 }
 
 function navigate(href) {
+    // Pantry has its own server-rendered shell and script bundle.
+    if (
+        new URL(href, location.origin).pathname.replace(/\/$/, "") ===
+        "/app/pantry"
+    ) {
+        location.href = href;
+        return;
+    }
     history.pushState({}, "", href);
     renderRoute();
 }
@@ -3336,10 +3344,6 @@ async function handleAction(button) {
             keepPrevious: true,
         });
         location.href = "/";
-        return;
-    }
-    if (action === "export-account") {
-        location.href = "/account/portal";
         return;
     }
     if (action === "add-grocery") {

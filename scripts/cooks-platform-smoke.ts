@@ -96,6 +96,9 @@ if (!cook || cook.media.length !== 1 || cook.events.length !== 1) {
         "Website-style cook creation did not persist its photo/event",
     );
 }
+if (cook.cook.cook_date !== "2026-09-14") {
+    throw new Error("Cook date must serialize as a calendar date");
+}
 const editedDish = await updateCookDish(
     owner.userId,
     started.cookId,
@@ -266,7 +269,8 @@ if (comparison.cooks.length !== 2 || comparison.photos[0]?.length !== 2) {
 
 const draft = await prepareCookRecipeDraft(owner.userId, started.cookId);
 if (
-    draft.missing_fields.length !== 0 ||
+    draft.draft.servings !== null ||
+    !draft.missing_fields.includes("servings") ||
     draft.draft.instructions.length === 0 ||
     draft.draft.ingredients.length === 0
 ) {
