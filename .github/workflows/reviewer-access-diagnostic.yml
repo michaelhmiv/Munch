@@ -45,14 +45,18 @@ jobs:
               with psycopg.connect(os.environ.get("MUNCH_PRODUCTION_DATABASE_URL") or os.environ["DATABASE_URL"], connect_timeout=15, options="-c default_transaction_read_only=on -c statement_timeout=15000", row_factory=dict_row) as conn:
                   with conn.cursor() as cur:
                       cur.execute("""
-                          SELECT table_name, column_name, data_type
-                          FROM information_schema.columns
-                          WHERE table_schema='munch'
-                            AND table_name IN ('users','auth_accounts','entitlements','audit_events')
-                          ORDER BY table_name, ordinal_position
+                          SELECT u.id, u.username, u.status, u.email_verified, u.created_at,
+                            EXISTS (SELECT 1 FROM munch.auth_accounts a WHERE a.user_id=u.id AND a.provider_id='credential' AND a.password IS NOT NULL) AS has_password_credential,
+                            e.active AS premium_override_active, e.expires_at,
+                            (SELECT max(a.occurred_at) FROM munch.audit_events a WHERE a.subject_user_id=u.id AND a.action='reviewer_sample_data_provisioned') AS provisioned_at
+                          FROM munch.users u
+                          LEFT JOIN munch.entitlements e ON e.user_id=u.id AND e.feature_key='premium_access'
+                          WHERE e.source='reviewer'
+                            OR EXISTS (SELECT 1 FROM munch.audit_events a WHERE a.subject_user_id=u.id AND a.action='reviewer_sample_data_provisioned')
+                          ORDER BY u.created_at LIMIT 20
                       """)
                       rows=cur.fetchall()
-                      print(json.dumps({"schema_columns":rows},default=str))
+                      print(json.dumps({"reviewer_accounts":rows},default=str))
           except Exception as exc:
               message = str(exc).lower()
               categories = {
