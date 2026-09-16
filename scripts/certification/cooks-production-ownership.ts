@@ -42,7 +42,7 @@ try {
         [userId, email, prefix],
     );
     await pool.query(
-        "insert into munch.auth_accounts (user_id,account_id,provider_id,password) values ($1,$1,'credential',$2)",
+        "insert into munch.auth_accounts (user_id,account_id,provider_id,password) values ($1::uuid,$1::text,'credential',$2)",
         [userId, await hashPassword(password)],
     );
     await pool.query(
@@ -156,7 +156,9 @@ try {
     console.log(
         "PASS: production HTTP ownership and database isolation. Signed photo links are bearer capabilities; this test does not claim they require browser sign-in.",
     );
-} catch {
+} catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code && /^[A-Z0-9]{5}$/.test(code)) console.error(`SQLSTATE ${code}`);
     console.error(`FAIL: ${step}; sensitive exception details suppressed`);
     process.exitCode = 1;
 } finally {
