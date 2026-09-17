@@ -368,6 +368,16 @@ export async function cookRequest(c: Context): Promise<{
     return { body, photos, mediaFailures };
 }
 
+export function resolveCookUpdateTimezone(
+    requestedTimezone: unknown,
+    cookTimezone: string,
+): string {
+    return typeof requestedTimezone === "string" &&
+        validateTz(requestedTimezone)
+        ? requestedTimezone
+        : cookTimezone;
+}
+
 function cookEventsFromBody(
     body: Record<string, unknown>,
     message: string | undefined,
@@ -1804,10 +1814,10 @@ export function createAppRouter(): Hono {
         const body = request.body;
         const detail = await getCook(userId, c.req.param("id")!);
         if (!detail) throw new Error("Cook not found");
-        const timezone =
-            typeof body.timezone === "string"
-                ? body.timezone
-                : detail.cook.timezone;
+        const timezone = resolveCookUpdateTimezone(
+            body.timezone,
+            detail.cook.timezone,
+        );
         const submittedAt =
             typeof body.submitted_at === "string"
                 ? body.submitted_at

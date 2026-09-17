@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { Hono } from "hono";
-import { cookRequest } from "./routes.js";
+import { cookRequest, resolveCookUpdateTimezone } from "./routes.js";
 
 const app = new Hono().post("/cook", async (c) => c.json(await cookRequest(c)));
 
@@ -34,4 +34,19 @@ test("an explicitly selected empty or invalid image still fails without losing t
         expect(data.photos).toEqual([]);
         expect(data.mediaFailures).toHaveLength(1);
     }
+});
+
+test("cook updates fall back to the stored cook timezone when the form value is empty or invalid", () => {
+    expect(resolveCookUpdateTimezone("", "America/New_York")).toBe(
+        "America/New_York",
+    );
+    expect(
+        resolveCookUpdateTimezone("not-a-timezone", "America/New_York"),
+    ).toBe("America/New_York");
+    expect(resolveCookUpdateTimezone(undefined, "America/New_York")).toBe(
+        "America/New_York",
+    );
+    expect(
+        resolveCookUpdateTimezone("America/Chicago", "America/New_York"),
+    ).toBe("America/Chicago");
 });
