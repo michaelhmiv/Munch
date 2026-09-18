@@ -132,6 +132,80 @@ describe("OpenRouter decision client", () => {
         });
     });
 
+    test("rejects a choice that was not in the bounded criteria", async () => {
+        const client = new OpenRouterDecisionClient(
+            {
+                apiKey: "or-test",
+                model: "~typesafe/jev-latest",
+                endpoint: "https://openrouter.example/api/alpha/decisions",
+                timeoutMs: 5_000,
+                minConfidence: 0.75,
+            },
+            {
+                fetcher: async () =>
+                    new Response(
+                        JSON.stringify({
+                            answers: {
+                                q0: {
+                                    type: "choice",
+                                    choice: "invented-id",
+                                    confidence: 0.99,
+                                },
+                            },
+                        }),
+                        { status: 200 },
+                    ),
+            },
+        );
+
+        await expect(
+            client.decideChoices(
+                {},
+                [
+                    {
+                        key: "x",
+                        instructions: "Choose.",
+                        criteria: { c0: "candidate", NO_MATCH: "none" },
+                    },
+                ],
+            ),
+        ).rejects.toThrow("unknown criterion");
+    });
+
+    test("surfaces a terminal provider error after bounded retries", async () => {
+        let calls = 0;
+        const client = new OpenRouterDecisionClient(
+            {
+                apiKey: "or-test",
+                model: "~typesafe/jev-latest",
+                endpoint: "https://openrouter.example/api/alpha/decisions",
+                timeoutMs: 5_000,
+                minConfidence: 0.75,
+            },
+            {
+                sleep: async () => {},
+                fetcher: async () => {
+                    calls += 1;
+                    return new Response("unavailable", { status: 503 });
+                },
+            },
+        );
+
+        await expect(
+            client.decideChoices(
+                {},
+                [
+                    {
+                        key: "x",
+                        instructions: "Choose.",
+                        criteria: { c0: "candidate" },
+                    },
+                ],
+            ),
+        ).rejects.toThrow("HTTP 503");
+        expect(calls).toBe(3);
+    });
+
     test("retries transient OpenRouter failures", async () => {
         let calls = 0;
         const sleeps: number[] = [];
