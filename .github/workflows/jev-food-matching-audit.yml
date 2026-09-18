@@ -39,7 +39,7 @@ jobs:
       NODE_ENV: test
       TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-      USDA_FDC_API_KEY: ${{ secrets.USDA_FDC_API_KEY }}
+      USDA_FDC_API_KEY: ${{ secrets.USDA_FDC_API_KEY || 'DEMO_KEY' }}
       OFF_USER_AGENT: Munch-Jev-Audit/1.0
       JEV_MODEL: jev-latest
       QWEN_MODEL: qwen/qwen3.7-flash
@@ -63,7 +63,6 @@ jobs:
         run: |
           test -n "$TYPESAFE_API_KEY" || { echo "TYPESAFE_API_KEY missing" >&2; exit 1; }
           test -n "$OPENROUTER_API_KEY" || { echo "OPENROUTER_API_KEY missing" >&2; exit 1; }
-          test -n "$USDA_FDC_API_KEY" || { echo "USDA_FDC_API_KEY missing" >&2; exit 1; }
 
       - name: Install canonical schema
         run: bun run db:migrate
