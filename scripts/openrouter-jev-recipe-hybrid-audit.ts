@@ -1,6 +1,15 @@
 #!/usr/bin/env bun
 
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import type { FoodCandidate } from "../src/food-providers/types.js";
+import { OpenRouterDecisionClient } from "../src/website-decision-client.js";
+import { fetchRecipePage } from "../src/recipe-import/fetch.js";
+import { previewRecipeUrl } from "../src/recipe-import/service.js";
+import {
+  HybridRecipeImportResolver,
+  OpenRouterRecipeImportResolver,
+  recipeImportAiConfig,
+} from "../src/recipe-import/semantic-resolver.js";
 import { RECIPE_IMPORT_CORPUS } from "../src/recipe-import/fixtures/recipe-corpus.js";
 
 const openrouterKey=process.env.OPENROUTER_API_KEY?.trim();
