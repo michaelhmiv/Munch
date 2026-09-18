@@ -396,6 +396,60 @@ describe("hybrid recipe import resolver", () => {
         });
     });
 
+    test("falls back to Qwen when the Jev request fails", async () => {
+        let received = 0;
+        const generative = generativeResolver(async (requests) => {
+            received += requests.length;
+            return new Map(
+                requests.map((request) => [
+                    request.key,
+                    {
+                        key: request.key,
+                        name: request.ingredient.name,
+                        candidateId: null,
+                        decision: "model_estimate" as const,
+                        searchQueries: ["oat milk"],
+                        confidence: 0.9,
+                    },
+                ]),
+            );
+        });
+        const decision = new OpenRouterDecisionClient(
+            {
+                apiKey: "or-test",
+                model: "~typesafe/jev-latest",
+                endpoint: "https://openrouter.example/api/alpha/decisions",
+                timeoutMs: 5_000,
+                minConfidence: 0.75,
+            },
+            {
+                sleep: async () => {},
+                fetcher: async () =>
+                    new Response("decision provider unavailable", {
+                        status: 503,
+                    }),
+            },
+        );
+        const resolver = new HybridRecipeImportResolver(generative, decision);
+
+        const assignments = await resolver.resolveUncertainIngredients?.([
+            {
+                key: "0:0",
+                ingredient: {
+                    rawText: "1 cup oat milk",
+                    name: "oat milk",
+                    quantity: 1,
+                    unit: "cup",
+                },
+                candidates: [candidate("300", "Almond milk, unsweetened")],
+                reason: "ambiguous_candidate",
+            },
+        ]);
+
+        expect(received).toBe(1);
+        expect(assignments?.get("0:0")?.decision).toBe("model_estimate");
+    });
+
     test("leaves generative no-candidate work entirely with Qwen", async () => {
         let receivedReason: string | undefined;
         const generative = generativeResolver(async (requests) => {
