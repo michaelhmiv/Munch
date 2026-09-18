@@ -1,0 +1,62 @@
+name: Jev Recipe Hybrid Audit
+
+on:
+  push:
+    branches:
+      - "jev-audit/**"
+    paths:
+      - "scripts/jev-recipe-hybrid-audit.ts"
+      - ".github/workflows/jev-recipe-hybrid-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jev-recipe-hybrid-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      NODE_ENV: test
+      TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      JEV_MODEL: jev-1.13.0
+      QWEN_MODEL: qwen/qwen3.7-flash
+      MUNCH_AI_MODEL: qwen/qwen3.7-flash
+      MUNCH_RECIPE_IMPORT_AI_ENABLED: "true"
+      MUNCH_RECIPE_IMPORT_AI_RESPONSE_FORMAT: "json_object"
+      MUNCH_RECIPE_IMPORT_AI_RESPONSE_HEALING: "true"
+      MUNCH_RECIPE_IMPORT_AI_TIMEOUT_MS: "30000"
+      MUNCH_RECIPE_IMPORT_AI_MAX_CALLS_PER_IMPORT: "2"
+      MUNCH_RECIPE_IMPORT_AI_MAX_TOKENS: "4000"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Verify benchmark secrets
+        shell: bash
+        run: |
+          test -n "$TYPESAFE_API_KEY" || { echo "TYPESAFE_API_KEY missing" >&2; exit 1; }
+          test -n "$OPENROUTER_API_KEY" || { echo "OPENROUTER_API_KEY missing" >&2; exit 1; }
+      - name: Typecheck
+        run: bun run typecheck
+      - name: Full test suite
+        run: bun test
+      - name: Run end-to-end recipe hybrid benchmark
+        run: bun scripts/jev-recipe-hybrid-audit.ts
+      - name: Upload hybrid benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jev-recipe-hybrid-audit
+          path: artifacts/
+          if-no-files-found: warn
