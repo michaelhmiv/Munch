@@ -269,6 +269,7 @@ function summarize(label:string, rows:any[]) {
     };
 }
 
+mkdirSync("artifacts",{recursive:true});
 const search = new FoodSearchService();
 const rows:any[]=[];
 
