@@ -26,7 +26,7 @@ async function retryFetch(label:string,input:RequestInfo|URL,init?:RequestInit,m
  let last:unknown;
  for(let attempt=0;attempt<maxAttempts;attempt++){
   try{
-   const r=await fetch(input,init);
+   const r=await fetch(input,{...init,signal:AbortSignal.timeout(60_000)});
    if(![429,529].includes(r.status)&&r.status<500) return r;
    if(attempt===maxAttempts-1) return r;
    meter && (meter.retries+=1);
@@ -66,7 +66,7 @@ function openRouterMeteredFetcher(meter:Meter){
 function jevMeteredFetcher(meter:Meter){
  return async(input:RequestInfo|URL,init?:RequestInit):Promise<Response>=>{
   const started=performance.now();
-  const r=await fetch(input,init);
+  const r=await fetch(input,{...init,signal:AbortSignal.timeout(60_000)});
   const text=await r.text();
   meter.calls+=1;
   meter.durationMs+=performance.now()-started;
