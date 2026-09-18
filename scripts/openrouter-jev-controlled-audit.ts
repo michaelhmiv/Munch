@@ -78,7 +78,7 @@ async function retryFetch(label:string,url:string,init:RequestInit,maxAttempts=8
  let last:unknown;
  for(let i=0;i<maxAttempts;i++){
   try{
-   const r=await fetch(url,init);
+   const r=await fetch(url,{...init,signal:AbortSignal.timeout(60_000)});
    if(![429,529].includes(r.status)&&r.status<500) return r;
    if(i===maxAttempts-1) return r;
    const ra=Number(r.headers.get("retry-after")||"0");
