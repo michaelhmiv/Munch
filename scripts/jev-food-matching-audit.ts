@@ -299,7 +299,8 @@ for (const def of CASES) {
         jev,
         qwen
     });
-    writeFileSync("artifacts/jev-food-matching-partial.json",JSON.stringify({rows},null,2));\n    console.log("[jev_audit_case] "+JSON.stringify({id:def.id,oracle:oracleIndexes,deterministic:deterministicCorrect,jev:jev.correct,qwen:qwen.correct,jev_ms:Math.round(jev.durationMs),qwen_ms:Math.round(qwen.durationMs),jev_conf:jev.confidence,jev_any:jev.anyMatch}));
+    writeFileSync("artifacts/jev-food-matching-partial.json",JSON.stringify({rows},null,2));
+    console.log("[jev_audit_case] "+JSON.stringify({id:def.id,oracle:oracleIndexes,deterministic:deterministicCorrect,jev:jev.correct,qwen:qwen.correct,jev_ms:Math.round(jev.durationMs),qwen_ms:Math.round(qwen.durationMs),jev_conf:jev.confidence,jev_any:jev.anyMatch}));
 }
 
 const stabilityTargets=rows
