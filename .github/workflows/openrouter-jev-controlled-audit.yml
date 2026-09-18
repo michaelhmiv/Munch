@@ -1,0 +1,46 @@
+name: OpenRouter Jev Controlled Audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/openrouter-jev-decisions
+    paths:
+      - scripts/openrouter-jev-controlled-audit.ts
+      - .github/workflows/openrouter-jev-controlled-audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openrouter-jev-controlled-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      NODE_ENV: test
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      JEV_MODEL: "~typesafe/jev-latest"
+      QWEN_MODEL: qwen/qwen3.7-flash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - name: Verify OpenRouter secret
+        run: test -n "$OPENROUTER_API_KEY" || { echo "OPENROUTER_API_KEY missing" >&2; exit 1; }
+      - run: bun run typecheck
+      - run: bun test
+      - name: Run OpenRouter Jev vs Qwen controlled benchmark
+        run: bun scripts/openrouter-jev-controlled-audit.ts
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openrouter-jev-controlled-audit
+          path: artifacts/
+          if-no-files-found: warn
