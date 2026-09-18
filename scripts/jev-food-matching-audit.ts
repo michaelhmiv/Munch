@@ -86,6 +86,29 @@ function candidateView(candidate:FoodCandidate,index:number) {
     };
 }
 
+async function retryFetch(label:string, url:string, init:RequestInit, maxAttempts=8):Promise<Response> {
+    let lastError:unknown;
+    for (let attempt=0; attempt<maxAttempts; attempt++) {
+        try {
+            const response=await fetch(url,init);
+            const retryable=response.status===429 || response.status===529 || response.status>=500;
+            if (!retryable || attempt===maxAttempts-1) return response;
+            const retryAfter=Number(response.headers.get("retry-after") || "0");
+            await response.arrayBuffer().catch(()=>new ArrayBuffer(0));
+            const delayMs=retryAfter>0 ? retryAfter*1000 : Math.min(15000,1000*Math.pow(2,attempt));
+            console.warn("[jev_audit_retry] "+JSON.stringify({label,status:response.status,attempt:attempt+1,delay_ms:delayMs}));
+            await Bun.sleep(delayMs);
+        } catch (error) {
+            lastError=error;
+            if (attempt===maxAttempts-1) throw error;
+            const delayMs=Math.min(15000,1000*Math.pow(2,attempt));
+            console.warn("[jev_audit_retry] "+JSON.stringify({label,error:error instanceof Error ? error.name : "unknown",attempt:attempt+1,delay_ms:delayMs}));
+            await Bun.sleep(delayMs);
+        }
+    }
+    throw lastError instanceof Error ? lastError : new Error(label+" request failed");
+}
+
 async function typesafeDecision(def:CaseDefinition, candidates:FoodCandidate[]) {
     const views = candidates.map(candidateView);
     const criteria:Record<string,string|null> = {};
@@ -105,7 +128,7 @@ async function typesafeDecision(def:CaseDefinition, candidates:FoodCandidate[]) 
         }))
     };
     const started = performance.now();
-    const response = await fetch("https://api.typesafe.ai/v1/systemone",{
+    const response = await retryFetch("TypeSafe","https://api.typesafe.ai/v1/systemone",{
         method:"POST",
         headers:{ authorization:"Bearer "+typesafeKey, "content-type":"application/json" },
         body:JSON.stringify({
@@ -158,7 +181,7 @@ async function qwenDecision(def:CaseDefinition, candidates:FoodCandidate[]) {
     const views = candidates.map(candidateView);
     const options = [...views.map(v=>v.key),"NO_MATCH"];
     const started = performance.now();
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions",{
+    const response = await retryFetch("OpenRouter","https://openrouter.ai/api/v1/chat/completions",{
         method:"POST",
         headers:{
             authorization:"Bearer "+openrouterKey,
@@ -276,7 +299,7 @@ for (const def of CASES) {
         jev,
         qwen
     });
-    console.log("[jev_audit_case] "+JSON.stringify({id:def.id,oracle:oracleIndexes,deterministic:deterministicCorrect,jev:jev.correct,qwen:qwen.correct,jev_ms:Math.round(jev.durationMs),qwen_ms:Math.round(qwen.durationMs),jev_conf:jev.confidence,jev_any:jev.anyMatch}));
+    writeFileSync("artifacts/jev-food-matching-partial.json",JSON.stringify({rows},null,2));\n    console.log("[jev_audit_case] "+JSON.stringify({id:def.id,oracle:oracleIndexes,deterministic:deterministicCorrect,jev:jev.correct,qwen:qwen.correct,jev_ms:Math.round(jev.durationMs),qwen_ms:Math.round(qwen.durationMs),jev_conf:jev.confidence,jev_any:jev.anyMatch}));
 }
 
 const stabilityTargets=rows
