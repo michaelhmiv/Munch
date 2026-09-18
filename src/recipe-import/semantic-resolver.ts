@@ -992,8 +992,10 @@ export class HybridRecipeImportResolver implements RecipeImportSemanticResolver 
             ) {
                 continue;
             }
+            const boundedCandidateId: string | null =
+                answer.choice === "NO_MATCH" ? null : candidateId!;
             result.set(request.key, {
-                candidateId: answer.choice === "NO_MATCH" ? null : candidateId,
+                candidateId: boundedCandidateId,
                 confidence: answer.confidence,
                 rationale:
                     "Selected from the bounded provider candidate set by the website decision model.",
@@ -1077,6 +1079,9 @@ export class HybridRecipeImportResolver implements RecipeImportSemanticResolver 
             for (const [key, value] of generated) assignments.set(key, value);
         }
 
+        console.info(
+            `[recipe_decision] model=${safeLogValue(this.decisionClient.config.model)} ambiguous=${ambiguous.length} accepted=${ambiguous.length - fallback.filter((request) => ambiguous.includes(request)).length} fallback=${fallback.length} threshold=${this.decisionClient.config.minConfidence}`,
+        );
         return assignments;
     }
 
@@ -1092,6 +1097,7 @@ export class HybridRecipeImportResolver implements RecipeImportSemanticResolver 
                 const choice = choices.get(request.key);
                 if (
                     choice &&
+                    choice.candidateId !== null &&
                     choice.confidence >=
                         this.decisionClient.config.minConfidence
                 ) {
