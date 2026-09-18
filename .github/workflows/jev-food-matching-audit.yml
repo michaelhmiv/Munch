@@ -1,0 +1,86 @@
+name: Jev Food Matching Audit
+
+on:
+  push:
+    branches:
+      - "jev-audit/**"
+    paths:
+      - "scripts/jev-food-matching-audit.ts"
+      - ".github/workflows/jev-food-matching-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jev-food-matching-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: munch_jev_audit
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d munch_jev_audit"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/munch_jev_audit
+      NODE_ENV: test
+      TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      USDA_FDC_API_KEY: ${{ secrets.USDA_FDC_API_KEY }}
+      OFF_USER_AGENT: Munch-Jev-Audit/1.0
+      JEV_MODEL: jev-latest
+      QWEN_MODEL: qwen/qwen3.7-flash
+      MUNCH_FOOD_CATALOG_READS_ENABLED: "true"
+      MUNCH_FOOD_CATALOG_WRITES_ENABLED: "true"
+      MUNCH_FOOD_CATALOG_STALE_ON_ERROR: "true"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Verify benchmark secrets
+        shell: bash
+        run: |
+          test -n "$TYPESAFE_API_KEY" || { echo "TYPESAFE_API_KEY missing" >&2; exit 1; }
+          test -n "$OPENROUTER_API_KEY" || { echo "OPENROUTER_API_KEY missing" >&2; exit 1; }
+          test -n "$USDA_FDC_API_KEY" || { echo "USDA_FDC_API_KEY missing" >&2; exit 1; }
+
+      - name: Install canonical schema
+        run: bun run db:migrate
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Full test suite
+        run: bun test
+
+      - name: Run Jev vs Qwen live food matching audit
+        run: bun scripts/jev-food-matching-audit.ts
+
+      - name: Upload benchmark report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jev-food-matching-audit
+          path: artifacts/
+          if-no-files-found: warn
