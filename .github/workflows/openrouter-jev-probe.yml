@@ -1,0 +1,25 @@
+name: OpenRouter Jev Probe
+
+on:
+  push:
+    branches:
+      - feature/openrouter-jev-decisions
+    paths:
+      - scripts/openrouter-jev-probe.ts
+      - .github/workflows/openrouter-jev-probe.yml
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Probe Jev through OpenRouter
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          JEV_MODEL: "~typesafe/jev-latest"
+        run: bun scripts/openrouter-jev-probe.ts
