@@ -217,7 +217,10 @@ for (const submission of submissions) {
         events: submission.events,
         idempotencyKey: submission.key,
     });
-    if (JSON.stringify([...retry.eventIds].sort()) !== JSON.stringify([...update.eventIds].sort()))
+    if (
+        JSON.stringify([...retry.eventIds].sort()) !==
+        JSON.stringify([...update.eventIds].sort())
+    )
         throw new Error("Retry duplicated a structured observation");
 }
 const actual = await getCook(owner.userId, started.cookId);
