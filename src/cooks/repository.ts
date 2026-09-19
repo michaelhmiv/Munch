@@ -1439,6 +1439,14 @@ export async function correctCookEvent(
                       normalized.timePrecision ??
                       (existing.time_precision as CookTimePrecision),
               };
+        if (Number(existing.version) !== expectedVersion)
+            throw new Error("Cook event changed, is unavailable, or was not found");
+        await tx`
+            insert into munch.cook_event_revisions (event_id, cook_id, prior_version, snapshot, changed_by_user_id)
+            select event.id, event.cook_id, event.version, to_jsonb(event), ${userId}
+            from munch.cook_events event
+            where event.id = ${eventId} and event.cook_id = ${cookId}
+        `;
         const rows = await tx<Array<Record<string, unknown>>>`
             update munch.cook_events
             set event_type = ${normalized.eventType}, event_at = ${eventAt.eventAt},
@@ -1452,7 +1460,7 @@ export async function correctCookEvent(
                 internal_temperature = case when ${normalized.internalTemperature === undefined} then internal_temperature else ${normalized.internalTemperature ?? null} end,
                 internal_unit = case when ${normalized.internalUnit === undefined} then internal_unit else ${normalized.internalUnit ?? null} end,
                 note = case when ${normalized.note === undefined} then note else ${normalized.note ?? null} end, original_message = case when ${normalized.originalMessage === undefined} then original_message else ${normalized.originalMessage ?? null} end,
-                correction_of_event_id = ${eventId}, version = version + 1, updated_at = now()
+                correction_of_event_id = coalesce(${normalized.correctionOfEventId ?? null}, correction_of_event_id), version = version + 1, updated_at = now()
             where id = ${eventId} and cook_id = ${cookId} and version = ${expectedVersion}
             returning *
         `;
@@ -1460,10 +1468,6 @@ export async function correctCookEvent(
             throw new Error(
                 "Cook event changed, is unavailable, or was not found",
             );
-        await tx`
-            insert into munch.cook_event_revisions (event_id, cook_id, prior_version, snapshot, changed_by_user_id)
-            values (${eventId}, ${cookId}, ${Number(existing.version)}, ${JSON.stringify(existing)}::jsonb, ${userId})
-        `;
         if (
             normalized.dishIds !== undefined ||
             normalized.dishId !== undefined
