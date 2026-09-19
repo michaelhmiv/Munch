@@ -258,6 +258,7 @@ function cookEventInput(value: unknown): CookEventInput {
             body.original_message === undefined ? undefined :
             typeof body.original_message === "string" ? body.original_message : null,
         dishId: body.dish_id === undefined ? undefined : typeof body.dish_id === "string" ? body.dish_id : null,
+        dishIds: Array.isArray(body.dish_ids) ? body.dish_ids.map((id) => String(id)) : undefined,
         idempotencyKey:
             typeof body.idempotency_key === "string"
                 ? body.idempotency_key
