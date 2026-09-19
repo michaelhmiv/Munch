@@ -241,7 +241,7 @@ if (
     JSON.stringify([...shared.dish_ids].sort()) !==
         JSON.stringify([ribs.id, loin.id].sort())
 )
-    throw new Error("One shared spritz must retain both dish associations");
+    throw new Error(`One shared spritz must retain both dish associations: ${JSON.stringify({ persisted: shared, expected: [ribs.id, loin.id] })}`);
 const rub = actual.events.find(
     (event) => event.event_type === "season" && event.dish_id === loin.id,
 );
