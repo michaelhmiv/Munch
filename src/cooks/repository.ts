@@ -1351,7 +1351,7 @@ export async function correctCookEvent(
         const eventAt = normalized.eventAt
             ? eventAtForInput(normalized, submittedAt, timezone)
             : {
-                  eventAt: existing.event_at == null ? null : new Date(String(existing.event_at)).toISOString(),
+                  eventAt: normalized.timePrecision === "unknown" ? null : existing.event_at == null ? null : new Date(String(existing.event_at)).toISOString(),
                   precision:
                       normalized.timePrecision ?? (existing.time_precision as CookTimePrecision),
               };
