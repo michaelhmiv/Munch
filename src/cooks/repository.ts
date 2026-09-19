@@ -252,7 +252,10 @@ function serializeEvent(row: Record<string, unknown>) {
         dish_id: nullableString(row.dish_id),
         dish_ids: Array.isArray(row.dish_ids) ? row.dish_ids.map(String) : [],
         event_type: String(row.event_type),
-        event_at: row.event_at == null ? null : new Date(String(row.event_at)).toISOString(),
+        event_at:
+            row.event_at == null
+                ? null
+                : new Date(String(row.event_at)).toISOString(),
         submitted_at: new Date(String(row.submitted_at)).toISOString(),
         event_timezone: String(row.event_timezone),
         time_precision: String(row.time_precision),
@@ -625,11 +628,26 @@ export function parseNaturalCookUpdate(
         const lowerClause = clause.toLowerCase();
         // Deterministic extraction must abstain when completion or occurrence
         // cannot be established. The original message is retained regardless.
-        if (/\b(?:no|not|never|without|unknown|unconfirmed|uncertain|haven.t|hasn.t|didn.t|doesn.t|wasn.t|isn.t|aren.t|don.t|won.t|can.t)\b/i.test(clause)) continue;
-        if (/\b(?:might|may|should|could|would|perhaps|maybe|plan|planned|planning|recommend(?:ed)?|suggest(?:ed)?|proposed|hypothetical|later|going to|will)\b/i.test(clause)) continue;
+        if (
+            /\b(?:no|not|never|without|unknown|unconfirmed|uncertain|haven.t|hasn.t|didn.t|doesn.t|wasn.t|isn.t|aren.t|don.t|won.t|can.t)\b/i.test(
+                clause,
+            )
+        )
+            continue;
+        if (
+            /\b(?:might|may|should|could|would|perhaps|maybe|plan|planned|planning|recommend(?:ed)?|suggest(?:ed)?|proposed|hypothetical|later|going to|will)\b/i.test(
+                clause,
+            )
+        )
+            continue;
         // An arbitrary historical clock time cannot safely be reconstructed
         // from the submission time. The host may provide an explicit event_at.
-        if (/\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|yesterday|last night|previously|earlier|recap|history)\b|\bat\s+\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)/i.test(clause)) continue;
+        if (
+            /\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|yesterday|last night|previously|earlier|recap|history)\b|\bat\s+\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)/i.test(
+                clause,
+            )
+        )
+            continue;
         const relativePhrase = clause.match(RELATIVE_TIME_RE)?.[0] ?? null;
         const types: CookEventType[] = [];
         if (
@@ -660,9 +678,12 @@ export function parseNaturalCookUpdate(
         )
             types.push("remove");
         if (/\b(rest|rested|resting)\b/.test(lowerClause)) types.push("rest");
-        if (/\b(spritz|spritzed|spraying|sprayed|spray)\b/.test(lowerClause)) types.push("spritz");
-        if (/\b(unwrapped|unwrap|unwrapping)\b/.test(lowerClause)) types.push("unwrap");
-        if (/\b(turned|flipped|flip|turning)\b/.test(lowerClause)) types.push("turn");
+        if (/\b(spritz|spritzed|spraying|sprayed|spray)\b/.test(lowerClause))
+            types.push("spritz");
+        if (/\b(unwrapped|unwrap|unwrapping)\b/.test(lowerClause))
+            types.push("unwrap");
+        if (/\b(turned|flipped|flip|turning)\b/.test(lowerClause))
+            types.push("turn");
         if (/\b(tast(?:e|ed|ing)|bite|bit into)\b/.test(lowerClause))
             types.push("taste");
         if (
@@ -674,9 +695,15 @@ export function parseNaturalCookUpdate(
             !types.includes("wrap")
         )
             types.push("temperature_change");
-        if (!types.length && /\b(marinat\w*)\b/.test(lowerClause)) types.push("marinate");
-        if (!types.length && /\b(season\w*|dry rub|rubbed)\b/.test(lowerClause)) types.push("season");
-        if (!types.length && /\b(start|starting|prep|prepped|chop|mix|trim)\b/.test(lowerClause)) types.push("preparation");
+        if (!types.length && /\b(marinat\w*)\b/.test(lowerClause))
+            types.push("marinate");
+        if (!types.length && /\b(season\w*|dry rub|rubbed)\b/.test(lowerClause))
+            types.push("season");
+        if (
+            !types.length &&
+            /\b(start|starting|prep|prepped|chop|mix|trim)\b/.test(lowerClause)
+        )
+            types.push("preparation");
         for (const type of types)
             events.push(
                 detectedEvent(
@@ -698,7 +725,13 @@ export function parseNaturalCookUpdate(
                 events.splice(i, 1);
         }
     }
-    if (!events.length && !isQuestion && !/\b(?:no|not|never|unknown|unconfirmed|should|might|planned|recommended|suggested|hypothetical)\b/i.test(factualText)) {
+    if (
+        !events.length &&
+        !isQuestion &&
+        !/\b(?:no|not|never|unknown|unconfirmed|should|might|planned|recommended|suggested|hypothetical)\b/i.test(
+            factualText,
+        )
+    ) {
         events.push(
             detectedEvent(
                 "note",
@@ -817,7 +850,8 @@ async function attachEventDishes(
         const dishRows = await tx<Array<{ id: string }>>`
             select id from munch.cook_dishes where id = ${dishId} and cook_id = ${cookId}
         `;
-        if (!dishRows[0]) throw new Error("Cook event dish is not part of this cook");
+        if (!dishRows[0])
+            throw new Error("Cook event dish is not part of this cook");
         await tx`
             insert into munch.cook_event_dishes (cook_id, event_id, dish_id)
             values (${cookId}, ${eventId}, ${dishId}) on conflict do nothing
@@ -838,8 +872,14 @@ async function insertEvent(
     const normalized = validateEventInput(input);
     const eventAt = eventAtForInput(normalized, submittedAt, timezone);
     const idempotencyKey = normalized.idempotencyKey ?? fallbackKey;
-    const dishIds = [...new Set([...(normalized.dishIds ?? []), ...(normalized.dishId ? [normalized.dishId] : [])])];
-    const primaryDishId = normalized.dishId ?? (dishIds.length === 1 ? dishIds[0] : null);
+    const dishIds = [
+        ...new Set([
+            ...(normalized.dishIds ?? []),
+            ...(normalized.dishId ? [normalized.dishId] : []),
+        ]),
+    ];
+    const primaryDishId =
+        normalized.dishId ?? (dishIds.length === 1 ? dishIds[0] : null);
     if (normalized.dishId) {
         const dishRows = await tx<Array<{ id: string }>>`
             select id from munch.cook_dishes
@@ -1035,7 +1075,13 @@ async function insertCookUpdateInTransaction(
                 userId,
                 cookId,
                 updateId,
-                { ...event, dishId: event.dishId === undefined && !event.dishIds?.length ? input.dishId : event.dishId },
+                {
+                    ...event,
+                    dishId:
+                        event.dishId === undefined && !event.dishIds?.length
+                            ? input.dishId
+                            : event.dishId,
+                },
                 submittedAt,
                 timezone,
                 `${input.idempotencyKey ?? updateId}:event:${index}`,
@@ -1358,7 +1404,7 @@ export async function correctCookEvent(
     const normalized = validateEventInput(input);
     return withUserDatabase(userId, async (tx) => {
         const submittedAt = new Date().toISOString();
-        const existingRows = await tx<Array<Record<string, unknown>> >`
+        const existingRows = await tx<Array<Record<string, unknown>>>`
             select *
             from munch.cook_events
             where id = ${eventId} and cook_id = ${cookId}
@@ -1377,14 +1423,21 @@ export async function correctCookEvent(
             const dish = await tx<Array<{ id: string }>>`
                 select id from munch.cook_dishes where id = ${normalized.dishId} and cook_id = ${cookId}
             `;
-            if (!dish[0]) throw new Error("Cook event dish is not part of this cook");
+            if (!dish[0])
+                throw new Error("Cook event dish is not part of this cook");
         }
         const eventAt = normalized.eventAt
             ? eventAtForInput(normalized, submittedAt, timezone)
             : {
-                  eventAt: normalized.timePrecision === "unknown" ? null : existing.event_at == null ? null : new Date(String(existing.event_at)).toISOString(),
+                  eventAt:
+                      normalized.timePrecision === "unknown"
+                          ? null
+                          : existing.event_at == null
+                            ? null
+                            : new Date(String(existing.event_at)).toISOString(),
                   precision:
-                      normalized.timePrecision ?? (existing.time_precision as CookTimePrecision),
+                      normalized.timePrecision ??
+                      (existing.time_precision as CookTimePrecision),
               };
         const rows = await tx<Array<Record<string, unknown>>>`
             update munch.cook_events
@@ -1411,15 +1464,26 @@ export async function correctCookEvent(
             insert into munch.cook_event_revisions (event_id, cook_id, prior_version, snapshot, changed_by_user_id)
             values (${eventId}, ${cookId}, ${Number(existing.version)}, ${JSON.stringify(existing)}::jsonb, ${userId})
         `;
-        if (normalized.dishIds !== undefined || normalized.dishId !== undefined) {
+        if (
+            normalized.dishIds !== undefined ||
+            normalized.dishId !== undefined
+        ) {
             await tx`delete from munch.cook_event_dishes where event_id = ${eventId} and cook_id = ${cookId}`;
-            await attachEventDishes(tx, cookId, eventId,
-                normalized.dishIds ?? (normalized.dishId ? [normalized.dishId] : []));
+            await attachEventDishes(
+                tx,
+                cookId,
+                eventId,
+                normalized.dishIds ??
+                    (normalized.dishId ? [normalized.dishId] : []),
+            );
         }
         const links = await tx<Array<{ dish_id: string }>>`
             select dish_id from munch.cook_event_dishes where event_id = ${eventId} order by dish_id
         `;
-        return serializeEvent({ ...rows[0], dish_ids: links.map((link) => link.dish_id) });
+        return serializeEvent({
+            ...rows[0],
+            dish_ids: links.map((link) => link.dish_id),
+        });
     });
 }
 

@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { COOK_EVENT_TYPES, normalizeCookEventType } from "./cooks/event-contract.js";
+import {
+    COOK_EVENT_TYPES,
+    normalizeCookEventType,
+} from "./cooks/event-contract.js";
 import { resolveMunchCapabilities } from "./billing/capabilities.js";
 import { withAnalytics } from "./analytics.js";
 import {
@@ -463,7 +466,8 @@ export function registerCookTools(
                             : undefined;
                     const existingCook = await getCook(userId, args.cook_id);
                     if (!existingCook) throw new Error("Cook not found");
-                    const timezone = args.timezone ?? existingCook.cook.timezone;
+                    const timezone =
+                        args.timezone ?? existingCook.cook.timezone;
                     const parsed =
                         message && !args.events
                             ? parseNaturalCookUpdate(
@@ -485,7 +489,9 @@ export function registerCookTools(
                         idempotencyKey: args.request_id,
                     });
                     return {
-                        content: [{ type: "text" as const, text: update.summary }],
+                        content: [
+                            { type: "text" as const, text: update.summary },
+                        ],
                         structuredContent: {
                             cook_id: args.cook_id,
                             update_id: update.updateId,
@@ -635,7 +641,12 @@ export function registerCookTools(
                         args.expected_version,
                     );
                     return {
-                        content: [{ type: "text" as const, text: "Cook timeline event corrected." }],
+                        content: [
+                            {
+                                type: "text" as const,
+                                text: "Cook timeline event corrected.",
+                            },
+                        ],
                         structuredContent: { event },
                     };
                 },

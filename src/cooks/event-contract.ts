@@ -52,7 +52,10 @@ export function normalizeCookEventType(value: unknown): CookEventType {
     if (typeof value !== "string") {
         throw new Error("Cook event type must be text");
     }
-    const name = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+    const name = value
+        .trim()
+        .toLowerCase()
+        .replace(/[\s-]+/g, "_");
     const canonical = aliases[name] ?? name;
     if (!supported.has(canonical)) {
         throw new Error(
