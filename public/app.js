@@ -1337,8 +1337,27 @@ function cookTimelineMarkup(detail) {
             (event) =>
                 '<article class="cook-event-row"><div><strong>' +
                 escapeHtml(String(event.event_type).replaceAll("_", " ")) +
-                "</strong><small>" +
-                escapeHtml(formatTime(event.event_at, detail.cook.timezone)) +
+                "</strong>" +
+                (event.dish_ids?.length
+                    ? "<small>" +
+                      escapeHtml(
+                          event.dish_ids
+                              .map(
+                                  (id) =>
+                                      detail.dishes.find(
+                                          (dish) => dish.id === id,
+                                      )?.name || "Unknown dish",
+                              )
+                              .join(" · "),
+                      ) +
+                      "</small>"
+                    : "") +
+                "<small>" +
+                escapeHtml(
+                    event.time_precision === "unknown" || !event.event_at
+                        ? event.relative_phrase || "Time unknown"
+                        : formatTime(event.event_at, detail.cook.timezone),
+                ) +
                 " · submitted " +
                 escapeHtml(
                     formatTime(event.submitted_at, detail.cook.timezone),
@@ -1495,26 +1514,65 @@ function openCookEdit(cook) {
     );
 }
 
-function openCookEventEditor(eventRecord, cookId) {
+function openCookEventEditor(eventRecord, cookId, dishes) {
     const localTime = eventRecord.event_at
-        ? new Date(eventRecord.event_at).toISOString().slice(0, 16)
+        ? new Date(
+              new Date(eventRecord.event_at).getTime() -
+                  new Date(eventRecord.event_at).getTimezoneOffset() * 60000,
+          )
+              .toISOString()
+              .slice(0, 16)
         : "";
     const types = [
         "preparation",
+        "season",
+        "marinate",
         "preheat",
         "food_on",
         "temperature_change",
         "wrap",
+        "unwrap",
         "sauce",
+        "spritz",
+        "turn",
+        "reposition",
+        "equipment_adjustment",
         "remove",
         "rest",
         "taste",
         "note",
+        "correction",
         "custom",
     ];
+    const dishOptions =
+        '<option value="">Whole cook / shared activity</option>' +
+        dishes
+            .map(
+                (dish) =>
+                    '<option value="' +
+                    escapeHtml(dish.id) +
+                    '" ' +
+                    (eventRecord.dish_id === dish.id ? "selected" : "") +
+                    ">" +
+                    escapeHtml(dish.name) +
+                    "</option>",
+            )
+            .join("");
+    const sharedDishes = dishes
+        .map(
+            (dish) =>
+                '<label><input type="checkbox" name="dish_ids" value="' +
+                escapeHtml(dish.id) +
+                '" ' +
+                (eventRecord.dish_ids?.includes(dish.id) ? "checked" : "") +
+                " />" +
+                escapeHtml(dish.name) +
+                "</label>",
+        )
+        .join("");
     openDialog(
         "Correct timeline event",
-        `<form id="cook-event-edit-form" class="auth-form" data-id="${escapeHtml(eventRecord.id)}" data-cook-id="${escapeHtml(cookId)}" data-version="${escapeHtml(eventRecord.version)}"><label class="field"><span>Event</span><select name="event_type">${types.map((type) => '<option value="' + type + '" ' + (eventRecord.event_type === type ? "selected" : "") + ">" + type.replaceAll("_", " ") + "</option>").join("")}</select></label><label class="field"><span>Event time (UTC)</span><input name="event_at" type="datetime-local" value="${escapeHtml(localTime)}" required /></label><label class="field"><span>Note</span><textarea name="note" rows="3" maxlength="20000">${escapeHtml(eventRecord.note || eventRecord.original_message || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Setpoint</span><input name="setpoint_temperature" type="number" step="0.1" value="${escapeHtml(eventRecord.setpoint_temperature ?? "")}" /></label><label class="field"><span>Setpoint unit</span><select name="setpoint_unit"><option value="F" ${eventRecord.setpoint_unit === "F" ? "selected" : ""}>°F</option><option value="C" ${eventRecord.setpoint_unit === "C" ? "selected" : ""}>°C</option></select></label><label class="field"><span>Cooking environment</span><input name="ambient_temperature" type="number" step="0.1" value="${escapeHtml(eventRecord.ambient_temperature ?? "")}" /></label><label class="field"><span>Environment unit</span><select name="ambient_unit"><option value="F" ${eventRecord.ambient_unit === "F" ? "selected" : ""}>°F</option><option value="C" ${eventRecord.ambient_unit === "C" ? "selected" : ""}>°C</option></select></label><label class="field"><span>Internal</span><input name="internal_temperature" type="number" step="0.1" value="${escapeHtml(eventRecord.internal_temperature ?? "")}" /></label><label class="field"><span>Internal unit</span><select name="internal_unit"><option value="F" ${eventRecord.internal_unit === "F" ? "selected" : ""}>°F</option><option value="C" ${eventRecord.internal_unit === "C" ? "selected" : ""}>°C</option></select></label></div><button class="button button-primary" type="submit">Save correction</button></form>`,
+        `<form id="cook-event-edit-form" class="auth-form" data-id="${escapeHtml(eventRecord.id)}" data-cook-id="${escapeHtml(cookId)}" data-version="${escapeHtml(eventRecord.version)}"><label class="field"><span>Event</span><select name="event_type">${types.map((type) => '<option value="' + type + '" ' + (eventRecord.event_type === type ? "selected" : "") + ">" + type.replaceAll("_", " ") + "</option>").join("")}</select></label><label class="field"><span>Dish</span><select name="dish_id">${dishOptions}</select></label><fieldset class="field"><legend>Shared activity: affected dishes (used when Whole cook is selected)</legend>${sharedDishes}</fieldset><label class="field"><span>Time precision</span><select name="time_precision"><option value="exact" ${eventRecord.time_precision === "exact" ? "selected" : ""}>Exact</option><option value="approximate" ${eventRecord.time_precision === "approximate" ? "selected" : ""}>Approximate</option><option value="unknown" ${eventRecord.time_precision === "unknown" ? "selected" : ""}>Unknown</option></select></label><label class="field"><span>Event time (your local time, optional)</span><input name="event_at" type="datetime-local" value="${escapeHtml(localTime)}" /></label><label class="field"><span>Original time description</span><input name="relative_phrase" maxlength="500" value="${escapeHtml(eventRecord.relative_phrase || "")}" placeholder="Thursday night, around 2 PM" /></label><label class="field"><span>Note</span><textarea name="note" rows="3" maxlength="20000">${escapeHtml(eventRecord.note || eventRecord.original_message || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Setpoint</span><input name="setpoint_temperature" type="number" step="0.1" value="${escapeHtml(eventRecord.setpoint_temperature ?? "")}" /></label><label class="field"><span>Setpoint unit</span><select name="setpoint_unit"><option value="F" ${eventRecord.setpoint_unit === "F" ? "selected" : ""}>°F</option><option value="C" ${eventRecord.setpoint_unit === "C" ? "selected" : ""}>°C</option></select></label><label class="field"><span>Cooking environment</span><input name="ambient_temperature" type="number" step="0.1" value="${escapeHtml(eventRecord.ambient_temperature ?? "")}" /></label><label class="field"><span>Environment unit</span><select name="ambient_unit"><option value="F" ${eventRecord.ambient_unit === "F" ? "selected" : ""}>°F</option><option value="C" ${eventRecord.ambient_unit === "C" ? "selected" : ""}>°C</option></select></label><label class="field"><span>Internal</span><input name="internal_temperature" type="number" step="0.1" value="${escapeHtml(eventRecord.internal_temperature ?? "")}" /></label><label class="field"><span>Internal unit</span><select name="internal_unit"><option value="F" ${eventRecord.internal_unit === "F" ? "selected" : ""}>°F</option><option value="C" ${eventRecord.internal_unit === "C" ? "selected" : ""}>°C</option></select></label></div><button class="button button-primary" type="submit">Save correction</button></form>`,
     );
 }
 
@@ -2942,7 +3000,7 @@ async function handleAction(button) {
             (event) => event.id === button.dataset.id,
         );
         if (!eventRecord) throw new Error("Cook event is no longer available");
-        openCookEventEditor(eventRecord, button.dataset.cookId);
+        openCookEventEditor(eventRecord, button.dataset.cookId, detail.dishes);
         return;
     }
     if (action === "compare-cooks") {
@@ -3816,8 +3874,15 @@ document.addEventListener("submit", async (event) => {
         if (form.id === "cook-event-edit-form") {
             const eventBody = {
                 event_type: values.event_type,
-                event_at: new Date(values.event_at + "Z").toISOString(),
-                time_precision: "exact",
+                ...(values.event_at && values.time_precision !== "unknown"
+                    ? { event_at: new Date(values.event_at).toISOString() }
+                    : {}),
+                time_precision: values.time_precision,
+                relative_phrase: values.relative_phrase || null,
+                dish_id: values.dish_id || null,
+                dish_ids: values.dish_id
+                    ? [values.dish_id]
+                    : new FormData(form).getAll("dish_ids").map(String),
                 note: values.note || null,
                 setpoint_temperature:
                     values.setpoint_temperature === ""

@@ -1,3 +1,4 @@
+import { normalizeCookEventType } from "../cooks/event-contract.js";
 import { Hono, type Context } from "hono";
 import { resolveMunchCapabilities } from "../billing/capabilities.js";
 import {
@@ -236,7 +237,7 @@ function cookEventInput(value: unknown): CookEventInput {
     if (typeof body.event_type !== "string")
         throw new Error("Cook event type is required");
     return {
-        eventType: body.event_type as CookEventInput["eventType"],
+        eventType: normalizeCookEventType(body.event_type),
         eventAt: typeof body.event_at === "string" ? body.event_at : undefined,
         eventTimezone:
             typeof body.event_timezone === "string"
@@ -244,21 +245,38 @@ function cookEventInput(value: unknown): CookEventInput {
                 : undefined,
         timePrecision: body.time_precision as CookEventInput["timePrecision"],
         relativePhrase:
-            typeof body.relative_phrase === "string"
-                ? body.relative_phrase
-                : null,
+            body.relative_phrase === undefined
+                ? undefined
+                : typeof body.relative_phrase === "string"
+                  ? body.relative_phrase
+                  : null,
         setpointTemperature: temperature("setpoint_temperature"),
         setpointUnit: unit("setpoint_unit"),
         ambientTemperature: temperature("ambient_temperature"),
         ambientUnit: unit("ambient_unit"),
         internalTemperature: temperature("internal_temperature"),
         internalUnit: unit("internal_unit"),
-        note: typeof body.note === "string" ? body.note : null,
+        note:
+            body.note === undefined
+                ? undefined
+                : typeof body.note === "string"
+                  ? body.note
+                  : null,
         originalMessage:
-            typeof body.original_message === "string"
-                ? body.original_message
-                : null,
-        dishId: typeof body.dish_id === "string" ? body.dish_id : null,
+            body.original_message === undefined
+                ? undefined
+                : typeof body.original_message === "string"
+                  ? body.original_message
+                  : null,
+        dishId:
+            body.dish_id === undefined
+                ? undefined
+                : typeof body.dish_id === "string"
+                  ? body.dish_id
+                  : null,
+        dishIds: Array.isArray(body.dish_ids)
+            ? body.dish_ids.map((id) => String(id))
+            : undefined,
         idempotencyKey:
             typeof body.idempotency_key === "string"
                 ? body.idempotency_key
