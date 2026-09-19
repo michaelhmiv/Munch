@@ -1501,14 +1501,20 @@ export async function getCook(userId: string, cookId: string) {
             from munch.cook_updates where cook_id = ${cookId} order by submitted_at, id
         `;
         const events = await tx<Array<Record<string, unknown>>>`
-            select event.*, coalesce(
-                (select array_agg(link.dish_id order by link.dish_id)
-                 from munch.cook_event_dishes link where link.event_id = event.id),
-                array[]::uuid[]
-            ) as dish_ids
-            from munch.cook_events event where event.cook_id = ${cookId}
-            order by event.event_at nulls last, event.submitted_at, event.id
+            select * from munch.cook_events
+            where cook_id = ${cookId}
+            order by event_at nulls last, submitted_at, id
         `;
+        const eventDishes = await tx<Array<{ event_id: string; dish_id: string }>>`
+            select event_id, dish_id from munch.cook_event_dishes
+            where cook_id = ${cookId} order by event_id, dish_id
+        `;
+        const eventDishIds = new Map<string, string[]>();
+        for (const link of eventDishes) {
+            const ids = eventDishIds.get(String(link.event_id)) ?? [];
+            ids.push(String(link.dish_id));
+            eventDishIds.set(String(link.event_id), ids);
+        }
         const outcomes = await tx<Array<Record<string, unknown>>>`
             select * from munch.cook_outcomes where cook_id = ${cookId}
             order by (dish_id is not null), updated_at desc, id
@@ -1535,7 +1541,12 @@ export async function getCook(userId: string, cookId: string) {
                 idempotency_key: nullableString(update.idempotency_key),
                 created_at: new Date(String(update.created_at)).toISOString(),
             })),
-            events: events.map(serializeEvent),
+            events: events.map((event) =>
+                serializeEvent({
+                    ...event,
+                    dish_ids: eventDishIds.get(String(event.id)) ?? [],
+                }),
+            ),
             outcomes: outcomes.map((outcome) => ({
                 id: String(outcome.id),
                 dish_id: nullableString(outcome.dish_id),
