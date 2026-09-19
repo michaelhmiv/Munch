@@ -84,6 +84,7 @@ const eventInput = z.object({
     note: z.string().max(20_000).nullable().optional(),
     original_message: z.string().max(20_000).nullable().optional(),
     dish_id: z.string().uuid().nullable().optional(),
+    dish_ids: z.array(z.string().uuid()).max(20).optional(),
     idempotency_key: z.string().max(500).optional(),
     correction_of_event_id: z.string().uuid().nullable().optional(),
 });
@@ -189,6 +190,7 @@ function mapEvent(event: z.infer<typeof eventInput>): CookEventInput {
         note: event.note,
         originalMessage: event.original_message,
         dishId: event.dish_id,
+        dishIds: event.dish_ids,
         idempotencyKey: event.idempotency_key,
         correctionOfEventId: event.correction_of_event_id,
     };
