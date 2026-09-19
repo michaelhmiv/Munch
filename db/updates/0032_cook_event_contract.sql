@@ -59,3 +59,45 @@ comment on table munch.cook_event_revisions is
 
 -- Unknown is an unknown instant, not the time the user submitted the note.
 alter table munch.cook_events alter column event_at drop not null;
+
+-- One physical action may belong to several dishes without duplicate events.
+-- Composite foreign keys prevent cross-Cook links at the database boundary.
+create unique index cook_events_cook_identity_idx on munch.cook_events (cook_id, id);
+create unique index cook_dishes_cook_identity_idx on munch.cook_dishes (cook_id, id);
+create table munch.cook_event_dishes (
+    cook_id uuid not null,
+    event_id uuid not null,
+    dish_id uuid not null,
+    primary key (event_id, dish_id),
+    constraint cook_event_dishes_event_fk foreign key (cook_id, event_id)
+        references munch.cook_events(cook_id, id) on delete cascade,
+    constraint cook_event_dishes_dish_fk foreign key (cook_id, dish_id)
+        references munch.cook_dishes(cook_id, id) on delete restrict
+);
+create index cook_event_dishes_dish_idx
+    on munch.cook_event_dishes (cook_id, dish_id, event_id);
+alter table munch.cook_event_dishes enable row level security;
+alter table munch.cook_event_dishes force row level security;
+create policy cook_event_dishes_app_read on munch.cook_event_dishes
+    for select to munch_app using (
+        exists (select 1 from munch.cooks cook where cook.id = cook_id and (
+            cook.personal_owner_user_id = munch.current_user_id()
+            or (cook.household_id is not null and munch.household_role(cook.household_id) is not null)
+        ))
+    );
+create policy cook_event_dishes_app_write on munch.cook_event_dishes
+    for all to munch_app using (
+        exists (select 1 from munch.cooks cook where cook.id = cook_id and (
+            cook.personal_owner_user_id = munch.current_user_id()
+            or (cook.household_id is not null and munch.household_role(cook.household_id) in ('owner', 'member'))
+        ))
+    ) with check (
+        exists (select 1 from munch.cooks cook where cook.id = cook_id and (
+            cook.personal_owner_user_id = munch.current_user_id()
+            or (cook.household_id is not null and munch.household_role(cook.household_id) in ('owner', 'member'))
+        ))
+    );
+create policy cook_event_dishes_auth_all on munch.cook_event_dishes
+    for all to munch_auth using (true) with check (true);
+grant select, insert, update, delete on munch.cook_event_dishes
+    to munch_app, munch_auth;
