@@ -234,6 +234,12 @@ if (
     actual.updates.length !== submissions.length
 )
     throw new Error("Original history or event count changed after retries");
+const eventLinks = await withUserDatabase(owner.userId, async (tx) =>
+    tx<Array<{ event_id: string; dish_id: string }>>`
+        select event_id, dish_id from munch.cook_event_dishes
+        where cook_id = ${started.cookId}
+    `,
+);
 const shared = actual.events.find((event) => event.event_type === "spritz");
 if (
     !shared ||
@@ -245,6 +251,7 @@ if (
         `One shared spritz must retain both dish associations: ${JSON.stringify({
             persisted: shared,
             expected: [ribs.id, loin.id],
+            storedLinks: eventLinks.filter((link) => link.event_id === shared?.id),
         })}`,
     );
 const rub = actual.events.find(
