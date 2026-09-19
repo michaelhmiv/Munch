@@ -308,17 +308,18 @@ const audit = await withUserDatabase(
         tx<
             Array<{
                 prior_version: number;
-                snapshot: { event_at: string; dish_id: string };
+                previous_at: string;
+                previous_dish: string;
             }>
         >`
-        select prior_version, snapshot from munch.cook_event_revisions
+        select prior_version, snapshot->>'event_at' as previous_at, snapshot->>'dish_id' as previous_dish from munch.cook_event_revisions
         where event_id = ${temp.id}
     `,
 );
 if (
     audit.length !== 1 ||
-    audit[0]?.snapshot.event_at !== temp.event_at ||
-    audit[0]?.snapshot.dish_id !== loin.id
+    new Date(audit[0]?.previous_at ?? "").toISOString() !== temp.event_at ||
+    audit[0]?.previous_dish !== loin.id
 )
     throw new Error("Correction failed to preserve its original revision");
 const second = await createCook(owner.userId, {
