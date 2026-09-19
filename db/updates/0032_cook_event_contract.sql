@@ -56,3 +56,6 @@ grant select, insert, update, delete on munch.cook_event_revisions
     to munch_app, munch_auth;
 comment on table munch.cook_event_revisions is
     'Immutable pre-correction event snapshots; source cook_updates are preserved separately.';
+
+-- Unknown is an unknown instant, not the time the user submitted the note.
+alter table munch.cook_events alter column event_at drop not null;
