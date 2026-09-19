@@ -250,7 +250,7 @@ function serializeEvent(row: Record<string, unknown>) {
         update_id: nullableString(row.update_id),
         dish_id: nullableString(row.dish_id),
         event_type: String(row.event_type),
-        event_at: new Date(String(row.event_at)).toISOString(),
+        event_at: row.event_at == null ? null : new Date(String(row.event_at)).toISOString(),
         submitted_at: new Date(String(row.submitted_at)).toISOString(),
         event_timezone: String(row.event_timezone),
         time_precision: String(row.time_precision),
@@ -341,13 +341,13 @@ function eventAtForInput(
     input: CookEventInput,
     submittedAt: string,
     timezone: string,
-): { eventAt: string; precision: CookTimePrecision } {
+): { eventAt: string | null; precision: CookTimePrecision } {
     if (input.eventAt) {
         const eventAt = isoOrNow(input.eventAt, "event time");
         return { eventAt, precision: input.timePrecision ?? "exact" };
     }
     return {
-        eventAt: submittedAt,
+        eventAt: null,
         precision: input.timePrecision ?? "unknown",
     };
 }
@@ -544,7 +544,7 @@ function detectedEvent(
     const offset = relativePhrase ? phraseOffset(relativePhrase) : null;
     const eventAt =
         offset == null
-            ? submittedAt
+            ? undefined
             : new Date(new Date(submittedAt).getTime() - offset).toISOString();
     return {
         eventType,
@@ -1351,7 +1351,7 @@ export async function correctCookEvent(
         const eventAt = normalized.eventAt
             ? eventAtForInput(normalized, submittedAt, timezone)
             : {
-                  eventAt: new Date(String(existing.event_at)).toISOString(),
+                  eventAt: existing.event_at == null ? null : new Date(String(existing.event_at)).toISOString(),
                   precision:
                       normalized.timePrecision ?? (existing.time_precision as CookTimePrecision),
               };
@@ -1398,7 +1398,7 @@ export async function getCook(userId: string, cookId: string) {
             from munch.cook_updates where cook_id = ${cookId} order by submitted_at, id
         `;
         const events = await tx<Array<Record<string, unknown>>>`
-            select * from munch.cook_events where cook_id = ${cookId} order by event_at, submitted_at, id
+            select * from munch.cook_events where cook_id = ${cookId} order by event_at nulls last, submitted_at, id
         `;
         const outcomes = await tx<Array<Record<string, unknown>>>`
             select * from munch.cook_outcomes where cook_id = ${cookId}
