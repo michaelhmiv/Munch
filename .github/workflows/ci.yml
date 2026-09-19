@@ -121,6 +121,8 @@ jobs:
         run: bun scripts/recipe-planning-smoke.ts
       - name: Exercise Cooks persistence, media, timeline, RLS, and side-effect boundaries
         run: bun scripts/cooks-platform-smoke.ts
+      - name: Replay September 19 Cooks against isolated PostgreSQL
+        run: bun scripts/cooks-sep19-regression.ts
       - name: Exercise parsed recipe save, read-back, and meal logging
         run: bun scripts/recipe-import-save-roundtrip-smoke.ts
       - name: Exercise Pantry inventory, receipt reconciliation, and RLS
