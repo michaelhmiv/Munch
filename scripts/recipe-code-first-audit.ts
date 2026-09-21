@@ -12,6 +12,7 @@ import {
     OpenRouterRecipeImportResolver,
     recipeImportAiConfig,
 } from "../src/recipe-import/semantic-resolver.js";
+import { CodeFirstRecipeImportResolver } from "../src/recipe-import/code-first-resolver.js";
 import { RECIPE_IMPORT_CORPUS } from "../src/recipe-import/fixtures/recipe-corpus.js";
 
 const openrouterKey = process.env.OPENROUTER_API_KEY?.trim();
@@ -256,7 +257,7 @@ const qwenConfig = {
 };
 
 
-type Mode = "code_only" | "code_first_jev" | "selective_qwen" | "code_first_jev_no_qwen";
+type Mode = "code_only" | "code_first_jev" | "selective_qwen" | "code_first_jev_no_qwen" | "code_first_guarded";
 type RecordRow = {id:string;site:string;url:string;fetchMs:number;parserStrategy:string;parserIngredients:number;parserWarnings:string[];modes:Record<string,unknown>};
 const allRows:RecordRow[]=[];
 const modes:Mode[]=(process.env.MUNCH_CODE_FIRST_MODES?.split(",").filter(Boolean) as Mode[] | undefined) ?? ["code_only","code_first_jev","selective_qwen","code_first_jev_no_qwen"];
@@ -277,6 +278,7 @@ const runMode=(mode:Mode, parsed:ParsedRecipe,meter:Meter,jevMeter:Meter):Recipe
        chooseCandidates:async()=>new Map()
      }
    :qwen;
+ if(mode==="code_first_guarded")return new CodeFirstRecipeImportResolver(qwen,jev);
  const hybrid=new HybridRecipeImportResolver(generative,jev);
  const risks=parsed.warnings.filter(w=>["quantity_unparsed","quantity_range"].includes(w.code));
  const possibleComposite=parsed.ingredients.some(i=> /\b(?:and|or)\b/i.test(i.name) && !/\b(?:salt and pepper|half and half)\b/i.test(i.name));
