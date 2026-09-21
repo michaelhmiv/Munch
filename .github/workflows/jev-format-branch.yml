@@ -24,6 +24,13 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run format
       - run: bun run format:check
+      - name: Upload formatted benchmark workflows
+        uses: actions/upload-artifact@v4
+        with:
+          name: formatted-jev-workflows
+          path: |
+            .github/workflows/openrouter-jev-controlled-audit.yml
+            .github/workflows/openrouter-jev-recipe-hybrid-audit.yml
       - name: Commit formatting
         run: |
           git config user.name "github-actions[bot]"
