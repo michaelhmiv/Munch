@@ -1221,9 +1221,17 @@ export async function previewRecipeUrl(
         !semanticWarning,
     );
     const warnings = [
-        ...parsed.warnings.filter(
-            (entry) =>
-                options.preserveSourceWarnings ||
+        ...parsed.warnings.filter((entry) => {
+            if (options.preserveSourceWarnings) {
+                const field = /^ingredients\\.(\\d+)$/.exec(entry.field ?? "");
+                const resolved =
+                    field &&
+                    options.semanticResolver?.resolvedSourceWarnings?.get(
+                        Number(field[1]),
+                    );
+                return !resolved?.has(entry.code);
+            }
+            return (
                 Boolean(semanticWarning) ||
                 ![
                     "quantity_range",
@@ -1231,8 +1239,9 @@ export async function previewRecipeUrl(
                     "quantity_unmeasured",
                     "compound_ingredient",
                     "ingredient_alternative",
-                ].includes(entry.code),
-        ),
+                ].includes(entry.code)
+            );
+        }),
         ...(semanticWarning ? [semanticWarning] : []),
         ...enrichedResult.warnings,
     ];
