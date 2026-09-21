@@ -105,9 +105,9 @@ describe("local food resolution", () => {
             confidence: 0.99,
         });
         expect(isStrongLocalMatch("onion", onionBagel)).toBe(false);
-        expect(
-            isStrongLocalMatch("BLAZING BAGELS ONION", onionBagel),
-        ).toBe(true);
+        expect(isStrongLocalMatch("BLAZING BAGELS ONION", onionBagel)).toBe(
+            true,
+        );
     });
 
     test("does not short-circuit a fuzzy or low-confidence match", () => {

@@ -159,16 +159,13 @@ describe("OpenRouter decision client", () => {
         );
 
         await expect(
-            client.decideChoices(
-                {},
-                [
-                    {
-                        key: "x",
-                        instructions: "Choose.",
-                        criteria: { c0: "candidate", NO_MATCH: "none" },
-                    },
-                ],
-            ),
+            client.decideChoices({}, [
+                {
+                    key: "x",
+                    instructions: "Choose.",
+                    criteria: { c0: "candidate", NO_MATCH: "none" },
+                },
+            ]),
         ).rejects.toThrow("unknown criterion");
     });
 
@@ -192,16 +189,13 @@ describe("OpenRouter decision client", () => {
         );
 
         await expect(
-            client.decideChoices(
-                {},
-                [
-                    {
-                        key: "x",
-                        instructions: "Choose.",
-                        criteria: { c0: "candidate" },
-                    },
-                ],
-            ),
+            client.decideChoices({}, [
+                {
+                    key: "x",
+                    instructions: "Choose.",
+                    criteria: { c0: "candidate" },
+                },
+            ]),
         ).rejects.toThrow("HTTP 503");
         expect(calls).toBe(3);
     });
@@ -223,7 +217,8 @@ describe("OpenRouter decision client", () => {
                 },
                 fetcher: async () => {
                     calls += 1;
-                    if (calls === 1) return new Response("rate limited", { status: 429 });
+                    if (calls === 1)
+                        return new Response("rate limited", { status: 429 });
                     return new Response(
                         JSON.stringify({
                             answers: {
@@ -241,16 +236,13 @@ describe("OpenRouter decision client", () => {
             },
         );
 
-        const result = await client.decideChoices(
-            {},
-            [
-                {
-                    key: "x",
-                    instructions: "Choose.",
-                    criteria: { c0: "candidate" },
-                },
-            ],
-        );
+        const result = await client.decideChoices({}, [
+            {
+                key: "x",
+                instructions: "Choose.",
+                criteria: { c0: "candidate" },
+            },
+        ]);
         expect(calls).toBe(2);
         expect(sleeps).toEqual([250]);
         expect(result.retries).toBe(1);

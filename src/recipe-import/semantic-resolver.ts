@@ -900,9 +900,10 @@ ${JSON.stringify(candidateContext(requests)).slice(0, MAX_AI_RECIPE_CONTEXT_CHAR
     }
 }
 
-function decisionCriteria(
-    request: RecipeImportCandidateChoiceRequest,
-): { criteria: Record<string, string>; candidateIds: string[] } {
+function decisionCriteria(request: RecipeImportCandidateChoiceRequest): {
+    criteria: Record<string, string>;
+    candidateIds: string[];
+} {
     const candidateIds: string[] = [];
     const criteria: Record<string, string> = {};
     request.candidates.slice(0, 3).forEach((candidate, index) => {
@@ -919,7 +920,8 @@ function decisionCriteria(
             .filter(Boolean)
             .join("; ");
     });
-    criteria.NO_MATCH = "None of the supplied candidates is a defensible match.";
+    criteria.NO_MATCH =
+        "None of the supplied candidates is a defensible match.";
     return { criteria, candidateIds };
 }
 
@@ -1035,14 +1037,17 @@ export class HybridRecipeImportResolver implements RecipeImportSemanticResolver 
                             ? undefined
                             : request.candidates.find(
                                   (item) =>
-                                      summarizeFoodCandidate(item).candidate_id ===
-                                      choice.candidateId,
+                                      summarizeFoodCandidate(item)
+                                          .candidate_id === choice.candidateId,
                               );
-                    const ingredientText = `${request.ingredient.rawText} ${request.ingredient.name}`.toLowerCase();
+                    const ingredientText =
+                        `${request.ingredient.rawText} ${request.ingredient.name}`.toLowerCase();
                     const hasUnrequestedBrand =
                         Boolean(candidate?.brand) &&
                         candidate?.dataKind !== "generic" &&
-                        !ingredientText.includes(candidate!.brand!.toLowerCase());
+                        !ingredientText.includes(
+                            candidate!.brand!.toLowerCase(),
+                        );
                     if (
                         choice &&
                         candidate &&
@@ -1079,7 +1084,10 @@ export class HybridRecipeImportResolver implements RecipeImportSemanticResolver 
             }
         }
 
-        if (fallback.length > 0 && this.generative.resolveUncertainIngredients) {
+        if (
+            fallback.length > 0 &&
+            this.generative.resolveUncertainIngredients
+        ) {
             const generated =
                 await this.generative.resolveUncertainIngredients(fallback);
             for (const [key, value] of generated) assignments.set(key, value);

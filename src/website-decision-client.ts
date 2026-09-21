@@ -1,7 +1,8 @@
 import { z } from "zod";
 
 export const DEFAULT_DECISION_MODEL = "~typesafe/jev-latest";
-export const DEFAULT_DECISION_ENDPOINT = "https://openrouter.ai/api/alpha/decisions";
+export const DEFAULT_DECISION_ENDPOINT =
+    "https://openrouter.ai/api/alpha/decisions";
 export const DEFAULT_DECISION_TIMEOUT_MS = 10_000;
 export const DEFAULT_RECIPE_DECISION_MIN_CONFIDENCE = 0.75;
 
@@ -62,7 +63,10 @@ export interface WebsiteDecisionBatchResult {
 }
 
 export interface OpenRouterDecisionClientDependencies {
-    fetcher?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+    fetcher?: (
+        input: RequestInfo | URL,
+        init?: RequestInit,
+    ) => Promise<Response>;
     sleep?: (ms: number) => Promise<void>;
 }
 
@@ -113,10 +117,7 @@ export function websiteDecisionConfig(
     env: Record<string, string | undefined> = process.env,
 ): WebsiteDecisionConfig | null {
     const apiKey = env.OPENROUTER_API_KEY?.trim();
-    if (
-        !apiKey ||
-        !enabledFlag(env.MUNCH_RECIPE_DECISION_ENABLED, false)
-    ) {
+    if (!apiKey || !enabledFlag(env.MUNCH_RECIPE_DECISION_ENABLED, false)) {
         return null;
     }
 
@@ -181,7 +182,10 @@ export class OpenRouterDecisionClient {
             };
         }
 
-        const questionKeyToRequest = new Map<string, WebsiteChoiceDecisionRequest>();
+        const questionKeyToRequest = new Map<
+            string,
+            WebsiteChoiceDecisionRequest
+        >();
         const questions: Record<string, unknown> = {};
         requests.forEach((request, index) => {
             const questionKey = `q${index}`;
@@ -226,7 +230,11 @@ export class OpenRouterDecisionClient {
                 continue;
             }
 
-            if (response.ok || !retryableStatus(response.status) || attempt === 2) {
+            if (
+                response.ok ||
+                !retryableStatus(response.status) ||
+                attempt === 2
+            ) {
                 break;
             }
             await response.arrayBuffer().catch(() => new ArrayBuffer(0));

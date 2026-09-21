@@ -227,7 +227,6 @@ describe("OpenRouter recipe import resolver", () => {
     });
 });
 
-
 describe("hybrid recipe import resolver", () => {
     const candidate = (id: string, name: string): FoodCandidate => ({
         provider: "usda",
@@ -298,10 +297,7 @@ describe("hybrid recipe import resolver", () => {
         );
         const resolver = new HybridRecipeImportResolver(generative, decision);
         const first = candidate("100", "Milk, nonfat, fluid");
-        const second = candidate(
-            "200",
-            "Milk, reduced fat, 2% milkfat, fluid",
-        );
+        const second = candidate("200", "Milk, reduced fat, 2% milkfat, fluid");
 
         const assignments = await resolver.resolveUncertainIngredients?.([
             {
@@ -400,17 +396,19 @@ describe("hybrid recipe import resolver", () => {
         let fallbackCalls = 0;
         const generative = generativeResolver(async (requests) => {
             fallbackCalls += requests.length;
-            return new Map(requests.map((request) => [
-                request.key,
-                {
-                    key: request.key,
-                    name: request.ingredient.name,
-                    candidateId: "usda:100",
-                    decision: "provider_match" as const,
-                    searchQueries: [],
-                    confidence: 0.98,
-                },
-            ]));
+            return new Map(
+                requests.map((request) => [
+                    request.key,
+                    {
+                        key: request.key,
+                        name: request.ingredient.name,
+                        candidateId: "usda:100",
+                        decision: "provider_match" as const,
+                        searchQueries: [],
+                        confidence: 0.98,
+                    },
+                ]),
+            );
         });
         const decision = new OpenRouterDecisionClient(
             {
@@ -422,16 +420,23 @@ describe("hybrid recipe import resolver", () => {
             },
             {
                 fetcher: async () =>
-                    new Response(JSON.stringify({
-                        answers: {
-                            q0: {
-                                type: "choice",
-                                choice: "c1",
-                                confidence: 0.99,
-                                probabilities: { c0: 0.01, c1: 0.99, NO_MATCH: 0 },
+                    new Response(
+                        JSON.stringify({
+                            answers: {
+                                q0: {
+                                    type: "choice",
+                                    choice: "c1",
+                                    confidence: 0.99,
+                                    probabilities: {
+                                        c0: 0.01,
+                                        c1: 0.99,
+                                        NO_MATCH: 0,
+                                    },
+                                },
                             },
-                        },
-                    }), { status: 200 }),
+                        }),
+                        { status: 200 },
+                    ),
             },
         );
         const resolver = new HybridRecipeImportResolver(generative, decision);

@@ -343,10 +343,7 @@ function hasUnsupportedBrandExactMatch(
     if (!candidate.brand || candidate.dataKind === "generic") return false;
     const normalizedName = normalizeFoodText(candidate.name);
     const normalizedBrand = normalizeFoodText(candidate.brand);
-    const queries = [
-        ingredient.name,
-        ...(ingredient.searchQueries ?? []),
-    ]
+    const queries = [ingredient.name, ...(ingredient.searchQueries ?? [])]
         .map(normalizeFoodText)
         .filter(Boolean);
     return (
