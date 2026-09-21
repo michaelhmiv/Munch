@@ -23,8 +23,7 @@ jobs:
         timeout-minutes: 45
         env:
             OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-            MUNCH_CODE_FIRST_MODES: code_only,code_first_jev_no_qwen,code_first_guarded
-            MUNCH_JEV_AUDIT_CASE_ID: pioneer-woman-sheet-pan-chicken
+            MUNCH_CODE_FIRST_MODES: qwen_only,code_only,code_first_jev_no_qwen,code_first_guarded
             MUNCH_RECIPE_IMPORT_AI_ENABLED: "true"
             MUNCH_RECIPE_IMPORT_AI_RESPONSE_FORMAT: json_object
             MUNCH_RECIPE_IMPORT_AI_RESPONSE_HEALING: "true"
