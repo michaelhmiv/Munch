@@ -233,6 +233,7 @@ export interface RecipeImportIngredientAssignment {
 
 export interface RecipeImportSemanticResolver {
     readonly label?: string;
+    readonly resolvedSourceWarnings?: Map<number, Set<string>>;
     normalizeRecipe(
         recipe: Pick<
             ParsedRecipe,
