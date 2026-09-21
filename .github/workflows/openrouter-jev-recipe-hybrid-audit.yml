@@ -22,6 +22,7 @@ jobs:
     timeout-minutes: 45
     env:
       NODE_ENV: test
+      MUNCH_JEV_AUDIT_CASE_ID: stay-at-home-chef-frito-pie
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       JEV_MODEL: "~typesafe/jev-latest"
       QWEN_MODEL: qwen/qwen3.7-flash
