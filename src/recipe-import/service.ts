@@ -336,6 +336,22 @@ function rankedCandidates(
         .sort((left, right) => right.score - left.score);
 }
 
+function hasUnsupportedBrandExactMatch(
+    ingredient: ParsedRecipeIngredient,
+    candidate: FoodCandidate,
+): boolean {
+    if (!candidate.brand || candidate.dataKind === "generic") return false;
+    const normalizedName = normalizeFoodText(candidate.name);
+    const normalizedBrand = normalizeFoodText(candidate.brand);
+    const queries = [ingredient.name, ...(ingredient.searchQueries ?? [])]
+        .map(normalizeFoodText)
+        .filter(Boolean);
+    return (
+        queries.some((query) => query === normalizedName) &&
+        !queries.some((query) => query.includes(normalizedBrand))
+    );
+}
+
 function hasStrongDeterministicMatch(
     ingredient: ParsedRecipeIngredient,
     candidates: FoodCandidate[],
@@ -343,7 +359,11 @@ function hasStrongDeterministicMatch(
     const ranked = rankedCandidates(ingredient, candidates);
     const top = ranked[0];
     const second = ranked[1];
-    if (!top || top.candidate.confidence < AUTO_MATCH_MIN_CONFIDENCE) {
+    if (
+        !top ||
+        top.candidate.confidence < AUTO_MATCH_MIN_CONFIDENCE ||
+        hasUnsupportedBrandExactMatch(ingredient, top.candidate)
+    ) {
         return false;
     }
     return (
@@ -559,6 +579,7 @@ function enrichIngredient(
     const deterministicMatch =
         selected === top.candidate &&
         top.candidate.confidence >= AUTO_MATCH_MIN_CONFIDENCE &&
+        !hasUnsupportedBrandExactMatch(ingredient, top.candidate) &&
         (exact ||
             (top.score >= AUTO_MATCH_MIN_SIMILARITY &&
                 (!second ||

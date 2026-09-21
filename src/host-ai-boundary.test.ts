@@ -11,6 +11,7 @@ const FORBIDDEN_MCP_MODULES = new Set([
     "inventory/meal-ideas.ts",
     "inventory/vision.ts",
     "recipe-import/semantic-resolver.ts",
+    "website-decision-client.ts",
 ]);
 
 const FORBIDDEN_MCP_SOURCE_PATTERNS: Array<[RegExp, string]> = [
@@ -18,6 +19,8 @@ const FORBIDDEN_MCP_SOURCE_PATTERNS: Array<[RegExp, string]> = [
     [/openrouter\.ai/i, "OpenRouter endpoint"],
     [/\/chat\/completions/, "model completion endpoint"],
     [/MUNCH_AI_MODEL/, "website AI model selector"],
+    [/MUNCH_DECISION_MODEL/, "website decision model selector"],
+    [/\/api\/alpha\/decisions/, "decision model endpoint"],
     [/MUNCH_[A-Z0-9_]*_AI_MODEL/, "feature AI model selector"],
     [/MUNCH_PANTRY_(?:VISION|PLANNING)_MODEL/, "Pantry AI model selector"],
 ];
@@ -134,11 +137,16 @@ describe("host AI / MCP architecture boundary", () => {
     test("recipe preview stays deterministic even when website AI credentials exist", async () => {
         const previousApiKey = process.env.OPENROUTER_API_KEY;
         const previousEnabled = process.env.MUNCH_RECIPE_IMPORT_AI_ENABLED;
+        const previousDecisionEnabled =
+            process.env.MUNCH_RECIPE_DECISION_ENABLED;
+        const previousDecisionModel = process.env.MUNCH_DECISION_MODEL;
         const previousFetch = globalThis.fetch;
         let unexpectedFetches = 0;
 
         process.env.OPENROUTER_API_KEY = "test-key-must-not-be-used";
         process.env.MUNCH_RECIPE_IMPORT_AI_ENABLED = "true";
+        process.env.MUNCH_RECIPE_DECISION_ENABLED = "true";
+        process.env.MUNCH_DECISION_MODEL = "~typesafe/jev-latest";
         globalThis.fetch = (async () => {
             unexpectedFetches += 1;
             throw new Error(
@@ -182,6 +190,14 @@ describe("host AI / MCP architecture boundary", () => {
             if (previousEnabled === undefined)
                 delete process.env.MUNCH_RECIPE_IMPORT_AI_ENABLED;
             else process.env.MUNCH_RECIPE_IMPORT_AI_ENABLED = previousEnabled;
+            if (previousDecisionEnabled === undefined)
+                delete process.env.MUNCH_RECIPE_DECISION_ENABLED;
+            else
+                process.env.MUNCH_RECIPE_DECISION_ENABLED =
+                    previousDecisionEnabled;
+            if (previousDecisionModel === undefined)
+                delete process.env.MUNCH_DECISION_MODEL;
+            else process.env.MUNCH_DECISION_MODEL = previousDecisionModel;
         }
     });
 });
