@@ -396,6 +396,69 @@ describe("hybrid recipe import resolver", () => {
         });
     });
 
+    test("does not accept a high-confidence unrequested packaged snack as a base ingredient", async () => {
+        let fallbackCalls = 0;
+        const generative = generativeResolver(async (requests) => {
+            fallbackCalls += requests.length;
+            return new Map(requests.map((request) => [
+                request.key,
+                {
+                    key: request.key,
+                    name: request.ingredient.name,
+                    candidateId: "usda:100",
+                    decision: "provider_match" as const,
+                    searchQueries: [],
+                    confidence: 0.98,
+                },
+            ]));
+        });
+        const decision = new OpenRouterDecisionClient(
+            {
+                apiKey: "or-test",
+                model: "~typesafe/jev-latest",
+                endpoint: "https://openrouter.example/api/alpha/decisions",
+                timeoutMs: 5000,
+                minConfidence: 0.75,
+            },
+            {
+                fetcher: async () =>
+                    new Response(JSON.stringify({
+                        answers: {
+                            q0: {
+                                type: "choice",
+                                choice: "c1",
+                                confidence: 0.99,
+                                probabilities: { c0: 0.01, c1: 0.99, NO_MATCH: 0 },
+                            },
+                        },
+                    }), { status: 200 }),
+            },
+        );
+        const resolver = new HybridRecipeImportResolver(generative, decision);
+        const result = await resolver.resolveUncertainIngredients?.([
+            {
+                key: "0:0",
+                ingredient: {
+                    rawText: "1 cup onion",
+                    name: "onion",
+                    quantity: 1,
+                    unit: "cup",
+                },
+                candidates: [
+                    candidate("100", "onion"),
+                    {
+                        ...candidate("200", "onion flavored prepared snack"),
+                        brand: "Benchmark Snack Co",
+                        dataKind: "packaged",
+                    },
+                ],
+                reason: "ambiguous_candidate",
+            },
+        ]);
+        expect(fallbackCalls).toBe(1);
+        expect(result?.get("0:0")?.candidateId).toBe("usda:100");
+    });
+
     test("falls back to Qwen when the Jev request fails", async () => {
         let received = 0;
         const generative = generativeResolver(async (requests) => {
