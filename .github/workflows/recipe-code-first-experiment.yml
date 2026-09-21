@@ -38,7 +38,7 @@ jobs:
                   bun-version: 1
             - run: bun install --frozen-lockfile
             - run: bun run typecheck
-            - run: bun test src/recipe-import.test.ts src/recipe-import/code-first-resolver.test.ts
+            - run: bun test
             - name: Compare code-only, code-first Jev and selective Qwen on 21 sites
               run: bun scripts/recipe-code-first-audit.ts
             - if: always()
