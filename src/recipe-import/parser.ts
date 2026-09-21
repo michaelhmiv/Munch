@@ -304,7 +304,7 @@ function packageSize(
 ): { quantity: number; unit: string; remainder: string } | undefined {
     // "2 (15 oz) cans" means 30 oz, not two unspecified cans.
     const before =
-        /^\(?\s*(\d+(?:\.\d+)?(?:\/\d+)?)\s*[- ]?\s*(oz|ounces?|g|grams?|ml|milliliters?|lb|lbs|pounds?)\s*\)?\.?\s+(?:jars?|cans?|bottles?|packages?|packs?|boxes?|bags?|cartons?)\.?\s+/i.exec(
+        /^\(?\s*(\d+(?:\.\d+)?(?:\/\d+)?)\s*[- ]?\s*(oz|ounces?|g|grams?|ml|milliliters?|lb|lbs|pounds?)\s*\)?\.?\s+(?:jars?|cans?|bottles?|packages?|packs?|boxes?|bags?|cartons?)\)?\.?\s+/i.exec(
             value,
         );
     if (before) {
@@ -338,6 +338,8 @@ function packageSize(
 const LOW_IMPACT_UNMEASURED =
     /\b(?:salt|pepper|herbs?|spices?|seasoning|paprika|thyme|oregano|parsley|basil|rosemary)\b/i;
 const COMPOUND_EXCEPTION = /\b(?:salt and pepper|half and half|mac and cheese)\b/i;
+const PREPARATION_PAIR =
+    /\b(?:sliced|diced|stemmed|grated|peeled|seeded|chopped|rinsed|drained|pitted|halved|smashed|torn|minced|cut)\s+and\s+(?:sliced|diced|stemmed|grated|peeled|seeded|chopped|rinsed|drained|pitted|halved|smashed|torn|minced|cut)\b/gi;
 
 export function parseIngredientText(rawValue: string): {
     ingredient: ParsedRecipeIngredient;
@@ -404,6 +406,20 @@ export function parseIngredientText(rawValue: string): {
             ),
         );
     }
+    if (
+        quantity !== undefined &&
+        unit === undefined &&
+        /^\(?\d+(?:\.\d+)?\s*[- ]\s*(?:inches?|cm|oz|ounces?|grams?|g)\b/i.test(
+            remainder,
+        )
+    ) {
+        warnings.push(
+            warning(
+                "measure_unresolved",
+                "The source contains an additional measurement that needs parsing or confirmation.",
+            ),
+        );
+    }
     if (/\bor\b/i.test(remainder) && !lowImpact) {
         warnings.push(
             warning(
@@ -412,7 +428,7 @@ export function parseIngredientText(rawValue: string): {
             ),
         );
     } else if (
-        /\band\b/i.test(remainder) &&
+        /\band\b/i.test(remainder.replace(PREPARATION_PAIR, "")) &&
         !lowImpact &&
         !COMPOUND_EXCEPTION.test(remainder)
     ) {
