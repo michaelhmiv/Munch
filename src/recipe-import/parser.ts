@@ -410,10 +410,10 @@ export function parseIngredientText(rawValue: string): {
         quantity !== undefined &&
         unit === undefined &&
         (
-            /^\(?\d+(?:\.\d+)?\s*[- ]\s*(?:inches?|cm|oz|ounces?|grams?|g)\b/i.test(
+            /^\(?\d+(?:\.\d+)?\s*[- ]\s*(?:inch(?:es)?|cm|oz|ounces?|grams?|g)\b/i.test(
                 remainder,
             ) ||
-            /\b\d+\s*-\s*(?:inches?|cm)\b/i.test(rawText)
+            /\b\d+\s*-\s*(?:inch(?:es)?|cm)\b/i.test(rawText)
         )
     ) {
         warnings.push(
