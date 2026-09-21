@@ -36,6 +36,7 @@ const COMMON_UNITS = new Set([
     "cloves",
     "cup",
     "cups",
+    "c",
     "dash",
     "drop",
     "each",
@@ -78,6 +79,8 @@ const COMMON_UNITS = new Set([
     "stalk",
     "stalks",
     "tbsp",
+    "tbs",
+    "tbl",
     "tablespoon",
     "tablespoons",
     "tsp",
@@ -260,6 +263,7 @@ function parseQuantityPrefix(value: string): {
 function normalizeUnit(value: string): string {
     const aliases: Record<string, string> = {
         cups: "cup",
+        c: "cup",
         cloves: "clove",
         grams: "g",
         gram: "g",
@@ -271,8 +275,11 @@ function normalizeUnit(value: string): string {
         milliliters: "ml",
         millilitres: "ml",
         ounces: "oz",
+        lbs: "lb",
         ounce: "oz",
         pounds: "lb",
+        tbs: "tbsp",
+        tbl: "tbsp",
         pound: "lb",
         slices: "slice",
         slice: "slice",
@@ -291,6 +298,59 @@ function normalizeUnit(value: string): string {
     return aliases[value.toLowerCase()] ?? value.toLowerCase();
 }
 
+const PACKAGING_UNIT_PATTERN =
+    "(?:jars?|cans?|bottles?|packages?|packs?|boxes?|bags?|cartons?)";
+const PACKAGE_SIZE_PATTERN =
+    "(\d+(?:\.\d+)?(?:/\d+)?)\s*[- ]?\s*(oz|ounces?|g|grams?|ml|milliliters?|lb|lbs|pounds?)";
+
+function packageSize(
+    value: string,
+    quantity: number,
+): { quantity: number; unit: string; remainder: string } | undefined {
+    // Package counts are not quantities: "2 (15 oz) cans" represents 30 oz.
+    const before = new RegExp(
+        "^\(?\s*" +
+            PACKAGE_SIZE_PATTERN +
+            "\s*\)?\.?\s+" +
+            PACKAGING_UNIT_PATTERN +
+            "\.?\s+",
+        "i",
+    ).exec(value);
+    if (before) {
+        const size = fractionValue(before[1]!);
+        if (size !== undefined) {
+            return {
+                quantity: quantity * size,
+                unit: normalizeUnit(before[2]!),
+                remainder: value.slice(before[0].length).trim(),
+            };
+        }
+    }
+    const after = new RegExp(
+        "^" +
+            PACKAGING_UNIT_PATTERN +
+            "\s*\(\s*" +
+            PACKAGE_SIZE_PATTERN +
+            "\s*\)\s+",
+        "i",
+    ).exec(value);
+    if (after) {
+        const size = fractionValue(after[1]!);
+        if (size !== undefined) {
+            return {
+                quantity: quantity * size,
+                unit: normalizeUnit(after[2]!),
+                remainder: value.slice(after[0].length).trim(),
+            };
+        }
+    }
+    return undefined;
+}
+
+const LOW_IMPACT_UNMEASURED =
+    /\b(?:salt|pepper|herbs?|spices?|seasoning|paprika|thyme|oregano|parsley|basil|rosemary)\b/i;
+const COMPOUND_EXCEPTION = /\b(?:salt and pepper|half and half|mac and cheese)\b/i;
+
 export function parseIngredientText(rawValue: string): {
     ingredient: ParsedRecipeIngredient;
     warnings: RecipeImportWarning[];
@@ -305,25 +365,59 @@ export function parseIngredientText(rawValue: string): {
         .trim();
     const parsed = parseQuantityPrefix(withoutOptional);
     let remainder = parsed.remainder;
+    let quantity = parsed.quantity;
     let unit: string | undefined;
-    const unitMatch = /^([a-zA-Z]+)\b/.exec(remainder);
-    if (unitMatch && COMMON_UNITS.has(unitMatch[1]!.toLowerCase())) {
-        unit = normalizeUnit(unitMatch[1]!);
-        remainder = remainder.slice(unitMatch[0].length).trim();
+    if (quantity !== undefined) {
+        const packaged = packageSize(remainder, quantity);
+        if (packaged) {
+            quantity = packaged.quantity;
+            unit = packaged.unit;
+            remainder = packaged.remainder;
+        }
+    }
+    if (!unit) {
+        // Only consume a leading hyphen when a quantity was parsed.
+        const initial =
+            quantity === undefined ? remainder : remainder.replace(/^-\s*/, "");
+        const unitMatch = /^([a-zA-Z]+)\.?(?=\s|$)/.exec(initial);
+        if (unitMatch && COMMON_UNITS.has(unitMatch[1]!.toLowerCase())) {
+            unit = normalizeUnit(unitMatch[1]!);
+            remainder = initial.slice(unitMatch[0].length).trim();
+        }
     }
     if (parsed.range) {
         warnings.push(
             warning(
                 "quantity_range",
-                `The source listed a quantity range; using the midpoint ${parsed.quantity}.`,
+                "The source listed a quantity range; the midpoint is an assumption.",
             ),
         );
     }
-    if (parsed.quantity === undefined && !/\bto taste\b/i.test(rawText)) {
+    const lowImpact = LOW_IMPACT_UNMEASURED.test(remainder);
+    if (quantity === undefined && !/\bto taste\b/i.test(rawText) && !lowImpact) {
         warnings.push(
             warning(
                 "quantity_unparsed",
                 "The ingredient quantity could not be parsed and needs review.",
+            ),
+        );
+    }
+    if (/\bor\b/i.test(remainder) && !lowImpact) {
+        warnings.push(
+            warning(
+                "ingredient_alternative",
+                "The source offered alternative ingredients; confirm the choice before calculating nutrition.",
+            ),
+        );
+    } else if (
+        /\band\b/i.test(remainder) &&
+        !lowImpact &&
+        !COMPOUND_EXCEPTION.test(remainder)
+    ) {
+        warnings.push(
+            warning(
+                "compound_ingredient",
+                "The source combines ingredients; split and quantify them before calculating nutrition.",
             ),
         );
     }
@@ -332,7 +426,7 @@ export function parseIngredientText(rawValue: string): {
         ingredient: {
             rawText,
             name,
-            quantity: parsed.quantity,
+            quantity,
             unit,
             optional: optional || undefined,
         },
