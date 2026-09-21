@@ -256,10 +256,10 @@ const qwenConfig = {
 };
 
 
-type Mode = "code_only" | "code_first_jev" | "selective_qwen";
+type Mode = "code_only" | "code_first_jev" | "selective_qwen" | "code_first_jev_no_qwen";
 type RecordRow = {id:string;site:string;url:string;fetchMs:number;parserStrategy:string;parserIngredients:number;parserWarnings:string[];modes:Record<string,unknown>};
 const allRows:RecordRow[]=[];
-const modes:Mode[]=["code_only","code_first_jev","selective_qwen"];
+const modes:Mode[]=(process.env.MUNCH_CODE_FIRST_MODES?.split(",").filter(Boolean) as Mode[] | undefined) ?? ["code_only","code_first_jev","selective_qwen","code_first_jev_no_qwen"];
 const idFilter=process.env.MUNCH_JEV_AUDIT_CASE_ID?.trim();
 const items=RECIPE_IMPORT_CORPUS.filter(x=>!idFilter||x.id===idFilter);
 const runMode=(mode:Mode, parsed:ParsedRecipe,meter:Meter,jevMeter:Meter):RecipeImportSemanticResolver|undefined=>{
@@ -269,7 +269,15 @@ const runMode=(mode:Mode, parsed:ParsedRecipe,meter:Meter,jevMeter:Meter):Recipe
   {apiKey:openrouterKey,model:JEV_MODEL,endpoint:"https://openrouter.ai/api/alpha/decisions",timeoutMs:10_000,minConfidence:0.75},
   {fetcher:jevMeteredFetcher(jevMeter)}
  );
- const hybrid=new HybridRecipeImportResolver(qwen,jev);
+ const generative:RecipeImportSemanticResolver=mode==="code_first_jev_no_qwen"
+   ? {
+       label:"experiment:no-generative-model",
+       normalizeRecipe:async()=>[],
+       resolveUncertainIngredients:async()=>new Map(),
+       chooseCandidates:async()=>new Map()
+     }
+   :qwen;
+ const hybrid=new HybridRecipeImportResolver(generative,jev);
  const risks=parsed.warnings.filter(w=>["quantity_unparsed","quantity_range"].includes(w.code));
  const possibleComposite=parsed.ingredients.some(i=> /\b(?:and|or)\b/i.test(i.name) && !/\b(?:salt and pepper|half and half)\b/i.test(i.name));
  const missedNumbers=parsed.ingredients.some(i=>i.quantity===undefined && /^\s*[0-9¼½¾⅓⅔⅛⅜⅝⅞]/.test(i.rawText));
