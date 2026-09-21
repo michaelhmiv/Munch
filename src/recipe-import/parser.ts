@@ -607,8 +607,14 @@ function parsedFromObject(
     if (ingredients.length === 0) {
         throw new Error("The recipe page did not provide ingredients.");
     }
-    for (const parsedIngredient of ingredients)
-        warnings.push(...parsedIngredient.warnings);
+    ingredients.forEach((parsedIngredient, index) => {
+        warnings.push(
+            ...parsedIngredient.warnings.map((entry) => ({
+                ...entry,
+                field: `ingredients.${index}`,
+            })),
+        );
+    });
     const yieldResult = parseServings(recipe.recipeYield);
     if (yieldResult.warning) warnings.push(yieldResult.warning);
     const instructions = instructionStrings(recipe.recipeInstructions);
@@ -759,7 +765,14 @@ function parseRecipeCardHtml(html: string): ParsedRecipe | null {
     if (ingredients.length === 0) return null;
 
     const warnings: RecipeImportWarning[] = [];
-    for (const ingredient of ingredients) warnings.push(...ingredient.warnings);
+    ingredients.forEach((ingredient, index) => {
+        warnings.push(
+            ...ingredient.warnings.map((entry) => ({
+                ...entry,
+                field: `ingredients.${index}`,
+            })),
+        );
+    });
 
     const yieldText = firstText(
         wprm
