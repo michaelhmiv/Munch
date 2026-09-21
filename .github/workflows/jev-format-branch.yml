@@ -1,0 +1,35 @@
+name: Format Jev Branch
+
+on:
+  push:
+    branches:
+      - feature/openrouter-jev-decisions
+    paths:
+      - .github/workflows/jev-format-branch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - run: bun run format
+      - run: bun run format:check
+      - name: Commit formatting
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          if ! git diff --cached --quiet; then
+            git commit -m "style: format Jev decision integration"
+            git push origin HEAD:feature/openrouter-jev-decisions
+          fi
