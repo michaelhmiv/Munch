@@ -390,6 +390,20 @@ export function parseIngredientText(rawValue: string): {
             ),
         );
     }
+    if (
+        !lowImpact &&
+        /\b(?:handful|splash|glug|knob|sprinkle|pinch|dash|bunch)\b/i.test(
+            remainder,
+        ) &&
+        unit === undefined
+    ) {
+        warnings.push(
+            warning(
+                "quantity_unmeasured",
+                "The source uses a nonstandard measure; confirm the amount before calculating nutrition.",
+            ),
+        );
+    }
     if (/\bor\b/i.test(remainder) && !lowImpact) {
         warnings.push(
             warning(
