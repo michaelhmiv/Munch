@@ -113,7 +113,8 @@ function draftQuality(draft:any){
  const targetSelections=draft.recipe.ingredients.filter((x:any)=>String(x.provider_food_id||"").startsWith("target-")).length;
  const decoySelections=draft.recipe.ingredients.filter((x:any)=>/^snack-|^sauce-/.test(String(x.provider_food_id||""))).length;
  const modelEstimates=draft.recipe.ingredients.filter((x:any)=>x.source_type==="model_estimate").length;
- return{ingredients:draft.recipe.ingredients.length,unresolved,ambiguous,blocking,requiresReview:draft.requires_review,nutritionStatus:draft.nutrition.status,targetSelections,decoySelections,modelEstimates,ok:draft.recipe.ingredients.length>0&&unresolved===0&&ambiguous===0&&!draft.requires_review&&blocking===0&&decoySelections===0};
+ const decoyDetails=draft.recipe.ingredients.filter((x:any)=>/^snack-|^sauce-/.test(String(x.provider_food_id||""))).map((x:any)=>({name:x.name,raw:x.source_snapshot?.raw_ingredient,id:x.provider_food_id,sourceSnapshot:x.source_snapshot}));
+ return{ingredients:draft.recipe.ingredients.length,unresolved,ambiguous,blocking,requiresReview:draft.requires_review,nutritionStatus:draft.nutrition.status,targetSelections,decoySelections,decoyDetails,modelEstimates,ok:draft.recipe.ingredients.length>0&&unresolved===0&&ambiguous===0&&!draft.requires_review&&blocking===0&&decoySelections===0};
 }
 
 const baseConfig=recipeImportAiConfig();
@@ -122,7 +123,7 @@ const qwenConfig={...baseConfig,model:QWEN_MODEL,maxCallsPerImport:2,responseFor
 
 mkdirSync("artifacts",{recursive:true});
 const rows:any[]=[];
-for(const entry of RECIPE_IMPORT_CORPUS){
+for(const entry of RECIPE_IMPORT_CORPUS.filter(x=>!process.env.MUNCH_JEV_AUDIT_CASE_ID||x.id===process.env.MUNCH_JEV_AUDIT_CASE_ID)){
  const row:any={id:entry.id,site:entry.site,url:entry.url};
  let page;
  try{
