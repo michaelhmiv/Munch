@@ -7,6 +7,8 @@ on:
         paths:
             - scripts/recipe-code-first-audit.ts
             - src/recipe-import/parser.ts
+            - src/recipe-import/code-first-resolver.ts
+            - src/recipe-import/code-first-resolver.test.ts
             - src/recipe-import/service.ts
             - src/recipe-import.test.ts
             - .github/workflows/recipe-code-first-experiment.yml
@@ -35,7 +37,7 @@ jobs:
                   bun-version: 1
             - run: bun install --frozen-lockfile
             - run: bun run typecheck
-            - run: bun test src/recipe-import.test.ts
+            - run: bun test src/recipe-import.test.ts src/recipe-import/code-first-resolver.test.ts
             - name: Compare code-only, code-first Jev and selective Qwen on 21 sites
               run: bun scripts/recipe-code-first-audit.ts
             - if: always()
