@@ -48,6 +48,7 @@ export interface RecipeImportDependencies {
     ) => Promise<FetchedRecipePage>;
     foodSearch?: Pick<FoodSearchService, "search">;
     semanticResolver?: RecipeImportSemanticResolver;
+    preserveSourceWarnings?: boolean;
 }
 
 type EnrichedIngredient = {
@@ -1222,6 +1223,7 @@ export async function previewRecipeUrl(
     const warnings = [
         ...parsed.warnings.filter(
             (entry) =>
+                options.preserveSourceWarnings ||
                 !["quantity_range", "quantity_unparsed"].includes(entry.code),
         ),
         ...(semanticWarning ? [semanticWarning] : []),
