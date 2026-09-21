@@ -326,7 +326,7 @@ for(const entry of items){
   const resolver=runMode(mode,parsed,meter,jevMeter);
   const started=performance.now();
   try{
-   const draft=await previewRecipeUrl(entry.url,{fetchPage:async()=>page,foodSearch,...(resolver?{semanticResolver:resolver}:{})});
+   const draft=await previewRecipeUrl(entry.url,{fetchPage:async()=>page,foodSearch,preserveSourceWarnings:mode!=="selective_qwen",...(resolver?{semanticResolver:resolver}:{})});
    row.modes[mode]={durationMs:performance.now()-started,qwen:meter,jev:jevMeter,...auditDraft(draft)};
   }catch(error){
    row.modes[mode]={durationMs:performance.now()-started,qwen:meter,jev:jevMeter,error:String(error)};
