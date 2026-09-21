@@ -252,6 +252,8 @@ describe("recipe import parser", () => {
             ["2 (15 oz) cans black beans", 30, "oz", "black beans"],
             ["2 cans (15 oz) black beans", 30, "oz", "black beans"],
             ["1 (14-ounce) can crushed tomatoes", 14, "oz", "crushed tomatoes"],
+            ["1 (14.5 ounce can) black beans", 14.5, "oz", "black beans"],
+            ["2 15oz. cans cannellini beans, drained and rinsed", 30, "oz", "cannellini beans, drained and rinsed"],
             ["1/3 c. olive oil", 1 / 3, "cup", "olive oil"],
             ["2 tbsp. olive oil", 2, "tbsp", "olive oil"],
             ["1½ cups milk", 1.5, "cup", "milk"],
@@ -281,6 +283,11 @@ describe("recipe import parser", () => {
             );
         }
         expect(parseIngredientText("Salt and black pepper to taste").warnings).toEqual([]);
+        expect(parseIngredientText("4 carrots, peeled and cut into chunks").warnings).toEqual([]);
+        expect(parseIngredientText("1/4 cup sliced and pitted olives").warnings).toEqual([]);
+        expect(parseIngredientText("2 cans black beans, drained and rinsed").warnings).toEqual([]);
+        expect(parseIngredientText("1 3-inch piece ginger").warnings.map((x) => x.code))
+            .toContain("measure_unresolved");
     });
 
     test("preserves raw text and warns when a quantity is not measurable", () => {
