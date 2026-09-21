@@ -1223,7 +1223,7 @@ export async function previewRecipeUrl(
     const warnings = [
         ...parsed.warnings.filter((entry) => {
             if (options.preserveSourceWarnings) {
-                const field = /^ingredients\\.(\\d+)$/.exec(entry.field ?? "");
+                const field = /^ingredients\.(\d+)$/.exec(entry.field ?? "");
                 const resolved =
                     field &&
                     options.semanticResolver?.resolvedSourceWarnings?.get(
