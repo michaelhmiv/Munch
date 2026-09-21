@@ -1,0 +1,37 @@
+name: Jev Frito Diagnostic
+
+on:
+  push:
+    branches:
+      - feature/openrouter-jev-decisions
+    paths:
+      - .github/workflows/jev-frito-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      MUNCH_RECIPE_IMPORT_AI_ENABLED: "true"
+      MUNCH_RECIPE_IMPORT_AI_RESPONSE_FORMAT: json_object
+      MUNCH_RECIPE_IMPORT_AI_RESPONSE_HEALING: "true"
+      MUNCH_RECIPE_IMPORT_AI_MAX_CALLS_PER_IMPORT: "2"
+      MUNCH_JEV_AUDIT_CASE_ID: stay-at-home-chef-frito-pie
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - run: bun install --frozen-lockfile
+      - run: bun scripts/openrouter-jev-recipe-hybrid-audit.ts
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jev-frito-diagnostic
+          path: artifacts/
+          if-no-files-found: warn
