@@ -357,12 +357,14 @@ export function parseIngredientText(rawValue: string): {
     let remainder = parsed.remainder;
     let quantity = parsed.quantity;
     let unit: string | undefined;
+    let packageWeightUsed = false;
     if (quantity !== undefined) {
         const packaged = packageSize(remainder, quantity);
         if (packaged) {
             quantity = packaged.quantity;
             unit = packaged.unit;
             remainder = packaged.remainder;
+            packageWeightUsed = true;
         }
     }
     if (!unit) {
@@ -374,6 +376,17 @@ export function parseIngredientText(rawValue: string): {
             unit = normalizeUnit(unitMatch[1]!);
             remainder = initial.slice(unitMatch[0].length).trim();
         }
+    }
+    // A can's label weight is generally gross weight, not the mass of beans
+    // after the packing liquid is discarded. Never scale drained nutrition as
+    // though the full can weight were edible food.
+    if (packageWeightUsed && /\b(?:drained|rinsed)\b/i.test(rawText)) {
+        warnings.push(
+            warning(
+                "drained_package_weight",
+                "The listed package weight includes packing liquid; confirm the drained edible weight before calculating nutrition.",
+            ),
+        );
     }
     if (parsed.range) {
         warnings.push(
