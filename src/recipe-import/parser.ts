@@ -409,8 +409,11 @@ export function parseIngredientText(rawValue: string): {
     if (
         quantity !== undefined &&
         unit === undefined &&
-        /^\(?\d+(?:\.\d+)?\s*[- ]\s*(?:inches?|cm|oz|ounces?|grams?|g)\b/i.test(
-            remainder,
+        (
+            /^\(?\d+(?:\.\d+)?\s*[- ]\s*(?:inches?|cm|oz|ounces?|grams?|g)\b/i.test(
+                remainder,
+            ) ||
+            /\b\d+\s*-\s*(?:inches?|cm)\b/i.test(rawText)
         )
     ) {
         warnings.push(
