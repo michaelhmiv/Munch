@@ -294,6 +294,50 @@ describe("recipe import parser", () => {
     });
 });
 
+describe("code-first source fidelity", () => {
+    test("keeps source quantity and compound warnings blocking in strict code-first previews", async () => {
+        const url = "https://example.com/ambiguous";
+        const draft = await previewRecipeUrl(url, {
+            preserveSourceWarnings: true,
+            fetchPage: async () => ({
+                submittedUrl: url,
+                finalUrl: url,
+                html: '<script type="application/ld+json">' +
+                    JSON.stringify({
+                        "@type": "Recipe",
+                        name: "Ambiguous Vegetables",
+                        recipeYield: "2 servings",
+                        recipeIngredient: [
+                            "1/3 c. olive oil",
+                            "4-5 potatoes",
+                            "1 cup kale and spinach",
+                            "1 handful spinach",
+                        ],
+                        recipeInstructions: "Cook vegetables.",
+                    }) +
+                    "</script>",
+            }),
+            foodSearch: {
+                search: async () => ({ candidates: [candidate], failures: [] }),
+            },
+        });
+        expect(draft.recipe.ingredients[0]).toMatchObject({
+            name: "olive oil",
+            quantity: 1 / 3,
+            unit: "cup",
+        });
+        expect(draft.warnings.map((x) => x.code)).toEqual(
+            expect.arrayContaining([
+                "quantity_range",
+                "compound_ingredient",
+                "quantity_unmeasured",
+            ]),
+        );
+        expect(draft.requires_review).toBe(true);
+        expect(draft.status).toBe("partial");
+    });
+});
+
 describe("recipe import enrichment", () => {
     test("returns a save-compatible imported recipe and scales nutrition", async () => {
         const draft = await previewRecipeUrl("https://example.com/recipe", {
