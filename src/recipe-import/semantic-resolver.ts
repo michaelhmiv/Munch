@@ -1038,9 +1038,15 @@ export class HybridRecipeImportResolver implements RecipeImportSemanticResolver 
                                       summarizeFoodCandidate(item).candidate_id ===
                                       choice.candidateId,
                               );
+                    const ingredientText = `${request.ingredient.rawText} ${request.ingredient.name}`.toLowerCase();
+                    const hasUnrequestedBrand =
+                        Boolean(candidate?.brand) &&
+                        candidate?.dataKind !== "generic" &&
+                        !ingredientText.includes(candidate!.brand!.toLowerCase());
                     if (
                         choice &&
                         candidate &&
+                        !hasUnrequestedBrand &&
                         choice.confidence >=
                             this.decisionClient.config.minConfidence &&
                         candidate.confidence >= 0.5
