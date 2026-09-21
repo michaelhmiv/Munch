@@ -262,9 +262,6 @@ const allRows:RecordRow[]=[];
 const modes:Mode[]=["code_only","code_first_jev","selective_qwen"];
 const idFilter=process.env.MUNCH_JEV_AUDIT_CASE_ID?.trim();
 const items=RECIPE_IMPORT_CORPUS.filter(x=>!idFilter||x.id===idFilter);
-const aiConfig=recipeImportAiConfig();
-if(!aiConfig)throw new Error("Missing Qwen configuration");
-const qwenConfig={...aiConfig,model:QWEN_MODEL,maxCallsPerImport:2,responseFormat:"json_object" as const,responseHealing:true};
 const runMode=(mode:Mode, parsed:ParsedRecipe,meter:Meter,jevMeter:Meter):RecipeImportSemanticResolver|undefined=>{
  if(mode==="code_only")return undefined;
  const qwen=new OpenRouterRecipeImportResolver(qwenConfig,{fetcher:openRouterMeteredFetcher(meter)});
