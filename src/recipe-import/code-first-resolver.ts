@@ -44,6 +44,7 @@ function sourceIntent(
  */
 export class CodeFirstRecipeImportResolver implements RecipeImportSemanticResolver {
     readonly label = "experiment:code-first+jev+targeted-qwen";
+    readonly resolvedSourceWarnings = new Map<number, Set<string>>();
     private readonly hybrid: HybridRecipeImportResolver;
 
     constructor(
@@ -59,6 +60,7 @@ export class CodeFirstRecipeImportResolver implements RecipeImportSemanticResolv
             "name" | "description" | "servings" | "instructions" | "ingredients"
         >,
     ): Promise<RecipeImportIngredientIntent[]> {
+        this.resolvedSourceWarnings.clear();
         const compounds = recipe.ingredients.flatMap((ingredient, rawIndex) => {
             const needsSplit = parseIngredientText(ingredient.rawText).warnings.some(
                 (warning) => warning.code === "compound_ingredient",
@@ -97,6 +99,30 @@ export class CodeFirstRecipeImportResolver implements RecipeImportSemanticResolv
             )
         ) {
             throw new Error("Qwen did not interpret every compound ingredient.");
+        }
+
+        for (const { ingredient, rawIndex } of compounds) {
+            const entries = byIndex.get(rawIndex) ?? [];
+            if (
+                entries.length > 1 &&
+                entries.every((intent) => intent.confidence >= 0.8) &&
+                new Set(entries.map((intent) => intent.name.trim().toLowerCase()))
+                    .size === entries.length
+            ) {
+                const codes = new Set(["compound_ingredient"]);
+                if (
+                    /[0-9¼½¾⅓⅔⅛⅜⅝⅞]/.test(ingredient.rawText) &&
+                    entries.every(
+                        (intent) =>
+                            intent.quantity !== undefined &&
+                            Number.isFinite(intent.quantity) &&
+                            intent.quantity > 0,
+                    )
+                ) {
+                    codes.add("quantity_unparsed");
+                }
+                this.resolvedSourceWarnings.set(rawIndex, codes);
+            }
         }
 
         const intents = recipe.ingredients.flatMap((ingredient, rawIndex) => {
