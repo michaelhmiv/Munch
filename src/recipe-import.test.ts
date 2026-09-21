@@ -246,6 +246,43 @@ describe("recipe import parser", () => {
         expect(parsed.instructions).toEqual(["Toast the bread."]);
     });
 
+    test("normalizes real recipe package weights and volume abbreviations", () => {
+        const examples = [
+            ["1 16oz. jar salsa verde", 16, "oz", "salsa verde"],
+            ["2 (15 oz) cans black beans", 30, "oz", "black beans"],
+            ["2 cans (15 oz) black beans", 30, "oz", "black beans"],
+            ["1 (14-ounce) can crushed tomatoes", 14, "oz", "crushed tomatoes"],
+            ["1/3 c. olive oil", 1 / 3, "cup", "olive oil"],
+            ["2 tbsp. olive oil", 2, "tbsp", "olive oil"],
+            ["1½ cups milk", 1.5, "cup", "milk"],
+        ] as const;
+        for (const [raw, quantity, unit, name] of examples) {
+            const actual = parseIngredientText(raw);
+            expect(actual.ingredient).toMatchObject({
+                rawText: raw,
+                name,
+                quantity,
+                unit,
+            });
+            expect(actual.warnings).toEqual([]);
+        }
+    });
+
+    test("flags quantity ranges and compound or alternative ingredients for review", () => {
+        const cases = [
+            ["4-5 potatoes", "quantity_range"],
+            ["1 cup spinach and kale", "compound_ingredient"],
+            ["1 cup lemon or lime juice", "ingredient_alternative"],
+            ["1 handful spinach", "quantity_unmeasured"],
+        ] as const;
+        for (const [raw, expectedCode] of cases) {
+            expect(parseIngredientText(raw).warnings.map((x) => x.code)).toContain(
+                expectedCode,
+            );
+        }
+        expect(parseIngredientText("Salt and black pepper to taste").warnings).toEqual([]);
+    });
+
     test("preserves raw text and warns when a quantity is not measurable", () => {
         const result = parseIngredientText("Salt to taste (optional)");
         expect(result.ingredient).toMatchObject({
