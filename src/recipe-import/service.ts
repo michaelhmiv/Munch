@@ -1224,7 +1224,14 @@ export async function previewRecipeUrl(
         ...parsed.warnings.filter(
             (entry) =>
                 options.preserveSourceWarnings ||
-                !["quantity_range", "quantity_unparsed"].includes(entry.code),
+                Boolean(semanticWarning) ||
+                ![
+                    "quantity_range",
+                    "quantity_unparsed",
+                    "quantity_unmeasured",
+                    "compound_ingredient",
+                    "ingredient_alternative",
+                ].includes(entry.code),
         ),
         ...(semanticWarning ? [semanticWarning] : []),
         ...enrichedResult.warnings,
