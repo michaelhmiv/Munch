@@ -298,24 +298,15 @@ function normalizeUnit(value: string): string {
     return aliases[value.toLowerCase()] ?? value.toLowerCase();
 }
 
-const PACKAGING_UNIT_PATTERN =
-    "(?:jars?|cans?|bottles?|packages?|packs?|boxes?|bags?|cartons?)";
-const PACKAGE_SIZE_PATTERN =
-    "(\d+(?:\.\d+)?(?:/\d+)?)\s*[- ]?\s*(oz|ounces?|g|grams?|ml|milliliters?|lb|lbs|pounds?)";
-
 function packageSize(
     value: string,
     quantity: number,
 ): { quantity: number; unit: string; remainder: string } | undefined {
-    // Package counts are not quantities: "2 (15 oz) cans" represents 30 oz.
-    const before = new RegExp(
-        "^\(?\s*" +
-            PACKAGE_SIZE_PATTERN +
-            "\s*\)?\.?\s+" +
-            PACKAGING_UNIT_PATTERN +
-            "\.?\s+",
-        "i",
-    ).exec(value);
+    // "2 (15 oz) cans" means 30 oz, not two unspecified cans.
+    const before =
+        /^\(?\s*(\d+(?:\.\d+)?(?:\/\d+)?)\s*[- ]?\s*(oz|ounces?|g|grams?|ml|milliliters?|lb|lbs|pounds?)\s*\)?\.?\s+(?:jars?|cans?|bottles?|packages?|packs?|boxes?|bags?|cartons?)\.?\s+/i.exec(
+            value,
+        );
     if (before) {
         const size = fractionValue(before[1]!);
         if (size !== undefined) {
@@ -326,14 +317,11 @@ function packageSize(
             };
         }
     }
-    const after = new RegExp(
-        "^" +
-            PACKAGING_UNIT_PATTERN +
-            "\s*\(\s*" +
-            PACKAGE_SIZE_PATTERN +
-            "\s*\)\s+",
-        "i",
-    ).exec(value);
+    // Common reverse order: "2 cans (15 oz) black beans".
+    const after =
+        /^(?:jars?|cans?|bottles?|packages?|packs?|boxes?|bags?|cartons?)\s*\(\s*(\d+(?:\.\d+)?(?:\/\d+)?)\s*(oz|ounces?|g|grams?|ml|milliliters?|lb|lbs|pounds?)\s*\)\s+/i.exec(
+            value,
+        );
     if (after) {
         const size = fractionValue(after[1]!);
         if (size !== undefined) {
