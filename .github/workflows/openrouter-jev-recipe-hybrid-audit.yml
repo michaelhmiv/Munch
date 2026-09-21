@@ -1,53 +1,52 @@
 name: OpenRouter Jev Recipe Hybrid Audit
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - feature/openrouter-jev-decisions
-    paths:
-      - scripts/openrouter-jev-recipe-hybrid-audit.ts
-      - .github/workflows/openrouter-jev-recipe-hybrid-audit.yml
+    workflow_dispatch:
+    push:
+        branches:
+            - feature/openrouter-jev-decisions
+        paths:
+            - scripts/openrouter-jev-recipe-hybrid-audit.ts
 
 permissions:
-  contents: read
+    contents: read
 
 concurrency:
-  group: openrouter-jev-recipe-hybrid-audit
-  cancel-in-progress: true
+    group: openrouter-jev-recipe-hybrid-audit
+    cancel-in-progress: true
 
 jobs:
-  audit:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    env:
-      NODE_ENV: test
-      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-      JEV_MODEL: "~typesafe/jev-latest"
-      QWEN_MODEL: qwen/qwen3.7-flash
-      MUNCH_AI_MODEL: qwen/qwen3.7-flash
-      MUNCH_RECIPE_IMPORT_AI_ENABLED: "true"
-      MUNCH_RECIPE_IMPORT_AI_RESPONSE_FORMAT: "json_object"
-      MUNCH_RECIPE_IMPORT_AI_RESPONSE_HEALING: "true"
-      MUNCH_RECIPE_IMPORT_AI_TIMEOUT_MS: "30000"
-      MUNCH_RECIPE_IMPORT_AI_MAX_CALLS_PER_IMPORT: "2"
-      MUNCH_RECIPE_IMPORT_AI_MAX_TOKENS: "4000"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1
-      - run: bun install --frozen-lockfile
-      - name: Verify OpenRouter secret
-        run: test -n "$OPENROUTER_API_KEY" || { echo "OPENROUTER_API_KEY missing" >&2; exit 1; }
-      - run: bun run typecheck
-      - run: bun test
-      - name: Run production hybrid recipe benchmark
-        run: bun scripts/openrouter-jev-recipe-hybrid-audit.ts
-      - name: Upload hybrid benchmark report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: openrouter-jev-recipe-hybrid-audit
-          path: artifacts/
-          if-no-files-found: warn
+    audit:
+        runs-on: ubuntu-latest
+        timeout-minutes: 45
+        env:
+            NODE_ENV: test
+            OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+            JEV_MODEL: "~typesafe/jev-latest"
+            QWEN_MODEL: qwen/qwen3.7-flash
+            MUNCH_AI_MODEL: qwen/qwen3.7-flash
+            MUNCH_RECIPE_IMPORT_AI_ENABLED: "true"
+            MUNCH_RECIPE_IMPORT_AI_RESPONSE_FORMAT: "json_object"
+            MUNCH_RECIPE_IMPORT_AI_RESPONSE_HEALING: "true"
+            MUNCH_RECIPE_IMPORT_AI_TIMEOUT_MS: "30000"
+            MUNCH_RECIPE_IMPORT_AI_MAX_CALLS_PER_IMPORT: "2"
+            MUNCH_RECIPE_IMPORT_AI_MAX_TOKENS: "4000"
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - run: bun install --frozen-lockfile
+            - name: Verify OpenRouter secret
+              run: test -n "$OPENROUTER_API_KEY" || { echo "OPENROUTER_API_KEY missing" >&2; exit 1; }
+            - run: bun run typecheck
+            - run: bun test
+            - name: Run production hybrid recipe benchmark
+              run: bun scripts/openrouter-jev-recipe-hybrid-audit.ts
+            - name: Upload hybrid benchmark report
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: openrouter-jev-recipe-hybrid-audit
+                  path: artifacts/
+                  if-no-files-found: warn
