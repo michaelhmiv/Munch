@@ -1,0 +1,41 @@
+name: Recipe Code First Experiment
+
+on:
+    push:
+        branches:
+            - experiment/recipe-code-first-jev-20260921
+        paths:
+            - scripts/recipe-code-first-audit.ts
+            - .github/workflows/recipe-code-first-experiment.yml
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    experiment:
+        runs-on: ubuntu-latest
+        timeout-minutes: 45
+        env:
+            OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+            MUNCH_RECIPE_IMPORT_AI_ENABLED: "true"
+            MUNCH_RECIPE_IMPORT_AI_RESPONSE_FORMAT: json_object
+            MUNCH_RECIPE_IMPORT_AI_RESPONSE_HEALING: "true"
+            MUNCH_RECIPE_IMPORT_AI_TIMEOUT_MS: "30000"
+            MUNCH_RECIPE_IMPORT_AI_MAX_CALLS_PER_IMPORT: "2"
+            MUNCH_AI_MODEL: qwen/qwen3.7-flash
+        steps:
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - run: bun install --frozen-lockfile
+            - run: bun run typecheck
+            - name: Compare code-only, code-first Jev and selective Qwen on 21 sites
+              run: bun scripts/recipe-code-first-audit.ts
+            - if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: recipe-code-first-experiment
+                  path: artifacts/
+                  if-no-files-found: warn
