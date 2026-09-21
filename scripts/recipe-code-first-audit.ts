@@ -257,7 +257,7 @@ const qwenConfig = {
 };
 
 
-type Mode = "code_only" | "code_first_jev" | "selective_qwen" | "code_first_jev_no_qwen" | "code_first_guarded";
+type Mode = "qwen_only" | "code_only" | "code_first_jev" | "selective_qwen" | "code_first_jev_no_qwen" | "code_first_guarded";
 type RecordRow = {id:string;site:string;url:string;fetchMs:number;parserStrategy:string;parserIngredients:number;parserWarnings:string[];modes:Record<string,unknown>};
 const allRows:RecordRow[]=[];
 const modes:Mode[]=(process.env.MUNCH_CODE_FIRST_MODES?.split(",").filter(Boolean) as Mode[] | undefined) ?? ["code_only","code_first_jev","selective_qwen","code_first_jev_no_qwen"];
@@ -266,6 +266,7 @@ const items=RECIPE_IMPORT_CORPUS.filter(x=>!idFilter||x.id===idFilter);
 const runMode=(mode:Mode, parsed:ParsedRecipe,meter:Meter,jevMeter:Meter):RecipeImportSemanticResolver|undefined=>{
  if(mode==="code_only")return undefined;
  const qwen=new OpenRouterRecipeImportResolver(qwenConfig,{fetcher:openRouterMeteredFetcher(meter)});
+ if(mode==="qwen_only")return qwen;
  const jev=new OpenRouterDecisionClient(
   {apiKey:openrouterKey,model:JEV_MODEL,endpoint:"https://openrouter.ai/api/alpha/decisions",timeoutMs:10_000,minConfidence:0.75},
   {fetcher:jevMeteredFetcher(jevMeter)}
@@ -333,7 +334,7 @@ for(const entry of items){
   const resolver=runMode(mode,parsed,meter,jevMeter);
   const started=performance.now();
   try{
-   const draft=await previewRecipeUrl(entry.url,{fetchPage:async()=>page,foodSearch,preserveSourceWarnings:mode!=="selective_qwen",...(resolver?{semanticResolver:resolver}:{})});
+   const draft=await previewRecipeUrl(entry.url,{fetchPage:async()=>page,foodSearch,preserveSourceWarnings:mode!=="selective_qwen"&&mode!=="qwen_only",...(resolver?{semanticResolver:resolver}:{})});
    row.modes[mode]={durationMs:performance.now()-started,qwen:meter,jev:jevMeter,...auditDraft(draft)};
   }catch(error){
    row.modes[mode]={durationMs:performance.now()-started,qwen:meter,jev:jevMeter,error:String(error)};
