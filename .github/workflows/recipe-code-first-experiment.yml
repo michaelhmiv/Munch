@@ -6,6 +6,9 @@ on:
             - experiment/recipe-code-first-jev-20260921
         paths:
             - scripts/recipe-code-first-audit.ts
+            - src/recipe-import/parser.ts
+            - src/recipe-import/service.ts
+            - src/recipe-import.test.ts
             - .github/workflows/recipe-code-first-experiment.yml
     workflow_dispatch:
 
@@ -18,7 +21,7 @@ jobs:
         timeout-minutes: 45
         env:
             OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-            MUNCH_CODE_FIRST_MODES: code_first_jev_no_qwen
+            MUNCH_CODE_FIRST_MODES: code_only,code_first_jev_no_qwen
             MUNCH_RECIPE_IMPORT_AI_ENABLED: "true"
             MUNCH_RECIPE_IMPORT_AI_RESPONSE_FORMAT: json_object
             MUNCH_RECIPE_IMPORT_AI_RESPONSE_HEALING: "true"
@@ -32,6 +35,7 @@ jobs:
                   bun-version: 1
             - run: bun install --frozen-lockfile
             - run: bun run typecheck
+            - run: bun test src/recipe-import.test.ts
             - name: Compare code-only, code-first Jev and selective Qwen on 21 sites
               run: bun scripts/recipe-code-first-audit.ts
             - if: always()
