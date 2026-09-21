@@ -3,7 +3,7 @@
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import type { FoodCandidate } from "../src/food-providers/types.js";
 import type { ParsedRecipe, RecipeImportSemanticResolver, RecipeImportIngredientIntent } from "../src/recipe-import/types.js";
-import { parseRecipeHtml } from "../src/recipe-import/parser.js";
+import { parseIngredientText, parseRecipeHtml } from "../src/recipe-import/parser.js";
 import { OpenRouterDecisionClient } from "../src/website-decision-client.js";
 import { fetchRecipePage } from "../src/recipe-import/fetch.js";
 import { previewRecipeUrl } from "../src/recipe-import/service.js";
@@ -318,6 +318,11 @@ for(const entry of items){
  }
  const fetchMs=performance.now()-fetchAt;
  const parsed=parseRecipeHtml(page.html);
+ const flagged=parsed.ingredients.flatMap((ingredient,index)=>{
+  const problems=parseIngredientText(ingredient.rawText).warnings.map(w=>w.code);
+  return problems.length?[{index,raw:ingredient.rawText,name:ingredient.name,quantity:ingredient.quantity??null,unit:ingredient.unit??null,problems}]:[];
+ });
+ console.log("[code_first_source] "+JSON.stringify({id:entry.id,flagged}));
  const row:RecordRow={id:entry.id,site:entry.site,url:entry.url,fetchMs,parserStrategy:parsed.strategy,parserIngredients:parsed.ingredients.length,
  parserWarnings:parsed.warnings.map(w=>w.code),modes:{}};
  const foodSearch={search:async(query:string)=>({candidates:candidatesFor(query),failures:[]})};
