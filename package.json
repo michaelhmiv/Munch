@@ -21,6 +21,7 @@
     "private": true,
     "devDependencies": {
         "@capacitor/cli": "8.5.0",
+        "@playwright/test": "^1.64.0",
         "@types/bun": "latest",
         "@types/node": "^26.1.2",
         "@types/pg": "8.15.5",
@@ -33,6 +34,7 @@
         "start": "bun src/index.ts",
         "dev": "bun --watch src/index.ts",
         "test": "bun test",
+        "test:e2e": "playwright test",
         "db:migrate": "bun scripts/migrate.ts",
         "maintenance": "bun scripts/maintenance.ts",
         "inspect": "bunx @modelcontextprotocol/inspector",

@@ -43,7 +43,17 @@ jobs:
       - name: Typecheck server
         run: bun run typecheck
       - name: Run tests and architecture invariants
-        run: bun test
+        run: bun test --coverage --coverage-reporter=text --coverage-reporter=lcov --coverage-dir=coverage
+      - name: Enforce guided-nutrition domain coverage floor
+        run: bun scripts/guidance-coverage-check.ts
+      - name: Upload LCOV coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: munch-lcov
+          path: coverage/lcov.info
+          if-no-files-found: warn
+          retention-days: 14
 
   database:
     runs-on: ubuntu-latest
@@ -145,6 +155,65 @@ jobs:
         run: bun scripts/pantry-account-deletion-smoke.ts
       - name: Exercise readiness endpoints and maintenance
         run: bun scripts/operations-smoke.ts
+
+  website-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: munch_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d munch_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      PORT: 8080
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/munch_e2e
+      MUNCH_APP_BASE_URL: http://127.0.0.1:8080
+      BETTER_AUTH_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      RESEND_API_KEY: re_test_schema
+      MUNCH_EMAIL_FROM: "Munch <support@munch.example>"
+      STRIPE_SECRET_KEY: sk_test_placeholder
+      STRIPE_WEBHOOK_SECRET: whsec_test_placeholder
+      STRIPE_PRICE_ID: price_test_placeholder
+      STRIPE_HOUSEHOLD_MEMBER_PRICE_ID: price_household_test_placeholder
+      OFF_USER_AGENT: "Munch E2E (test@example.test)"
+      USDA_FDC_API_KEY: test-placeholder
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Install fresh canonical schema
+        run: bun run db:migrate
+      - name: Install Chromium and Linux dependencies
+        run: bunx playwright install --with-deps chromium
+      - name: Provision isolated reviewer account and run browser journeys
+        run: |
+          REVIEWER_EMAIL="e2e-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT@example.test"
+          REVIEWER_PASSWORD="$(openssl rand -hex 24)"
+          MUNCH_REVIEWER_EMAIL="$REVIEWER_EMAIL" MUNCH_REVIEWER_PASSWORD="$REVIEWER_PASSWORD" bun scripts/provision-reviewer.ts
+          MUNCH_REVIEWER_EMAIL="$REVIEWER_EMAIL" MUNCH_REVIEWER_PASSWORD="$REVIEWER_PASSWORD" bun run test:e2e
+      - name: Upload browser traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: munch-website-e2e
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 14
 
   container:
     runs-on: ubuntu-latest
