@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 13294)
-Total output lines: 585
-
 # Munch — ChatGPT-first Guided Nutrition, with Website Parity
 
 **Status:** Implementation specification / not yet implemented  
@@ -292,7 +289,37 @@ The user's selected objective—maintain, gain, lose or track-only—must shape 
 - Use **trend** weight rather than reacting to one measurement; apply configurable conservative change bounds. Set and document minimum evidence thresholds before any recommendation. If threshold fails, show "insufficient data" and let user edit their goals manually.
 - Missing days are unknown, not zero consumption. Don't claim weight change was caused by a particular calorie intake or imply clinically precise TDEE.
 - Persist user's acceptance/rejection and never silently update goals. User can turn adaptive suggestions off.
-- Avoid medical conditions, clinical weigh…1294 tokens truncated…puteTrends`, `computeWeeklyDigest` and weight trends but implement a new structured analysis contract instead of parsing narrative text.
+- Avoid medical conditions, clinical weight-loss prescriptions, rigid calorie floors, or claims of medical expertise. Product/legal review the altered nonmedical contract before exposure; if not supportable, ship only target-tracking and manual review in v1.
+- Goal changes apply prospectively. Weekly reports retain the historical effective goal revision, not today's target retroactively.
+
+### 7.2 Personalized weekly meal planning, including new recipes
+
+The first release supports a deliberate mix of **saved recipes and new AI-generated recipe drafts**. Users can choose saved-only, generated-only or a mix when planning. The website AI adapter is part of v1, and the ChatGPT host model can propose recipes through MCP; both routes use the same Munch validation and persistence rules.
+
+- Default to a seven-day local-date window with flexible start date; support selected meals (e.g. dinners only), servings, repeats, household scope, meal dates, preparation limits and objective-aligned targets.
+- Provide a user-editable planning profile for allergies and hard exclusions; dislikes, likes, cuisine and flavor preferences; easy-to-cook/difficulty preference; prep and total-time limits; household servings; available equipment and preferred/avoided cooking methods; repeat tolerance and variety. Users can skip setup, edit the profile on either surface, and override it for one plan.
+- Munch supplies the model with the authorized user's relevant saved-recipe summaries (such as title, ingredients, cuisine, primary protein, time and methods) and recent committed meal-plan history. Use only the scoped context needed for the request. This context helps avoid repeating saved or recently planned meals and helps the model suggest genuinely different options.
+- Avoid exact and near-duplicate recipes using server-side normalized title, ingredient and recipe-tag comparisons. Apply variety across primary protein, cuisine, key ingredients and cooking method when compatible choices exist; do not default to chicken-and-rice. Let the user allow favorites/repeats or prioritize a requested dish. Do not promise absolute novelty when the recipe library or constraints are sparse.
+- The model may select saved recipe revisions and return new recipes as structured drafts with ingredient quantities/units, servings, steps, prep/cook times, difficulty, equipment and tags. Users can edit the candidate recipe and meal slot before committing.
+- Hard constraints: allergies and explicitly excluded ingredients, household access, valid immutable recipe revisions, available equipment when the user requires it, and specified meal/date bounds. Known allergen matches and unresolved allergen ingredients block a candidate. Never claim a generated recipe is allergy-safe based only on its text; remind users to verify product labels and cross-contact conditions. Allergy uncertainty must be surfaced, not silently downgraded.
+- Soft preferences: favorite meals, disliked ingredients, cuisine/flavor variety, protein proximity, pantry matching when authorized, cooking skill, preparation time and grocery efficiency.
+- The deterministic server resolves generated ingredients and calculates nutrition from existing trusted sources. Ignore model-supplied calories/macros. If an ingredient or nutrient cannot be resolved, show partial/unavailable nutrition and never claim target compliance. The scorer evaluates validated candidates and daily totals; the model cannot declare compliance itself.
+- With insufficient compatible saved/generated recipes, return an honest partial plan and actionable unmet requirements rather than silently dropping constraints or fabricating nutrition.
+- ChatGPT flow: get authorized profile and library context -> host proposes saved recipe IDs/revisions and/or structured generated drafts -> Munch validates and returns an editable draft -> user reviews/edits -> user explicitly commits.
+- Website flow: "Generate week" -> Munch gathers bounded authorized context -> `MUNCH_AI_MODEL` proposes saved selections and/or generated recipe drafts -> the same validator/draft service -> editable calendar -> explicit commit. Users can also plan manually if AI is unavailable, over budget, declined or disabled.
+- After the plan is committed, offer a separate review of grocery-list additions. Reconcile duplicates, exclude already-purchased items where supported, require a distinct confirmation, and never infer pantry consumption.
+
+### 7.3 Meal swaps
+
+- Offer 3–5 verified replacements for a specific **planned** meal (not historical consumption), ranked on nutrition similarity, hard dietary constraints, pantry availability, preparation time and user preferences.
+- Show old vs new calories/protein, change to that day's target totals, time, missing ingredients and nutrition coverage.
+- "Swap only this meal" is default. "Change future repeated occurrences" is an explicitly separate multi-item operation with its own review.
+- Preview does not mutate anything; apply requires user confirmation, expected version and idempotency key.
+- Plan history supports undo where safe; concurrency conflicts produce a non-destructive refresh path.
+
+### 7.4 Weekly check-ins
+
+Reuse `buildDailyBuckets`, `computeTrends`, `computeWeeklyDigest` and weight trends but implement a new structured analysis contract instead of parsing narrative text.
 
 Show:
 
