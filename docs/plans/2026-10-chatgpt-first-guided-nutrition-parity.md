@@ -414,7 +414,7 @@ Test at the **same persisted account state**, not parallel hand-coded mock outpu
 Complete this before feature implementation so new work starts from a verified quality baseline.
 
 - Reconfirm current `main`, open PRs, production revision, test workflows and dependency/runtime versions.
-- Create `docs/testing/current-test-audit.md` with a capability-to-test map for nutrition logging/history/goals, recipes/import, planning/groceries, pantry, Cooks, auth/billing/households, website, MCP and mobile. For each capability record unit/contract, database, browser/device, and release-smoke coverage plus the CI trigger and latest evidence.
+- Maintain and refresh `docs/testing/current-test-audit.md` with a capability-to-test map for nutrition logging/history/goals, recipes/import, planning/groceries, pantry, Cooks, auth/billing/households, website, MCP and mobile. For each capability record unit/contract, database, browser/device, and release-smoke coverage plus the CI trigger and latest evidence.
 - Run and record the current-main baseline for `bun run format:check`, `bun run typecheck`, `bun run submission:check`, `bun test`, the PostgreSQL integration/smoke job, OAuth/mobile auth and Android build. Record skipped or secret-dependent checks honestly.
 - Add coverage reporting for the unit suite and measure a baseline. Set a risk-based ratcheting threshold for new shared domain code after seeing the report; do not claim a repo-wide percentage before measuring it.
 - Close high-risk gaps that affect this release before feature PRs. Add a real browser E2E harness for prioritized authenticated website workflows and reuse it for the new features. Keep static UI checks as a separate, faster layer.
