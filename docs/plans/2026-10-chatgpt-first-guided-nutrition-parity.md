@@ -92,7 +92,7 @@ ChatGPT should let a user say:
 
 These should use **Munch's saved data**, not free-form invented past meals. The host model can reason over context and make proposals but Munch remains the authority for permission checks, calculations, provenance, validation, idempotency and persistence.
 
-No everyday nutrition operation should *require* leaving ChatGPT.
+No everyday nutrition operation should _require_ leaving ChatGPT.
 
 ### 3.2 Website parity
 
@@ -203,57 +203,62 @@ Suggested contract shapes, not fixed identifiers:
 
 ```ts
 type NutritionProvenance = {
-  status: "complete" | "partial" | "unavailable";
-  sourceTypes: string[];
-  warnings: string[];
+    status: "complete" | "partial" | "unavailable";
+    sourceTypes: string[];
+    warnings: string[];
 };
 
 type DayTargetEvaluation = {
-  date: string;                         // user's local YYYY-MM-DD
-  planned: { calories: number | null; proteinG: number | null };
-  target: { calories: number | null; proteinG: number | null };
-  coverage: NutritionProvenance;
-  hasBlockingConstraints: boolean;
+    date: string; // user's local YYYY-MM-DD
+    planned: { calories: number | null; proteinG: number | null };
+    target: { calories: number | null; proteinG: number | null };
+    coverage: NutritionProvenance;
+    hasBlockingConstraints: boolean;
 };
 
 type PlanDraft = {
-  id: string;
-  version: number;
-  scope: { type: "personal" } | { type: "household"; householdId: string };
-  startDate: string;
-  endDate: string;
-  timezone: string;
-  status: "draft" | "committed" | "cancelled" | "expired";
-  days: DayTargetEvaluation[];
-  blockers: string[];
-  warnings: string[];
-  expectedPlanVersion?: number;
+    id: string;
+    version: number;
+    scope: { type: "personal" } | { type: "household"; householdId: string };
+    startDate: string;
+    endDate: string;
+    timezone: string;
+    status: "draft" | "committed" | "cancelled" | "expired";
+    days: DayTargetEvaluation[];
+    blockers: string[];
+    warnings: string[];
+    expectedPlanVersion?: number;
 };
 
 type GoalChangeProposal = {
-  id: string;
-  currentRevisionId: string;
-  proposedTargets: Record<string, number | null>;
-  evidence: { weightDays: number; loggedDays: number; timeframeDays: number };
-  rationale: string[];
-  limitations: string[];
-  expiresAt: string;
+    id: string;
+    currentRevisionId: string;
+    proposedTargets: Record<string, number | null>;
+    evidence: { weightDays: number; loggedDays: number; timeframeDays: number };
+    rationale: string[];
+    limitations: string[];
+    expiresAt: string;
 };
 
 type GeneratedRecipeProposal = {
-  title: string;
-  ingredients: Array<{ name: string; quantity: number | null; unit: string | null; optional: boolean }>;
-  instructions: string[];
-  servings: number;
-  prepMinutes: number | null;
-  cookMinutes: number | null;
-  difficulty: "easy" | "moderate" | "advanced";
-  requiredEquipment: string[];
-  cuisineTags: string[];
-  primaryProtein: string | null;
-  cookingMethods: string[];
-  // Nutrition is resolved and calculated by Munch; model-supplied macro values are not trusted.
-  nutritionProvenance: NutritionProvenance;
+    title: string;
+    ingredients: Array<{
+        name: string;
+        quantity: number | null;
+        unit: string | null;
+        optional: boolean;
+    }>;
+    instructions: string[];
+    servings: number;
+    prepMinutes: number | null;
+    cookMinutes: number | null;
+    difficulty: "easy" | "moderate" | "advanced";
+    requiredEquipment: string[];
+    cuisineTags: string[];
+    primaryProtein: string | null;
+    cookingMethods: string[];
+    // Nutrition is resolved and calculated by Munch; model-supplied macro values are not trusted.
+    nutritionProvenance: NutritionProvenance;
 };
 ```
 
@@ -303,6 +308,7 @@ The first release supports a deliberate mix of **saved recipes and new AI-genera
 - ChatGPT flow: get authorized profile and library context -> host proposes saved recipe IDs/revisions and/or structured generated drafts -> Munch validates and returns an editable draft -> user reviews/edits -> user explicitly commits.
 - Website flow: "Generate week" -> Munch gathers bounded authorized context -> `MUNCH_AI_MODEL` proposes saved selections and/or generated recipe drafts -> the same validator/draft service -> editable calendar -> explicit commit. Users can also plan manually if AI is unavailable, over budget, declined or disabled.
 - After the plan is committed, offer a separate review of grocery-list additions. Reconcile duplicates, exclude already-purchased items where supported, require a distinct confirmation, and never infer pantry consumption.
+
 ### 7.3 Meal swaps
 
 - Offer 3–5 verified replacements for a specific **planned** meal (not historical consumption), ranked on nutrition similarity, hard dietary constraints, pantry availability, preparation time and user preferences.
@@ -316,6 +322,7 @@ The first release supports a deliberate mix of **saved recipes and new AI-genera
 Reuse `buildDailyBuckets`, `computeTrends`, `computeWeeklyDigest` and weight trends but implement a new structured analysis contract instead of parsing narrative text.
 
 Show:
+
 - period and timezone;
 - days with any logging, percentage of target coverage, missing macro fields, uncertain estimates and source confidence;
 - calories/protein and hydration on **recorded days**, clear denominator and separate total-period view when useful;
