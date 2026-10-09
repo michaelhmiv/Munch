@@ -52,6 +52,32 @@ Confirmed in current code:
 
 **First step for the implementing agent:** reconfirm the repository head, open PRs, actual migration head, feature flags and production plugin-review status. The above is a planning baseline, not a promise that production matches current source.
 
+### 2.1 Existing-product testing audit — snapshot as of 2026-10-09
+
+Reviewed `main` at `4f025dc298ff0214cbff47df1d3d8cb1d77299ea`, its test paths, package scripts, CI workflows, representative parity/auth/domain tests and recent Actions results. This is an inventory and workflow-level audit, not a line-by-line review of all tests or a coverage measurement.
+
+**What is already in place**
+
+- The repository contains 112 JavaScript/TypeScript `*.test.*` files across product, auth, billing, recipe/food, inventory, Cooks, mobile, UI and platform code.
+- The PR/main `CI` workflow runs formatting, capability/commerce/submission/UI/widget checks, typechecking and `bun test`; it also runs a PostgreSQL 17 job that installs and re-applies the schema, then exercises auth/OAuth, nutrition, food catalog, structured meals, saved foods, household access/lifecycle, recipes/planning/groceries, Cooks, Pantry, exports/deletion, reviewer readiness and operations. A separate job builds the production container.
+- Separate workflows test OAuth/session behavior, mobile bearer sessions, and an Android debug build with lint and unit tests. Manual or scheduled workflows cover live recipe-import and AI-provider corpora, USDA data, and production certification.
+- Existing RLS, idempotency, migration, privacy, host-model-boundary and capability-manifest checks provide a strong server-side foundation.
+
+**Gaps to address**
+
+- No code-coverage report or coverage threshold was found in the package scripts or PR CI; current coverage therefore cannot be quantified.
+- Website UI smoke checks validate static entry points/contracts. The OAuth “browser” smoke runs the app in-process over HTTP; no browser automation dependency or full authenticated website journey suite was found.
+- Current parity tests check meal totals, missing-nutrient semantics and date-range behavior, while the capability manifest maps tools to outcomes. They do not yet exercise broad read/write journeys across MCP and the website against the same persisted account.
+- Android CI builds and tests a debug app, but only a starter/example native unit-test file was found; the workflow does not run emulator/device UI journeys.
+- Live model/provider corpora and production certification are manual or scheduled rather than part of every PR. Deterministic adapter and boundary tests run in PR CI, but model behavior is not continuously evaluated there.
+- Production certification is available by manual dispatch. The audit did not find an automatic post-deploy certification trigger.
+
+**Observed baseline runs**
+
+- Main CI passed at commit `4f025dc` on 2026-09-17: https://github.com/michaelhmiv/Munch/actions/runs/35177767237
+- The scheduled USDA corpus most recently passed on 2026-10-05: https://github.com/michaelhmiv/Munch/actions/runs/37346645204
+- At the audit snapshot, PR #153's CI run failed at `format:check` because this plan file was not Prettier-formatted; the database and container jobs passed, but typecheck and `bun test` were skipped: https://github.com/michaelhmiv/Munch/actions/runs/37918751747
+
 ## 3. Product contract / UX principles
 
 ### 3.1 ChatGPT-first, not ChatGPT-dependent
@@ -375,6 +401,19 @@ Test at the **same persisted account state**, not parallel hand-coded mock outpu
 16. No-data period: neither client pretends the user ate zero or missed dietary obligations.
 
 ## 10. Delivery plan — small, reviewable PRs
+
+### PR -1 — Existing-product test audit and baseline
+
+Complete this before feature implementation so new work starts from a verified quality baseline.
+
+- Reconfirm current `main`, open PRs, production revision, test workflows and dependency/runtime versions.
+- Create `docs/testing/current-test-audit.md` with a capability-to-test map for nutrition logging/history/goals, recipes/import, planning/groceries, pantry, Cooks, auth/billing/households, website, MCP and mobile. For each capability record unit/contract, database, browser/device, and release-smoke coverage plus the CI trigger and latest evidence.
+- Run and record the current-main baseline for `bun run format:check`, `bun run typecheck`, `bun run submission:check`, `bun test`, the PostgreSQL integration/smoke job, OAuth/mobile auth and Android build. Record skipped or secret-dependent checks honestly.
+- Add coverage reporting for the unit suite and measure a baseline. Set a risk-based ratcheting threshold for new shared domain code after seeing the report; do not claim a repo-wide percentage before measuring it.
+- Close high-risk gaps that affect this release before feature PRs. Add a real browser E2E harness for prioritized authenticated website workflows and reuse it for the new features. Keep static UI checks as a separate, faster layer.
+- Review Android support expectations and add a representative emulator/device smoke only if the app's current support contract requires it; document the current build-only limits either way.
+- Review manual and scheduled provider/corpus workflows for cost, reproducibility, result artifacts and clear release-gate criteria.
+- Acceptance: the test map and baseline report are committed; high-risk existing failures are fixed or explicitly tracked; a future feature PR cannot claim website/MCP parity based only on matching unit fixtures.
 
 ### PR 0 — Contract and parity gate (nonfeature foundation)
 
