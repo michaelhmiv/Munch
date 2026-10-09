@@ -234,7 +234,7 @@ type GeneratedRecipeProposal = {
 Suggested shared service operations:
 
 - `getGuidanceContext(userId, scope, dates)`: aggregate current goals, goal revision, scoped recipe-library and recent-plan summaries, pantry permission/matches (optional), constraints, available-equipment profile, existing plan and source status. Bound returned rows.
-- `generateRecipeCandidates(userId, scope, profile, constraints, libraryContext)`: return schema-validated recipe drafts for deterministic ingredient, allergen, equipment, nutrition, novelty and variety checks.
+- `validateGeneratedRecipeProposal(userId, scope, proposal, profile, constraints, libraryContext)`: validate a structured proposal from the ChatGPT host or website AI adapter; perform deterministic ingredient, allergen, equipment, nutrition, novelty and variety checks, with no model-provider call.
 - `previewGoalAdjustment(userId, proposedTargets | userConfiguredRule)` / `commitGoalAdjustment(userId, proposalId, expectedRevision, idempotencyKey, confirmation)`.
 - `createPlanDraft(userId, scope, dates, proposalItems, constraints, idempotencyKey)`; `getPlanDraft`; `updatePlanDraft`; `validatePlanDraft`; `commitPlanDraft`; `cancelPlanDraft`.
 - `rankMealSwapCandidates(userId, plannedMealId, filters)`; `previewMealSwap`; `commitMealSwap(userId, plannedMealId, candidate, expectedVersion, confirm, idempotencyKey)`; `undoMealSwap`.
