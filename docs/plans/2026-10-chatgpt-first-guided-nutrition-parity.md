@@ -1,6 +1,8 @@
 # Munch — ChatGPT-first Guided Nutrition, with Website Parity
 
 **Status:** Implementation specification / not yet implemented  
+**Confirmed product decisions (2026-10-09):** All five outcomes below are in scope for this program. Weekly planning may combine saved recipes with customizable, AI-generated recipe drafts. A user-editable preference profile covers allergies, dislikes, likes, cooking difficulty and time, and available equipment; generation must use the saved recipe library and committed plan history to avoid repeats and improve variety. Goal guidance follows the user's selected objective (maintain, gain, lose, or track-only). Website AI-assisted planning uses the existing `MUNCH_AI_MODEL`, with manual fallback. Grocery-list additions are offered in a separate review-and-confirm step.
+
 **Project:** `michaelhmiv/Munch`  
 **Product:** Munch — consumer food, nutrition, recipes, planning, groceries and progress tracking  
 **Primary experience:** ChatGPT plugin over Munch MCP  
@@ -13,7 +15,7 @@
 Extend Munch from predominantly factual meal/nutrition logging and recipe scheduling into an **optional guided nutrition planning loop**:
 
 1. User defines desired goals, priorities, preferences and constraints.
-2. Munch provides defensible data/context; the host AI or optional website AI proposes a plan.
+2. Munch provides defensible data/context; the ChatGPT host model or Munch's website AI proposes candidate plans and recipes.
 3. Munch validates the proposed plan against factual recipes, verified nutrition, scopes, permissions and constraints.
 4. The user edits and explicitly approves any committed goal or meal-plan changes.
 5. Munch records consumption separately from planning.
@@ -22,7 +24,7 @@ Extend Munch from predominantly factual meal/nutrition logging and recipe schedu
 Implement the following five outcomes:
 
 - **Goal guidance:** explain current goals, support reviewable goal-change recommendations, preserve goal history.
-- **Guided weekly planning:** produce editable seven-day meal-plan drafts consistent with user constraints.
+- **Guided weekly planning:** produce editable seven-day meal-plan drafts from saved and AI-generated recipes, personalized to user constraints and preferences.
 - **Meal substitutions:** compare meaningful replacements; preview and atomically apply a chosen swap.
 - **Weekly check-ins:** show trustworthy seven-day progress, coverage and actionable observations.
 - **Daily guidance:** present a concise daily status and suggested next actions, never invent unlogged consumption.
@@ -116,7 +118,7 @@ db/updates/
 
 The server/service layer exposes deterministic pure functions and repositories; both adapters call those. Reuse `src/nutrition-platform`, `src/planning`, `src/insights.ts` and nutrition-provenance systems instead of copying them.
 
-The website may optionally ask the configured provider for **candidate proposals only**. Parse the returned JSON with a versioned schema; no model output bypasses deterministic verification.
+The website uses the configured provider for **candidate proposals only** as a planned v1 capability. Parse every response with a versioned schema; no model output bypasses deterministic verification. Keep the manual planner available whenever AI is disabled, unavailable, declined or over budget.
 
 Do not call an AI provider from `src/mcp-runtime.ts` or its transitive imports. Add tests preserving the existing `src/host-ai-boundary.test.ts` rule.
 
@@ -131,9 +133,11 @@ New user-scoped preferences may include:
 - `objective`: maintain, gain, lose, or track-only (self-reported).
 - `target_style`: self-managed versus suggestions-enabled.
 - User-specified daily calorie/macro target, allowed variance and preferred review cadence.
-- Dietary preferences, excluded ingredients, food allergies, disliked foods, meal slots per day, prep-time limit, budget preference, shopping preference, repeat tolerance.
+- Dietary preferences, excluded ingredients, food allergies, disliked foods, liked cuisines/flavors/ingredients, meal slots per day, prep-time and total-time limits, budget and shopping preferences, repeat tolerance and desired variety.
+- Cooking skill or preferred difficulty, easy-to-cook preference, owned/available equipment (including custom equipment), and preferred or avoided cooking methods.
 - Optional pantry use when authorized and available.
-- Version, updated timestamp, source/provenance of self-reported input.
+- Version, updated timestamp and source/provenance of self-reported input.
+- A profile that users can review and edit on both MCP and website, plus one-plan overrides; profile setup is skippable and must not block a first plan.
 
 Do not collect sensitive health diagnoses or create disease-specific goals. Distinguish hard exclusions (e.g. allergy/ingredient) from soft preferences (e.g. preferred cuisine).
 
@@ -148,11 +152,12 @@ A recommendation/proposal must expire, be rejectable, and never silently change 
 Keep committed meals in `munch.planned_meals`. Introduce user-/household-scoped **draft header and draft item tables** with:
 
 - range, timezone, scope/owner, selected constraints, target snapshot, generated-by provenance, status (`draft`, `committed`, `cancelled`, `expired`), version, expiry;
-- date, meal slot, `recipe_id`, **immutable recipe_revision_id**, servings, editable notes and user-selected candidate;
+- date, meal slot, servings and editable notes, with either a saved `recipe_id` + **immutable recipe_revision_id** or a versioned structured generated-recipe snapshot;
+- generated-recipe fields for title, ingredients with quantities/units, instructions, yield, prep/cook time, difficulty, required equipment, cuisine/method tags, nutrition provenance and user edits;
 - nutritional completeness per item, warnings/blocking issues, predicted daily totals, origin information;
 - commit ID and idempotency key to prevent repeated save.
 
-Draft saves must not log eaten meals, mutate pantry or auto-add groceries. Approval can optionally stage grocery additions separately as a reviewable add-on. Either use a transactionally bounded week commit or preserve a documented, recoverable partial-commit contract; prefer a single transaction.
+Draft saves must not log eaten meals, mutate pantry or auto-add groceries. On explicit plan commit, materialize only selected generated recipes as durable immutable revisions linked to their planned meals; rejected candidates are never persisted. Keep personal Recipe Library membership as a user-controlled save action, while committed plan history retains the recipe snapshot for cooking history and future repeat/duplicate checks. Grocery-list additions are a separate post-commit review-and-confirm action; a user can commit a plan without changing groceries. Either use a transactionally bounded week commit or preserve a documented, recoverable partial-commit contract; prefer a single transaction.
 
 Never overwrite previously scheduled meals without a clear review and user-selected replace/merge policy. Detect stale draft data and return a conflict that supports refresh.
 
@@ -208,11 +213,28 @@ type GoalChangeProposal = {
   limitations: string[];
   expiresAt: string;
 };
+
+type GeneratedRecipeProposal = {
+  title: string;
+  ingredients: Array<{ name: string; quantity: number | null; unit: string | null; optional: boolean }>;
+  instructions: string[];
+  servings: number;
+  prepMinutes: number | null;
+  cookMinutes: number | null;
+  difficulty: "easy" | "moderate" | "advanced";
+  requiredEquipment: string[];
+  cuisineTags: string[];
+  primaryProtein: string | null;
+  cookingMethods: string[];
+  // Nutrition is resolved and calculated by Munch; model-supplied macro values are not trusted.
+  nutritionProvenance: NutritionProvenance;
+};
 ```
 
 Suggested shared service operations:
 
-- `getGuidanceContext(userId, scope, dates)`: aggregate current goals, goal revision, eligible recipes, pantry permission/matches (optional), constraints, existing plan and source status. Bound returned rows.
+- `getGuidanceContext(userId, scope, dates)`: aggregate current goals, goal revision, scoped recipe-library and recent-plan summaries, pantry permission/matches (optional), constraints, available-equipment profile, existing plan and source status. Bound returned rows.
+- `generateRecipeCandidates(userId, scope, profile, constraints, libraryContext)`: return schema-validated recipe drafts for deterministic ingredient, allergen, equipment, nutrition, novelty and variety checks.
 - `previewGoalAdjustment(userId, proposedTargets | userConfiguredRule)` / `commitGoalAdjustment(userId, proposalId, expectedRevision, idempotencyKey, confirmation)`.
 - `createPlanDraft(userId, scope, dates, proposalItems, constraints, idempotencyKey)`; `getPlanDraft`; `updatePlanDraft`; `validatePlanDraft`; `commitPlanDraft`; `cancelPlanDraft`.
 - `rankMealSwapCandidates(userId, plannedMealId, filters)`; `previewMealSwap`; `commitMealSwap(userId, plannedMealId, candidate, expectedVersion, confirm, idempotencyKey)`; `undoMealSwap`.
@@ -228,9 +250,10 @@ Suggested shared service operations:
 
 ### 7.1 Adaptive goal guidance
 
-Build in phases: (a) user-specified target changes with historical comparison; (b) optional, transparent recommendations tied to objective data.
+The user's selected objective—maintain, gain, lose or track-only—must shape goal guidance and meal-plan scoring. Do not apply one generic target adjustment to every person. Build in phases: (a) user-specified target changes with historical comparison; (b) opt-in, transparent recommendations tied to objective-specific data and a documented product policy.
 
 - Start with existing goal fields; don't create a conflicting target store.
+- Define distinct behavior for maintaining, gaining, losing and track-only. Use a user-entered target or timeframe when available; otherwise explain what can and cannot be inferred. Keep target proposals evidence-gated, nonclinical, opt-in and explicitly approved. The model may explain a proposal but cannot invent or commit numeric targets.
 - A proposal states current target, suggested target, plain-language basis, input window, number of measured weight days, number of logged nutrition days, uncertainty and user-editable target.
 - Use **trend** weight rather than reacting to one measurement; apply configurable conservative change bounds. Set and document minimum evidence thresholds before any recommendation. If threshold fails, show "insufficient data" and let user edit their goals manually.
 - Missing days are unknown, not zero consumption. Don't claim weight change was caused by a particular calorie intake or imply clinically precise TDEE.
@@ -238,20 +261,22 @@ Build in phases: (a) user-specified target changes with historical comparison; (
 - Avoid medical conditions, clinical weight-loss prescriptions, rigid calorie floors, or claims of medical expertise. Product/legal review the altered nonmedical contract before exposure; if not supportable, ship only target-tracking and manual review in v1.
 - Goal changes apply prospectively. Weekly reports retain the historical effective goal revision, not today's target retroactively.
 
-### 7.2 Target-aligned weekly meal planning
+### 7.2 Personalized weekly meal planning, including new recipes
 
-First release: prioritize **existing saved recipes** and optionally pre-resolved food/recipe candidates with defensible nutrition. Avoid an unbounded AI recipe-generation system.
+The first release supports a deliberate mix of **saved recipes and new AI-generated recipe drafts**. Users can choose saved-only, generated-only or a mix when planning. The website AI adapter is part of v1, and the ChatGPT host model can propose recipes through MCP; both routes use the same Munch validation and persistence rules.
 
-- Default to a seven-day local-date window with flexible start date; support selected meals (e.g. dinners only), number of servings, repeats, household scope and time constraints.
-- Hard constraints: explicitly excluded ingredients/allergies, household access, valid immutable recipe revision, nutrition availability and specified meal/date bounds. Ambiguous allergen status is a blocker, not an assertion of safety.
-- Soft preferences: favorite meals, culinary variety, protein proximity, pantry matching, preparation time and grocery efficiency.
-- Deterministic scorer evaluates candidates and daily totals. A model may pick among candidates, but cannot declare target compliance itself.
-- With insufficient compatible recipes, return an honest partial plan and actionable unmet requirements rather than fabricated recipes, macro estimates or silently omitted constraints.
-- ChatGPT flow: get context -> host proposes selected recipe IDs/revisions -> Munch validates and returns draft -> user reviews/edits -> user explicitly commits.
-- Website flow: "Generate week" -> Munch gathers bounded context -> optional `MUNCH_AI_MODEL` drafts candidate selections -> same validator/draft service -> editable calendar -> explicit commit.
-- Website still supports manual recipe selection if AI is unavailable, over budget or opted out.
-- User approves grocery-list additions separately. Reconcile duplicates, exclude purchased items appropriately and never infer pantry consumption.
-
+- Default to a seven-day local-date window with flexible start date; support selected meals (e.g. dinners only), servings, repeats, household scope, meal dates, preparation limits and objective-aligned targets.
+- Provide a user-editable planning profile for allergies and hard exclusions; dislikes, likes, cuisine and flavor preferences; easy-to-cook/difficulty preference; prep and total-time limits; household servings; available equipment and preferred/avoided cooking methods; repeat tolerance and variety. Users can skip setup, edit the profile on either surface, and override it for one plan.
+- Munch supplies the model with the authorized user's relevant saved-recipe summaries (such as title, ingredients, cuisine, primary protein, time and methods) and recent committed meal-plan history. Use only the scoped context needed for the request. This context helps avoid repeating saved or recently planned meals and helps the model suggest genuinely different options.
+- Avoid exact and near-duplicate recipes using server-side normalized title, ingredient and recipe-tag comparisons. Apply variety across primary protein, cuisine, key ingredients and cooking method when compatible choices exist; do not default to chicken-and-rice. Let the user allow favorites/repeats or prioritize a requested dish. Do not promise absolute novelty when the recipe library or constraints are sparse.
+- The model may select saved recipe revisions and return new recipes as structured drafts with ingredient quantities/units, servings, steps, prep/cook times, difficulty, equipment and tags. Users can edit the candidate recipe and meal slot before committing.
+- Hard constraints: allergies and explicitly excluded ingredients, household access, valid immutable recipe revisions, available equipment when the user requires it, and specified meal/date bounds. Known allergen matches and unresolved allergen ingredients block a candidate. Never claim a generated recipe is allergy-safe based only on its text; remind users to verify product labels and cross-contact conditions. Allergy uncertainty must be surfaced, not silently downgraded.
+- Soft preferences: favorite meals, disliked ingredients, cuisine/flavor variety, protein proximity, pantry matching when authorized, cooking skill, preparation time and grocery efficiency.
+- The deterministic server resolves generated ingredients and calculates nutrition from existing trusted sources. Ignore model-supplied calories/macros. If an ingredient or nutrient cannot be resolved, show partial/unavailable nutrition and never claim target compliance. The scorer evaluates validated candidates and daily totals; the model cannot declare compliance itself.
+- With insufficient compatible saved/generated recipes, return an honest partial plan and actionable unmet requirements rather than silently dropping constraints or fabricating nutrition.
+- ChatGPT flow: get authorized profile and library context -> host proposes saved recipe IDs/revisions and/or structured generated drafts -> Munch validates and returns an editable draft -> user reviews/edits -> user explicitly commits.
+- Website flow: "Generate week" -> Munch gathers bounded authorized context -> `MUNCH_AI_MODEL` proposes saved selections and/or generated recipe drafts -> the same validator/draft service -> editable calendar -> explicit commit. Users can also plan manually if AI is unavailable, over budget, declined or disabled.
+- After the plan is committed, offer a separate review of grocery-list additions. Reconcile duplicates, exclude already-purchased items where supported, require a distinct confirmation, and never infer pantry consumption.
 ### 7.3 Meal swaps
 
 - Offer 3–5 verified replacements for a specific **planned** meal (not historical consumption), ranked on nutrition similarity, hard dietary constraints, pantry availability, preparation time and user preferences.
@@ -286,7 +311,7 @@ A minimal deterministic daily summary should work if website AI is disabled. Cha
 
 - Responses are useful in plain text if widgets fail or are disabled.
 - Inline `goal-change` widget shows old/new values, rationale and a review/confirm action; no accidental "apply" from simply viewing.
-- `guided-plan` widget has seven-day overview, editable draft slots, daily totals, data-coverage warnings, Confirm/Cancel. Request fullscreen when screen density requires; keep mobile usable.
+- `guided-plan` widget has a seven-day overview, editable saved/generated recipe slots, recipe details and preference warnings, daily totals, data-coverage warnings, Confirm/Cancel. Request fullscreen when screen density requires; keep mobile usable.
 - `plan-swap` widget compares verified candidates and re-renders after action.
 - `weekly-checkin` uses compact trend/status visualization with clear "recorded days" coverage.
 - Widget requests use host-approved APIs and existing CSP/resource versioning, no secret or credential exposure, no price/checkout/premium promotions, no medical claims.
@@ -296,7 +321,7 @@ A minimal deterministic daily summary should work if website AI is disabled. Cha
 ### Website
 
 - Today: expandable daily-guidance summary, not a wall of coaching cards.
-- Plan: clear week/month navigation, Generate / Review / Commit, per-meal swap, daily totals, missing-data notices, undo, responsive small-screen editing.
+- Plan: clear week/month navigation, editable preference/equipment profile and per-plan overrides, Generate / Review / Commit, saved-or-new recipe choice, editable generated recipe details, per-meal swap, daily totals, missing-data notices, undo, responsive small-screen editing, and a separate confirmed grocery-list action.
 - Insights: structured weekly check-in with logging coverage and historical target context.
 - Goals: explicit "Review targets" and opt-in adjustment suggestion; show change history and disable toggle.
 - Prefer existing `public/app.html`, `public/app.js`, `public/app-api.js`, `public/styles.css` structure; extract features modularly where maintainability demands it.
@@ -315,6 +340,10 @@ guidance.goalHistory
 mealPlan.draftCreate
 mealPlan.draftEdit
 mealPlan.draftCommit
+mealPlan.recipeGenerate
+mealPlan.recipeCustomize
+mealPlan.groceryPreview
+mealPlan.groceryCommit
 mealPlan.swapPreview
 mealPlan.swapCommit
 mealPlan.swapUndo
@@ -333,11 +362,17 @@ Test at the **same persisted account state**, not parallel hand-coded mock outpu
 3. Preview/commit goal change via either route; historical effective date and revision must agree.
 4. Repeat identical commit request: one logical mutation.
 5. Stale version: conflict without overwriting other client's change.
-6. One client lacks premium/household permission: both reject consistently.
-7. Uncertain nutrition: both return partial/unavailable, neither claims a met target.
-8. Explicit logout/revocation and account deletion: no orphaned guidance data.
-9. Plugin widget disabled: conversational fallback still allows outcome.
-10. No-data period: neither client pretends the user ate zero or missed dietary obligations.
+6. A preference profile edited on one surface is honored by generation on the other.
+7. Saved-only, generated-only and mixed plans honor the same hard constraints and nutrition validator.
+8. Exact/near-duplicate saved or recently committed recipes are avoided unless the user allows repeats; variety responds to profile preferences.
+9. Allergy matches/unknown ingredients and unavailable required equipment block or clearly qualify a generated recipe.
+10. Generated nutrition is calculated by Munch; model-supplied macros cannot bypass validation.
+11. Grocery additions are previewed and committed only after separate confirmation.
+12. One client lacks premium/household permission: both reject consistently.
+13. Uncertain nutrition: both return partial/unavailable, neither claims a met target.
+14. Explicit logout/revocation and account deletion: no orphaned guidance data.
+15. Plugin widget disabled: conversational fallback still allows outcome.
+16. No-data period: neither client pretends the user ate zero or missed dietary obligations.
 
 ## 10. Delivery plan — small, reviewable PRs
 
@@ -352,8 +387,8 @@ Test at the **same persisted account state**, not parallel hand-coded mock outpu
 
 ### PR 1 — Preferences, versioned targets, data-quality baseline
 
-- SQL migrations, forced RLS, repositories, preferences UI and MCP read/update access.
-- Goal-revision persistence, coverage-aware week calculations, retention/export/deletion.
+- SQL migrations, forced RLS, repositories, preference/equipment/variety profile UI and MCP read/update access.
+- Goal-revision persistence, objective-aware target context, coverage-aware week calculations, retention/export/deletion.
 - Explicit behavior for missing nutrition, units and historical goals; correct faulty weekly averaging/denominators in new structured output.
 - Acceptance: manual goal changes work on both surfaces, revisions auditable, same numeric summaries, no AI inference.
 
@@ -366,16 +401,16 @@ Test at the **same persisted account state**, not parallel hand-coded mock outpu
 
 ### PR 3 — Weekly draft planning and validation engine
 
-- Candidate ranking/scoring, hard constraints, nutrition coverage, draft header/items, transactional commit and conflict handling.
-- MCP planning context/create/review/commit and optional widget; website manual draft-first planner.
+- Candidate ranking/scoring, saved-recipe selection, structured AI-generated recipe drafts, allergy/equipment/dietary constraints, duplicate/variety checks, nutrition coverage, draft header/items, transactional commit and conflict handling.
+- MCP planning context/create/review/commit and generated-recipe widget; website AI-assisted and manual draft-first planner with equivalent controls.
 - Use existing recipes, immutable revisions and existing `planned_meals`.
 - Acceptance: seven-day eligible schedule with true daily totals, editable draft, no logged consumption/pantry/grocery changes, idempotent commit.
 
 ### PR 4 — Website AI proposal adapter
 
-- Only after PR 3's deterministic planner works, add optional provider adapter behind `MUNCH_AI_MODEL`; JSON schema, timeouts, token/cost caps, model-call telemetry, circuit breaker and manual fallback.
+- After PR 3's deterministic planner works, add the website AI proposal adapter behind `MUNCH_AI_MODEL` as a v1 capability; enforce JSON schema, timeouts, token/cost caps, model-call telemetry, circuit breaker and manual fallback.
 - Test prompts against malformed results, injected instructions embedded in recipes, nonsensical macronutrients, allergy exclusion violations and empty catalog.
-- Acceptance: same validation/commit outcome whether proposals originated from ChatGPT, website AI or a manual selection. MCP path never invokes website model.
+- Acceptance: same validation/commit outcome whether proposals originated from ChatGPT, website AI or manual selection. MCP path never invokes the website model.
 
 ### PR 5 — Meal swap + edit/undo lifecycle
 
@@ -397,7 +432,7 @@ Test at the **same persisted account state**, not parallel hand-coded mock outpu
 
 ### PR 8 — End-to-end certification and staged release
 
-- Scenario tests with actual DB/auth; MCP client protocol smoke; website browser test at phone and desktop widths; widget host/CSP tests; local migration and postdeploy smoke.
+- Scenario tests with actual DB/auth for all five outcomes; MCP client protocol smoke; website browser test at phone and desktop widths; widget host/CSP tests; generated-recipe, preference, variety and grocery-confirmation journeys; local migration and postdeploy smoke.
 - Audit docs, submission manifest, reviewer seeded account, privacy/terms, analytics and feature flags.
 - Railway deploy pinned exact SHA, validate health + identity, then enable in staged cohort. Preserve existing plugin tool schemas/resources until new tool scans have approved additions.
 - Release is complete only when MCP and website customer outcomes are certified; mobile status remains honest.
@@ -423,7 +458,12 @@ Add dedicated tests:
 
 - pure score invariants, unit conversions and nutrition provenance;
 - partial/missing nutrient handling and incomplete tracking denominator;
-- hard exclusions and allergen-unknown block;
+- hard exclusions, allergen-unknown block and label/cross-contact caveat;
+- preference-profile persistence, per-plan overrides and cross-surface read-after-write;
+- saved/generated/mixed recipe modes, exact/near-duplicate avoidance and variety behavior;
+- required-equipment compatibility and difficulty/time constraint validation;
+- generated recipe schema validation, ingredient resolution, computed nutrition and user edit/commit lifecycle;
+- grocery-list preview, duplicate reconciliation and separate confirmation;
 - draft state transitions, merge/replace policy, rollback, duplicate requests;
 - cross-account and household membership changes with forced RLS;
 - concurrency and stale-proposal/version errors;
@@ -441,7 +481,7 @@ Add dedicated tests:
 1. **Nutrition target advice vs existing scope:** user-owned manual targets and reviewable proposals only; nonclinical policy gate required; ship manual target comparison if automated suggestion is unreviewable.
 2. **Incomplete meal nutrition:** never mark compliance when key macros unresolved; show unavailable/partial and data coverage.
 3. **Host-model variation:** constrain to structured candidate references; server performs deterministic validation for all channels.
-4. **Unsaved or sparse recipe library:** partial-plan/manual fallback; do not hallucinate catalog ingredients or dietary compliance.
+4. **Sparse recipe library or weak personalization data:** allow validated AI-generated drafts, disclose uncertainty and offer profile controls; never invent ingredient nutrition or claim dietary/allergy compliance. Compare candidates with saved recipes and committed plan history to reduce repeats.
 5. **Household scope and billing:** existing premium/seat permissions remain authoritative; no new pricing surfaces inside MCP.
 6. **Stale plugin metadata:** staged, backward-compatible schemas; approved tools/resources unchanged until scans; plugin rescan after deployment and approval verified.
 7. **Mobile parity:** mandatory declarations and honest planned status, but do not misrepresent unfinished Android/iOS as certified.
@@ -450,9 +490,9 @@ Add dedicated tests:
 
 ## 14. User-journey acceptance script
 
-**Scenario A — initial plan**
-"Use my stored goals to plan weekday dinners next week, high protein, under 30 minutes."
-Expected: retrieve authorized preferences and saved recipes, provide a realistic draft with nutritional coverage, ask for approval, commit only on approval; website calendar reflects it.
+**Scenario A — initial personalized plan**
+"Use my goals and preferences to plan weekday dinners next week, high protein, under 30 minutes. Avoid my dislikes, use only equipment I have, and make the meals varied."
+Expected: retrieve the authorized profile, saved recipes and relevant plan history; propose a mix of saved and genuinely different generated recipes; validate allergens, equipment and nutrition; let the user edit the draft; commit only on approval; offer grocery additions separately; website calendar reflects the same plan.
 
 **Scenario B — a swap**
 "Thursday's dinner takes too long; replace it with something simpler."
@@ -467,7 +507,13 @@ Expected: report exactly which days were recorded, estimates/missing data, logge
 Expected: explain available evidence, uncertainties and nonmedical limits; only offer a preview if opt-in/evidence permits; never change current goal without explicit approval.
 
 **Scenario E — website independence**
-User signs into website without connecting ChatGPT. Expected: they can set goals/preferences, manually or AI-assist draft a plan, swap an item, view the same weekly review and guidance, and export/delete records.
+User signs into website without connecting ChatGPT. Expected: they can set goals/preferences/equipment, use website AI or plan manually, generate and customize a recipe, swap an item, review groceries separately, view the same weekly check-in and daily guidance, and export/delete records.
+
+**Scenario F — allergy, equipment and novelty**
+User has a tree-nut allergy, dislikes chicken, owns a pressure cooker and stovetop, and prefers easy meals. Expected: generated candidates exclude known and unresolved allergen ingredients, avoid chicken unless the user overrides the dislike, require only available equipment, favor easy preparation, and are compared with saved and recently committed recipes to avoid near-duplicates. The UI never guarantees packaged-food or cross-contact safety.
+
+**Scenario G — objective-based goal guidance**
+User switches between maintain and lose objectives and asks to review targets. Expected: Munch explains which objective and evidence support any proposed target change; the plan uses the active target context; no numeric goal changes without an explicit, version-checked approval.
 
 ## 15. Handoff instructions for coding agent
 
@@ -489,3 +535,5 @@ When completing each PR, report: changed files, domain behavior, MCP and web use
 - OpenAI plugin MCP server docs: https://developers.openai.com/plugins/build/mcp-server
 - OpenAI plugin submission/change scans: https://developers.openai.com/plugins/deploy/submission
 - OpenAI MCP Apps UI reference: https://developers.openai.com/plugins/reference
+- NIDDK Body Weight Planner: https://www.niddk.nih.gov/health-information/weight-management/body-weight-planner
+- FDA food-allergy information: https://www.fda.gov/food/buy-store-serve-safe-food/food-allergies-what-you-need-know
