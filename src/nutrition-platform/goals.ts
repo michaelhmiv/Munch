@@ -36,8 +36,20 @@ function mapGoals(row: NutritionGoalsRow): NutritionGoals {
 export async function upsertNutritionGoals(
     userId: string,
     input: NutritionGoalsInput,
+    options: {
+        origin?: "user" | "website" | "mcp";
+        idempotencyKey?: string;
+    } = {},
 ): Promise<NutritionGoals> {
     return withUserDatabase(userId, async (tx) => {
+        await tx`select pg_advisory_xact_lock(hashtextextended(${userId}, 0))`;
+        const beforeRows = await tx<Array<NutritionGoalsRow>>`
+            select user_id, daily_calories, daily_protein_g, daily_carbs_g,
+                   daily_fat_g, daily_fiber_g, daily_sugar_g, daily_alcohol_g,
+                   daily_water_ml, target_weight_g, updated_at
+            from munch.nutrition_goals where user_id = ${userId} for update
+        `;
+        const before = beforeRows[0] ? mapGoals(beforeRows[0]) : null;
         const rows = await tx<Array<NutritionGoalsRow>>`
             insert into munch.nutrition_goals (
                 user_id,
@@ -89,8 +101,80 @@ export async function upsertNutritionGoals(
                 updated_at
         `;
         if (!rows[0]) throw new Error("Failed to save nutrition goals");
-        return mapGoals(rows[0]);
+        const saved = mapGoals(rows[0]);
+        const preferences = await tx<Array<{ objective: string }>>`
+            select objective from munch.guidance_preferences where user_id = ${userId}
+        `;
+        const objective = preferences[0]?.objective ?? "track_only";
+        const revisions = await tx<
+            Array<{ revision: number | string; targets: unknown }>
+        >`
+            select revision, targets from munch.guidance_goal_revisions
+            where user_id = ${userId} order by revision desc limit 1 for update
+        `;
+        let revision = revisions[0];
+        if (!revision) {
+            const baseline = await tx<
+                Array<{ revision: number | string; targets: unknown }>
+            >`
+                insert into munch.guidance_goal_revisions (
+                    user_id, revision, objective, targets, origin, confirmed, rationale
+                ) values (
+                    ${userId}, 1, ${objective}, ${before ? targetsOf(before) : emptyTargets()}::jsonb,
+                    'user', true, ${["Initial snapshot before the first goal update"]}::jsonb
+                ) returning revision, targets
+            `;
+            revision = baseline[0];
+        }
+        if (!revision)
+            throw new Error("Failed to initialize nutrition goal history");
+        if (
+            JSON.stringify(before ? targetsOf(before) : emptyTargets()) !==
+            JSON.stringify(targetsOf(saved))
+        ) {
+            const nextRevision = Number(revision.revision) + 1;
+            await tx`
+                insert into munch.guidance_goal_revisions (
+                    user_id, revision, objective, targets, origin, confirmed,
+                    rationale, idempotency_key
+                ) values (
+                    ${userId}, ${nextRevision}, ${objective}, ${targetsOf(saved)}::jsonb,
+                    ${options.origin ?? "user"}, true,
+                    ${["Targets explicitly entered by the user"]}::jsonb,
+                    ${options.idempotencyKey ?? null}
+                ) on conflict do nothing
+            `;
+        }
+        return saved;
     });
+}
+
+function emptyTargets() {
+    return {
+        daily_calories: null,
+        daily_protein_g: null,
+        daily_carbs_g: null,
+        daily_fat_g: null,
+        daily_fiber_g: null,
+        daily_sugar_g: null,
+        daily_alcohol_g: null,
+        daily_water_ml: null,
+        target_weight_g: null,
+    };
+}
+
+function targetsOf(goals: NutritionGoals) {
+    return {
+        daily_calories: goals.daily_calories,
+        daily_protein_g: goals.daily_protein_g,
+        daily_carbs_g: goals.daily_carbs_g,
+        daily_fat_g: goals.daily_fat_g,
+        daily_fiber_g: goals.daily_fiber_g,
+        daily_sugar_g: goals.daily_sugar_g,
+        daily_alcohol_g: goals.daily_alcohol_g,
+        daily_water_ml: goals.daily_water_ml,
+        target_weight_g: goals.target_weight_g,
+    };
 }
 
 export async function getNutritionGoals(

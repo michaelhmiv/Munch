@@ -1004,19 +1004,28 @@ describe("write-tool numeric bounds", () => {
     test("set_nutrition_goals rejects negatives and numeric(6,2) overflow", async () => {
         await withTools(null, async (call) => {
             expect(
-                (await call("set_nutrition_goals", { daily_fiber_g: -1 }))
-                    .isError,
+                (
+                    await call("set_nutrition_goals", {
+                        daily_fiber_g: -1,
+                        confirm: true,
+                    })
+                ).isError,
             ).toBe(true);
             expect(
                 (
                     await call("set_nutrition_goals", {
                         daily_sugar_g: MAX_GOAL_G + 1,
+                        confirm: true,
                     })
                 ).isError,
             ).toBe(true);
             expect(
-                (await call("set_nutrition_goals", { daily_alcohol_g: 1e308 }))
-                    .isError,
+                (
+                    await call("set_nutrition_goals", {
+                        daily_alcohol_g: 1e308,
+                        confirm: true,
+                    })
+                ).isError,
             ).toBe(true);
         });
     });
@@ -1028,6 +1037,7 @@ describe("write-tool numeric bounds", () => {
         await withTools(null, async (call) => {
             const r = await call("set_nutrition_goals", {
                 daily_fiber_g: null,
+                confirm: true,
             });
             expect(r.isError).toBeFalsy();
         });

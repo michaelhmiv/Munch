@@ -129,6 +129,8 @@ jobs:
         run: bun scripts/household-lifecycle-smoke.ts
       - name: Exercise recipes, planning, groceries, idempotency, and RLS
         run: bun scripts/recipe-planning-smoke.ts
+      - name: Exercise guided nutrition, goal history, plan review, groceries, swaps, and RLS
+        run: bun scripts/guided-nutrition-smoke.ts
       - name: Exercise Cooks persistence, media, timeline, RLS, and side-effect boundaries
         run: bun scripts/cooks-platform-smoke.ts
       - name: Exercise parsed recipe save, read-back, and meal logging

@@ -53,6 +53,7 @@ export interface RecipeInput {
     sourceType: "user_entered" | "chatgpt_generated" | "imported";
     sourceTitle?: string;
     sourceUrl?: string;
+    guidanceMetadata?: Record<string, unknown>;
     ingredients: RecipeIngredientInput[];
 }
 
@@ -362,6 +363,7 @@ async function insertRecipeRevision(
             fiber_g_per_serving,
             sugar_g_per_serving,
             sodium_mg_per_serving,
+            guidance_metadata,
             nutrition_status,
             calculated_at,
             created_by_user_id
@@ -389,6 +391,7 @@ async function insertRecipeRevision(
             ${calculation.perServing.fiber_g ?? null},
             ${calculation.perServing.sugar_g ?? null},
             ${calculation.perServing.sodium_mg ?? null},
+            ${input.recipe.guidanceMetadata ?? {}}::jsonb,
             ${calculation.nutritionStatus},
             ${calculation.nutritionStatus === "unavailable" ? null : new Date()},
             ${input.userId}
@@ -433,7 +436,7 @@ async function insertRecipeRevision(
     return revision;
 }
 
-async function saveRecipeInTransaction(
+export async function saveRecipeInTransaction(
     tx: DatabaseTransaction,
     input: {
         userId: string;
@@ -1043,7 +1046,7 @@ export async function logRecipe(input: {
     };
 }
 
-async function scheduleRecipeInTransaction(
+export async function scheduleRecipeInTransaction(
     tx: DatabaseTransaction,
     input: {
         userId: string;

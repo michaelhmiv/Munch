@@ -30,7 +30,8 @@ for (const contract of INVENTORY_CAPABILITY_CONTRACTS) {
 
 for await (const path of sourceFiles.scan({ cwd: "." })) {
     const source = await Bun.file(path).text();
-    const pattern = /registerTool\(\s*(?:"([^"]+)"|'([^']+)'|`([^`]+)`)/gs;
+    const pattern =
+        /(?:registerTool|register)\(\s*(?:"([^"]+)"|'([^']+)'|`([^`]+)`)/gs;
     for (const match of source.matchAll(pattern)) {
         const toolName = match[1] || match[2] || match[3];
         if (toolName) discovered.add(toolName);

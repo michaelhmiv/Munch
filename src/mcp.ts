@@ -85,6 +85,7 @@ import {
     widgetToolMeta,
 } from "./openai-submission.js";
 import { getWidgetHtml } from "./widgets.js";
+import { registerGuidanceTools } from "./guidance-tools.js";
 
 // MCP Apps UI (https://blog.modelcontextprotocol.io/posts/2026-01-26-mcp-apps/):
 // the get_nutrition_summary tool links to an HTML dashboard served as a ui://
@@ -2031,7 +2032,7 @@ export function registerTools(
         {
             title: "Set Nutrition Goals",
             description:
-                "Set the user's daily calorie and macro targets, and optionally a target body weight. Pass only the fields you want to update — omitted fields keep their previous value. Pass null explicitly to clear a target. Calories, protein, carbs, fat, fiber and water are targets to REACH; sugar and alcohol are limits to STAY UNDER, and progress against them is worded accordingly. Targets are the user's own choice; this server does not provide medical or dietary advice.",
+                "Set the user's daily calorie and macro targets, and optionally a target body weight. Pass only the fields you want to update — omitted fields keep their previous value. Pass null explicitly to clear a target. Set confirm=true only after the user explicitly approves the exact change. Calories, protein, carbs, fat, fiber and water are targets to REACH; sugar and alcohol are limits to STAY UNDER, and progress against them is worded accordingly. Targets are the user's own choice; this server does not provide medical or dietary advice.",
             outputSchema: TEXT_OUTPUT_SCHEMA,
             annotations: {
                 readOnlyHint: false,
@@ -2050,6 +2051,10 @@ export function registerTools(
                     .nullable()
                     .optional()
                     .describe("Daily calorie target (kcal). Null to clear."),
+                confirm: z
+                    .boolean()
+                    .describe("Explicitly confirm this goal update"),
+                idempotency_key: z.string().min(8).max(120).optional(),
                 daily_protein_g: z.coerce
                     .number()
                     .min(0)
@@ -2125,6 +2130,11 @@ export function registerTools(
             return withAnalytics(
                 "set_nutrition_goals",
                 async () => {
+                    if (!args.confirm) {
+                        throw new Error(
+                            "Explicit confirmation is required to update nutrition goals",
+                        );
+                    }
                     const [existing, preferredUnit] = await Promise.all([
                         getNutritionGoals(userId),
                         getPreferredWeightUnit(userId),
@@ -2182,7 +2192,11 @@ export function registerTools(
                                 : args.daily_water_ml,
                         target_weight_g,
                     };
-                    const goals = await upsertNutritionGoals(userId, merged);
+                    const goals = await upsertNutritionGoals(userId, merged, {
+                        origin: "mcp",
+                        idempotencyKey:
+                            args.idempotency_key ?? crypto.randomUUID(),
+                    });
                     // An alcohol target set by someone who has alcohol tracking
                     // off is saved but invisible everywhere else, so say so here
                     // rather than let the goal silently vanish from the list.
@@ -4038,6 +4052,11 @@ export function registerTools(
             );
         },
     );
+
+    // Guidance uses the same deterministic persistence and validation layer as
+    // the website. This adapter accepts host-proposed recipes and never calls a
+    // model provider or imports website-only AI configuration.
+    registerGuidanceTools(toolServer, userId);
 }
 
 // Build a fresh McpServer with this user's tools registered.

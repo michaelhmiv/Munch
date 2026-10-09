@@ -2589,6 +2589,11 @@ export function createAppRouter(): Hono {
 
     app.put("/api/app/goals", requireSameOrigin, async (c) => {
         const body = (await c.req.json()) as Record<string, unknown>;
+        if (body.confirm !== true) {
+            throw new Error(
+                "Explicit confirmation is required to update nutrition goals",
+            );
+        }
         const unit = isWeightUnit(body.unit) ? body.unit : null;
         const targetWeight = numberOrNull(body.target_weight);
         if (targetWeight !== undefined && targetWeight !== null && !unit) {
@@ -2604,17 +2609,27 @@ export function createAppRouter(): Hono {
         ) {
             throw new Error("Target weight is outside the supported range");
         }
-        const goals = await upsertNutritionGoals(c.get("munchUserId"), {
-            daily_calories: numberOrNull(body.daily_calories),
-            daily_protein_g: numberOrNull(body.daily_protein_g),
-            daily_carbs_g: numberOrNull(body.daily_carbs_g),
-            daily_fat_g: numberOrNull(body.daily_fat_g),
-            daily_fiber_g: numberOrNull(body.daily_fiber_g),
-            daily_sugar_g: numberOrNull(body.daily_sugar_g),
-            daily_alcohol_g: numberOrNull(body.daily_alcohol_g),
-            daily_water_ml: numberOrNull(body.daily_water_ml),
-            target_weight_g: targetWeightG,
-        });
+        const goals = await upsertNutritionGoals(
+            c.get("munchUserId"),
+            {
+                daily_calories: numberOrNull(body.daily_calories),
+                daily_protein_g: numberOrNull(body.daily_protein_g),
+                daily_carbs_g: numberOrNull(body.daily_carbs_g),
+                daily_fat_g: numberOrNull(body.daily_fat_g),
+                daily_fiber_g: numberOrNull(body.daily_fiber_g),
+                daily_sugar_g: numberOrNull(body.daily_sugar_g),
+                daily_alcohol_g: numberOrNull(body.daily_alcohol_g),
+                daily_water_ml: numberOrNull(body.daily_water_ml),
+                target_weight_g: targetWeightG,
+            },
+            {
+                origin: "website",
+                idempotencyKey:
+                    typeof body.idempotency_key === "string"
+                        ? body.idempotency_key
+                        : crypto.randomUUID(),
+            },
+        );
         return privateJson(c, { goals });
     });
 
