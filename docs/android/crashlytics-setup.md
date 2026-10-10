@@ -9,10 +9,10 @@ Firebase's Android setup uses `google-services.json` at the app module root. The
 Munch keeps the real configuration out of the public repository:
 
 - **Local builds:** Download the Android config from Firebase Console and place it at `android/app/google-services.json`. This path is gitignored.
-- **Trusted GitHub Actions builds:** Add a repository Actions secret named `FIREBASE_ANDROID_CONFIG_BASE64` containing a base64 encoding of the complete JSON file. The workflow decodes and validates it on pushes to `main`.
+- **Trusted GitHub Actions builds:** Add a repository Actions secret named `FIREBASE_ANDROID_CONFIG_JSON` containing the complete JSON text. The workflow writes it locally and validates it on pushes to `main`.
 - **Pull request CI:** PR builds use the fake fixture at `android/app/src/test/fixtures/google-services.json`. It verifies Gradle integration but does not connect crash reports to Munch's Firebase project. The production config secret is not passed to PR jobs.
 
-To create the Actions secret, open the repository's **Settings → Secrets and variables → Actions → New repository secret**. Encode the file as one line; on macOS/Linux, `base64 < android/app/google-services.json | tr -d '\\n'` works.
+To create the Actions secret, open the repository's **Settings → Secrets and variables → Actions → New repository secret**. Paste the complete contents of `google-services.json` as the secret value, preserving the JSON text.
 
 Firebase describes Firebase-provisioned API keys as client identifiers, not secrets, and permits them in app configuration when they are used only for Firebase services. The key is still included in the built Android app and can be extracted by users; putting the JSON in an Actions secret protects it from source control, not from the app binary. Keep the key limited to Firebase APIs. Use separate restricted keys for any other Google APIs. Never put Firebase Admin service-account keys, Gemini Developer API keys, or backend credentials in the Android app.
 
