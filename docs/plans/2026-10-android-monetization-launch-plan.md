@@ -25,6 +25,8 @@ ChatGPT or another MCP host may provide its own model usage. Those host-model ca
 - The existing server uses Better Auth and Railway PostgreSQL. Firebase Auth and Firestore are not required for this product architecture.
 - The Android workflow currently builds and tests a debug APK. A signed release AAB, store listing, Google service credentials, AdMob integration, and Firebase integration still need setup.
 - No AdMob SDK, UMP consent flow, or Firebase Crashlytics SDK is integrated in the Android app.
+- The AdMob account is approved. A Munch Android app entry and home banner unit exist but are not linked to a Play listing yet: app ID `ca-app-pub-2708638041809482~4540309917`, banner unit `ca-app-pub-2708638041809482/4316948636`. The AdMob console warns the account is nearing its inactivity cutoff, so serving a valid impression soon after launch matters.
+- A Firebase Spark project named Munch Android (`munch-android-bf1cd`) and Android app `business.munch.app` have been created. Google Analytics and Gemini are off. No Firebase SDK is integrated yet; Firebase Auth and Firestore remain out of scope.
 
 ## Implementation sequence
 
@@ -68,9 +70,9 @@ Set pack prices only after measuring representative input/output costs and apply
 
 ### 4. Add the minimum useful Firebase services
 
-Create a Firebase project for Munch Android and register business.munch.app.
+The Firebase project `munch-android-bf1cd` and Android app `business.munch.app` are registered on the Spark plan. Keep Analytics disabled unless a minimal event schema and its privacy disclosures are approved. Gemini in Firebase is also disabled. The Android build still needs its Firebase config and SDK integration.
 
-- Add Firebase Crashlytics for crash diagnostics, without attaching Munch account IDs, meal content, or nutrition records to crash reports.
+- Add Firebase Crashlytics only after approving that crash stack traces and app/device diagnostics will be transmitted to Firebase/Google. Do not attach Munch account IDs, meal content, or nutrition records to crash reports.
 - Add Firebase Analytics only if a minimal event schema is approved. Events may describe screens and coarse conversion outcomes; they must not contain nutrition details or user-entered content. If Analytics is not needed for launch, leave it disabled.
 - Do not add Firebase Auth or Firestore: identity and application data remain in Better Auth and Railway PostgreSQL.
 - Add the Firebase client configuration to the Android build with API-key restrictions appropriate for the package and signing certificate. Do not commit service-account keys or backend credentials.
@@ -85,8 +87,8 @@ After the product IDs and account choice are confirmed:
 - Enable the Google Play Android Developer API and create a narrowly scoped service account for purchase verification/acknowledgement. Grant only the Play Console permissions needed for Munch.
 - Create the Pub/Sub topic and authenticated push subscription for the existing Google Play notification endpoint.
 - Add Google Play service-account and Pub/Sub verification secrets to the Munch Railway service through its secret-variable interface. Never place private keys in GitHub, the app bundle, logs, or this plan.
-- Register Munch in AdMob, create ad units, link the Play listing when available, and complete AdMob privacy messaging.
-- Register the Android app in Firebase and configure Crashlytics.
+- Munch is already registered in AdMob with a banner unit; link it to the Play listing when available, integrate UMP, and complete AdMob privacy messaging.
+- The Android app is already registered in Firebase; add the Android config and configure Crashlytics after the telemetry decision.
 - Set the app’s publisher contact details and store metadata only after confirming the developer account’s public identity/address choice.
 
 ### 6. Store listing and policy readiness
@@ -126,7 +128,8 @@ Build a signed release AAB, then run internal testing with license testers. Veri
 - Confirm the exact Android feature set that is free, including Pantry and household collaboration.
 - Approve the ad-free price and whether annual billing launches with monthly.
 - Approve credit-pack sizes and prices after the real provider-cost/fee model is measured.
-- Decide whether Firebase Analytics is worth collecting minimal app telemetry, or launch with Crashlytics only.
+- Approve sending crash stack traces and app/device diagnostics to Firebase/Google via Crashlytics, or leave crash reporting disabled.
+- Decide whether Firebase Analytics is worth collecting minimal app telemetry; it is currently disabled.
 
 ## Official references
 
