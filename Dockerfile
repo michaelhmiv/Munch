@@ -1,5 +1,6 @@
 FROM public.ecr.aws/docker/library/node:22-bookworm-slim AS base
 WORKDIR /app
+RUN chown node:node /app
 RUN npm install --global bun@1.3.10 \
     && bun --version
 COPY --chown=node:node package.json bun.lock ./
