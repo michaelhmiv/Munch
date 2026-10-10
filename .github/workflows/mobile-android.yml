@@ -90,3 +90,4 @@ jobs:
             --app "$firebase_app_id" \
             --testers "michaelhmiv@gmail.com" \
             --release-notes "Automated Android build from commit ${GITHUB_SHA::7}"
+# Keep each main-branch build independent so every merge gets a distribution attempt.
