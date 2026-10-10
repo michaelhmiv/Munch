@@ -110,7 +110,7 @@ export async function upsertNutritionGoals(
             Array<{ revision: number | string; targets: unknown }>
         >`
             select revision, targets from munch.guidance_goal_revisions
-            where user_id = ${userId} order by revision desc limit 1 for update
+            where user_id = ${userId} order by revision desc limit 1
         `;
         let revision = revisions[0];
         if (!revision) {
