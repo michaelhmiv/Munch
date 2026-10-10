@@ -36,8 +36,10 @@ Set these Railway service variables on the Munch API:
 The Android app uses Credential Manager to obtain a Google ID token and sends
 it to Better Auth, which validates it on Munch's backend. Google accounts with
 verified email addresses can link to an existing Munch account with the same
-email. Google credentials are not stored in Munch; the Google provider ID and
-account link are stored with the user's Munch account.
+email. The user's Google password never reaches Munch. The app does not persist
+the Google ID token locally; it stores the Munch session in Android Keystore.
+Better Auth stores the linked Google provider identity in the Munch account
+record, whose schema also has optional provider-token fields.
 
 The app link association endpoint is `https://munch.business/.well-known/assetlinks.json`.
 It returns the Android statement only after the signing SHA-256 fingerprint
