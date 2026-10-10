@@ -40,12 +40,8 @@ jobs:
           npx cap sync android
           bun scripts/configure-mobile-android.ts
       - name: Prepare Firebase config for Android CI
-        env:
-          ANDROID_FIREBASE_CONFIG_JSON: ${{ secrets.ANDROID_FIREBASE_CONFIG_JSON }}
         run: |
-          if [ -n "$ANDROID_FIREBASE_CONFIG_JSON" ]; then
-            printf '%s' "$ANDROID_FIREBASE_CONFIG_JSON" > android/app/google-services.json
-          else
+          if [ ! -s android/app/google-services.json ]; then
             cp android/app/src/test/fixtures/google-services.json android/app/google-services.json
           fi
       - name: Verify native project is reproducible
