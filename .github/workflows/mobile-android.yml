@@ -48,8 +48,8 @@ jobs:
             exit 1
           fi
           printf '%s' "$FIREBASE_ANDROID_CONFIG_JSON" > android/app/google-services.json
-          jq -e --arg project "munch-android-bf1cd" --arg package "business.munch.app" \\
-            '.project_info.project_id == $project and any(.client[]; .client_info.android_client_info.package_name == $package)' \\
+          jq -e --arg project "munch-android-bf1cd" --arg package "business.munch.app" \
+            '.project_info.project_id == $project and any(.client[]; .client_info.android_client_info.package_name == $package)' \
             android/app/google-services.json > /dev/null
           echo "Using the Firebase app config from the Actions secret."
       - name: Prepare Firebase fixture for pull requests
@@ -110,8 +110,8 @@ jobs:
           config_path="$RUNNER_TEMP/google-services.json"
           printf '%s' "$FIREBASE_ANDROID_CONFIG_JSON" > "$config_path"
           trap 'rm -f "$config_path"' EXIT
-          jq -e --arg project "munch-android-bf1cd" --arg package "business.munch.app" \\
-            '.project_info.project_id == $project and any(.client[]; .client_info.android_client_info.package_name == $package)' \\
+          jq -e --arg project "munch-android-bf1cd" --arg package "business.munch.app" \
+            '.project_info.project_id == $project and any(.client[]; .client_info.android_client_info.package_name == $package)' \
             "$config_path" > /dev/null
           firebase_app_id="$(jq -er '.client[] | select(.client_info.android_client_info.package_name == "business.munch.app") | .client_info.mobilesdk_app_id' "$config_path")"
           echo "app_id=$firebase_app_id" >> "$GITHUB_OUTPUT"
@@ -134,10 +134,10 @@ jobs:
           FIREBASE_APP_ID: ${{ steps.firebase.outputs.app_id }}
         run: |
           set -euo pipefail
-          firebase appdistribution:distribute "artifacts/app-debug.apk" \\
-            --app "$FIREBASE_APP_ID" \\
-            --project "munch-android-bf1cd" \\
-            --testers "michaelhmiv@gmail.com" \\
+          firebase appdistribution:distribute "artifacts/app-debug.apk" \
+            --app "$FIREBASE_APP_ID" \
+            --project "munch-android-bf1cd" \
+            --testers "michaelhmiv@gmail.com" \
             --release-notes "Automated Android build from commit $(printf '%s' "$GITHUB_SHA" | cut -c1-7)"
       - name: Distribute Android APK with the existing Firebase key
         if: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER == '' && vars.GCP_DISTRIBUTION_SERVICE_ACCOUNT == '' }}
@@ -155,9 +155,9 @@ jobs:
           chmod 600 "$service_account_file"
           trap 'rm -f "$service_account_file"' EXIT
           export GOOGLE_APPLICATION_CREDENTIALS="$service_account_file"
-          firebase appdistribution:distribute "artifacts/app-debug.apk" \\
-            --app "$FIREBASE_APP_ID" \\
-            --project "munch-android-bf1cd" \\
-            --testers "michaelhmiv@gmail.com" \\
+          firebase appdistribution:distribute "artifacts/app-debug.apk" \
+            --app "$FIREBASE_APP_ID" \
+            --project "munch-android-bf1cd" \
+            --testers "michaelhmiv@gmail.com" \
             --release-notes "Automated Android build from commit $(printf '%s' "$GITHUB_SHA" | cut -c1-7)"
 # No cancellation group is used, so merged main commits each retain a release run.
