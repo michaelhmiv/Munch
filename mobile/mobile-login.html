@@ -102,6 +102,29 @@
             button:disabled {
                 opacity: 0.55;
             }
+            .button-google {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 10px;
+                width: 100%;
+                margin-top: 18px;
+                border: 1px solid #cbd7d0;
+                color: #183329;
+                background: #fff;
+            }
+            .button-google[hidden] {
+                display: none;
+            }
+            .google-mark {
+                width: 20px;
+                height: 20px;
+                flex: none;
+                color: #4285f4;
+                font-size: 1.25rem;
+                font-weight: 800;
+                line-height: 20px;
+            }
             .status {
                 min-height: 24px;
                 margin: 14px 0 0;
@@ -125,38 +148,39 @@
             <section class="card">
                 <h1>Welcome back.</h1>
                 <p>
-                    Sign in to your Munch account. Your installed-app session is
-                    stored by Android Keystore, not browser storage.
+                    Sign in without a Munch password. We’ll email you a secure,
+                    single-use link.
                 </p>
                 <form id="mobile-login-form">
                     <label>
-                        Email or username
+                        Email address
                         <input
-                            name="identifier"
-                            autocomplete="username"
+                            name="email"
+                            type="email"
+                            inputmode="email"
+                            autocomplete="email"
                             autocapitalize="none"
                             spellcheck="false"
                             required
+                            maxlength="320"
                         />
                     </label>
-                    <label>
-                        Password
-                        <input
-                            name="password"
-                            type="password"
-                            autocomplete="current-password"
-                            required
-                        />
-                    </label>
-                    <button type="submit">Sign in</button>
+                    <button type="submit">Email me a sign-in link</button>
                 </form>
+                <button
+                    id="google-sign-in"
+                    class="button-google"
+                    type="button"
+                    hidden
+                >
+                    <span class="google-mark" aria-hidden="true">G</span>
+                    Continue with Google
+                </button>
                 <p id="mobile-login-status" class="status" role="status"></p>
             </section>
             <p class="fine-print">
-                This Android foundation uses the same Munch account and backend
-                as the website and ChatGPT connection. Magic-link app handoff is
-                being added as a separate authentication path before store
-                release.
+                Your installed-app session is stored by Android Keystore. Munch
+                does not receive or store your Google password.
             </p>
         </main>
         <script type="module" src="/mobile-login.js"></script>

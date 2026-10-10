@@ -1,6 +1,7 @@
 import { oauthProvider } from "@better-auth/oauth-provider";
 import { betterAuth } from "better-auth";
 import { bearer, jwt, magicLink, username } from "better-auth/plugins";
+import { createHash, randomBytes } from "node:crypto";
 import { Pool } from "pg";
 import { betterAuthTrustedOrigins } from "../mobile/origins.js";
 import { getBetterAuthRuntimeConfig } from "./config.js";
@@ -16,6 +17,29 @@ import {
     munchMcpResourceUrl,
 } from "./oauth-scopes.js";
 
+const MOBILE_HANDOFF_IDENTIFIER_PREFIX = "munch-mobile-handoff:";
+const MOBILE_HANDOFF_TTL_MS = 2 * 60 * 1000;
+
+let authDatabase: Pool | null = null;
+
+function sha256Base64Url(value: string): string {
+    return createHash("sha256").update(value).digest("base64url");
+}
+
+function getAuthDatabase(): Pool {
+    if (!authDatabase) getMunchBetterAuth();
+    if (!authDatabase) throw new Error("Better Auth database is unavailable");
+    return authDatabase;
+}
+
+function validMobileCodeChallenge(value: string): boolean {
+    return /^[A-Za-z0-9_-]{43}$/.test(value);
+}
+
+function validMobileCodeVerifier(value: string): boolean {
+    return /^[A-Za-z0-9._~-]{43,128}$/.test(value);
+}
+
 function createMunchBetterAuth() {
     const config = getBetterAuthRuntimeConfig();
     const reviewerSeedMode = process.env.MUNCH_REVIEWER_SEED_MODE === "true";
@@ -29,6 +53,12 @@ function createMunchBetterAuth() {
         application_name: "munch-better-auth",
         options: "-c search_path=munch,public -c role=munch_auth",
     });
+    authDatabase = database;
+
+    const googleClientIds = [
+        config.googleWebClientId,
+        config.googleAndroidClientId,
+    ].filter((value): value is string => Boolean(value));
 
     async function activateVerifiedUser(userId: string): Promise<void> {
         await database.query(
@@ -123,9 +153,26 @@ function createMunchBetterAuth() {
                 updatedAt: "updated_at",
             },
             accountLinking: {
-                enabled: false,
+                // Google ID tokens with verified email addresses may link to
+                // matching Munch accounts. Unverified providers cannot claim
+                // existing accounts by email.
+                enabled: Boolean(
+                    config.googleWebClientId &&
+                    config.googleAndroidClientId &&
+                    config.googleClientSecret,
+                ),
             },
         },
+        ...(config.googleWebClientId && config.googleClientSecret
+            ? {
+                  socialProviders: {
+                      google: {
+                          clientId: googleClientIds,
+                          clientSecret: config.googleClientSecret,
+                      },
+                  },
+              }
+            : {}),
         verification: {
             modelName: "auth_verifications",
             fields: {
@@ -285,4 +332,68 @@ let instance: MunchBetterAuth | null = null;
 export function getMunchBetterAuth(): MunchBetterAuth {
     instance ??= createMunchBetterAuth();
     return instance;
+}
+
+export async function createMobileSignInHandoff(input: {
+    sessionToken: string;
+    codeChallenge: string;
+}): Promise<string> {
+    if (!input.sessionToken || input.sessionToken.length > 16_384) {
+        throw new Error("A valid Munch session is required for app sign-in");
+    }
+    if (!validMobileCodeChallenge(input.codeChallenge)) {
+        throw new Error("A valid mobile sign-in challenge is required");
+    }
+
+    const code = randomBytes(32).toString("base64url");
+    const identifier = MOBILE_HANDOFF_IDENTIFIER_PREFIX + sha256Base64Url(code);
+    const value = JSON.stringify({
+        sessionToken: input.sessionToken,
+        challenge: input.codeChallenge,
+    });
+    const expiresAt = new Date(Date.now() + MOBILE_HANDOFF_TTL_MS);
+
+    await getAuthDatabase().query(
+        `insert into munch.auth_verifications (identifier, value, expires_at)
+         values ($1, $2, $3)`,
+        [identifier, value, expiresAt],
+    );
+    return code;
+}
+
+export async function exchangeMobileSignInHandoff(input: {
+    code: string;
+    codeVerifier: string;
+}): Promise<string | null> {
+    if (
+        !/^[A-Za-z0-9_-]{43}$/.test(input.code) ||
+        !validMobileCodeVerifier(input.codeVerifier)
+    ) {
+        return null;
+    }
+
+    const identifier =
+        MOBILE_HANDOFF_IDENTIFIER_PREFIX + sha256Base64Url(input.code);
+    const challenge = sha256Base64Url(input.codeVerifier);
+    const result = await getAuthDatabase().query<{ value: string }>(
+        `delete from munch.auth_verifications
+         where identifier = $1
+           and expires_at > now()
+           and value::jsonb ->> 'challenge' = $2
+         returning value`,
+        [identifier, challenge],
+    );
+    const value = result.rows[0]?.value;
+    if (!value) return null;
+
+    try {
+        const payload = JSON.parse(value) as { sessionToken?: unknown };
+        return typeof payload.sessionToken === "string" &&
+            payload.sessionToken.length > 0 &&
+            payload.sessionToken.length <= 16_384
+            ? payload.sessionToken
+            : null;
+    } catch {
+        return null;
+    }
 }

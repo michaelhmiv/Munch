@@ -28,7 +28,7 @@ function validEnvironment() {
 }
 
 describe("Munch startup configuration", () => {
-    test("accepts canonical Better Auth + Railway PostgreSQL configuration", () => {
+    test("accepts Better Auth and Railway PostgreSQL configuration", () => {
         validEnvironment();
         expect(configurationIssues()).toEqual([]);
     });
@@ -69,5 +69,35 @@ describe("Munch startup configuration", () => {
         expect(keys).toContain("USDA_FDC_API_KEY");
         expect(keys).toContain("STRIPE_WEBHOOK_SECRET");
         expect(keys).toContain("STRIPE_HOUSEHOLD_MEMBER_PRICE_ID");
+    });
+
+    test("accepts Google credentials only as a complete backend pair", () => {
+        validEnvironment();
+        process.env.MUNCH_GOOGLE_WEB_CLIENT_ID = "web-client-id";
+        expect(configurationIssues()).toContainEqual(
+            expect.objectContaining({ key: "MUNCH_GOOGLE_WEB_CLIENT_ID" }),
+        );
+
+        process.env.MUNCH_GOOGLE_CLIENT_SECRET = "server-only-secret";
+        expect(configurationIssues()).toEqual([]);
+    });
+
+    test("requires Google web credentials before an Android client ID", () => {
+        validEnvironment();
+        process.env.MUNCH_GOOGLE_ANDROID_CLIENT_ID = "android-client-id";
+        expect(configurationIssues()).toContainEqual(
+            expect.objectContaining({ key: "MUNCH_GOOGLE_ANDROID_CLIENT_ID" }),
+        );
+    });
+
+    test("validates Android App Link signing fingerprints", () => {
+        validEnvironment();
+        process.env.MUNCH_ANDROID_APP_LINK_SHA256_FINGERPRINTS =
+            "not-a-fingerprint";
+        expect(configurationIssues()).toContainEqual(
+            expect.objectContaining({
+                key: "MUNCH_ANDROID_APP_LINK_SHA256_FINGERPRINTS",
+            }),
+        );
     });
 });
