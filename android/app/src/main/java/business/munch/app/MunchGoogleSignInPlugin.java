@@ -15,7 +15,6 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption;
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
-import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException;
 
 @CapacitorPlugin(name = "MunchGoogleSignIn")
 public class MunchGoogleSignInPlugin extends Plugin {
@@ -67,7 +66,7 @@ public class MunchGoogleSignInPlugin extends Plugin {
                         JSObject result = new JSObject();
                         result.put("idToken", googleCredential.getIdToken());
                         call.resolve(result);
-                    } catch (GoogleIdTokenParsingException error) {
+                    } catch (RuntimeException error) {
                         call.reject("Google returned an invalid ID token", error);
                     }
                 }
