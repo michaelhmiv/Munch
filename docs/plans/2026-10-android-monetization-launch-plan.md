@@ -25,9 +25,9 @@ ChatGPT or another MCP host may provide its own model usage. Those host-model ca
 - The existing server uses Better Auth and Railway PostgreSQL. Firebase Auth and Firestore are not required for this product architecture.
 - The Android workflow currently builds and tests a debug APK. A signed release AAB, store listing, Play purchase credentials, and AdMob integration still need setup.
 - No AdMob SDK or UMP consent flow is integrated in the Android app.
-- Firebase Crashlytics Gradle/SDK wiring is in implementation PR #157. The real Firebase app config is still required to build a Munch-connected app and verify crash reporting.
-- The AdMob account is approved. A Munch Android app entry and home banner unit exist but are not linked to a Play listing yet: app ID `ca-app-pub-2708638041809482~4540309917`, banner unit `ca-app-pub-2708638041809482/4316948636`. The AdMob console warns the account is nearing its inactivity cutoff, so serving a valid impression soon after launch matters.
-- A Firebase Spark project named Munch Android (`munch-android-bf1cd`) and Android app `business.munch.app` have been created. Google Analytics and Gemini are off. Crashlytics is the only approved Firebase SDK; Firebase Auth, Firestore, and Analytics remain out of scope.
+- Firebase Crashlytics wiring and the verified real Android config are in implementation PR #157. The config matches project `munch-android-bf1cd`, package `business.munch.app`, and Firebase app ID `1:890658789419:android:ce2401c4693688722d726e`. A successful internal build and test crash are still needed to verify end-to-end reporting.
+- The AdMob account is approved. A Munch Android app entry and home banner unit exist: app ID `ca-app-pub-2708638041809482~4540309917`, banner unit `ca-app-pub-2708638041809482/4316948636`. The Play Console app has since been created as `business.munch.app` (app ID `4976415306653536151`) but is not published, so AdMob could not find it to link. The AdMob console warns the account is over five months inactive and may deactivate it at six months.
+- A Firebase Spark project named Munch Android (`munch-android-bf1cd`) and Android app `business.munch.app` have been created. The real `google-services.json` is now included in implementation PR #157. Google Analytics and Gemini are off. Crashlytics is the only approved Firebase SDK; Firebase Auth, Firestore, and Analytics remain out of scope.
 
 ## Implementation sequence
 
@@ -70,7 +70,7 @@ Set pack prices only after measuring representative input/output costs and apply
 
 ### 4. Add the minimum useful Firebase services
 
-The Firebase project `munch-android-bf1cd` and Android app `business.munch.app` are registered on the Spark plan. Crashlytics is approved and wired in implementation PR #157. Google Analytics and Gemini are disabled; Firebase Auth and Firestore are out of scope. The Android build still needs its real `google-services.json`, followed by an internal crash test.
+The Firebase project `munch-android-bf1cd` and Android app `business.munch.app` are registered on the Spark plan. Crashlytics is approved and wired in implementation PR #157. The real `google-services.json` is included in that PR and matches the registered project/app. Google Analytics and Gemini are disabled; Firebase Auth and Firestore are out of scope. The current CI must pass, followed by an internal test crash.
 
 - Crashlytics reports crash stack traces and related app/device diagnostics to Firebase/Google. Do not attach Munch account IDs, meal content, or nutrition records to reports. Update the privacy policy to describe this before distributing a build with reporting enabled.
 - Add Firebase Analytics only if a minimal event schema is approved. Events may describe screens and coarse conversion outcomes; they must not contain nutrition details or user-entered content. If Analytics is not needed for launch, leave it disabled.
@@ -81,13 +81,13 @@ The Firebase project `munch-android-bf1cd` and Android app `business.munch.app` 
 
 After the product IDs and account choice are confirmed:
 
-- Create the Play Console app for package business.munch.app and enable Play App Signing after the account owner completes the app-policy and U.S. export-law attestations.
-- Create a new subscription product for ad removal, separate from munch_premium_monthly. Start with monthly only unless annual pricing is approved.
-- Create three consumable AI credit products after the credit quantities and prices are costed.
+- The Play Console app has been created as a free app for package `business.munch.app` (app ID `4976415306653536151`). The account owner confirmed the app-policy and U.S. export-law declarations. The app is not published.
+- After uploading a build with the Play Billing permission, create a new subscription product for ad removal, separate from `munch_premium_monthly`. Start with monthly only unless annual pricing is approved.
+- After uploading a build with the Play Billing permission, create three consumable AI credit products once credit quantities and prices are costed and approved.
 - Enable the Google Play Android Developer API and create a narrowly scoped service account for purchase verification/acknowledgement. Grant only the Play Console permissions needed for Munch.
 - Create the Pub/Sub topic and authenticated push subscription for the existing Google Play notification endpoint.
 - Add Google Play service-account and Pub/Sub verification secrets to the Munch Railway service through its secret-variable interface. Never place private keys in GitHub, the app bundle, logs, or this plan.
-- Munch is already registered in AdMob with a banner unit; link it to the Play listing when available, integrate UMP, and complete AdMob privacy messaging.
+- Munch is already registered in AdMob with a banner unit. Link it to the Play listing after the app is publicly listed, then integrate UMP and complete AdMob privacy messaging.
 - The Android app is already registered in Firebase; add the real Android config and verify Crashlytics with an internal test build.
 - Set the app’s publisher contact details and store metadata only after confirming the developer account’s public identity/address choice.
 
@@ -98,7 +98,7 @@ Prepare and verify:
 - Store listing name, short/full descriptions, icon, feature graphic, screenshots, support URL, support email, privacy-policy URL, and release notes.
 - Ads declaration, Data Safety form, content rating, target audience, app-access instructions, account-deletion path, and health-app declaration.
 - Munch tracks nutrition and personal health/wellness information, so complete the Google Play Health apps declaration accurately, including on test tracks.
-- Verify whether this personal developer account is subject to the 12-tester/14-day closed-test requirement before production access.
+- This Play Console account requires at least 12 closed-test users opted in continuously for 14 days before requesting production access.
 - Review the developer profile disclosure before activating paid products. Google displays the legal name, legal address, developer email, and phone for developer accounts; merchant accounts with in-app purchases must display the full address on Google Play.
 
 ### 7. Test, certify, and release
@@ -124,7 +124,7 @@ Build a signed release AAB, then run internal testing with license testers. Veri
 
 ## Owner decisions needed before products go live
 
-- Use the existing personal Play developer account, as selected. The account owner must still affirm Play's app-policy and U.S. export-law declarations before creating the app.
+- The existing personal Play developer account was used. The account owner confirmed both declarations, and the Play Console app entry is created.
 - Android feature scope is set: all non-AI features, including Pantry and household collaboration, are free with ads; the subscription removes ads, and AI credits are separate.
 - Approve the ad-free price and whether annual billing launches with monthly.
 - Approve credit-pack sizes and prices after the real provider-cost/fee model is measured.
