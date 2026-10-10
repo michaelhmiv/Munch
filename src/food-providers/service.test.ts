@@ -96,6 +96,20 @@ describe("local food resolution", () => {
         ).toBe(true);
     });
 
+    test("does not treat a branded packaged exact name as a generic strong match", () => {
+        const onionBagel = candidate({
+            providerFoodId: "onion-bagel",
+            name: "ONION",
+            brand: "BLAZING BAGELS",
+            dataKind: "packaged",
+            confidence: 0.99,
+        });
+        expect(isStrongLocalMatch("onion", onionBagel)).toBe(false);
+        expect(isStrongLocalMatch("BLAZING BAGELS ONION", onionBagel)).toBe(
+            true,
+        );
+    });
+
     test("does not short-circuit a fuzzy or low-confidence match", () => {
         expect(isStrongLocalMatch("apple", candidate())).toBe(false);
         expect(

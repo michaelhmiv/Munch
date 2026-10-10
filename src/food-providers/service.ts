@@ -96,13 +96,18 @@ export function isStrongLocalMatch(
     const normalizedQuery = normalizeFoodText(query);
     if (!normalizedQuery) return false;
     const normalizedName = normalizeFoodText(candidate.name);
+    const normalizedBrand = normalizeFoodText(candidate.brand ?? "");
     const normalizedBrandedName = normalizeFoodText(
         [candidate.brand, candidate.name].filter(Boolean).join(" "),
     );
-    return (
-        normalizedQuery === normalizedName ||
-        normalizedQuery === normalizedBrandedName
-    );
+    const exactName = normalizedQuery === normalizedName;
+    const exactBrandedName = normalizedQuery === normalizedBrandedName;
+    const brandedWithoutBrandContext =
+        exactName &&
+        Boolean(normalizedBrand) &&
+        candidate.dataKind !== "generic" &&
+        !normalizedQuery.includes(normalizedBrand);
+    return !brandedWithoutBrandContext && (exactName || exactBrandedName);
 }
 
 function dedupe(candidates: FoodCandidate[]): FoodCandidate[] {

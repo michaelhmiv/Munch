@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { FoodCandidate } from "../food-providers/types.js";
+import { OpenRouterDecisionClient } from "../website-decision-client.js";
+import type { RecipeImportSemanticResolver } from "./types.js";
 import {
     DEFAULT_RECIPE_IMPORT_AI_MODEL,
+    HybridRecipeImportResolver,
     OpenRouterRecipeImportResolver,
     recipeImportAiConfig,
 } from "./semantic-resolver.js";
@@ -221,5 +224,339 @@ describe("OpenRouter recipe import resolver", () => {
             error = caught;
         }
         expect(error).toMatchObject({ code: "timeout" });
+    });
+});
+
+describe("hybrid recipe import resolver", () => {
+    const candidate = (id: string, name: string): FoodCandidate => ({
+        provider: "usda",
+        providerFoodId: id,
+        name,
+        dataKind: "generic",
+        portions: [],
+        attribution: { label: "USDA" },
+        confidence: 0.95,
+    });
+
+    function generativeResolver(
+        onAssignments: (
+            requests: Parameters<
+                NonNullable<
+                    RecipeImportSemanticResolver["resolveUncertainIngredients"]
+                >
+            >[0],
+        ) => ReturnType<
+            NonNullable<
+                RecipeImportSemanticResolver["resolveUncertainIngredients"]
+            >
+        >,
+    ): RecipeImportSemanticResolver {
+        return {
+            label: "openrouter:qwen/qwen3.7-flash",
+            normalizeRecipe: async () => [],
+            resolveUncertainIngredients: onAssignments,
+            chooseCandidates: async () => new Map(),
+        };
+    }
+
+    test("uses Jev for a confident bounded ambiguous candidate without calling Qwen assignment", async () => {
+        let qwenAssignments = 0;
+        const generative = generativeResolver(async () => {
+            qwenAssignments += 1;
+            return new Map();
+        });
+        const decision = new OpenRouterDecisionClient(
+            {
+                apiKey: "or-test",
+                model: "~typesafe/jev-latest",
+                endpoint: "https://openrouter.example/api/alpha/decisions",
+                timeoutMs: 5_000,
+                minConfidence: 0.75,
+            },
+            {
+                fetcher: async () =>
+                    new Response(
+                        JSON.stringify({
+                            model: "typesafe/jev-test",
+                            answers: {
+                                q0: {
+                                    type: "choice",
+                                    choice: "c1",
+                                    probabilities: {
+                                        c0: 0.02,
+                                        c1: 0.97,
+                                        NO_MATCH: 0.01,
+                                    },
+                                    confidence: 0.97,
+                                },
+                            },
+                        }),
+                        { status: 200 },
+                    ),
+            },
+        );
+        const resolver = new HybridRecipeImportResolver(generative, decision);
+        const first = candidate("100", "Milk, nonfat, fluid");
+        const second = candidate("200", "Milk, reduced fat, 2% milkfat, fluid");
+
+        const assignments = await resolver.resolveUncertainIngredients?.([
+            {
+                key: "0:0",
+                ingredient: {
+                    rawText: "1 cup 2% milk",
+                    name: "2% milk",
+                    quantity: 1,
+                    unit: "cup",
+                    searchQueries: ["2% milk"],
+                },
+                candidates: [first, second],
+                reason: "ambiguous_candidate",
+            },
+        ]);
+
+        expect(qwenAssignments).toBe(0);
+        expect(assignments?.get("0:0")).toMatchObject({
+            candidateId: "usda:200",
+            decision: "provider_match",
+            confidence: 0.97,
+        });
+    });
+
+    test("falls back to Qwen when Jev returns NO_MATCH or low confidence", async () => {
+        let received = 0;
+        const generative = generativeResolver(async (requests) => {
+            received += requests.length;
+            return new Map(
+                requests.map((request) => [
+                    request.key,
+                    {
+                        key: request.key,
+                        name: request.ingredient.name,
+                        candidateId: null,
+                        decision: "model_estimate" as const,
+                        searchQueries: ["oat milk"],
+                        confidence: 0.9,
+                    },
+                ]),
+            );
+        });
+        const decision = new OpenRouterDecisionClient(
+            {
+                apiKey: "or-test",
+                model: "~typesafe/jev-latest",
+                endpoint: "https://openrouter.example/api/alpha/decisions",
+                timeoutMs: 5_000,
+                minConfidence: 0.75,
+            },
+            {
+                fetcher: async () =>
+                    new Response(
+                        JSON.stringify({
+                            answers: {
+                                q0: {
+                                    type: "choice",
+                                    choice: "NO_MATCH",
+                                    probabilities: {
+                                        c0: 0.05,
+                                        NO_MATCH: 0.95,
+                                    },
+                                    confidence: 0.95,
+                                },
+                            },
+                        }),
+                        { status: 200 },
+                    ),
+            },
+        );
+        const resolver = new HybridRecipeImportResolver(generative, decision);
+
+        const assignments = await resolver.resolveUncertainIngredients?.([
+            {
+                key: "0:0",
+                ingredient: {
+                    rawText: "1 cup oat milk",
+                    name: "oat milk",
+                    quantity: 1,
+                    unit: "cup",
+                    searchQueries: ["oat milk"],
+                },
+                candidates: [candidate("300", "Almond milk, unsweetened")],
+                reason: "ambiguous_candidate",
+            },
+        ]);
+
+        expect(received).toBe(1);
+        expect(assignments?.get("0:0")).toMatchObject({
+            decision: "model_estimate",
+            searchQueries: ["oat milk"],
+        });
+    });
+
+    test("does not accept a high-confidence unrequested packaged snack as a base ingredient", async () => {
+        let fallbackCalls = 0;
+        const generative = generativeResolver(async (requests) => {
+            fallbackCalls += requests.length;
+            return new Map(
+                requests.map((request) => [
+                    request.key,
+                    {
+                        key: request.key,
+                        name: request.ingredient.name,
+                        candidateId: "usda:100",
+                        decision: "provider_match" as const,
+                        searchQueries: [],
+                        confidence: 0.98,
+                    },
+                ]),
+            );
+        });
+        const decision = new OpenRouterDecisionClient(
+            {
+                apiKey: "or-test",
+                model: "~typesafe/jev-latest",
+                endpoint: "https://openrouter.example/api/alpha/decisions",
+                timeoutMs: 5000,
+                minConfidence: 0.75,
+            },
+            {
+                fetcher: async () =>
+                    new Response(
+                        JSON.stringify({
+                            answers: {
+                                q0: {
+                                    type: "choice",
+                                    choice: "c1",
+                                    confidence: 0.99,
+                                    probabilities: {
+                                        c0: 0.01,
+                                        c1: 0.99,
+                                        NO_MATCH: 0,
+                                    },
+                                },
+                            },
+                        }),
+                        { status: 200 },
+                    ),
+            },
+        );
+        const resolver = new HybridRecipeImportResolver(generative, decision);
+        const result = await resolver.resolveUncertainIngredients?.([
+            {
+                key: "0:0",
+                ingredient: {
+                    rawText: "1 cup onion",
+                    name: "onion",
+                    quantity: 1,
+                    unit: "cup",
+                },
+                candidates: [
+                    candidate("100", "onion"),
+                    {
+                        ...candidate("200", "onion flavored prepared snack"),
+                        brand: "Benchmark Snack Co",
+                        dataKind: "packaged",
+                    },
+                ],
+                reason: "ambiguous_candidate",
+            },
+        ]);
+        expect(fallbackCalls).toBe(1);
+        expect(result?.get("0:0")?.candidateId).toBe("usda:100");
+    });
+
+    test("falls back to Qwen when the Jev request fails", async () => {
+        let received = 0;
+        const generative = generativeResolver(async (requests) => {
+            received += requests.length;
+            return new Map(
+                requests.map((request) => [
+                    request.key,
+                    {
+                        key: request.key,
+                        name: request.ingredient.name,
+                        candidateId: null,
+                        decision: "model_estimate" as const,
+                        searchQueries: ["oat milk"],
+                        confidence: 0.9,
+                    },
+                ]),
+            );
+        });
+        const decision = new OpenRouterDecisionClient(
+            {
+                apiKey: "or-test",
+                model: "~typesafe/jev-latest",
+                endpoint: "https://openrouter.example/api/alpha/decisions",
+                timeoutMs: 5_000,
+                minConfidence: 0.75,
+            },
+            {
+                sleep: async () => {},
+                fetcher: async () =>
+                    new Response("decision provider unavailable", {
+                        status: 503,
+                    }),
+            },
+        );
+        const resolver = new HybridRecipeImportResolver(generative, decision);
+
+        const assignments = await resolver.resolveUncertainIngredients?.([
+            {
+                key: "0:0",
+                ingredient: {
+                    rawText: "1 cup oat milk",
+                    name: "oat milk",
+                    quantity: 1,
+                    unit: "cup",
+                },
+                candidates: [candidate("300", "Almond milk, unsweetened")],
+                reason: "ambiguous_candidate",
+            },
+        ]);
+
+        expect(received).toBe(1);
+        expect(assignments?.get("0:0")?.decision).toBe("model_estimate");
+    });
+
+    test("leaves generative no-candidate work entirely with Qwen", async () => {
+        let receivedReason: string | undefined;
+        const generative = generativeResolver(async (requests) => {
+            receivedReason = requests[0]?.reason;
+            return new Map();
+        });
+        let decisionCalls = 0;
+        const decision = new OpenRouterDecisionClient(
+            {
+                apiKey: "or-test",
+                model: "~typesafe/jev-latest",
+                endpoint: "https://openrouter.example/api/alpha/decisions",
+                timeoutMs: 5_000,
+                minConfidence: 0.75,
+            },
+            {
+                fetcher: async () => {
+                    decisionCalls += 1;
+                    throw new Error("must not be called");
+                },
+            },
+        );
+        const resolver = new HybridRecipeImportResolver(generative, decision);
+
+        await resolver.resolveUncertainIngredients?.([
+            {
+                key: "0:0",
+                ingredient: {
+                    rawText: "1 cup oat milk",
+                    name: "oat milk",
+                    quantity: 1,
+                    unit: "cup",
+                },
+                candidates: [],
+                reason: "no_candidate",
+            },
+        ]);
+
+        expect(decisionCalls).toBe(0);
+        expect(receivedReason).toBe("no_candidate");
     });
 });
