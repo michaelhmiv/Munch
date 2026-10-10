@@ -39,7 +39,9 @@
                         and Pantry inventory service designed to work through
                         ChatGPT and compatible MCP clients.
                     </p>
-                    <p class="tiny spacer-top">Last updated: August 25, 2026</p>
+                    <p class="tiny spacer-top">
+                        Last updated: October 10, 2026
+                    </p>
                 </div>
             </section>
             <div class="container legal-layout">
@@ -57,11 +59,16 @@
                     <section id="summary">
                         <h2>Summary</h2>
                         <div class="notice">
-                            Munch does not sell nutrition data, use advertising
-                            trackers, or train a Munch AI model on your
-                            nutrition records. ChatGPT is operated by OpenAI and
-                            is governed separately by OpenAI's terms, privacy
-                            policy, plan, and user settings.
+                            Munch does not sell nutrition data, use it for
+                            advertising, or train a Munch AI model on your
+                            nutrition records. On Android, Munch uses Firebase
+                            Crashlytics to send crash stack traces and
+                            app/device diagnostics to Google for debugging.
+                            Munch does not intentionally add account identifiers
+                            or user-entered nutrition content to crash reports.
+                            ChatGPT is operated by OpenAI and is governed
+                            separately by OpenAI's terms, privacy policy, plan,
+                            and user settings.
                         </div>
                     </section>
                     <section id="data">
@@ -274,12 +281,22 @@
                                 conversation and decides what tool arguments to
                                 send to Munch.
                             </li>
+                            <li>
+                                <strong>Firebase Crashlytics</strong> receives
+                                Android crash stack traces, installation
+                                identifiers, and related app/device diagnostics
+                                to help Munch diagnose failures. Munch does not
+                                intentionally attach account identifiers,
+                                nutrition records, or user-entered content to
+                                these reports.
+                            </li>
                         </ul>
                         <p>
                             These providers process information under their own
-                            terms and privacy practices. Munch does not use
-                            advertising analytics or create advertising
-                            profiles.
+                            terms and privacy practices. Munch does not pass
+                            nutrition records to advertising, analytics, or
+                            crash reporting providers, or use them to build
+                            advertising profiles.
                         </p>
                     </section>
                     <section id="security">
@@ -360,6 +377,10 @@
                             overwrites them. Stripe may retain billing,
                             accounting, fraud, dispute, and tax records for the
                             periods required by law and its own policies.
+                            Firebase Crashlytics retains crash stack traces and
+                            associated identifiers for 90 days before beginning
+                            removal from live and backup systems, subject to
+                            Firebase's current practices.
                         </p>
                     </section>
                     <section id="limits">

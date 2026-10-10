@@ -37,3 +37,6 @@ supabase/.branches/
 
 # Finder (MacOS) folder config
 .DS_Store
+
+# Firebase Android client configuration (provide locally or through trusted CI)
+android/app/google-services.json
