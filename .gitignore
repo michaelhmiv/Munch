@@ -6,7 +6,6 @@ out
 dist
 *.tgz
 .mobile-web/
-/android/app/google-services.json
 
 # code coverage
 coverage
