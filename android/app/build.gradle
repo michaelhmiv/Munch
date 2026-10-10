@@ -1,5 +1,17 @@
 apply plugin: 'com.android.application'
 
+def firebaseConfig = file('google-services.json')
+def firebaseConfigAvailable = firebaseConfig.exists() && firebaseConfig.length() > 0
+def releaseTaskRequested = gradle.startParameter.taskNames.any {
+    it.toLowerCase().contains('release')
+}
+
+if (releaseTaskRequested && !firebaseConfigAvailable) {
+    throw new GradleException(
+        "Android release builds require android/app/google-services.json so Crashlytics is included."
+    )
+}
+
 android {
     namespace = "business.munch.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -37,6 +49,10 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    if (firebaseConfigAvailable) {
+        implementation platform('com.google.firebase:firebase-bom:34.19.0')
+        implementation 'com.google.firebase:firebase-crashlytics'
+    }
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
@@ -45,11 +61,11 @@ dependencies {
 
 apply from: 'capacitor.build.gradle'
 
-try {
-    def servicesJSON = file('google-services.json')
-    if (servicesJSON.text) {
-        apply plugin: 'com.google.gms.google-services'
-    }
-} catch(Exception e) {
-    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+if (firebaseConfigAvailable) {
+    apply plugin: 'com.google.gms.google-services'
+    apply plugin: 'com.google.firebase.crashlytics'
+} else {
+    logger.lifecycle(
+        'Firebase config is absent; Crashlytics is disabled for this local/debug build.'
+    )
 }
