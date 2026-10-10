@@ -7,6 +7,7 @@ import androidx.credentials.CustomCredential;
 import androidx.credentials.GetCredentialRequest;
 import androidx.credentials.GetCredentialResponse;
 import androidx.credentials.exceptions.GetCredentialException;
+import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -42,7 +43,7 @@ public class MunchGoogleSignInPlugin extends Plugin {
             getActivity(),
             request,
             null,
-            getActivity().getMainExecutor(),
+            ContextCompat.getMainExecutor(getActivity()),
             new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
                 @Override
                 public void onResult(GetCredentialResponse response) {
