@@ -24,7 +24,8 @@ ChatGPT or another MCP host may provide its own model usage. Those host-model ca
 - Product configuration currently points to the planned product ID munch_premium_monthly and base plan monthly. Do not repurpose that ID for the new ad-free offer.
 - The existing server uses Better Auth and Railway PostgreSQL. Firebase Auth and Firestore are not required for this product architecture.
 - The Android workflow currently builds and tests a debug APK. A signed release AAB, store listing, Google service credentials, AdMob integration, and Firebase integration still need setup.
-- No AdMob SDK, UMP consent flow, or Firebase Crashlytics SDK is integrated in the Android app.
+- No AdMob SDK or UMP consent flow is integrated in the Android app.
+- Firebase Crashlytics integration is proposed in implementation PR #157; the real Firebase app config is still required to verify production reporting.
 - The AdMob account is approved. A Munch Android app entry and home banner unit exist but are not linked to a Play listing yet: app ID `ca-app-pub-2708638041809482~4540309917`, banner unit `ca-app-pub-2708638041809482/4316948636`. The AdMob console warns the account is nearing its inactivity cutoff, so serving a valid impression soon after launch matters.
 - A Firebase Spark project named Munch Android (`munch-android-bf1cd`) and Android app `business.munch.app` have been created. Google Analytics and Gemini are off. No Firebase SDK is integrated yet; Firebase Auth and Firestore remain out of scope.
 
@@ -124,12 +125,11 @@ Build a signed release AAB, then run internal testing with license testers. Veri
 
 ## Owner decisions needed before products go live
 
-- Use the current personal Play developer account after reviewing its public legal-address disclosure, or use an organization account with the correct business identity.
+- Use the existing personal Play developer account, as selected. Play Console app creation still requires the account owner to affirm the app-policy and U.S. export-law declarations.
 - Confirm the exact Android feature set that is free, including Pantry and household collaboration.
 - Approve the ad-free price and whether annual billing launches with monthly.
 - Approve credit-pack sizes and prices after the real provider-cost/fee model is measured.
-- Approve sending crash stack traces and app/device diagnostics to Firebase/Google via Crashlytics, or leave crash reporting disabled.
-- Decide whether Firebase Analytics is worth collecting minimal app telemetry; it is currently disabled.
+- Crash reporting to Firebase via Crashlytics is approved; Firebase Analytics remains disabled.
 
 ## Official references
 
