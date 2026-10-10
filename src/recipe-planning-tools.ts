@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { dateOnlyString } from "./tz.js";
 import { withAnalytics } from "./analytics.js";
 import type { MunchCapabilities } from "./billing/capabilities.js";
 import { rankSavedRecipesForPantry } from "./inventory/meal-planning.js";
@@ -375,7 +376,7 @@ function groceryInputs(items: z.infer<typeof groceryItemSchema>[]) {
 function serializeScheduledMeal(planned: Record<string, unknown>) {
     return {
         planned_meal_id: String(planned.id),
-        planned_date: String(planned.planned_date),
+        planned_date: dateOnlyString(planned.planned_date),
         meal_slot: planned.meal_slot == null ? null : String(planned.meal_slot),
         servings: Number(planned.servings),
     };

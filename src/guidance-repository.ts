@@ -24,7 +24,7 @@ import {
     scheduleRecipeInTransaction,
 } from "./planning/repository.js";
 import { resolvePlanningRecipeNutrition } from "./recipe-nutrition-resolution.js";
-import { dateInTz, shiftLocalDate, validateTz } from "./tz.js";
+import { dateInTz, dateOnlyString, shiftLocalDate, validateTz } from "./tz.js";
 import { toStoredInteger } from "./units.js";
 import {
     buildDailyGuidance,
@@ -603,7 +603,7 @@ function planFingerprint(rows: Array<Record<string, unknown>>): string {
     const canonical = rows.map((row) => [
         String(row.id),
         String(row.version),
-        String(row.planned_date),
+        dateOnlyString(row.planned_date),
         String(row.meal_slot ?? ""),
         String(row.recipe_id),
         String(row.recipe_revision_id),
@@ -1201,8 +1201,8 @@ async function getDraftInTransaction(
                   type: "household" as const,
                   householdId: String(header.household_id),
               },
-        start_date: String(header.start_date),
-        end_date: String(header.end_date),
+        start_date: dateOnlyString(header.start_date),
+        end_date: dateOnlyString(header.end_date),
         timezone: String(header.timezone),
         mode: String(header.mode),
         preferences_override: asObject(header.preferences_override),
@@ -1216,7 +1216,7 @@ async function getDraftInTransaction(
         items: items.map((item) => ({
             id: String(item.id),
             position: Number(item.position),
-            date: String(item.planned_date),
+            date: dateOnlyString(item.planned_date),
             meal_slot: String(item.meal_slot),
             servings: Number(item.servings),
             source_type: String(item.source_type),
@@ -1421,8 +1421,8 @@ export async function updateGuidedPlanDraft(input: {
             draftId: input.draftId,
             scope,
             items,
-            startDate: String(header.start_date).slice(0, 10),
-            endDate: String(header.end_date).slice(0, 10),
+            startDate: dateOnlyString(header.start_date),
+            endDate: dateOnlyString(header.end_date),
             preferences,
             allowRepeats: preferences.allow_repeats,
         });
@@ -1517,8 +1517,8 @@ export async function commitGuidedPlanDraft(input: {
         const scope: PlanningScope = header.personal_owner_user_id
             ? { type: "personal" }
             : { type: "household", householdId: String(header.household_id) };
-        const startDate = String(header.start_date).slice(0, 10);
-        const endDate = String(header.end_date).slice(0, 10);
+        const startDate = dateOnlyString(header.start_date);
+        const endDate = dateOnlyString(header.end_date);
         const currentPlan = await planStateInTransaction(
             tx,
             scope,
@@ -1585,14 +1585,14 @@ export async function commitGuidedPlanDraft(input: {
         const replacedSlots = new Set(
             items.map(
                 (item) =>
-                    `${String(item.planned_date).slice(0, 10)}:${String(item.meal_slot)}`,
+                    `${dateOnlyString(item.planned_date)}:${String(item.meal_slot)}`,
             ),
         );
         if (header.replace_existing === true && currentPlan.length > 0) {
             for (const previous of currentPlan) {
                 if (
                     !replacedSlots.has(
-                        `${String(previous.planned_date).slice(0, 10)}:${String(previous.meal_slot)}`,
+                        `${dateOnlyString(previous.planned_date)}:${String(previous.meal_slot)}`,
                     )
                 ) {
                     continue;
@@ -1644,7 +1644,7 @@ export async function commitGuidedPlanDraft(input: {
                 scope,
                 recipeId,
                 recipeRevisionId: revisionId,
-                plannedDate: String(item.planned_date).slice(0, 10),
+                plannedDate: dateOnlyString(item.planned_date),
                 mealSlot: String(item.meal_slot) as
                     "breakfast" | "lunch" | "dinner" | "snack",
                 servings: Number(item.servings),
@@ -1653,7 +1653,7 @@ export async function commitGuidedPlanDraft(input: {
             });
             committedMeals.push({
                 planned_meal_id: String(planned.id),
-                planned_date: String(planned.planned_date).slice(0, 10),
+                planned_date: dateOnlyString(planned.planned_date),
                 meal_slot: planned.meal_slot,
                 recipe_id: recipeId,
                 recipe_revision_id: revisionId,
@@ -1665,8 +1665,8 @@ export async function commitGuidedPlanDraft(input: {
             for (const previous of currentPlan) {
                 const replacement = committedMeals.find(
                     (meal) =>
-                        String(meal.planned_date).slice(0, 10) ===
-                            String(previous.planned_date).slice(0, 10) &&
+                        dateOnlyString(meal.planned_date) ===
+                            dateOnlyString(previous.planned_date) &&
                         meal.meal_slot === previous.meal_slot,
                 );
                 if (!replacement) continue;
@@ -1755,7 +1755,7 @@ export async function previewGuidedPlanGroceries(
                     where deleted_at is null
                       and personal_owner_user_id is not distinct from ${draft.personal_owner_user_id}
                       and household_id is not distinct from ${draft.household_id}
-                      and planned_date = ${String(row.planned_date).slice(0, 10)}::date
+                      and planned_date = ${dateOnlyString(row.planned_date)}::date
                       and meal_slot = ${String(row.meal_slot)}
                       and recipe_revision_id = ${String(row.recipe_revision_id)}
                     order by created_at desc limit 1
@@ -2072,7 +2072,7 @@ export async function previewMealSwaps(input: {
             where planned.deleted_at is null
               and planned.personal_owner_user_id is not distinct from ${owner.personal}
               and planned.household_id is not distinct from ${owner.household}
-              and planned.planned_date = ${String(current.planned_date).slice(0, 10)}::date
+              and planned.planned_date = ${dateOnlyString(current.planned_date)}::date
         `;
         const before = {
             calories: numberOrNull(dayRows[0]?.calories),
@@ -2082,7 +2082,7 @@ export async function previewMealSwaps(input: {
         return {
             planned_meal_id: String(current.id),
             expected_version: Number(current.version),
-            planned_date: String(current.planned_date).slice(0, 10),
+            planned_date: dateOnlyString(current.planned_date),
             meal_slot: current.meal_slot,
             current: {
                 recipe_id: String(current.recipe_id),

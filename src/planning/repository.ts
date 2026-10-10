@@ -2,6 +2,7 @@ import type { DatabaseTransaction } from "../platform/database.js";
 import { resolvePlanningRecipeNutrition } from "../recipe-nutrition-resolution.js";
 import { withUserDatabase } from "../platform/database.js";
 import { insertStructuredMeal } from "../structured-meals/repository.js";
+import { dateOnlyString } from "../tz.js";
 import type {
     StructuredMealInsertResult,
     StructuredMealItemInput,
@@ -725,7 +726,7 @@ export async function searchRecipes(input: {
             last_scheduled_date:
                 row.last_scheduled_date == null
                     ? null
-                    : String(row.last_scheduled_date),
+                    : dateOnlyString(row.last_scheduled_date),
             times_logged: Number(row.times_logged),
             last_logged_at:
                 row.last_logged_at == null
@@ -1154,7 +1155,7 @@ export async function getMealPlan(input: {
         `;
         return rows.map((row) => ({
             planned_meal_id: String(row.id),
-            planned_date: String(row.planned_date),
+            planned_date: dateOnlyString(row.planned_date),
             meal_slot: row.meal_slot == null ? null : String(row.meal_slot),
             recipe_id: String(row.recipe_id),
             recipe_revision_id: String(row.recipe_revision_id),
@@ -1575,7 +1576,7 @@ export async function saveRecipeAndPlan(input: {
             recipe,
             plannedMeal: {
                 planned_meal_id: String(planned.id),
-                planned_date: String(planned.planned_date),
+                planned_date: dateOnlyString(planned.planned_date),
                 meal_slot:
                     planned.meal_slot == null
                         ? null
