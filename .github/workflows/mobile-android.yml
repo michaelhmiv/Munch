@@ -9,6 +9,7 @@ on:
 permissions:
   contents: read
 
+# Keep each main-branch run independent so every merge gets a distribution attempt.
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -42,15 +43,14 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$FIREBASE_ANDROID_CONFIG_JSON" ]; then
-            cp android/app/src/test/fixtures/google-services.json android/app/google-services.json
-            echo "Firebase config secret is unset; using the non-production test fixture."
-          else
-            printf '%s' "$FIREBASE_ANDROID_CONFIG_JSON" > android/app/google-services.json
-            jq -e --arg project "munch-android-bf1cd" --arg package "business.munch.app" \
-              '.project_info.project_id == $project and any(.client[]; .client_info.android_client_info.package_name == $package)' \
-              android/app/google-services.json > /dev/null
-            echo "Using the Firebase app config from the Actions secret."
+            echo "::error::Missing FIREBASE_ANDROID_CONFIG_JSON repository secret."
+            exit 1
           fi
+          printf '%s' "$FIREBASE_ANDROID_CONFIG_JSON" > android/app/google-services.json
+          jq -e --arg project "munch-android-bf1cd" --arg package "business.munch.app" \
+            '.project_info.project_id == $project and any(.client[]; .client_info.android_client_info.package_name == $package)' \
+            android/app/google-services.json > /dev/null
+          echo "Using the Firebase app config from the Actions secret."
       - name: Prepare Firebase fixture for pull requests
         if: github.event_name == 'pull_request'
         run: cp android/app/src/test/fixtures/google-services.json android/app/google-services.json
@@ -90,4 +90,3 @@ jobs:
             --app "$firebase_app_id" \
             --testers "michaelhmiv@gmail.com" \
             --release-notes "Automated Android build from commit ${GITHUB_SHA::7}"
-# Keep each main-branch build independent so every merge gets a distribution attempt.
