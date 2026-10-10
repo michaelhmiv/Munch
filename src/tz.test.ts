@@ -2,6 +2,7 @@ import { test, expect } from "bun:test";
 import {
     validateTz,
     dateInTz,
+    dateOnlyString,
     formatLocalDateTime,
     hourInTz,
     dowInTz,
@@ -19,6 +20,16 @@ test("dateInTz maps an instant to the local calendar day", () => {
     expect(dateInTz(inst, "America/Los_Angeles")).toBe("2024-02-29");
     expect(dateInTz(inst, "UTC")).toBe("2024-03-01");
     expect(dateInTz(inst, "Asia/Tokyo")).toBe("2024-03-01");
+});
+
+test("dateOnlyString handles PostgreSQL dates returned as text or Date", () => {
+    expect(dateOnlyString("2026-10-09")).toBe("2026-10-09");
+    expect(dateOnlyString(new Date("2026-10-09T00:00:00.000Z"))).toBe(
+        "2026-10-09",
+    );
+    expect(() => dateOnlyString("Fri Oct 09 2026")).toThrow(
+        "Invalid date value",
+    );
 });
 
 test("formatLocalDateTime renders wall-clock time, normalizing hour 24 to 00", () => {

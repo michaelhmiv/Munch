@@ -245,7 +245,7 @@ function goalsPage(data) {
                   .replace(/\.0$/, "");
     return settingsShell(
         "settings-goals",
-        `${sectionHeading("Nutrition", "Nutrition targets", "These are targets you choose. Munch stores and compares against them; it does not prescribe medical or dietary goals.")}<form id="settings-goals-form" class="settings-stack">${settingGroup("Daily energy & macros", "Leave any field blank if you do not want a target for it.", `<div class="settings-form-grid">${nutrientInput("daily_calories", "Calories", goals.daily_calories, "kcal", { step: "1" })}${nutrientInput("daily_protein_g", "Protein", goals.daily_protein_g, "g")}${nutrientInput("daily_carbs_g", "Carbohydrates", goals.daily_carbs_g, "g")}${nutrientInput("daily_fat_g", "Fat", goals.daily_fat_g, "g")}</div>`)}${settingGroup("Additional targets", "Optional targets remain separate from the primary macro summary.", `<div class="settings-form-grid">${nutrientInput("daily_fiber_g", "Fiber", goals.daily_fiber_g, "g")}${nutrientInput("daily_sugar_g", "Sugar", goals.daily_sugar_g, "g")}${nutrientInput("daily_water_ml", "Water", goals.daily_water_ml, "mL", { step: "1" })}${nutrientInput("daily_alcohol_g", "Alcohol", goals.daily_alcohol_g, "g")}</div><div class="settings-form-grid settings-form-grid-single spacer-top"><label class="settings-field compact"><span>Target weight</span><small>Optional. Uses your current display unit.</small><div class="input-with-unit"><input name="target_weight" type="number" min="1" step="0.1" value="${esc(targetWeight)}" inputmode="decimal"><span>${esc(unit)}</span></div><input type="hidden" name="unit" value="${esc(unit)}"></label></div>`)}<div class="settings-savebar"><span class="settings-save-status" role="status" aria-live="polite"></span><button class="button button-primary" type="submit">Save targets</button></div></form>`,
+        `${sectionHeading("Nutrition", "Nutrition targets", "These are targets you choose. Munch stores and compares against them; it does not prescribe medical or dietary goals.")}<form id="settings-goals-form" class="settings-stack">${settingGroup("Daily energy & macros", "Leave any field blank if you do not want a target for it.", `<div class="settings-form-grid">${nutrientInput("daily_calories", "Calories", goals.daily_calories, "kcal", { step: "1" })}${nutrientInput("daily_protein_g", "Protein", goals.daily_protein_g, "g")}${nutrientInput("daily_carbs_g", "Carbohydrates", goals.daily_carbs_g, "g")}${nutrientInput("daily_fat_g", "Fat", goals.daily_fat_g, "g")}</div>`)}${settingGroup("Additional targets", "Optional targets remain separate from the primary macro summary.", `<div class="settings-form-grid">${nutrientInput("daily_fiber_g", "Fiber", goals.daily_fiber_g, "g")}${nutrientInput("daily_sugar_g", "Sugar", goals.daily_sugar_g, "g")}${nutrientInput("daily_water_ml", "Water", goals.daily_water_ml, "mL", { step: "1" })}${nutrientInput("daily_alcohol_g", "Alcohol", goals.daily_alcohol_g, "g")}</div><div class="settings-form-grid settings-form-grid-single spacer-top"><label class="settings-field compact"><span>Target weight</span><small>Optional. Uses your current display unit.</small><div class="input-with-unit"><input name="target_weight" type="number" min="1" step="0.1" value="${esc(targetWeight)}" inputmode="decimal"><span>${esc(unit)}</span></div><input type="hidden" name="unit" value="${esc(unit)}"></label></div>`)}<div class="settings-savebar"><span class="settings-save-status" role="status" aria-live="polite"></span><button class="button button-primary" type="submit">Preview target changes</button><button class="button button-secondary" type="button" data-action="guidance-preferences">Guidance preferences</button></div></form><section class="panel spacer-top" id="goal-guidance-review"><p>Loading goal review and history…</p></section><section class="panel spacer-top" id="goal-change-preview" aria-live="polite"></section>`,
     );
 }
 
@@ -465,6 +465,27 @@ export async function renderAccountRoute(route, ctx) {
     if (route === "settings") ctx.content.innerHTML = settingsIndex(data);
     if (route === "settings-profile") ctx.content.innerHTML = profilePage(data);
     if (route === "settings-goals") ctx.content.innerHTML = goalsPage(data);
+    if (route === "settings-goals") {
+        const [review, history] = await Promise.all([
+            ctx.api("/api/app/guidance/goals/review", { keepPrevious: true }),
+            ctx.api("/api/app/guidance/goals/history?limit=10", {
+                keepPrevious: true,
+            }),
+        ]);
+        const panel = ctx.content.querySelector("#goal-guidance-review");
+        if (panel) {
+            const historyRows = (history || [])
+                .map((revision) => {
+                    const targets = revision.targets || {};
+                    const setTargets = Object.entries(targets).filter(
+                        ([, value]) => value != null,
+                    ).length;
+                    return `<div class="food-row"><div><strong>Revision ${esc(revision.revision)} · ${esc(revision.objective)}</strong><small>${esc(new Date(revision.created_at).toLocaleDateString())} · ${setTargets} targets · ${esc(revision.origin)}</small></div><span>${revision.confirmed ? "Confirmed" : "Pending"}</span></div>`;
+                })
+                .join("");
+            panel.innerHTML = `<div class="panel-title"><div><h3>Goal review</h3><span>${esc(review.status.replaceAll("_", " "))}</span></div><span class="source-chip source-saved">${esc(review.objective)}</span></div><p>${esc(review.rationale)}</p><p class="tiny">Recent evidence: ${esc(review.evidence.logged_nutrition_days)} logged nutrition days and ${esc(review.evidence.weight_measurements)} weight measurements across ${esc(review.evidence.weight_measurement_span_days)} days.</p><p class="tiny">Munch does not prescribe numeric targets. You can review your own changes above; each confirmed update is recorded below.</p><div class="spacer-top">${historyRows || `<p class="tiny">No goal revisions recorded yet.</p>`}</div>`;
+        }
+    }
     if (route === "settings-billing")
         ctx.content.innerHTML = await billingPage(data, ctx);
     if (route === "settings-connections")
@@ -511,13 +532,68 @@ export async function handleAccountSubmit(form, ctx) {
         const submit = form.querySelector("button[type='submit']");
         if (submit) submit.disabled = true;
         try {
-            await ctx.api("/api/app/goals", {
-                method: "PUT",
-                body: JSON.stringify(values),
+            const weight =
+                values.target_weight === ""
+                    ? null
+                    : Number(values.target_weight);
+            const weightUnit = values.unit === "lb" ? "lb" : "kg";
+            const targets = Object.fromEntries(
+                [
+                    "daily_calories",
+                    "daily_protein_g",
+                    "daily_carbs_g",
+                    "daily_fat_g",
+                    "daily_fiber_g",
+                    "daily_sugar_g",
+                    "daily_alcohol_g",
+                    "daily_water_ml",
+                ].map((key) => [
+                    key,
+                    values[key] === "" ? null : Number(values[key]),
+                ]),
+            );
+            targets.target_weight_g =
+                weight == null
+                    ? null
+                    : Math.round(
+                          weight * (weightUnit === "lb" ? 453.59237 : 1000),
+                      );
+            const preview = await ctx.api("/api/app/guidance/goals/preview", {
+                method: "POST",
+                body: JSON.stringify({
+                    targets,
+                    idempotency_key: crypto.randomUUID(),
+                }),
                 keepPrevious: true,
             });
-            saveStatus(form, "Saved");
-            ctx.toast("Nutrition targets saved.");
+            ctx.state.goalPreview = preview;
+            const previewPanel = ctx.content.querySelector(
+                "#goal-change-preview",
+            );
+            if (previewPanel) {
+                const current = preview.current_revision?.targets || {};
+                const proposed = preview.proposed_targets || targets;
+                const labels = {
+                    daily_calories: "Calories",
+                    daily_protein_g: "Protein",
+                    daily_carbs_g: "Carbohydrates",
+                    daily_fat_g: "Fat",
+                    daily_fiber_g: "Fiber",
+                    daily_sugar_g: "Sugar",
+                    daily_alcohol_g: "Alcohol",
+                    daily_water_ml: "Water",
+                    target_weight_g: "Target weight",
+                };
+                const changes = Object.keys(labels)
+                    .filter((key) => current[key] !== proposed[key])
+                    .map(
+                        (key) =>
+                            `<tr><th>${esc(labels[key])}</th><td>${current[key] == null ? "No target" : esc(current[key])}</td><td>${proposed[key] == null ? "No target" : esc(proposed[key])}</td></tr>`,
+                    )
+                    .join("");
+                previewPanel.innerHTML = `<div class="panel-title"><div><h3>Review target changes</h3><span>Current and proposed values</span></div></div>${changes ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Target</th><th>Current</th><th>Proposed</th></tr></thead><tbody>${changes}</tbody></table></div>` : `<p>No target values changed.</p>`}<button class="button button-primary spacer-top" type="button" data-action="confirm-goal-change" ${changes ? "" : "disabled"}>Confirm target changes</button>`;
+            }
+            saveStatus(form, "Preview ready");
         } finally {
             if (submit) submit.disabled = false;
         }

@@ -4,6 +4,7 @@ import { cors } from "hono/cors";
 import { createAccountRouter } from "./accounts/routes.js";
 import { createProvenanceRouter } from "./app/provenance-routes.js";
 import { createAppRouter } from "./app/routes.js";
+import { createGuidanceRouter } from "./app/guidance-routes.js";
 import { registerBetterAuthRoutes } from "./auth/routes.js";
 import { createBillingRouter } from "./billing/routes.js";
 import { registerDiscoveryRoutes } from "./discovery.js";
@@ -98,6 +99,7 @@ app.route("/", createBillingRouter());
 // purpose-built premium inventory UI without changing the existing SPA bundle.
 app.route("/", createInventoryRouter());
 app.route("/", createAppRouter());
+app.route("/", createGuidanceRouter());
 app.route("/", createProvenanceRouter());
 app.all(
     "/mcp",

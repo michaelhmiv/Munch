@@ -179,9 +179,9 @@ if (!cottageProfile || Number(cottageProfile.protein_g) !== 12) {
 if (serialized.includes('"actor_user_id"')) {
     throw new Error("Account export leaked Pantry actor user IDs");
 }
-if (document.schema_version !== 4) {
+if (document.schema_version !== 5) {
     throw new Error(
-        "Account export schema version was not advanced for persistent Cooks",
+        "Account export schema version was not advanced for guided nutrition",
     );
 }
 if (exported.recordCount < 7) {

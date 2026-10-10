@@ -70,6 +70,12 @@ export async function exportAccountData(
             inventoryEvents,
             purchaseReconciliations,
             purchaseReconciliationLines,
+            guidancePreferences,
+            goalRevisions,
+            goalProposals,
+            guidedPlanDrafts,
+            guidedPlanDraftItems,
+            guidedPlanChanges,
         ] = await Promise.all([
             tx<JsonRecord[]>`
                 select id, email, email_verified_at, status, created_at, updated_at
@@ -378,14 +384,72 @@ export async function exportAccountData(
                    )
                 order by line.purchase_reconciliation_id, line.position
             `,
+            tx<JsonRecord[]>`
+                select objective, suggestions_enabled, profile, version, updated_at
+                from munch.guidance_preferences where user_id = ${userId}
+            `,
+            tx<JsonRecord[]>`
+                select revision, objective, targets, origin, confirmed, rationale,
+                       proposal_id, idempotency_key, created_at
+                from munch.guidance_goal_revisions where user_id = ${userId}
+                order by revision
+            `,
+            tx<JsonRecord[]>`
+                select expected_revision, proposed_targets, rationale, evidence,
+                       status, idempotency_key, expires_at, created_at, updated_at
+                from munch.guidance_goal_proposals where user_id = ${userId}
+                order by created_at, id
+            `,
+            tx<JsonRecord[]>`
+                select draft.*
+                from munch.guided_plan_drafts draft
+                where draft.personal_owner_user_id = ${userId}
+                   or draft.household_id in (
+                       select membership.household_id
+                       from munch.household_memberships membership
+                       where membership.user_id = ${userId}
+                         and membership.status = 'active'
+                   )
+                order by draft.created_at, draft.id
+            `,
+            tx<JsonRecord[]>`
+                select item.*
+                from munch.guided_plan_draft_items item
+                join munch.guided_plan_drafts draft on draft.id = item.plan_draft_id
+                where draft.personal_owner_user_id = ${userId}
+                   or draft.household_id in (
+                       select membership.household_id
+                       from munch.household_memberships membership
+                       where membership.user_id = ${userId}
+                         and membership.status = 'active'
+                   )
+                order by item.plan_draft_id, item.position
+            `,
+            tx<JsonRecord[]>`
+                select change.*
+                from munch.guided_plan_changes change
+                join munch.planned_meals planned on planned.id = change.planned_meal_id
+                where change.user_id = ${userId}
+                   or planned.personal_owner_user_id = ${userId}
+                   or planned.household_id in (
+                       select membership.household_id
+                       from munch.household_memberships membership
+                       where membership.user_id = ${userId}
+                         and membership.status = 'active'
+                   )
+                order by change.created_at, change.id
+            `,
         ]);
 
         return {
-            schema_version: 4,
+            schema_version: 5,
             exported_at: new Date().toISOString(),
             account: account[0] ?? null,
             preferences: preferences[0] ?? null,
             nutrition_goals: goals[0] ?? null,
+            guidance_preferences: stripInternalFields(guidancePreferences),
+            guidance_goal_revisions: stripInternalFields(goalRevisions),
+            guidance_goal_proposals: stripInternalFields(goalProposals),
             meals: stripInternalFields(meals),
             meal_items: stripInternalFields(mealItems),
             water_logs: stripInternalFields(waterLogs),
@@ -403,6 +467,9 @@ export async function exportAccountData(
             recipe_revisions: stripInternalFields(recipeRevisions),
             recipe_ingredients: stripInternalFields(recipeIngredients),
             planned_meals: stripInternalFields(plannedMeals),
+            guided_plan_drafts: stripInternalFields(guidedPlanDrafts),
+            guided_plan_draft_items: stripInternalFields(guidedPlanDraftItems),
+            guided_plan_changes: stripInternalFields(guidedPlanChanges),
             grocery_lists: stripInternalFields(groceryLists),
             grocery_items: stripInternalFields(groceryItems),
             inventory_spaces: stripInternalFields(inventorySpaces),

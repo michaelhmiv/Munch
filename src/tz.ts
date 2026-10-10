@@ -29,6 +29,24 @@ export function dateInTz(instant: Date | string, tz: string): string {
     }).format(d);
 }
 
+/** Format a PostgreSQL date value returned as text or as Bun's Date object. */
+export function dateOnlyString(value: unknown): string {
+    if (value instanceof Date) {
+        if (!Number.isFinite(value.getTime())) {
+            throw new Error("Invalid date value");
+        }
+        return value.toISOString().slice(0, 10);
+    }
+    if (typeof value === "string") {
+        const match = /^(\d{4}-\d{2}-\d{2})(?:$|[T\s])/.exec(value);
+        if (match?.[1]) {
+            const date = new Date(`${match[1]}T00:00:00.000Z`);
+            if (date.toISOString().slice(0, 10) === match[1]) return match[1];
+        }
+    }
+    throw new Error("Invalid date value");
+}
+
 /**
  * Local wall-clock timestamp ("YYYY-MM-DD HH:mm:ss") of an absolute instant in
  * the given IANA timezone. With tz="UTC" this yields the raw UTC time.
