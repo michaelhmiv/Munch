@@ -4,9 +4,9 @@ Munch's Firebase project is `munch-android-bf1cd`, with the Android app register
 
 ## Configuration
 
-Download the Android configuration file for the registered Munch Android app from Firebase Console and place it at `android/app/google-services.json`. The file is intentionally ignored by Git. Do not commit it, put it in logs, or add Firebase user identifiers or nutrition data to crash reports.
+Download the Android configuration file for the registered Munch Android app from Firebase Console and add it at `android/app/google-services.json`. Firebase documents this client config and its Firebase API key as public by design, so it can be checked into the app repository. Keep its API restrictions limited to Firebase services. Never commit service-account private keys, Gemini Developer API keys, or backend credentials. Do not add Firebase user identifiers or nutrition data to crash reports.
 
-For GitHub Actions builds, add the complete JSON contents as the `ANDROID_FIREBASE_CONFIG_JSON` Actions secret. The workflow uses that configuration when available. Otherwise, CI uses a clearly fake configuration fixture solely to verify that the Firebase Gradle integration compiles; the debug artifact built with that fixture cannot report to Munch's Firebase project.
+GitHub Actions uses the real configuration file when present. Until it is added, CI uses the clearly fake test fixture solely to verify the Firebase Gradle integration compiles; the debug artifact built with that fixture cannot report to Munch's Firebase project.
 
 Gradle enables Google Services and Crashlytics when a valid app configuration is present. Release builds fail early without the local config file so Munch cannot ship a release that silently omits the approved crash reporting.
 
