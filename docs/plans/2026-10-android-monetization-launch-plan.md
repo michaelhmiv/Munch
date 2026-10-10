@@ -5,13 +5,13 @@ Scope: Android first. Keep the app and backend ready for a later iOS StoreKit im
 
 ## Product model
 
-The Android product should have three independent parts:
+The Android product has three independent parts:
 
-1. **Free app with ads:** all agreed non-AI app capabilities are available without a subscription. Ads support the free experience.
-2. **Ad-free subscription:** the same app capabilities, with ads removed. It does not include AI usage.
-3. **AI credit packs:** optional consumable purchases for Munch-operated AI features. Credits are charged per task using the measured cost of the selected model, not exposed as raw tokens.
+1. **Free app with ads:** all Android non-AI capabilities, including Pantry and household collaboration, are available without a subscription.
+2. **Ad-free subscription:** removes ads only; it does not unlock baseline app features or include AI usage.
+3. **AI credit packs:** optional consumable purchases for Munch-operated AI features. Credits are charged per task using measured model cost, not exposed as raw tokens.
 
-The current website and MCP subscription model is separate: the site has a $4.99/month Stripe Premium offer, and the current free tier limits history and some recipe/planning features. Android must not reuse that Premium SKU as an ad-removal product. Preserve current Stripe customer access during this Android release. Before implementation, write down whether “full features” includes household seats and Pantry, and decide whether the free feature model applies only to Android or later to all Munch surfaces.
+The current website and MCP subscription model remains separate: the site has a $4.99/month Stripe Premium offer, and its free tier limits history and some recipe/planning features. Android must not reuse that Premium SKU as an ad-removal product. Preserve current Stripe customer access and web/MCP behavior during this Android release. An existing paid Premium customer should receive ad-free Android access while their current website/MCP entitlements remain intact.
 
 ChatGPT or another MCP host may provide its own model usage. Those host-model calls are not Munch-operated AI and must not consume Munch credits. OpenAI account-usage sharing can be explored later if Munch receives access to the limited partner preview; it is not a release dependency.
 
@@ -23,11 +23,11 @@ ChatGPT or another MCP host may provide its own model usage. Those host-model ca
 - The current Play purchase flow only covers the Premium subscription. It does not yet support consumable AI credit products or ad entitlements.
 - Product configuration currently points to the planned product ID munch_premium_monthly and base plan monthly. Do not repurpose that ID for the new ad-free offer.
 - The existing server uses Better Auth and Railway PostgreSQL. Firebase Auth and Firestore are not required for this product architecture.
-- The Android workflow currently builds and tests a debug APK. A signed release AAB, store listing, Google service credentials, AdMob integration, and Firebase integration still need setup.
+- The Android workflow currently builds and tests a debug APK. A signed release AAB, store listing, Play purchase credentials, and AdMob integration still need setup.
 - No AdMob SDK or UMP consent flow is integrated in the Android app.
-- Firebase Crashlytics integration is proposed in implementation PR #157; the real Firebase app config is still required to verify production reporting.
+- Firebase Crashlytics Gradle/SDK wiring is in implementation PR #157. The real Firebase app config is still required to build a Munch-connected app and verify crash reporting.
 - The AdMob account is approved. A Munch Android app entry and home banner unit exist but are not linked to a Play listing yet: app ID `ca-app-pub-2708638041809482~4540309917`, banner unit `ca-app-pub-2708638041809482/4316948636`. The AdMob console warns the account is nearing its inactivity cutoff, so serving a valid impression soon after launch matters.
-- A Firebase Spark project named Munch Android (`munch-android-bf1cd`) and Android app `business.munch.app` have been created. Google Analytics and Gemini are off. No Firebase SDK is integrated yet; Firebase Auth and Firestore remain out of scope.
+- A Firebase Spark project named Munch Android (`munch-android-bf1cd`) and Android app `business.munch.app` have been created. Google Analytics and Gemini are off. Crashlytics is the only approved Firebase SDK; Firebase Auth, Firestore, and Analytics remain out of scope.
 
 ## Implementation sequence
 
@@ -35,12 +35,11 @@ ChatGPT or another MCP host may provide its own model usage. Those host-model ca
 
 Create a small product/entitlement ADR before modifying billing:
 
-- Free Android accounts receive the agreed full non-AI app feature set.
+- Free Android accounts receive all non-AI app features, including Pantry and household collaboration.
 - The new ad-free entitlement only controls whether Android may request/show ads.
 - AI credits are an independent balance and do not come with the ad-free subscription.
 - Existing Stripe Premium records and web/MCP behavior remain intact for this release.
 - Map any existing paid Premium customer to at least the Android ad-free state while preserving their current paid features.
-- Define whether household and Pantry capabilities are part of Android’s free feature set.
 
 Add explicit Android capability checks instead of using one Premium boolean for access, ads, and AI. Never trust a client-side “no ads” or credit balance flag.
 
@@ -65,31 +64,31 @@ Set pack prices only after measuring representative input/output costs and apply
 - Start with a limited banner placement on a low-interruption screen. Do not interrupt barcode capture, meal entry, photo review, confirmation, or purchase flows with an interstitial.
 - Do not request ads when the server-confirmed ad-free entitlement is active.
 - Integrate Google’s UMP SDK and show required consent/privacy choices before eligible ad requests. Add a persistent privacy-options entry point.
-- Default to contextual/non-personalized ads where available. Never send meal names, ingredients, calorie/macronutrient values, weight, goals, allergies, or other nutrition data to AdMob for targeting or to analytics event parameters.
+- Default to contextual/non-personalized ads where available. The Google Mobile Ads SDK can collect/share IP address, app interactions, diagnostics, and device/account identifiers for advertising, analytics, and fraud prevention; document the SDK's actual version and configuration in the privacy policy and Data Safety form. Never send meal names, ingredients, calorie/macronutrient values, weight, goals, allergies, or other nutrition data to AdMob or analytics event parameters.
 - Review sensitive-category blocking for health/weight-loss categories and verify ad behavior in the regions where Munch launches.
 - Update the privacy policy and Play Data Safety responses to list the actual ad SDK data collection, consent behavior, and opt-out controls.
 
 ### 4. Add the minimum useful Firebase services
 
-The Firebase project `munch-android-bf1cd` and Android app `business.munch.app` are registered on the Spark plan. Keep Analytics disabled unless a minimal event schema and its privacy disclosures are approved. Gemini in Firebase is also disabled. The Android build still needs its Firebase config and SDK integration.
+The Firebase project `munch-android-bf1cd` and Android app `business.munch.app` are registered on the Spark plan. Crashlytics is approved and wired in implementation PR #157. Google Analytics and Gemini are disabled; Firebase Auth and Firestore are out of scope. The Android build still needs its real `google-services.json`, followed by an internal crash test.
 
-- Add Firebase Crashlytics only after approving that crash stack traces and app/device diagnostics will be transmitted to Firebase/Google. Do not attach Munch account IDs, meal content, or nutrition records to crash reports.
+- Crashlytics reports crash stack traces and related app/device diagnostics to Firebase/Google. Do not attach Munch account IDs, meal content, or nutrition records to reports. Update the privacy policy to describe this before distributing a build with reporting enabled.
 - Add Firebase Analytics only if a minimal event schema is approved. Events may describe screens and coarse conversion outcomes; they must not contain nutrition details or user-entered content. If Analytics is not needed for launch, leave it disabled.
 - Do not add Firebase Auth or Firestore: identity and application data remain in Better Auth and Railway PostgreSQL.
-- Add the Firebase client configuration to the Android build with API-key restrictions appropriate for the package and signing certificate. Do not commit service-account keys or backend credentials.
+- Add the Firebase client configuration to the Android build. Firebase documents this client config as public by design; commit it with the app when available, and do not commit service-account keys or backend credentials.
 
 ### 5. Finish Play billing and Google Cloud setup
 
 After the product IDs and account choice are confirmed:
 
-- Create the Play Console app for package business.munch.app and enable Play App Signing.
+- Create the Play Console app for package business.munch.app and enable Play App Signing after the account owner completes the app-policy and U.S. export-law attestations.
 - Create a new subscription product for ad removal, separate from munch_premium_monthly. Start with monthly only unless annual pricing is approved.
 - Create three consumable AI credit products after the credit quantities and prices are costed.
 - Enable the Google Play Android Developer API and create a narrowly scoped service account for purchase verification/acknowledgement. Grant only the Play Console permissions needed for Munch.
 - Create the Pub/Sub topic and authenticated push subscription for the existing Google Play notification endpoint.
 - Add Google Play service-account and Pub/Sub verification secrets to the Munch Railway service through its secret-variable interface. Never place private keys in GitHub, the app bundle, logs, or this plan.
 - Munch is already registered in AdMob with a banner unit; link it to the Play listing when available, integrate UMP, and complete AdMob privacy messaging.
-- The Android app is already registered in Firebase; add the Android config and configure Crashlytics after the telemetry decision.
+- The Android app is already registered in Firebase; add the real Android config and verify Crashlytics with an internal test build.
 - Set the app’s publisher contact details and store metadata only after confirming the developer account’s public identity/address choice.
 
 ### 6. Store listing and policy readiness
@@ -125,8 +124,8 @@ Build a signed release AAB, then run internal testing with license testers. Veri
 
 ## Owner decisions needed before products go live
 
-- Use the existing personal Play developer account, as selected. Play Console app creation still requires the account owner to affirm the app-policy and U.S. export-law declarations.
-- Confirm the exact Android feature set that is free, including Pantry and household collaboration.
+- Use the existing personal Play developer account, as selected. The account owner must still affirm Play's app-policy and U.S. export-law declarations before creating the app.
+- Android feature scope is set: all non-AI features, including Pantry and household collaboration, are free with ads; the subscription removes ads, and AI credits are separate.
 - Approve the ad-free price and whether annual billing launches with monthly.
 - Approve credit-pack sizes and prices after the real provider-cost/fee model is measured.
 - Crash reporting to Firebase via Crashlytics is approved; Firebase Analytics remains disabled.
@@ -139,6 +138,9 @@ Build a signed release AAB, then run internal testing with license testers. Veri
 - [Play Billing testing](https://developer.android.com/google/play/billing/test)
 - [AdMob Android quick start](https://developers.google.com/admob/android/quick-start)
 - [AdMob UMP consent setup](https://developers.google.com/admob/android/privacy)
+- [Google Mobile Ads SDK Android Data Safety disclosure](https://developers.google.com/admob/android/privacy/play-data-disclosure)
+- [Firebase Android Data Safety disclosure](https://firebase.google.com/docs/android/play-data-disclosure)
+- [Google Play Data Safety form requirements](https://support.google.com/googleplay/android-developer/answer/10787469)
 - [Firebase Android setup](https://firebase.google.com/docs/android/setup)
 - [Firebase Crashlytics Android setup](https://firebase.google.com/docs/crashlytics/android/get-started)
 - [Google Play Health apps declaration](https://support.google.com/googleplay/android-developer/answer/14738291)
