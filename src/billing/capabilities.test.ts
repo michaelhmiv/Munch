@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+    androidFreeBaselineCapabilities,
     capabilitiesFromSubscription,
     failClosedMunchCapabilities,
     FREE_HISTORY_DAYS,
@@ -9,6 +10,58 @@ import {
 const now = new Date("2026-08-04T17:00:00.000Z");
 
 describe("Munch capability resolution", () => {
+    test("includes all non-AI Android features in the free baseline", () => {
+        const result = androidFreeBaselineCapabilities(null, "android-user");
+        expect(result.tier).toBe("free");
+        expect(result.entitlementSource).toBe("android_free_baseline");
+        expect(result.historyDays).toBeNull();
+        expect(result.savedFoodLimit).toBeNull();
+        expect(result.personalRecipesRead).toBe(true);
+        expect(result.personalRecipesWrite).toBe(true);
+        expect(result.personalPlanningRead).toBe(true);
+        expect(result.personalPlanningWrite).toBe(true);
+        expect(result.householdRead).toBe(false);
+        expect(result.householdWrite).toBe(false);
+    });
+
+    test("keeps Android household permissions aligned with membership roles", () => {
+        const base = {
+            householdId: "household-id",
+            householdName: "Shared",
+            ownerUserId: "android-user",
+            role: "owner" as const,
+            displayName: "Owner",
+        };
+        const owner = androidFreeBaselineCapabilities(base, "android-user");
+        const member = androidFreeBaselineCapabilities(
+            {
+                ...base,
+                ownerUserId: "other",
+                role: "member",
+                displayName: "Member",
+            },
+            "android-user",
+        );
+        const viewer = androidFreeBaselineCapabilities(
+            {
+                ...base,
+                ownerUserId: "other",
+                role: "viewer",
+                displayName: "Viewer",
+            },
+            "android-user",
+        );
+
+        expect(owner.householdWrite).toBe(true);
+        expect(owner.householdManage).toBe(true);
+        expect(member.householdRead).toBe(true);
+        expect(member.householdWrite).toBe(true);
+        expect(member.householdManage).toBe(false);
+        expect(viewer.householdRead).toBe(true);
+        expect(viewer.householdWrite).toBe(false);
+        expect(viewer.householdManage).toBe(false);
+    });
+
     test("gives permanent core access without a subscription", () => {
         const result = capabilitiesFromSubscription({ status: null }, now);
         expect(result.tier).toBe("free");

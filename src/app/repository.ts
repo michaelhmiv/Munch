@@ -1,4 +1,7 @@
-import { resolveMunchCapabilities } from "../billing/capabilities.js";
+import {
+    resolveMunchCapabilities,
+    type MunchCapabilitySurface,
+} from "../billing/capabilities.js";
 import { resolveAndroidEntitlements } from "../billing/android-entitlements.js";
 import {
     getActiveHouseholdContext,
@@ -203,11 +206,15 @@ async function listOpenDrafts(userId: string) {
     });
 }
 
-export async function getAppBootstrap(userId: string, email: string) {
+export async function getAppBootstrap(
+    userId: string,
+    email: string,
+    surface: MunchCapabilitySurface = "web",
+) {
     const [profile, capabilities, household, androidEntitlements] =
         await Promise.all([
             getProfile(userId),
-            resolveMunchCapabilities(userId),
+            resolveMunchCapabilities(userId, surface),
             getActiveHouseholdContext(userId),
             resolveAndroidEntitlements(userId),
         ]);
@@ -237,11 +244,15 @@ export async function getAppBootstrap(userId: string, email: string) {
     };
 }
 
-export async function getTodayWorkspace(userId: string, dateValue: string) {
+export async function getTodayWorkspace(
+    userId: string,
+    dateValue: string,
+    surface: MunchCapabilitySurface = "web",
+) {
     const date = validateLocalDate(dateValue);
     const [profile, capabilities] = await Promise.all([
         getProfile(userId),
-        resolveMunchCapabilities(userId),
+        resolveMunchCapabilities(userId, surface),
     ]);
     const timezone = profile?.timezone ?? "UTC";
     const [meals, goals, water, weight, drafts, plannedMeals] =
@@ -330,8 +341,11 @@ export async function getMealHistoryWorkspace(
  * The old standalone /app/foods URL still redirects to the Food Log, but the
  * authenticated API remains the canonical saved-food read model.
  */
-export async function getFoodsWorkspace(userId: string) {
-    const capabilities = await resolveMunchCapabilities(userId);
+export async function getFoodsWorkspace(
+    userId: string,
+    surface: MunchCapabilitySurface = "web",
+) {
+    const capabilities = await resolveMunchCapabilities(userId, surface);
     const foods = await listSavedFoods(userId, 200);
     return {
         deprecated: true,
@@ -554,13 +568,14 @@ export async function getPlanningWorkspace(
     userId: string,
     startValue: string,
     endValue: string,
+    surface: MunchCapabilitySurface = "web",
 ) {
     const startDate = validateLocalDate(startValue);
     const endDate = validateLocalDate(endValue);
     if (inclusiveDateSpanDays(startDate, endDate) > 62) {
         throw new Error("Date range is too large");
     }
-    const capabilities = await resolveMunchCapabilities(userId);
+    const capabilities = await resolveMunchCapabilities(userId, surface);
     const household = capabilities.household;
     const canRead =
         capabilities.personalPlanningRead || capabilities.householdRead;
@@ -621,8 +636,9 @@ export async function getRecipeWorkspace(
     userId: string,
     recipeId: string,
     revisionId?: string,
+    surface: MunchCapabilitySurface = "web",
 ) {
-    const capabilities = await resolveMunchCapabilities(userId);
+    const capabilities = await resolveMunchCapabilities(userId, surface);
     const canRead =
         capabilities.personalRecipesRead || capabilities.householdRead;
     if (!canRead) return { available: false, recipe: null };

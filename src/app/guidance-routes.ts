@@ -2,7 +2,8 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { requireSameOrigin } from "../accounts/csrf.js";
 import { requireWebSession } from "../accounts/session.js";
-import { resolveMunchCapabilities } from "../billing/capabilities.js";
+import { resolveRequestMunchCapabilities } from "../billing/capabilities.js";
+import { androidAiTaskCreditsUnavailable } from "../billing/android-ai-credits.js";
 import {
     requirePlanningAccess,
     requirePlanningScope,
@@ -68,16 +69,26 @@ function queryRequired(value: string | undefined, label: string): string {
     return value;
 }
 
-async function authorizedScope(userId: string, scope: unknown, write: boolean) {
+async function authorizedScope(
+    c: any,
+    userId: string,
+    scope: unknown,
+    write: boolean,
+) {
     const selected = scope === "household" ? "household" : "personal";
-    const capabilities = await resolveMunchCapabilities(userId);
+    const capabilities = await resolveRequestMunchCapabilities(c, userId);
     return requirePlanningScope(selected, capabilities, write);
 }
 
-async function authorizeDraft(userId: string, draftId: string, write: boolean) {
+async function authorizeDraft(
+    c: any,
+    userId: string,
+    draftId: string,
+    write: boolean,
+) {
     const draft = await getGuidedPlanDraft(userId, draftId);
     if (!draft) throw new Error("Plan draft was not found");
-    const scope = await authorizedScope(userId, draft.scope.type, write);
+    const scope = await authorizedScope(c, userId, draft.scope.type, write);
     if (
         draft.scope.type === "household" &&
         scope.type === "household" &&
@@ -132,10 +143,10 @@ function responseText(value: unknown): string | null {
     return null;
 }
 
-async function proposeRecipes(userId: string, body: unknown) {
+async function proposeRecipes(c: any, userId: string, body: unknown) {
     const request = aiProposalRequest.parse(body);
     if (!validateTz(request.timezone)) throw new Error("Invalid timezone");
-    const selectedScope = await authorizedScope(userId, request.scope, true);
+    const selectedScope = await authorizedScope(c, userId, request.scope, true);
     if (
         request.scope === "household" &&
         request.household_id &&
@@ -310,6 +321,7 @@ export function createGuidanceRouter(): Hono {
     app.get("/api/app/guidance/context", async (c) => {
         const userId = currentUserId(c);
         const scope = await authorizedScope(
+            c,
             userId,
             c.req.query("scope"),
             false,
@@ -413,16 +425,18 @@ export function createGuidanceRouter(): Hono {
         ),
     );
 
-    app.post("/api/app/planning/propose", requireSameOrigin, async (c) =>
-        privateJson(
+    app.post("/api/app/planning/propose", requireSameOrigin, async (c) => {
+        const unavailable = androidAiTaskCreditsUnavailable(c);
+        if (unavailable) return unavailable;
+        return privateJson(
             c,
-            await proposeRecipes(currentUserId(c), await c.req.json()),
-        ),
-    );
+            await proposeRecipes(c, currentUserId(c), await c.req.json()),
+        );
+    });
     app.post("/api/app/planning/drafts", requireSameOrigin, async (c) => {
         const userId = currentUserId(c);
         const body = bodyObject(await c.req.json(), "Plan draft");
-        const scope = await authorizedScope(userId, body.scope, true);
+        const scope = await authorizedScope(c, userId, body.scope, true);
         if (
             body.scope === "household" &&
             body.household_id &&
@@ -448,6 +462,7 @@ export function createGuidanceRouter(): Hono {
     app.get("/api/app/planning/drafts/:id", async (c) => {
         const userId = currentUserId(c);
         const draft = await authorizeDraft(
+            c,
             userId,
             requiredParam(c, "id"),
             false,
@@ -457,7 +472,7 @@ export function createGuidanceRouter(): Hono {
     app.patch("/api/app/planning/drafts/:id", requireSameOrigin, async (c) => {
         const userId = currentUserId(c);
         const draftId = requiredParam(c, "id");
-        await authorizeDraft(userId, draftId, true);
+        await authorizeDraft(c, userId, draftId, true);
         const body = bodyObject(await c.req.json(), "Plan draft update");
         return privateJson(
             c,
@@ -473,7 +488,7 @@ export function createGuidanceRouter(): Hono {
     app.delete("/api/app/planning/drafts/:id", requireSameOrigin, async (c) => {
         const userId = currentUserId(c);
         const draftId = requiredParam(c, "id");
-        await authorizeDraft(userId, draftId, true);
+        await authorizeDraft(c, userId, draftId, true);
         const body = bodyObject(await c.req.json(), "Draft cancellation");
         return privateJson(
             c,
@@ -491,7 +506,7 @@ export function createGuidanceRouter(): Hono {
         async (c) => {
             const userId = currentUserId(c);
             const draftId = requiredParam(c, "id");
-            await authorizeDraft(userId, draftId, true);
+            await authorizeDraft(c, userId, draftId, true);
             const body = bodyObject(await c.req.json(), "Plan confirmation");
             return privateJson(
                 c,
@@ -507,7 +522,7 @@ export function createGuidanceRouter(): Hono {
     app.get("/api/app/planning/drafts/:id/groceries", async (c) => {
         const userId = currentUserId(c);
         const draftId = requiredParam(c, "id");
-        await authorizeDraft(userId, draftId, false);
+        await authorizeDraft(c, userId, draftId, false);
         return privateJson(
             c,
             await previewGuidedPlanGroceries(userId, draftId),
@@ -519,7 +534,7 @@ export function createGuidanceRouter(): Hono {
         async (c) => {
             const userId = currentUserId(c);
             const draftId = requiredParam(c, "id");
-            await authorizeDraft(userId, draftId, true);
+            await authorizeDraft(c, userId, draftId, true);
             const body = bodyObject(await c.req.json(), "Grocery confirmation");
             return privateJson(
                 c,
@@ -538,7 +553,7 @@ export function createGuidanceRouter(): Hono {
     app.get("/api/app/planning/:plannedMealId/swaps", async (c) => {
         const userId = currentUserId(c);
         const plannedMealId = requiredParam(c, "plannedMealId");
-        const capabilities = await resolveMunchCapabilities(userId);
+        const capabilities = await resolveRequestMunchCapabilities(c, userId);
         requirePlanningAccess(capabilities, "all", false);
         return privateJson(
             c,
@@ -550,7 +565,10 @@ export function createGuidanceRouter(): Hono {
         requireSameOrigin,
         async (c) => {
             const userId = currentUserId(c);
-            const capabilities = await resolveMunchCapabilities(userId);
+            const capabilities = await resolveRequestMunchCapabilities(
+                c,
+                userId,
+            );
             requirePlanningAccess(capabilities, "all", true);
             const body = bodyObject(await c.req.json(), "Meal swap");
             return privateJson(
@@ -572,7 +590,10 @@ export function createGuidanceRouter(): Hono {
         requireSameOrigin,
         async (c) => {
             const userId = currentUserId(c);
-            const capabilities = await resolveMunchCapabilities(userId);
+            const capabilities = await resolveRequestMunchCapabilities(
+                c,
+                userId,
+            );
             requirePlanningAccess(capabilities, "all", true);
             const body = bodyObject(await c.req.json(), "Swap undo");
             return privateJson(

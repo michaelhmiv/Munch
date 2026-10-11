@@ -178,6 +178,7 @@ for (const route of [
 }
 
 const appRouterSource = await Bun.file("src/app/routes.ts").text();
+const normalizedAppRouterSource = appRouterSource.replace(/\s+/g, " ");
 const exportRouterSource = await Bun.file(
     "src/account-export-routes.ts",
 ).text();
@@ -257,7 +258,7 @@ for (const route of [
     '"/api/app/meal-drafts/:id/confirm"',
     '"/api/app/meal-drafts/:id/cancel"',
 ]) {
-    if (!appRouterSource.includes(route)) {
+    if (!normalizedAppRouterSource.includes(route.replace(/\s+/g, " "))) {
         throw new Error(`App meal composer is missing route: ${route}`);
     }
 }

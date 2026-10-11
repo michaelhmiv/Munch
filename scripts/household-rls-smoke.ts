@@ -7,6 +7,8 @@ const {
     createHousehold,
     createHouseholdInvitation,
     getActiveHouseholdContext,
+    getHouseholdSeatCounts,
+    householdInvitationUsesAndroidFreeAccess,
     listHouseholdMembers,
     removeHouseholdMember,
 } = await import("../src/households/repository.js");
@@ -42,6 +44,9 @@ async function inviteAndAccept(input: {
 const owner = await createSmokeIdentity("household-owner");
 const member = await createSmokeIdentity("household-member");
 const departing = await createSmokeIdentity("household-departing");
+const androidMember = await createSmokeIdentity(
+    "household-android-free-member",
+);
 const outsider = await createSmokeIdentity("household-outsider");
 const household = await createHousehold({
     userId: owner.userId,
@@ -65,6 +70,33 @@ if (accepted.householdId !== household.householdId) {
     throw new Error("Invitation did not join the intended household");
 }
 
+const androidInvitation = await createHouseholdInvitation({
+    userId: owner.userId,
+    householdId: household.householdId,
+    email: androidMember.email,
+    role: "member",
+    androidFreeAccess: true,
+});
+if (
+    !(await householdInvitationUsesAndroidFreeAccess(
+        androidInvitation.rawToken,
+    ))
+) {
+    throw new Error("Android free invitation did not retain its access mode");
+}
+await acceptHouseholdInvitation({
+    userId: androidMember.userId,
+    token: androidInvitation.rawToken,
+    displayName: "Android Member",
+});
+const androidSeatCounts = await getHouseholdSeatCounts(household.householdId);
+if (
+    androidSeatCounts.activeNonOwnerCount !== 1 ||
+    androidSeatCounts.desiredSeatQuantity !== 1
+) {
+    throw new Error("Android free members changed billable Stripe seat counts");
+}
+
 let reused = false;
 try {
     await acceptHouseholdInvitation({
@@ -86,8 +118,15 @@ await inviteAndAccept({
 });
 
 const members = await listHouseholdMembers(owner.userId, household.householdId);
-if (members.length !== 3 || members[0]?.displayName !== "Mom") {
+if (members.length !== 4 || members[0]?.displayName !== "Mom") {
     throw new Error("Household member listing was incorrect");
+}
+const finalSeatCounts = await getHouseholdSeatCounts(household.householdId);
+if (
+    finalSeatCounts.activeNonOwnerCount !== 2 ||
+    finalSeatCounts.desiredSeatQuantity !== 2
+) {
+    throw new Error("Paid household members were not counted as Stripe seats");
 }
 if (
     (await listHouseholdMembers(outsider.userId, household.householdId))
@@ -141,7 +180,7 @@ const activeMembers = await listHouseholdMembers(
     household.householdId,
 );
 if (
-    activeMembers.length !== 2 ||
+    activeMembers.length !== 3 ||
     activeMembers.some((entry) => entry.displayName === "Former Member")
 ) {
     throw new Error("Deleted member remained in active household reads");
