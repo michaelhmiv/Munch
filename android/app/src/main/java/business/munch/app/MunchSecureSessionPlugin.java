@@ -26,7 +26,9 @@ public class MunchSecureSessionPlugin extends Plugin {
     private static final String KEY_ALIAS = "munch_installed_session_v1";
     private static final String PREFS_NAME = "munch_secure_session";
     private static final String PREF_TOKEN = "session_token";
+    private static final String PREF_PENDING_AUTH = "pending_auth";
     private static final int MAX_TOKEN_LENGTH = 16384;
+    private static final int MAX_PENDING_AUTH_LENGTH = 4096;
     private static final int GCM_TAG_BITS = 128;
     private static final int IV_BYTES = 12;
 
@@ -61,6 +63,40 @@ public class MunchSecureSessionPlugin extends Plugin {
     @PluginMethod
     public void clearToken(PluginCall call) {
         preferences().edit().remove(PREF_TOKEN).apply();
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void getPendingAuth(PluginCall call) {
+        try {
+            String encrypted = preferences().getString(PREF_PENDING_AUTH, null);
+            JSObject result = new JSObject();
+            result.put("value", encrypted == null ? "" : decrypt(encrypted));
+            call.resolve(result);
+        } catch (Exception error) {
+            preferences().edit().remove(PREF_PENDING_AUTH).apply();
+            call.reject("Unable to read the pending Munch sign-in", error);
+        }
+    }
+
+    @PluginMethod
+    public void setPendingAuth(PluginCall call) {
+        String value = call.getString("value");
+        if (value == null || value.isBlank() || value.length() > MAX_PENDING_AUTH_LENGTH) {
+            call.reject("A valid pending Munch sign-in is required");
+            return;
+        }
+        try {
+            preferences().edit().putString(PREF_PENDING_AUTH, encrypt(value)).apply();
+            call.resolve();
+        } catch (Exception error) {
+            call.reject("Unable to store the pending Munch sign-in", error);
+        }
+    }
+
+    @PluginMethod
+    public void clearPendingAuth(PluginCall call) {
+        preferences().edit().remove(PREF_PENDING_AUTH).apply();
         call.resolve();
     }
 

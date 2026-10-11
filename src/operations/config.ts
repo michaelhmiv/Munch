@@ -34,7 +34,7 @@ export function configurationIssues(): ConfigurationIssue[] {
                 issues.push({
                     key: "MUNCH_APP_BASE_URL",
                     message:
-                        "Application URL must be an origin without path, query, or fragment",
+                        "Application URL must be an origin without a path, query, or fragment",
                 });
             }
         } catch {
@@ -66,6 +66,43 @@ export function configurationIssues(): ConfigurationIssue[] {
         "USDA_FDC_API_KEY",
         "USDA_FDC_API_KEY is required because the USDA provider is enabled",
     );
+
+    const googleWebClientId = present("MUNCH_GOOGLE_WEB_CLIENT_ID");
+    const googleAndroidClientId = present("MUNCH_GOOGLE_ANDROID_CLIENT_ID");
+    const googleClientSecret = present("MUNCH_GOOGLE_CLIENT_SECRET");
+    if (Boolean(googleWebClientId) !== Boolean(googleClientSecret)) {
+        issues.push({
+            key: "MUNCH_GOOGLE_WEB_CLIENT_ID",
+            message:
+                "Google web client ID and secret must be configured together",
+        });
+    }
+    if (googleAndroidClientId && (!googleWebClientId || !googleClientSecret)) {
+        issues.push({
+            key: "MUNCH_GOOGLE_ANDROID_CLIENT_ID",
+            message: "Google Android client ID requires web client credentials",
+        });
+    }
+
+    const appLinkFingerprints = present(
+        "MUNCH_ANDROID_APP_LINK_SHA256_FINGERPRINTS",
+    );
+    if (
+        appLinkFingerprints &&
+        appLinkFingerprints
+            .split(",")
+            .map((value) => value.trim())
+            .some(
+                (value) =>
+                    !/^(?:[0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}$/.test(value),
+            )
+    ) {
+        issues.push({
+            key: "MUNCH_ANDROID_APP_LINK_SHA256_FINGERPRINTS",
+            message:
+                "App Link fingerprints must be colon-separated SHA-256 values",
+        });
+    }
 
     const pool = Number(present("MUNCH_DB_POOL_SIZE") || 10);
     if (!Number.isInteger(pool) || pool < 1 || pool > 50) {

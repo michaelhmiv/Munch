@@ -29,6 +29,16 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="munch" android:host="app" />
             </intent-filter>
+
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="munch.business"
+                    android:pathPrefix="/mobile/auth/callback" />
+            </intent-filter>
         </activity>
 
         <provider

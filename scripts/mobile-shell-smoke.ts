@@ -14,6 +14,14 @@ const plugin = await readFile(
     "mobile/android/MunchSecureSessionPlugin.java",
     "utf8",
 );
+const googleSignInPlugin = await readFile(
+    "mobile/android/MunchGoogleSignInPlugin.java",
+    "utf8",
+);
+const androidMainActivity = await readFile(
+    "mobile/android/MainActivity.java",
+    "utf8",
+);
 const playBillingPlugin = await readFile(
     "mobile/android/MunchPlayBillingPlugin.java",
     "utf8",
@@ -38,6 +46,7 @@ const storeRepository = await readFile(
 );
 const configure = await readFile("scripts/configure-mobile-android.ts", "utf8");
 const server = await readFile("src/index.ts", "utf8");
+const mobileAuthRoutes = await readFile("src/auth/mobile-routes.ts", "utf8");
 const inventoryRoutes = await readFile("src/inventory/routes.ts", "utf8");
 const appRoutes = await readFile("src/app/routes.ts", "utf8");
 
@@ -102,9 +111,7 @@ requireText(
     "Server-owned duplicate purchase decision",
 );
 if (/App\.addListener\(["']backButton["']/.test(runtime)) {
-    throw new Error(
-        "Installed runtime must retain Capacitor's default Android back handling",
-    );
+    throw new Error("Keep Capacitor's default Android back handling");
 }
 if (/localStorage/.test(runtime)) {
     throw new Error("Installed bearer credentials must not use localStorage");
@@ -130,6 +137,52 @@ requireText(
     "installedReturnRoute",
     "Installed post-login return validation",
 );
+requireText(
+    mobileLogin,
+    "requestMobileMagicLink",
+    "Passwordless Android email sign-in",
+);
+requireText(mobileLogin, "signInWithGoogle", "Android Google account sign-in");
+requireText(
+    runtime,
+    'registerPlugin("MunchGoogleSignIn")',
+    "Google sign-in bridge",
+);
+requireText(runtime, "/api/auth/sign-in/magic-link", "Munch magic-link API");
+requireText(
+    runtime,
+    "/mobile/auth/handoff/exchange",
+    "One-time mobile handoff",
+);
+requireText(
+    runtime,
+    "/api/auth/sign-in/social",
+    "Better Auth Google token exchange",
+);
+requireText(plugin, "setPendingAuth", "Encrypted pending magic-link state");
+requireText(plugin, "clearPendingAuth", "Encrypted pending magic-link state");
+requireText(
+    googleSignInPlugin,
+    "CredentialManager",
+    "Native Google Credential Manager",
+);
+requireText(
+    googleSignInPlugin,
+    "GoogleIdTokenCredential",
+    "Native Google ID-token response",
+);
+requireText(
+    androidMainActivity,
+    "registerPlugin(MunchGoogleSignInPlugin.class)",
+    "Native Google sign-in registration",
+);
+if (
+    /signInWithPassword|name=["']password["']|type=["']password["']/.test(
+        `${mobileLogin}\n${runtime}`,
+    )
+) {
+    throw new Error("Android sign-in must not collect a Munch password");
+}
 
 requireText(
     plugin,
@@ -149,11 +202,41 @@ requireText(
     'android:usesCleartextTraffic="false"',
     "Android manifest policy",
 );
+requireText(
+    configure,
+    'android:autoVerify="true"',
+    "Verified Android sign-in links",
+);
+requireText(
+    configure,
+    'android:pathPrefix="/mobile/auth/callback"',
+    "Verified Android sign-in callback path",
+);
+requireText(
+    mobileAuthRoutes,
+    "MUNCH_ANDROID_APP_LINK_SHA256_FINGERPRINTS",
+    "Android App Link domain association",
+);
 requireText(server, '"set-auth-token"', "Installed auth CORS contract");
 requireText(
     configure,
     "com.android.billingclient:billing:9.1.0",
     "Google Play Billing dependency",
+);
+requireText(
+    configure,
+    "androidx.credentials:credentials:1.6.0",
+    "Android Credential Manager dependency",
+);
+requireText(
+    configure,
+    "com.google.android.libraries.identity.googleid:googleid:1.2.1",
+    "Google ID token dependency",
+);
+requireText(
+    configure,
+    "MunchGoogleSignInPlugin.java",
+    "Google Credential Manager native bridge",
 );
 requireText(
     playBillingPlugin,

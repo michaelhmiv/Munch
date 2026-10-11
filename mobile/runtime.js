@@ -25,8 +25,10 @@ const FOREGROUND_SESSION_RECHECK_MS = 5 * 60 * 1000;
 
 const MunchSecureSession = registerPlugin("MunchSecureSession");
 const MunchPlayBilling = registerPlugin("MunchPlayBilling");
+const MunchGoogleSignIn = registerPlugin("MunchGoogleSignIn");
 let backgroundedAt = null;
 let foregroundSessionCheck = null;
+const mobileAuthCallbacks = new Map();
 
 async function storedToken() {
     try {
@@ -106,44 +108,52 @@ export async function hasStoredSession() {
 }
 
 export async function restoreInstalledEntryRoute(explicitRoute) {
-    const requested = installedAppRoute(explicitRoute);
-    if (requested) return navigateInstalledRoute(requested, true);
-
     try {
         const launch = await App.getLaunchUrl();
+        const authenticatedRoute = await completeMobileMagicLink(launch?.url);
+        if (authenticatedRoute) {
+            return navigateInstalledRoute(authenticatedRoute, true);
+        }
         const launchedRoute = installedRouteFromUrl(launch?.url);
         if (launchedRoute) return navigateInstalledRoute(launchedRoute, true);
     } catch {
         // A missing launch URL is a normal app start.
     }
 
+    const requested = installedAppRoute(explicitRoute);
+    if (requested) return navigateInstalledRoute(requested, true);
+
     return installedAppRoute(location.pathname);
 }
 
-export async function signInWithPassword(identifier, password) {
-    const normalizedIdentifier = String(identifier || "").trim();
-    const normalizedPassword = String(password || "");
-    if (!normalizedIdentifier || !normalizedPassword) {
-        throw new Error("Email or username and password are required");
+function randomBase64Url(byteLength = 32) {
+    const bytes = new Uint8Array(byteLength);
+    crypto.getRandomValues(bytes);
+    let binary = "";
+    for (const value of bytes) binary += String.fromCharCode(value);
+    return btoa(binary)
+        .replaceAll("+", "-")
+        .replaceAll("/", "_")
+        .replaceAll("=", "");
+}
+
+async function sha256Base64Url(value) {
+    const digest = await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(value),
+    );
+    let binary = "";
+    for (const byte of new Uint8Array(digest)) {
+        binary += String.fromCharCode(byte);
     }
+    return btoa(binary)
+        .replaceAll("+", "-")
+        .replaceAll("/", "_")
+        .replaceAll("=", "");
+}
 
-    const usesEmail = normalizedIdentifier.includes("@");
-    const endpoint = usesEmail
-        ? "/api/auth/sign-in/email"
-        : "/api/auth/sign-in/username";
-    const body = usesEmail
-        ? {
-              email: normalizedIdentifier.toLowerCase(),
-              password: normalizedPassword,
-              rememberMe: true,
-          }
-        : {
-              username: normalizedIdentifier,
-              password: normalizedPassword,
-              rememberMe: true,
-          };
-
-    const response = await fetch(new URL(endpoint, API_BASE_URL), {
+async function jsonRequest(path, body) {
+    const response = await fetch(new URL(path, API_BASE_URL), {
         method: "POST",
         credentials: "omit",
         headers: {
@@ -152,23 +162,178 @@ export async function signInWithPassword(identifier, password) {
         },
         body: JSON.stringify(body),
     });
-
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
         throw new Error(
             payload?.message ||
                 payload?.error ||
-                `Sign in failed (${response.status})`,
+                `The sign-in request failed (${response.status})`,
         );
     }
+    return payload;
+}
 
+export async function requestMobileMagicLink(email, returnTo = "/app") {
+    const normalizedEmail = String(email || "")
+        .trim()
+        .toLowerCase();
+    if (!normalizedEmail || normalizedEmail.length > 320) {
+        throw new Error("Enter a valid email address");
+    }
+
+    const state = randomBase64Url();
+    const codeVerifier = randomBase64Url();
+    const codeChallenge = await sha256Base64Url(codeVerifier);
+    const route = installedReturnRoute(returnTo);
+    await MunchSecureSession.setPendingAuth({
+        value: JSON.stringify({
+            state,
+            codeVerifier,
+            returnTo: route,
+        }),
+    });
+
+    const callbackURL = new URL("/mobile/auth/handoff/complete", API_BASE_URL);
+    callbackURL.searchParams.set("state", state);
+    callbackURL.searchParams.set("code_challenge", codeChallenge);
+
+    try {
+        await jsonRequest("/api/auth/sign-in/magic-link", {
+            email: normalizedEmail,
+            name: "Munch user",
+            callbackURL: `${callbackURL.pathname}${callbackURL.search}`,
+            newUserCallbackURL: `${callbackURL.pathname}${callbackURL.search}`,
+            errorCallbackURL: "/connect/error",
+        });
+    } catch (error) {
+        await MunchSecureSession.clearPendingAuth();
+        throw error;
+    }
+}
+
+async function googleSignInConfig() {
+    const response = await fetch(
+        new URL("/mobile/auth/google-config", API_BASE_URL),
+        {
+            method: "GET",
+            credentials: "omit",
+            headers: { Accept: "application/json" },
+        },
+    );
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.configured || !payload.webClientId) {
+        throw new Error("Google sign-in is not configured yet");
+    }
+    return payload;
+}
+
+export async function signInWithGoogle() {
+    const config = await googleSignInConfig();
+    const nonce = randomBase64Url();
+    const credential = await MunchGoogleSignIn.signIn({
+        webClientId: config.webClientId,
+        nonce,
+    });
+    if (typeof credential?.idToken !== "string" || !credential.idToken) {
+        throw new Error("Google did not return a sign-in token");
+    }
+
+    const response = await fetch(
+        new URL("/api/auth/sign-in/social", API_BASE_URL),
+        {
+            method: "POST",
+            credentials: "omit",
+            headers: {
+                Accept: "application/json",
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                provider: "google",
+                idToken: { token: credential.idToken, nonce },
+                callbackURL: "/app",
+            }),
+        },
+    );
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(
+            payload?.message || payload?.error || "Google sign-in failed",
+        );
+    }
     const token = response.headers.get("set-auth-token");
     if (!token) {
         throw new Error("Munch did not return an installed-app session token");
     }
-
     await MunchSecureSession.setToken({ token });
+    await MunchSecureSession.clearPendingAuth();
     return payload;
+}
+
+export async function isGoogleSignInAvailable() {
+    try {
+        await googleSignInConfig();
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function mobileAuthCallback(value) {
+    try {
+        const parsed = new URL(value);
+        return parsed.protocol === "https:" &&
+            parsed.hostname === "munch.business" &&
+            parsed.pathname === "/mobile/auth/callback"
+            ? parsed
+            : null;
+    } catch {
+        return null;
+    }
+}
+
+async function completeMobileMagicLink(value) {
+    const callback = mobileAuthCallback(value);
+    if (!callback) return null;
+    const cached = mobileAuthCallbacks.get(value);
+    if (cached) return cached;
+
+    const completion = (async () => {
+        const code = callback.searchParams.get("code") || "";
+        const state = callback.searchParams.get("state") || "";
+        const stored = await MunchSecureSession.getPendingAuth();
+        let pending;
+        try {
+            pending = JSON.parse(stored?.value || "{}");
+        } catch {
+            pending = {};
+        }
+        if (
+            !code ||
+            !state ||
+            state !== pending.state ||
+            typeof pending.codeVerifier !== "string"
+        ) {
+            throw new Error("This sign-in link is not waiting on this device");
+        }
+
+        const result = await jsonRequest("/mobile/auth/handoff/exchange", {
+            code,
+            codeVerifier: pending.codeVerifier,
+        });
+        if (typeof result?.token !== "string" || !result.token) {
+            throw new Error("Munch did not complete the installed-app sign-in");
+        }
+        await MunchSecureSession.setToken({ token: result.token });
+        await MunchSecureSession.clearPendingAuth();
+        return installedReturnRoute(pending.returnTo);
+    })();
+    mobileAuthCallbacks.set(value, completion);
+    return completion;
+}
+
+function redirectAfterMobileAuth(route) {
+    const safeRoute = installedReturnRoute(route);
+    location.replace(`/index.html?route=${encodeURIComponent(safeRoute)}`);
 }
 
 export async function signOutInstalledSession() {
@@ -360,6 +525,21 @@ App.addListener("appStateChange", ({ isActive }) => {
 });
 
 App.addListener("appUrlOpen", ({ url }) => {
+    if (mobileAuthCallback(url)) {
+        void completeMobileMagicLink(url)
+            .then((route) => {
+                if (route) redirectAfterMobileAuth(route);
+                else moveToLogin(currentInstalledAppRoute());
+            })
+            .catch(() => {
+                void MunchSecureSession.clearPendingAuth();
+                const returnTo = encodeURIComponent(currentInstalledAppRoute());
+                location.replace(
+                    `${LOGIN_PATH}?return_to=${returnTo}&auth_error=handoff`,
+                );
+            });
+        return;
+    }
     const route = installedRouteFromUrl(url);
     if (!route) return;
     if (location.pathname === LOGIN_PATH) {
