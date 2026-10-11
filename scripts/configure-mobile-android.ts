@@ -30,6 +30,10 @@ await cp(
     "mobile/android/MunchGoogleSignInPlugin.java",
     `${javaDir}/MunchGoogleSignInPlugin.java`,
 );
+await cp(
+    "mobile/android/MunchAdsPlugin.java",
+    `${javaDir}/MunchAdsPlugin.java`,
+);
 
 const buildGradlePath = "android/app/build.gradle";
 let buildGradle = await readFile(buildGradlePath, "utf8");
@@ -38,6 +42,8 @@ const requiredDependencies = [
     "androidx.credentials:credentials:1.6.0",
     "androidx.credentials:credentials-play-services-auth:1.6.0",
     "com.google.android.libraries.identity.googleid:googleid:1.2.1",
+    "com.google.android.gms:play-services-ads:25.5.0",
+    "com.google.android.ump:user-messaging-platform:4.0.0",
 ];
 for (const dependency of requiredDependencies) {
     if (!buildGradle.includes(dependency)) {
@@ -54,6 +60,16 @@ await writeFile(buildGradlePath, buildGradle);
 
 const manifestPath = "android/app/src/main/AndroidManifest.xml";
 let manifest = await readFile(manifestPath, "utf8");
+if (
+    !manifest.includes(
+        'android:name="com.google.android.gms.ads.APPLICATION_ID"',
+    )
+) {
+    manifest = manifest.replace(
+        /(<application\b[^>]*>)/,
+        '$1\n        <meta-data\n            android:name="com.google.android.gms.ads.APPLICATION_ID"\n            android:value="${munchAdMobAppId}" />',
+    );
+}
 manifest = manifest.replace(
     'android:allowBackup="true"',
     'android:allowBackup="false"',
@@ -106,11 +122,52 @@ if (!manifest.includes('android:allowBackup="false"')) {
         "Android backups were not disabled for installed credentials",
     );
 }
+const applicationMatch = manifest.match(/^[ \t]*<application\b/m);
+if (!applicationMatch || applicationMatch.index === undefined) {
+    throw new Error("Android application element is missing");
+}
+const permissionPattern = /^[ \t]*<uses-permission\b[^>]*\/>[ \t]*(?:\r?\n)?/gm;
+const trailingPermissions = [...manifest.matchAll(permissionPattern)].filter(
+    (match) => match.index > applicationMatch.index!,
+);
+if (trailingPermissions.length > 0) {
+    const permissionLines = trailingPermissions.map((match) => match[0].trim());
+    for (const match of trailingPermissions.toReversed()) {
+        manifest =
+            manifest.slice(0, match.index) +
+            manifest.slice(match.index + match[0].length);
+    }
+    const updatedApplicationMatch = manifest.match(/^[ \t]*<application\b/m);
+    if (
+        !updatedApplicationMatch ||
+        updatedApplicationMatch.index === undefined
+    ) {
+        throw new Error(
+            "Android application element disappeared while moving permissions",
+        );
+    }
+    const applicationIndent = updatedApplicationMatch[0].slice(
+        0,
+        updatedApplicationMatch[0].indexOf("<application"),
+    );
+    const permissionBlock = `${permissionLines.map((line) => `${applicationIndent}${line}`).join("\n")}\n\n`;
+    manifest =
+        manifest.slice(0, updatedApplicationMatch.index) +
+        permissionBlock +
+        manifest.slice(updatedApplicationMatch.index);
+}
 if (!manifest.includes('android:usesCleartextTraffic="false"')) {
     throw new Error("Android cleartext traffic was not disabled");
+}
+if (
+    !manifest.includes(
+        'android:name="com.google.android.gms.ads.APPLICATION_ID"',
+    )
+) {
+    throw new Error("Google Mobile Ads app ID metadata is missing");
 }
 await writeFile(manifestPath, manifest);
 
 console.log(
-    "Configured Android API 36, Billing, sign-in, App Links, and plugins",
+    "Configured Android API 36, Billing, sign-in, ads, App Links, and plugins",
 );

@@ -905,6 +905,12 @@ export function createAppRouter(): Hono {
             "Cache-Control": "no-cache",
         }),
     );
+    app.get("/ads-policy.js", async (c) =>
+        c.body(await Bun.file("./public/ads-policy.js").text(), 200, {
+            "Content-Type": "text/javascript; charset=utf-8",
+            "Cache-Control": "no-cache",
+        }),
+    );
     app.get("/app-api.js", async (c) =>
         c.body(await Bun.file("./public/app-api.js").text(), 200, {
             "Content-Type": "text/javascript; charset=utf-8",

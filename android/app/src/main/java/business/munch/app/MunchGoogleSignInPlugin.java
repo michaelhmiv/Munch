@@ -7,6 +7,7 @@ import androidx.credentials.CustomCredential;
 import androidx.credentials.GetCredentialRequest;
 import androidx.credentials.GetCredentialResponse;
 import androidx.credentials.exceptions.GetCredentialException;
+import androidx.credentials.exceptions.NoCredentialException;
 import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.JSObject;
@@ -74,6 +75,10 @@ public class MunchGoogleSignInPlugin extends Plugin {
 
                 @Override
                 public void onError(GetCredentialException error) {
+                    if (error instanceof NoCredentialException) {
+                        call.reject("No Google account is available for this sign-in.");
+                        return;
+                    }
                     call.reject("Google sign-in was cancelled or could not be completed");
                 }
             }

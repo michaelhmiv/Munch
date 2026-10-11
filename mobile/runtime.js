@@ -26,6 +26,15 @@ const FOREGROUND_SESSION_RECHECK_MS = 5 * 60 * 1000;
 const MunchSecureSession = registerPlugin("MunchSecureSession");
 const MunchPlayBilling = registerPlugin("MunchPlayBilling");
 const MunchGoogleSignIn = registerPlugin("MunchGoogleSignIn");
+const MunchAds = registerPlugin("MunchAds");
+window.MunchAds = Object.freeze({
+    setBannerVisible(options) {
+        return MunchAds.setBannerVisible(options);
+    },
+    showPrivacyOptions() {
+        return MunchAds.showPrivacyOptions();
+    },
+});
 let backgroundedAt = null;
 let foregroundSessionCheck = null;
 const mobileAuthCallbacks = new Map();

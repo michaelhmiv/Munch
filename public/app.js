@@ -1,4 +1,5 @@
 import { requestJson } from "./app-api.js";
+import { shouldShowAndroidBanner } from "./ads-policy.js";
 import {
     displayWeightUnit,
     savedWeightUnit,
@@ -271,6 +272,21 @@ async function api(path, options = {}) {
         ...options,
         signal: options.signal || controller.signal,
     });
+}
+
+function syncAndroidAdPlacement() {
+    if (typeof window.MunchAds?.setBannerVisible !== "function") return;
+    const adFree = state.bootstrap?.androidEntitlements?.adFree;
+    const visible = shouldShowAndroidBanner({
+        route: state.route,
+        pathname: location.pathname,
+        dialogOpen: dialog.open,
+        adFree,
+    });
+    void window.MunchAds.setBannerVisible({
+        visible,
+        adFree: adFree !== false,
+    }).catch(() => {});
 }
 
 function setLoading(label = "Loading your Munch workspace…") {
@@ -1836,6 +1852,7 @@ function accountContext() {
 
 async function renderRoute() {
     state.route = routes[location.pathname] || "today";
+    syncAndroidAdPlacement();
     setActiveRoute(state.route);
     try {
         if (!state.bootstrap) {
@@ -1873,6 +1890,7 @@ async function renderRoute() {
                 renderAccountRoute("settings-account", accountContext()),
         };
         await (renderers[state.route] || renderToday)();
+        syncAndroidAdPlacement();
         if (state.route === "today" || state.route === "log") {
             const actions = content.querySelector(
                 ".page-heading .auth-actions",
@@ -1914,6 +1932,10 @@ function openDialog(title, body, actions = "") {
 }
 
 dialog.addEventListener("close", stopRecipeImportProgress);
+new MutationObserver(syncAndroidAdPlacement).observe(dialog, {
+    attributes: true,
+    attributeFilter: ["open"],
+});
 
 const webImportFields = [
     { key: "logged_at", label: "Date", required: true },

@@ -1,4 +1,5 @@
 import { resolveMunchCapabilities } from "../billing/capabilities.js";
+import { resolveAndroidEntitlements } from "../billing/android-entitlements.js";
 import {
     getActiveHouseholdContext,
     listHouseholdMembers,
@@ -203,11 +204,13 @@ async function listOpenDrafts(userId: string) {
 }
 
 export async function getAppBootstrap(userId: string, email: string) {
-    const [profile, capabilities, household] = await Promise.all([
-        getProfile(userId),
-        resolveMunchCapabilities(userId),
-        getActiveHouseholdContext(userId),
-    ]);
+    const [profile, capabilities, household, androidEntitlements] =
+        await Promise.all([
+            getProfile(userId),
+            resolveMunchCapabilities(userId),
+            getActiveHouseholdContext(userId),
+            resolveAndroidEntitlements(userId),
+        ]);
     return {
         user: { id: userId, email },
         profile,
@@ -229,6 +232,7 @@ export async function getAppBootstrap(userId: string, email: string) {
             household: capabilities.householdRead,
             householdManage: capabilities.householdManage,
         },
+        androidEntitlements,
         household,
     };
 }

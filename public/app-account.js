@@ -335,7 +335,7 @@ function connectionsPage(data) {
 function dataPage() {
     return settingsShell(
         "settings-data",
-        `${sectionHeading("Data", "Data & privacy", "Import or export your records and review the policies that define how Munch handles them.")}<div class="settings-stack">${settingGroup("Import & export", "Your export is generated as a private, short-lived download.", `<div class="settings-action-list"><button class="settings-action-row" data-action="open-import"><span><strong>Import meal history</strong><small>Upload, preview and confirm a supported CSV export.</small></span><span aria-hidden="true">›</span></button><button class="settings-action-row" data-action="export-meals"><span><strong>Export meal history</strong><small>Download only your logged meals as a CSV file.</small></span><span aria-hidden="true">↓</span></button><button class="settings-action-row" data-action="export-account"><span><strong>Export complete account data</strong><small>Download your personal data and household records you are authorized to view.</small></span><span aria-hidden="true">↓</span></button></div>`)}${settingGroup("Privacy & security", "Policies open in a new website page without changing your Munch records.", `<div class="settings-action-list"><a class="settings-action-row" href="/privacy"><span><strong>Privacy policy</strong><small>Data handling, household boundaries and retention.</small></span><span aria-hidden="true">›</span></a><a class="settings-action-row" href="/security"><span><strong>Security</strong><small>Security practices and vulnerability reporting.</small></span><span aria-hidden="true">›</span></a></div>`)}</div>`,
+        `${sectionHeading("Data", "Data & privacy", "Import or export your records and review the policies that define how Munch handles them.")}<div class="settings-stack">${settingGroup("Import & export", "Your export is generated as a private, short-lived download.", `<div class="settings-action-list"><button class="settings-action-row" data-action="open-import"><span><strong>Import meal history</strong><small>Upload, preview and confirm a supported CSV export.</small></span><span aria-hidden="true">›</span></button><button class="settings-action-row" data-action="export-meals"><span><strong>Export meal history</strong><small>Download only your logged meals as a CSV file.</small></span><span aria-hidden="true">↓</span></button><button class="settings-action-row" data-action="export-account"><span><strong>Export complete account data</strong><small>Download your personal data and household records you are authorized to view.</small></span><span aria-hidden="true">↓</span></button></div>`)}${window.MunchAds ? settingGroup("Advertising privacy", "Review or change the privacy choices used before Android ads are requested.", `<div class="settings-action-list"><button class="settings-action-row" data-action="ad-privacy-options"><span><strong>Advertising privacy choices</strong><small>Review or change your ad consent choices.</small></span><span aria-hidden="true">›</span></button></div>`) : ""}${settingGroup("Privacy & security", "Policies open in a new website page without changing your Munch records.", `<div class="settings-action-list"><a class="settings-action-row" href="/privacy"><span><strong>Privacy policy</strong><small>Data handling, household boundaries and retention.</small></span><span aria-hidden="true">›</span></a><a class="settings-action-row" href="/security"><span><strong>Security</strong><small>Security practices and vulnerability reporting.</small></span><span aria-hidden="true">›</span></a></div>`)}</div>`,
     );
 }
 
@@ -647,6 +647,22 @@ export async function handleAccountSubmit(form, ctx) {
 
 export async function handleAccountAction(button, ctx) {
     const action = button.dataset.action;
+    if (action === "ad-privacy-options") {
+        try {
+            const result = await window.MunchAds?.showPrivacyOptions();
+            if (result?.available === false) {
+                ctx.toast(
+                    "No additional advertising privacy choices are required for this location.",
+                );
+            }
+        } catch {
+            ctx.toast(
+                "Advertising privacy choices could not be opened. Try again later.",
+                "error",
+            );
+        }
+        return true;
+    }
     if (action === "billing-play-manage") {
         window.open(
             "https://play.google.com/store/account/subscriptions",
