@@ -12,6 +12,7 @@ jobs:
         runs-on: ubuntu-latest
         timeout-minutes: 40
         env:
+            MUNCH_ANDROID_VERSION_CODE: ${{ github.run_number }}
             MUNCH_ADMOB_APP_ID: ca-app-pub-3940256099942544~3347511713
             MUNCH_ADMOB_BANNER_AD_UNIT_ID: ca-app-pub-3940256099942544/9214589741
         steps:

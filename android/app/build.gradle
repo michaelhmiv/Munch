@@ -19,6 +19,18 @@ def uploadKeyAlias = (System.getenv('MUNCH_ANDROID_UPLOAD_KEY_ALIAS') ?: '').tri
 def uploadSigningReady =
     uploadKeystorePath && uploadStorePassword && uploadKeyAlias &&
     file(uploadKeystorePath).exists()
+def configuredVersionCode = (System.getenv('MUNCH_ANDROID_VERSION_CODE') ?: '').trim()
+def androidVersionCode = 1
+if (configuredVersionCode) {
+    try {
+        androidVersionCode = Integer.parseInt(configuredVersionCode)
+    } catch (NumberFormatException ignored) {
+        throw new GradleException('MUNCH_ANDROID_VERSION_CODE must be between 1 and 2100000000.')
+    }
+    if (androidVersionCode < 1 || androidVersionCode > 2100000000) {
+        throw new GradleException('MUNCH_ANDROID_VERSION_CODE must be between 1 and 2100000000.')
+    }
+}
 def sampleAdMobAppId = 'ca-app-pub-3940256099942544~3347511713'
 def sampleBannerAdUnitId = 'ca-app-pub-3940256099942544/9214589741'
 def configuredReleaseAdMobAppId =
@@ -52,7 +64,7 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         manifestPlaceholders = [munchAdMobAppId: sampleAdMobAppId]
         resValue "string", "munch_admob_banner_unit_id", ""
-        versionCode 1
+        versionCode androidVersionCode
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
