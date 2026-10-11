@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -37,7 +38,7 @@ jobs:
           npx cap sync android
           bun scripts/configure-mobile-android.ts
       - name: Prepare Firebase config for trusted main build
-        if: github.event_name == 'push'
+        if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' }}
         env:
           FIREBASE_ANDROID_CONFIG_JSON: ${{ secrets.FIREBASE_ANDROID_CONFIG_JSON }}
         run: |
@@ -66,28 +67,97 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
-      - name: Distribute Android APK to Firebase App Distribution
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+  distribute:
+    name: Firebase App Distribution
+    needs: validate
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_DISTRIBUTION_SERVICE_ACCOUNT: ${{ vars.GCP_DISTRIBUTION_SERVICE_ACCOUNT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: munch-android-debug
+          path: artifacts
+      - name: Validate Google Cloud authentication settings
+        run: |
+          set -euo pipefail
+          if { [ -n "$GCP_WORKLOAD_IDENTITY_PROVIDER" ] && [ -z "$GCP_DISTRIBUTION_SERVICE_ACCOUNT" ]; } ||
+             { [ -z "$GCP_WORKLOAD_IDENTITY_PROVIDER" ] && [ -n "$GCP_DISTRIBUTION_SERVICE_ACCOUNT" ]; }; then
+            echo "::error::Set both GCP_WORKLOAD_IDENTITY_PROVIDER and GCP_DISTRIBUTION_SERVICE_ACCOUNT, or leave both empty during migration."
+            exit 1
+          fi
+      - name: Extract Firebase Android app ID
+        id: firebase
+        env:
+          FIREBASE_ANDROID_CONFIG_JSON: ${{ secrets.FIREBASE_ANDROID_CONFIG_JSON }}
+        run: |
+          set -euo pipefail
+          if [ -z "$FIREBASE_ANDROID_CONFIG_JSON" ]; then
+            echo "::error::Missing FIREBASE_ANDROID_CONFIG_JSON repository secret."
+            exit 1
+          fi
+          config_path="$RUNNER_TEMP/google-services.json"
+          printf '%s' "$FIREBASE_ANDROID_CONFIG_JSON" > "$config_path"
+          trap 'rm -f "$config_path"' EXIT
+          jq -e --arg project "munch-android-bf1cd" --arg package "business.munch.app" \
+            '.project_info.project_id == $project and any(.client[]; .client_info.android_client_info.package_name == $package)' \
+            "$config_path" > /dev/null
+          firebase_app_id="$(jq -er '.client[] | select(.client_info.android_client_info.package_name == "business.munch.app") | .client_info.mobilesdk_app_id' "$config_path")"
+          echo "app_id=$firebase_app_id" >> "$GITHUB_OUTPUT"
+      - name: Install Firebase CLI
+        run: |
+          npm install --global firebase-tools
+          firebase --version
+      - name: Authenticate to Google Cloud with Workload Identity Federation
+        if: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && vars.GCP_DISTRIBUTION_SERVICE_ACCOUNT != '' }}
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DISTRIBUTION_SERVICE_ACCOUNT }}
+          project_id: munch-android-bf1cd
+          create_credentials_file: true
+          export_environment_variables: true
+      - name: Distribute Android APK with Workload Identity Federation
+        if: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && vars.GCP_DISTRIBUTION_SERVICE_ACCOUNT != '' }}
+        env:
+          FIREBASE_APP_ID: ${{ steps.firebase.outputs.app_id }}
+        run: |
+          set -euo pipefail
+          firebase appdistribution:distribute "artifacts/app-debug.apk" \
+            --app "$FIREBASE_APP_ID" \
+            --project "munch-android-bf1cd" \
+            --testers "michaelhmiv@gmail.com" \
+            --release-notes "Automated Android build from commit $(printf '%s' "$GITHUB_SHA" | cut -c1-7)"
+      - name: Distribute Android APK with the existing Firebase key
+        if: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER == '' && vars.GCP_DISTRIBUTION_SERVICE_ACCOUNT == '' }}
         env:
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          FIREBASE_APP_ID: ${{ steps.firebase.outputs.app_id }}
         run: |
           set -euo pipefail
           if [ -z "$FIREBASE_SERVICE_ACCOUNT_JSON" ]; then
-            echo "::error::Missing FIREBASE_SERVICE_ACCOUNT_JSON repository secret. Configure a Firebase App Distribution service account before merging this workflow."
+            echo "::error::Missing FIREBASE_SERVICE_ACCOUNT_JSON repository secret. Keep it until a WIF distribution succeeds."
             exit 1
           fi
-
           service_account_file="$RUNNER_TEMP/firebase-service-account.json"
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$service_account_file"
           chmod 600 "$service_account_file"
           trap 'rm -f "$service_account_file"' EXIT
           export GOOGLE_APPLICATION_CREDENTIALS="$service_account_file"
-
-          firebase_app_id="$(jq -er '.client[] | select(.client_info.android_client_info.package_name == "business.munch.app") | .client_info.mobilesdk_app_id' android/app/google-services.json)"
-          apk_path="android/app/build/outputs/apk/debug/app-debug.apk"
-          npm install --global firebase-tools
-          firebase appdistribution:distribute "$apk_path" \
-            --app "$firebase_app_id" \
+          firebase appdistribution:distribute "artifacts/app-debug.apk" \
+            --app "$FIREBASE_APP_ID" \
+            --project "munch-android-bf1cd" \
             --testers "michaelhmiv@gmail.com" \
-            --release-notes "Automated Android build from commit ${GITHUB_SHA::7}"
+            --release-notes "Automated Android build from commit $(printf '%s' "$GITHUB_SHA" | cut -c1-7)"
 # No cancellation group is used, so merged main commits each retain a release run.
