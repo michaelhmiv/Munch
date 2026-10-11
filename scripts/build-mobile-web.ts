@@ -12,7 +12,7 @@ await cp("public", output, { recursive: true });
 let appHtml = await readFile("public/app.html", "utf8");
 appHtml = appHtml.replaceAll('href="/app/pantry"', 'href="/pantry.html"');
 appHtml = appHtml.replace(
-    '<script type="module" src="/app-integrity.js"></script>\n        <script type="module" src="/app.js"></script>\n        <script type="module" src="/app-patches.js"></script>',
+    /<script type="module" src="\/app-integrity\.js"><\/script>\s*<script type="module" src="\/app\.js"><\/script>\s*<script type="module" src="\/app-patches\.js"><\/script>/,
     '<script type="module" src="/mobile-entry.js"></script>',
 );
 if (!appHtml.includes("/mobile-entry.js")) {
@@ -83,6 +83,11 @@ if (!runtime.includes("MunchSecureSession")) {
 if (!runtime.includes("MunchPlayBilling")) {
     throw new Error(
         "Installed-client runtime lost Google Play Billing integration",
+    );
+}
+if (!runtime.includes("MunchAds")) {
+    throw new Error(
+        "Installed-client runtime lost native ad and privacy controls",
     );
 }
 if (!runtime.includes("CapacitorBarcodeScanner")) {

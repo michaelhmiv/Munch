@@ -10,6 +10,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(MunchSecureSessionPlugin.class);
         registerPlugin(MunchPlayBillingPlugin.class);
         registerPlugin(MunchGoogleSignInPlugin.class);
+        registerPlugin(MunchAdsPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
