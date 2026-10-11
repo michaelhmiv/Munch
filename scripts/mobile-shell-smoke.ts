@@ -10,6 +10,15 @@ const mobileEntry = await readFile("mobile/mobile-entry.js", "utf8");
 const mobileLogin = await readFile("mobile/mobile-login.js", "utf8");
 const pantryNative = await readFile("mobile/pantry-native.js", "utf8");
 const buildMobileWeb = await readFile("scripts/build-mobile-web.ts", "utf8");
+const androidBuildGradle = await readFile("android/app/build.gradle", "utf8");
+const androidWorkflow = await readFile(
+    ".github/workflows/mobile-android.yml",
+    "utf8",
+);
+const playBundleWorkflow = await readFile(
+    ".github/workflows/android-play-internal-bundle.yml",
+    "utf8",
+);
 const plugin = await readFile(
     "mobile/android/MunchSecureSessionPlugin.java",
     "utf8",
@@ -197,6 +206,21 @@ requireText(
 requireText(configure, "minSdkVersion = 26", "Android configuration");
 requireText(configure, "compileSdkVersion\\s*=\\s*36", "Android configuration");
 requireText(configure, "targetSdkVersion\\s*=\\s*36", "Android configuration");
+requireText(
+    androidBuildGradle,
+    "MUNCH_ANDROID_VERSION_CODE",
+    "Android build version code",
+);
+requireText(
+    androidWorkflow,
+    "MUNCH_ANDROID_VERSION_CODE: ${{ github.run_number }}",
+    "Main Android build versioning",
+);
+requireText(
+    playBundleWorkflow,
+    "MUNCH_ANDROID_VERSION_CODE: ${{ github.run_number }}",
+    "Internal Play bundle versioning",
+);
 requireText(
     configure,
     'android:usesCleartextTraffic="false"',
