@@ -55,6 +55,37 @@ jobs:
       - name: Prepare Firebase fixture for pull requests
         if: github.event_name == 'pull_request'
         run: cp android/app/src/test/fixtures/google-services.json android/app/google-services.json
+      - name: Prepare stable internal debug signer
+        if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' }}
+        env:
+          MUNCH_ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.MUNCH_ANDROID_DEBUG_KEYSTORE_BASE64 }}
+          MUNCH_ANDROID_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.MUNCH_ANDROID_DEBUG_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$MUNCH_ANDROID_DEBUG_KEYSTORE_BASE64" ] && [ -z "$MUNCH_ANDROID_DEBUG_KEYSTORE_PASSWORD" ]; then
+            echo "Stable internal debug signing secrets are not configured; using the runner-generated debug key."
+            exit 0
+          fi
+          if [ -z "$MUNCH_ANDROID_DEBUG_KEYSTORE_BASE64" ] || [ -z "$MUNCH_ANDROID_DEBUG_KEYSTORE_PASSWORD" ]; then
+            echo "::error::Set both MUNCH_ANDROID_DEBUG_KEYSTORE_BASE64 and MUNCH_ANDROID_DEBUG_KEYSTORE_PASSWORD repository secrets."
+            exit 1
+          fi
+          keystore_path="$RUNNER_TEMP/munch-internal-debug.p12"
+          password_path="$RUNNER_TEMP/munch-internal-debug-password"
+          printf '%s' "$MUNCH_ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$keystore_path"
+          chmod 600 "$keystore_path"
+          umask 077
+          printf '%s' "$MUNCH_ANDROID_DEBUG_KEYSTORE_PASSWORD" > "$password_path"
+          key_listing="$(keytool -list -v -keystore "$keystore_path" -storetype PKCS12 -storepass:file "$password_path" 2>/dev/null)"
+          key_alias="$(printf '%s\n' "$key_listing" | sed -n 's/^Alias name: //p' | head -n 1)"
+          if [ -z "$key_alias" ] || ! printf '%s\n' "$key_listing" | grep -q 'Entry type: PrivateKeyEntry'; then
+            echo "::error::Debug keystore must contain a private-key entry."
+            exit 1
+          fi
+          echo "MUNCH_ANDROID_DEBUG_KEYSTORE_PATH=$keystore_path" >> "$GITHUB_ENV"
+          echo "MUNCH_ANDROID_DEBUG_KEYSTORE_PASSWORD=$MUNCH_ANDROID_DEBUG_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "MUNCH_ANDROID_DEBUG_KEY_ALIAS=$key_alias" >> "$GITHUB_ENV"
+          rm -f "$password_path"
       - name: Verify native project is reproducible
         run: git diff --exit-code -- android package.json bun.lock
       - name: Lint, unit test, and assemble Android debug app
@@ -67,6 +98,13 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
+      - name: Remove temporary debug signing material
+        if: always()
+        run: |
+          if [ -n "${MUNCH_ANDROID_DEBUG_KEYSTORE_PATH:-}" ]; then
+            rm -f -- "$MUNCH_ANDROID_DEBUG_KEYSTORE_PATH"
+          fi
+          rm -f -- "$RUNNER_TEMP/munch-internal-debug-password"
 
   distribute:
     name: Firebase App Distribution

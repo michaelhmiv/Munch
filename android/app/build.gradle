@@ -5,6 +5,20 @@ def firebaseConfigAvailable = firebaseConfig.exists() && firebaseConfig.length()
 def releaseTaskRequested = gradle.startParameter.taskNames.any {
     it.toLowerCase().contains('release')
 }
+def internalDebugKeystorePath = (System.getenv('MUNCH_ANDROID_DEBUG_KEYSTORE_PATH') ?: '').trim()
+def internalDebugStorePassword = (System.getenv('MUNCH_ANDROID_DEBUG_KEYSTORE_PASSWORD') ?: '').trim()
+def internalDebugKeyAlias = (System.getenv('MUNCH_ANDROID_DEBUG_KEY_ALIAS') ?: '').trim()
+def internalDebugSigningReady =
+    internalDebugKeystorePath && internalDebugStorePassword && internalDebugKeyAlias &&
+    file(internalDebugKeystorePath).exists()
+def internalDebugSigningRequested =
+    internalDebugKeystorePath || internalDebugStorePassword || internalDebugKeyAlias
+def uploadKeystorePath = (System.getenv('MUNCH_ANDROID_UPLOAD_KEYSTORE_PATH') ?: '').trim()
+def uploadStorePassword = (System.getenv('MUNCH_ANDROID_UPLOAD_KEYSTORE_PASSWORD') ?: '').trim()
+def uploadKeyAlias = (System.getenv('MUNCH_ANDROID_UPLOAD_KEY_ALIAS') ?: '').trim()
+def uploadSigningReady =
+    uploadKeystorePath && uploadStorePassword && uploadKeyAlias &&
+    file(uploadKeystorePath).exists()
 def sampleAdMobAppId = 'ca-app-pub-3940256099942544~3347511713'
 def sampleBannerAdUnitId = 'ca-app-pub-3940256099942544/9214589741'
 def configuredReleaseAdMobAppId =
@@ -16,6 +30,16 @@ def releaseAdMobAppId = configuredReleaseAdMobAppId ?: sampleAdMobAppId
 if (releaseTaskRequested && !firebaseConfigAvailable) {
     throw new GradleException(
         "Android release builds require android/app/google-services.json so Crashlytics is included."
+    )
+}
+if (internalDebugSigningRequested && !internalDebugSigningReady) {
+    throw new GradleException(
+        "Stable Android debug signing is partially configured; provide the keystore path, password, and alias together."
+    )
+}
+if (releaseTaskRequested && !uploadSigningReady) {
+    throw new GradleException(
+        "Android release builds require the stable upload keystore, password, and alias from the protected signing workflow."
     )
 }
 
@@ -37,16 +61,42 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (internalDebugSigningReady) {
+            internalDebug {
+                storeFile file(internalDebugKeystorePath)
+                storePassword internalDebugStorePassword
+                keyAlias internalDebugKeyAlias
+                keyPassword internalDebugStorePassword
+                storeType 'PKCS12'
+            }
+        }
+        if (uploadSigningReady) {
+            upload {
+                storeFile file(uploadKeystorePath)
+                storePassword uploadStorePassword
+                keyAlias uploadKeyAlias
+                keyPassword uploadStorePassword
+                storeType 'PKCS12'
+            }
+        }
+    }
     buildTypes {
         debug {
             manifestPlaceholders = [munchAdMobAppId: sampleAdMobAppId]
             resValue "string", "munch_admob_banner_unit_id", sampleBannerAdUnitId
+            if (internalDebugSigningReady) {
+                signingConfig signingConfigs.internalDebug
+            }
         }
         release {
             manifestPlaceholders = [munchAdMobAppId: releaseAdMobAppId]
             resValue "string", "munch_admob_banner_unit_id", configuredReleaseBannerAdUnitId
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (uploadSigningReady) {
+                signingConfig signingConfigs.upload
+            }
         }
     }
 }
