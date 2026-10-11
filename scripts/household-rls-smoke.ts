@@ -89,6 +89,13 @@ await acceptHouseholdInvitation({
     token: androidInvitation.rawToken,
     displayName: "Android Member",
 });
+const androidSeatCounts = await getHouseholdSeatCounts(household.householdId);
+if (
+    androidSeatCounts.activeNonOwnerCount !== 1 ||
+    androidSeatCounts.desiredSeatQuantity !== 1
+) {
+    throw new Error("Android free members changed billable Stripe seat counts");
+}
 
 let reused = false;
 try {
@@ -114,12 +121,12 @@ const members = await listHouseholdMembers(owner.userId, household.householdId);
 if (members.length !== 4 || members[0]?.displayName !== "Mom") {
     throw new Error("Household member listing was incorrect");
 }
-const androidSeatCounts = await getHouseholdSeatCounts(household.householdId);
+const finalSeatCounts = await getHouseholdSeatCounts(household.householdId);
 if (
-    androidSeatCounts.activeNonOwnerCount !== 1 ||
-    androidSeatCounts.desiredSeatQuantity !== 1
+    finalSeatCounts.activeNonOwnerCount !== 2 ||
+    finalSeatCounts.desiredSeatQuantity !== 2
 ) {
-    throw new Error("Android free members changed billable Stripe seat counts");
+    throw new Error("Paid household members were not counted as Stripe seats");
 }
 if (
     (await listHouseholdMembers(outsider.userId, household.householdId))

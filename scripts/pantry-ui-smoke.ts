@@ -71,9 +71,13 @@ if (
         "Pantry web auth must use explicit base and slash-wildcard route patterns",
     );
 }
-if (!routes.includes('capabilities.tier !== "premium"')) {
+const normalizedRoutes = routes.replace(/\s+/g, " ");
+if (
+    !normalizedRoutes.includes("resolveRequestMunchCapabilities(c, userId)") ||
+    !normalizedRoutes.includes("if (!capabilities.personalPlanningRead)")
+) {
     throw new Error(
-        "Pantry web surface is missing premium entitlement enforcement",
+        "Pantry route is missing surface-specific planning capability enforcement",
     );
 }
 if (!routes.includes("8 * 1024 * 1024")) {
