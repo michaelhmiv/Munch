@@ -4,6 +4,7 @@ import type { SubscriptionSnapshot } from "./entitlements.js";
 import { getHouseholdSeatCoverage } from "./household-seats.js";
 import { hasActivePremiumOverride } from "./override.js";
 import { getDirectSubscriptionSnapshot } from "./subscription-sources.js";
+import type { Context } from "hono";
 
 // Backwards-compatible exports. Product policy lives in PRODUCT_CONFIG; these
 // aliases prevent older imports from becoming a second source of truth.
@@ -36,8 +37,11 @@ export interface MunchCapabilities {
         | "direct_subscription"
         | "explicit_override"
         | "household_subscription"
-        | "retained_read_access";
+        | "retained_read_access"
+        | "android_free_baseline";
 }
+
+export type MunchCapabilitySurface = "web" | "android";
 
 export type MunchCapabilityResolutionStatus = "resolved" | "unavailable";
 
@@ -89,6 +93,31 @@ export function failClosedMunchCapabilities(): MunchCapabilities {
     return capabilitiesFromSubscription({ status: null });
 }
 
+export function androidFreeBaselineCapabilities(
+    household: HouseholdCapabilityContext | null,
+    userId: string,
+): MunchCapabilities {
+    const isOwner =
+        household?.role === "owner" && household.ownerUserId === userId;
+    const canEditRole =
+        household?.role === "owner" || household?.role === "member";
+    return {
+        tier: "free",
+        coreNutrition: true,
+        historyDays: null,
+        savedFoodLimit: null,
+        personalRecipesRead: true,
+        personalRecipesWrite: true,
+        personalPlanningRead: true,
+        personalPlanningWrite: true,
+        householdRead: Boolean(household),
+        householdWrite: Boolean(household && canEditRole),
+        householdManage: Boolean(household && isOwner),
+        household,
+        entitlementSource: "android_free_baseline",
+    };
+}
+
 function applyPremiumOverride(
     capabilities: MunchCapabilities,
 ): MunchCapabilities {
@@ -123,7 +152,24 @@ function applyHouseholdPremium(
 
 export async function resolveMunchCapabilities(
     userId: string,
+    surface: MunchCapabilitySurface = "web",
 ): Promise<MunchCapabilities> {
+    if (surface === "android") {
+        const household = await getActiveHouseholdContext(userId);
+        return androidFreeBaselineCapabilities(
+            household
+                ? {
+                      householdId: household.householdId,
+                      householdName: household.householdName,
+                      ownerUserId: household.ownerUserId,
+                      role: household.role,
+                      displayName: household.displayName,
+                  }
+                : null,
+            userId,
+        );
+    }
+
     const [directSubscription, household, explicitOverride] = await Promise.all(
         [
             getDirectSubscriptionSnapshot(userId),
@@ -142,7 +188,10 @@ export async function resolveMunchCapabilities(
     const isOwner =
         household.role === "owner" && household.ownerUserId === userId;
     const inheritedPremium =
-        !isOwner && result.tier !== "premium" && coverage.covered;
+        !household.androidFreeAccess &&
+        !isOwner &&
+        result.tier !== "premium" &&
+        coverage.covered;
     if (inheritedPremium) {
         result = applyHouseholdPremium(result);
     }
@@ -155,8 +204,9 @@ export async function resolveMunchCapabilities(
     // Premium is intentionally personal-only until a store-native seat model
     // exists, so it does not satisfy this Stripe-specific shared billing gate.
     const sharedBillingActive =
-        result.entitlementSource === "explicit_override" ||
-        (coverage.ownerHasBillablePremium && coverage.covered);
+        !household.androidFreeAccess &&
+        (result.entitlementSource === "explicit_override" ||
+            (coverage.ownerHasBillablePremium && coverage.covered));
 
     return {
         ...result,
@@ -177,6 +227,21 @@ export async function resolveMunchCapabilities(
                   ? result.entitlementSource
                   : "retained_read_access",
     };
+}
+
+/** Resolve capabilities for an authenticated app API request. The server
+ * derives the surface from the session transport; callers cannot select it. */
+export function resolveRequestMunchCapabilities(
+    c: Context,
+    userId: string,
+): Promise<MunchCapabilities> {
+    return resolveMunchCapabilities(userId, capabilitySurfaceFromRequest(c));
+}
+
+export function capabilitySurfaceFromRequest(
+    c: Context,
+): MunchCapabilitySurface {
+    return c.get("munchAuthTransport") === "bearer" ? "android" : "web";
 }
 
 /**

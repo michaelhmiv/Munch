@@ -1,5 +1,9 @@
 import { Hono, type Context } from "hono";
-import { resolveMunchCapabilities } from "../billing/capabilities.js";
+import {
+    capabilitySurfaceFromRequest,
+    resolveMunchCapabilities,
+    resolveRequestMunchCapabilities,
+} from "../billing/capabilities.js";
 import {
     getHouseholdSeatCoverage,
     ownerCanPurchaseHouseholdSeats,
@@ -954,6 +958,7 @@ export function createAppRouter(): Hono {
             await getAppBootstrap(
                 c.get("munchUserId"),
                 c.get("munchUserEmail"),
+                capabilitySurfaceFromRequest(c),
             ),
         ),
     );
@@ -964,6 +969,7 @@ export function createAppRouter(): Hono {
             await getTodayWorkspace(
                 c.get("munchUserId"),
                 requiredQuery(c.req.query("date"), "date"),
+                capabilitySurfaceFromRequest(c),
             ),
         ),
     );
@@ -1056,7 +1062,13 @@ export function createAppRouter(): Hono {
     });
 
     app.get("/api/app/foods", async (c) =>
-        privateJson(c, await getFoodsWorkspace(c.get("munchUserId"))),
+        privateJson(
+            c,
+            await getFoodsWorkspace(
+                c.get("munchUserId"),
+                capabilitySurfaceFromRequest(c),
+            ),
+        ),
     );
 
     app.post("/api/app/foods", requireSameOrigin, async (c) => {
@@ -1090,7 +1102,7 @@ export function createAppRouter(): Hono {
         await assertSavedFoodCapacity(
             userId,
             label,
-            await resolveMunchCapabilities(userId),
+            await resolveRequestMunchCapabilities(c, userId),
         );
         const candidate = await getFoodSearchService().details(candidateId);
         if (!candidate) {
@@ -1389,6 +1401,7 @@ export function createAppRouter(): Hono {
                 c.get("munchUserId"),
                 requiredQuery(c.req.query("start"), "start"),
                 requiredQuery(c.req.query("end"), "end"),
+                capabilitySurfaceFromRequest(c),
             ),
         ),
     );
@@ -1396,7 +1409,7 @@ export function createAppRouter(): Hono {
     app.post("/api/app/recipes", requireSameOrigin, async (c) => {
         const userId = c.get("munchUserId");
         const body = recordValue(await c.req.json(), "Recipe create");
-        const capabilities = await resolveMunchCapabilities(userId);
+        const capabilities = await resolveRequestMunchCapabilities(c, userId);
         const result = await saveRecipe({
             userId,
             scope: recipeScopeForCreation(body, capabilities),
@@ -1421,7 +1434,10 @@ export function createAppRouter(): Hono {
                 await c.req.json(),
                 "Recipe import preview",
             );
-            const capabilities = await resolveMunchCapabilities(userId);
+            const capabilities = await resolveRequestMunchCapabilities(
+                c,
+                userId,
+            );
             if (
                 !capabilities.personalRecipesRead &&
                 !capabilities.householdRead
@@ -1432,7 +1448,10 @@ export function createAppRouter(): Hono {
                 typeof body.url === "string" ? body.url : "",
                 {
                     rateLimitKey: userId,
-                    semanticResolver: getWebsiteRecipeImportSemanticResolver(),
+                    semanticResolver:
+                        capabilitySurfaceFromRequest(c) === "android"
+                            ? undefined
+                            : getWebsiteRecipeImportSemanticResolver(),
                 },
             );
             return privateJson(c, { draft });
@@ -1442,7 +1461,7 @@ export function createAppRouter(): Hono {
     app.post("/api/app/recipes/compose", requireSameOrigin, async (c) => {
         const userId = c.get("munchUserId");
         const body = recordValue(await c.req.json(), "Recipe compose");
-        const capabilities = await resolveMunchCapabilities(userId);
+        const capabilities = await resolveRequestMunchCapabilities(c, userId);
         const recipeScope = recipeScopeForCreation(body, capabilities);
         const scope = requirePlanningScope(
             recipeScope.type,
@@ -1470,6 +1489,7 @@ export function createAppRouter(): Hono {
             c.get("munchUserId"),
             c.req.param("id")!,
             c.req.query("revision_id") || undefined,
+            capabilitySurfaceFromRequest(c),
         );
         if (!workspace.available || !workspace.recipe) {
             throw new Error("Recipe not found");
@@ -1482,7 +1502,7 @@ export function createAppRouter(): Hono {
         const current = await getRecipe(userId, c.req.param("id")!);
         if (!current) throw new Error("Recipe not found");
         const body = recordValue(await c.req.json(), "Recipe update");
-        const capabilities = await resolveMunchCapabilities(userId);
+        const capabilities = await resolveRequestMunchCapabilities(c, userId);
         const expectedVersion = Number(body.expected_version);
         if (!Number.isInteger(expectedVersion) || expectedVersion < 1) {
             throw new Error("Recipe expected_version is required");
@@ -1516,7 +1536,7 @@ export function createAppRouter(): Hono {
             body.expected_version === undefined
                 ? undefined
                 : Number(body.expected_version);
-        const capabilities = await resolveMunchCapabilities(userId);
+        const capabilities = await resolveRequestMunchCapabilities(c, userId);
         const result = await archiveRecipe({
             userId,
             scope: recipeScopeForCapabilities(current, capabilities, true),
@@ -1533,7 +1553,7 @@ export function createAppRouter(): Hono {
         const body = recordValue(await c.req.json(), "Recipe log");
         const servingsConsumed = positiveNumber(body.servings_consumed);
         if (!servingsConsumed) throw new Error("Serving amount is required");
-        const capabilities = await resolveMunchCapabilities(userId);
+        const capabilities = await resolveRequestMunchCapabilities(c, userId);
         recipeScopeForCapabilities(current, capabilities, false);
         const result = await logRecipe({
             userId,
@@ -1571,7 +1591,7 @@ export function createAppRouter(): Hono {
         }
         const servings = positiveNumber(body.servings);
         if (!servings) throw new Error("Planned servings are required");
-        const capabilities = await resolveMunchCapabilities(userId);
+        const capabilities = await resolveRequestMunchCapabilities(c, userId);
         const result = await scheduleRecipe({
             userId,
             scope: recipeScopeForCapabilities(
@@ -1656,7 +1676,7 @@ export function createAppRouter(): Hono {
                       },
                   ]
                 : undefined);
-        const capabilities = await resolveMunchCapabilities(userId);
+        const capabilities = await resolveRequestMunchCapabilities(c, userId);
         const result = await createCook(userId, {
             scope: cookScopeFromBody(body, capabilities),
             title:
@@ -2015,7 +2035,7 @@ export function createAppRouter(): Hono {
     app.post("/api/app/cooks/:id/save-recipe", requireSameOrigin, async (c) => {
         const userId = c.get("munchUserId");
         const body = recordValue(await c.req.json(), "Cook recipe save");
-        const capabilities = await resolveMunchCapabilities(userId);
+        const capabilities = await resolveRequestMunchCapabilities(c, userId);
         const result = await saveCookAsRecipe({
             userId,
             cookId: c.req.param("id")!,
@@ -2035,7 +2055,8 @@ export function createAppRouter(): Hono {
 
     app.post("/api/app/groceries/items", requireSameOrigin, async (c) => {
         const body = recordValue(await c.req.json(), "Grocery items");
-        const capabilities = await resolveMunchCapabilities(
+        const capabilities = await resolveRequestMunchCapabilities(
+            c,
             c.get("munchUserId"),
         );
         const scope = planningScopeFromBody(body, capabilities, true);
@@ -2056,7 +2077,8 @@ export function createAppRouter(): Hono {
 
     app.patch("/api/app/groceries/items/:id", requireSameOrigin, async (c) => {
         const body = recordValue(await c.req.json(), "Grocery item update");
-        const capabilities = await resolveMunchCapabilities(
+        const capabilities = await resolveRequestMunchCapabilities(
+            c,
             c.get("munchUserId"),
         );
         const scope = planningScopeFromBody(body, capabilities, true);
@@ -2079,7 +2101,8 @@ export function createAppRouter(): Hono {
             await c.req.json().catch(() => ({})),
             "Grocery item delete",
         );
-        const capabilities = await resolveMunchCapabilities(
+        const capabilities = await resolveRequestMunchCapabilities(
+            c,
             c.get("munchUserId"),
         );
         const scope = planningScopeFromBody(body, capabilities, true);
@@ -2103,7 +2126,8 @@ export function createAppRouter(): Hono {
             if (typeof body.purchased !== "boolean") {
                 throw new Error("Grocery purchased state is required");
             }
-            const capabilities = await resolveMunchCapabilities(
+            const capabilities = await resolveRequestMunchCapabilities(
+                c,
                 c.get("munchUserId"),
             );
             planningScopeFromBody(body, capabilities, true);
@@ -2125,7 +2149,8 @@ export function createAppRouter(): Hono {
                 await c.req.json(),
                 "Clear purchased groceries",
             );
-            const capabilities = await resolveMunchCapabilities(
+            const capabilities = await resolveRequestMunchCapabilities(
+                c,
                 c.get("munchUserId"),
             );
             const scope = planningScopeFromBody(body, capabilities, true);
@@ -2143,7 +2168,9 @@ export function createAppRouter(): Hono {
 
     app.get("/api/app/household/manage", async (c) => {
         const userId = c.get("munchUserId");
-        const capabilities = await resolveMunchCapabilities(userId);
+        const capabilities = await resolveRequestMunchCapabilities(c, userId);
+        const androidFreeAccess =
+            capabilities.entitlementSource === "android_free_baseline";
         const household = capabilities.household;
         if (!household) {
             return privateJson(c, {
@@ -2153,7 +2180,8 @@ export function createAppRouter(): Hono {
                 tier: capabilities.tier,
                 entitlementSource: capabilities.entitlementSource,
                 canCreateHousehold:
-                    await ownerCanPurchaseHouseholdSeats(userId),
+                    androidFreeAccess ||
+                    (await ownerCanPurchaseHouseholdSeats(userId)),
                 canInvite: false,
                 canWrite: false,
                 activeNonOwnerCount: 0,
@@ -2177,7 +2205,9 @@ export function createAppRouter(): Hono {
                       )
                     : Promise.resolve([]),
                 owner
-                    ? ownerCanPurchaseHouseholdSeats(userId)
+                    ? androidFreeAccess
+                        ? Promise.resolve(true)
+                        : ownerCanPurchaseHouseholdSeats(userId)
                     : Promise.resolve(false),
             ]);
 
@@ -2193,6 +2223,7 @@ export function createAppRouter(): Hono {
                 displayName: member.displayName,
                 role: member.role,
                 joinedAt: member.joinedAt,
+                androidFreeAccess: member.androidFreeAccess,
             })),
             pendingInvitations,
             tier: capabilities.tier,
@@ -2200,9 +2231,11 @@ export function createAppRouter(): Hono {
             canCreateHousehold: false,
             canInvite,
             canWrite: capabilities.householdWrite,
-            activeNonOwnerCount: coverage.activeNonOwnerCount,
+            activeNonOwnerCount: androidFreeAccess
+                ? members.filter((member) => member.role !== "owner").length
+                : coverage.activeNonOwnerCount,
             billedSeatQuantity: coverage.billedSeatQuantity,
-            seatCoverage: coverage.covered,
+            seatCoverage: androidFreeAccess ? true : coverage.covered,
         });
     });
 
@@ -2210,7 +2243,11 @@ export function createAppRouter(): Hono {
         const userId = c.get("munchUserId");
         const [bootstrap, goals, subscription, connections] = await Promise.all(
             [
-                getAppBootstrap(userId, c.get("munchUserEmail")),
+                getAppBootstrap(
+                    userId,
+                    c.get("munchUserEmail"),
+                    capabilitySurfaceFromRequest(c),
+                ),
                 getNutritionGoals(userId),
                 getDirectSubscriptionSnapshot(userId),
                 listOAuthConnections(userId),

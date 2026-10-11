@@ -1,7 +1,11 @@
 import { Hono, type Context } from "hono";
 import { requireSameOrigin } from "../accounts/csrf.js";
 import { requireWebSession } from "../accounts/session.js";
-import { resolveMunchCapabilities } from "../billing/capabilities.js";
+import { androidAiTaskCreditsUnavailable } from "../billing/android-ai-credits.js";
+import {
+    resolveRequestMunchCapabilities,
+    type MunchCapabilities,
+} from "../billing/capabilities.js";
 import { generatePantryMealIdeas } from "./meal-ideas.js";
 import { getPantryPlanningContext } from "./meal-planning.js";
 import {
@@ -37,8 +41,8 @@ function objectValue(value: unknown, label: string): Record<string, unknown> {
 
 async function premiumContext(c: Context) {
     const userId = c.get("munchUserId") as string;
-    const capabilities = await resolveMunchCapabilities(userId);
-    if (capabilities.tier !== "premium") {
+    const capabilities = await resolveRequestMunchCapabilities(c, userId);
+    if (!capabilities.personalPlanningRead) {
         return { userId, capabilities, premium: false as const };
     }
     return { userId, capabilities, premium: true as const };
@@ -46,7 +50,7 @@ async function premiumContext(c: Context) {
 
 function scopeFromValue(
     value: unknown,
-    capabilities: Awaited<ReturnType<typeof resolveMunchCapabilities>>,
+    capabilities: MunchCapabilities,
     write: boolean,
 ): InventoryScope {
     const scope = value ?? "personal";
@@ -408,6 +412,8 @@ export function createInventoryRouter(): Hono {
     });
 
     app.post("/api/app/pantry/meal-ideas", requireSameOrigin, async (c) => {
+        const unavailable = androidAiTaskCreditsUnavailable(c);
+        if (unavailable) return unavailable;
         const context = await premiumContext(c);
         if (!context.premium)
             return privateJson(c, { error: "premium_required" }, 403);
@@ -472,6 +478,8 @@ export function createInventoryRouter(): Hono {
     });
 
     async function imagePreview(c: Context, mode: "receipt" | "pantry_photo") {
+        const unavailable = androidAiTaskCreditsUnavailable(c);
+        if (unavailable) return unavailable;
         const context = await premiumContext(c);
         if (!context.premium)
             return privateJson(c, { error: "premium_required" }, 403);

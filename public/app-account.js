@@ -91,6 +91,12 @@ function formatDateTime(value) {
 }
 
 function planLabel(data) {
+    if (
+        window.MunchAds &&
+        data.capabilities?.entitlementSource === "android_free_baseline"
+    ) {
+        return "Free on Android";
+    }
     if (data.capabilities?.entitlementSource === "household_subscription") {
         return "Premium through household";
     }
@@ -257,6 +263,9 @@ async function billingPage(data, ctx) {
     const policy = requireProductPolicy(data);
     const premiumPrice = dollars(policy.premiumPriceMonthlyCents);
     const seatPrice = dollars(policy.householdMemberPriceMonthlyCents);
+    const androidFree =
+        Boolean(window.MunchAds) &&
+        data.capabilities?.entitlementSource === "android_free_baseline";
     let household = null;
     try {
         household = await ctx.api("/api/app/household/manage");
@@ -269,8 +278,12 @@ async function billingPage(data, ctx) {
         data.capabilities?.tier === "premium" && !householdProvided;
     const status = data.subscription?.status || null;
     const provider = data.subscription?.provider || null;
-    let billingSummary = "Free";
-    let detail = "Munch Free remains available without a subscription.";
+    let billingSummary = androidFree ? "Free on Android" : "Free";
+    let detail = androidFree
+        ? data.androidEntitlements?.adFree
+            ? "All non-AI Android features are included. Ads are off for this account through its existing entitlement."
+            : "All non-AI Android features are included. A separate ad-free subscription is not configured in Google Play yet."
+        : "Munch Free remains available without a subscription.";
     if (householdProvided) {
         billingSummary = "Premium through household";
         detail = `Your household owner pays for your ${seatPrice}/month seat. You are not billed separately for this entitlement.`;
@@ -302,16 +315,20 @@ async function billingPage(data, ctx) {
         directPremium && provider !== "google_play"
             ? `<div class="billing-price"><span>Current Munch subscription</span><strong>${dollars(total)}<small>/month</small></strong>${ownerHousehold ? `<p>${premiumPrice} Premium + ${ownerHousehold.activeNonOwnerCount} household seat${ownerHousehold.activeNonOwnerCount === 1 ? "" : "s"} × ${seatPrice}.</p>` : `<p>Household members are ${seatPrice}/month each when added.</p>`}</div>`
             : "";
-    const action = householdProvided
-        ? `<a class="button button-secondary" href="/app/household">View household</a>`
-        : directPremium
-          ? provider === "google_play"
-              ? `<button class="button button-primary" data-action="billing-play-manage">Manage in Google Play</button>`
-              : `<button class="button button-primary" data-action="billing-portal">Manage billing in Stripe</button>`
-          : `<button class="button button-primary" data-action="billing-checkout">Get Premium — ${premiumPrice}/month</button>`;
+    const action = androidFree
+        ? data.subscription?.provider === "stripe"
+            ? `<button class="button button-secondary" data-action="billing-portal">Manage website and connected-client subscription</button>`
+            : ""
+        : householdProvided
+          ? `<a class="button button-secondary" href="/app/household">View household</a>`
+          : directPremium
+            ? provider === "google_play"
+                ? `<button class="button button-primary" data-action="billing-play-manage">Manage in Google Play</button>`
+                : `<button class="button button-primary" data-action="billing-portal">Manage billing in Stripe</button>`
+            : `<button class="button button-primary" data-action="billing-checkout">Get Premium — ${premiumPrice}/month</button>`;
     return settingsShell(
         "settings-billing",
-        `${sectionHeading("Billing", "Plan & billing", "See exactly how your Munch access is funded. Manage payment and cancellation with the provider that owns the active subscription.")}<div class="settings-stack">${settingGroup("Current plan", detail, `<div class="plan-summary"><div><span>Plan</span><strong>${esc(billingSummary)}</strong></div>${statusPill(householdProvided ? "Household seat" : directPremium ? status || "Premium" : "Free", directPremium || householdProvided ? "success" : "neutral")}</div>${chargeCard}<div class="settings-actions">${action}</div>`)}${settingGroup("Household pricing", "Discounted seats are part of a collaborative household, not standalone Premium accounts.", `<div class="pricing-rule"><strong>${premiumPrice}</strong><span>Premium owner</span></div><div class="pricing-rule"><strong>+${seatPrice}</strong><span>per additional active household member</span></div><p class="settings-note">Household recipes, meal plans and grocery lists are shared automatically while a discounted seat is active. Personal meals, water, weight and goals remain private.</p><a class="text-link" href="/app/household">Manage household →</a>`)}</div>`,
+        `${sectionHeading("Billing", "Plan & billing", androidFree ? "Android access and ads are managed separately from website billing." : "See exactly how your Munch access is funded. Manage payment and cancellation with the provider that owns the active subscription.")}<div class="settings-stack">${settingGroup(androidFree ? "Android access" : "Current plan", detail, `<div class="plan-summary"><div><span>${androidFree ? "Android plan" : "Plan"}</span><strong>${esc(androidFree ? (data.androidEntitlements?.adFree ? "Free · ad-free" : billingSummary) : billingSummary)}</strong></div>${statusPill(householdProvided ? "Household seat" : directPremium ? status || "Premium" : androidFree && data.androidEntitlements?.adFree ? "Ads off" : "Free", directPremium || householdProvided || (androidFree && data.androidEntitlements?.adFree) ? "success" : "neutral")}</div>${androidFree && data.subscription?.provider === "stripe" ? `<p class="settings-note">Your existing Munch Premium subscription remains active for website and connected-client access.</p>` : ""}${chargeCard}<div class="settings-actions">${action}</div>`)}${androidFree ? "" : settingGroup("Household pricing", "Discounted seats are part of a collaborative household, not standalone Premium accounts.", `<div class="pricing-rule"><strong>${premiumPrice}</strong><span>Premium owner</span></div><div class="pricing-rule"><strong>+${seatPrice}</strong><span>per additional active household member</span></div><p class="settings-note">Household recipes, meal plans and grocery lists are shared automatically while a discounted seat is active. Personal meals, water, weight and goals remain private.</p><a class="text-link" href="/app/household">Manage household →</a>`)}</div>`,
     );
 }
 
@@ -362,13 +379,20 @@ function morePage() {
     return `${sectionHeading("Munch", "More", "Everything that does not need a permanent spot in the mobile navigation.")}<div class="more-grid">${items.map(([href, title, description, icon]) => `<a class="more-card" href="${href}"><span class="more-icon" aria-hidden="true">${icon}</span><div><h3>${esc(title)}</h3><p>${esc(description)}</p></div><span class="settings-chevron" aria-hidden="true">›</span></a>`).join("")}</div>`;
 }
 
-function householdMemberCard(member, owner, seatPrice) {
+function householdMemberCard(member, owner, seatPrice, androidFree) {
     const isOwner = member.role === "owner";
     const controls =
         owner && !isOwner
             ? `<div class="member-controls"><select aria-label="Role for ${esc(member.displayName)}" data-household-role="${esc(member.membershipId)}"><option value="member" ${member.role === "member" ? "selected" : ""}>Member · can edit shared data</option><option value="viewer" ${member.role === "viewer" ? "selected" : ""}>Viewer · read only</option></select><button class="button button-secondary button-small" data-action="household-role-save" data-membership-id="${esc(member.membershipId)}">Save role</button><button class="button button-quiet button-small" data-action="household-member-remove" data-membership-id="${esc(member.membershipId)}" data-member-name="${esc(member.displayName)}">Remove</button></div>`
             : "";
-    return `<article class="household-member"><div class="member-avatar" aria-hidden="true">${esc(member.displayName.slice(0, 1).toUpperCase())}</div><div class="member-copy"><div><strong>${esc(member.displayName)}</strong>${isOwner ? statusPill("Owner", "success") : statusPill(member.role, "neutral")}</div><small>${isOwner ? "Included with Premium" : `+${seatPrice}/month household seat`} · joined ${esc(formatDateTime(member.joinedAt))}</small></div>${controls}</article>`;
+    const accessDescription = androidFree
+        ? "Included on Android"
+        : member.androidFreeAccess
+          ? "Free through Android invitation"
+          : isOwner
+            ? "Included with Premium"
+            : `+${seatPrice}/month household seat`;
+    return `<article class="household-member"><div class="member-avatar" aria-hidden="true">${esc(member.displayName.slice(0, 1).toUpperCase())}</div><div class="member-copy"><div><strong>${esc(member.displayName)}</strong>${isOwner ? statusPill("Owner", "success") : statusPill(member.role, "neutral")}</div><small>${accessDescription} · joined ${esc(formatDateTime(member.joinedAt))}</small></div>${controls}</article>`;
 }
 
 async function householdPage(ctx) {
@@ -376,7 +400,13 @@ async function householdPage(ctx) {
     const policy = requireProductPolicy(ctx.state.bootstrap);
     const premiumPrice = dollars(policy.premiumPriceMonthlyCents);
     const seatPrice = dollars(policy.householdMemberPriceMonthlyCents);
+    const androidFree =
+        Boolean(window.MunchAds) &&
+        data.entitlementSource === "android_free_baseline";
     if (!data.household) {
+        if (androidFree && data.canCreateHousehold === true) {
+            return `${sectionHeading("Shared workspace", "Create a household", "Share recipes, meal plans and grocery lists while keeping personal nutrition records private.")}<div class="household-hero-grid"><section class="settings-group"><header><h3>Start your household</h3><p>Household sharing is included on Android. Inviting members does not add a charge.</p></header><form id="household-create-form" class="settings-group-body"><label class="settings-field"><span>Household name</span><input name="name" maxlength="120" placeholder="The Smith household" required></label><label class="settings-field"><span>Your display name</span><input name="display_name" maxlength="80" placeholder="Michael" required></label><button class="button button-primary" type="submit">Create household</button></form></section><aside class="household-privacy-card"><span class="settings-card-label">Privacy boundary</span><h3>Shared by default</h3><p>Recipes, meal plans and grocery lists are collaborative for household members.</p><h3>Still personal</h3><p>Meals, macros, water, weight, goals and personal nutrition history remain private.</p></aside></div>`;
+        }
         if (data.tier === "premium" && data.canCreateHousehold === true) {
             return `${sectionHeading("Shared workspace", "Create a household", "Share recipes, meal plans and grocery lists while keeping personal nutrition records private.")}<div class="household-hero-grid"><section class="settings-group"><header><h3>Start your household</h3><p>Your Premium account is included. Each additional active member is ${seatPrice}/month after they accept.</p></header><form id="household-create-form" class="settings-group-body"><label class="settings-field"><span>Household name</span><input name="name" maxlength="120" placeholder="The Smith household" required></label><label class="settings-field"><span>Your display name</span><input name="display_name" maxlength="80" placeholder="Michael" required></label><button class="button button-primary" type="submit">Create household</button></form></section><aside class="household-privacy-card"><span class="settings-card-label">Privacy boundary</span><h3>Shared by default</h3><p>Recipes, meal plans and grocery lists are collaborative for household members.</p><h3>Still personal</h3><p>Meals, macros, water, weight, goals and personal nutrition history remain private.</p></aside></div>`;
         }
@@ -393,32 +423,38 @@ async function householdPage(ctx) {
         policy.premiumPriceMonthlyCents +
         policy.householdMemberPriceMonthlyCents * activeNonOwnerCount;
     const pending = data.pendingInvitations || [];
-    const billing = owner
-        ? `<section class="household-billing-card"><div><span>Current household total</span><strong>${dollars(total)}<small>/month</small></strong><p>${premiumPrice} Premium + ${activeNonOwnerCount} active member seat${activeNonOwnerCount === 1 ? "" : "s"} × ${seatPrice}.</p></div>${data.seatCoverage ? statusPill("Billing in sync", "success") : statusPill("Billing reconciling", "warning")}</section>`
-        : data.entitlementSource === "household_subscription"
-          ? `<section class="household-billing-card"><div><span>Your plan</span><strong>Premium<small> through household</small></strong><p>The household owner pays ${seatPrice}/month for your seat. Leaving ends this household-provided Premium entitlement.</p></div>${statusPill("Seat active", "success")}</section>`
-          : "";
+    const billing = androidFree
+        ? ""
+        : owner
+          ? `<section class="household-billing-card"><div><span>Current household total</span><strong>${dollars(total)}<small>/month</small></strong><p>${premiumPrice} Premium + ${activeNonOwnerCount} active member seat${activeNonOwnerCount === 1 ? "" : "s"} × ${seatPrice}.</p></div>${data.seatCoverage ? statusPill("Billing in sync", "success") : statusPill("Billing reconciling", "warning")}</section>`
+          : data.entitlementSource === "household_subscription"
+            ? `<section class="household-billing-card"><div><span>Your plan</span><strong>Premium<small> through household</small></strong><p>The household owner pays ${seatPrice}/month for your seat. Leaving ends this household-provided Premium entitlement.</p></div>${statusPill("Seat active", "success")}</section>`
+            : "";
     const invite =
         owner && data.canInvite
-            ? `<section class="settings-group"><header><h3>Invite a household member</h3><p>Invitations are free. Billing changes only when the invited person accepts.</p></header><form id="household-invite-form" class="settings-group-body"><div class="settings-form-grid"><label class="settings-field"><span>Email</span><input name="email" type="email" maxlength="320" required></label><label class="settings-field"><span>Role</span><select name="role"><option value="member">Member · can edit shared data</option><option value="viewer">Viewer · read only</option></select></label></div><div class="settings-savebar"><span class="settings-note">Accepted members receive full Premium and automatically share household recipes, meal plans and grocery lists.</span><button class="button button-primary" type="submit">Send invitation</button></div></form>${pending.length ? `<div class="pending-invites"><h4>Pending invitations</h4>${pending.map((invite) => `<div class="pending-invite"><div><strong>${esc(invite.email)}</strong><small>${esc(invite.role)} · expires ${esc(formatDateTime(invite.expiresAt))}</small></div>${statusPill("Pending", "neutral")}</div>`).join("")}</div>` : ""}</section>`
+            ? `<section class="settings-group"><header><h3>Invite a household member</h3><p>${androidFree ? "Invitations do not add a charge on Android." : "Invitations are free. Billing changes only when the invited person accepts."}</p></header><form id="household-invite-form" class="settings-group-body"><div class="settings-form-grid"><label class="settings-field"><span>Email</span><input name="email" type="email" maxlength="320" required></label><label class="settings-field"><span>Role</span><select name="role"><option value="member">Member · can edit shared data</option><option value="viewer">Viewer · read only</option></select></label></div><div class="settings-savebar"><span class="settings-note">${androidFree ? "Household recipes, meal plans and grocery lists are shared. Personal nutrition records stay private." : "Accepted members receive full Premium and automatically share household recipes, meal plans and grocery lists."}</span><button class="button button-primary" type="submit">Send invitation</button></div></form>${pending.length ? `<div class="pending-invites"><h4>Pending invitations</h4>${pending.map((invite) => `<div class="pending-invite"><div><strong>${esc(invite.email)}</strong><small>${esc(invite.role)}${invite.androidFreeAccess ? " · Free Android access" : androidFree ? " · Paid seat applies on web" : ""} · expires ${esc(formatDateTime(invite.expiresAt))}</small></div>${statusPill("Pending", "neutral")}</div>`).join("")}</div>` : ""}</section>`
             : owner
-              ? `<section class="settings-group"><header><h3>Invitations unavailable</h3><p>A directly paid Premium subscription is required before another discounted seat can be added.</p></header></section>`
+              ? `<section class="settings-group"><header><h3>Invitations unavailable</h3><p>${androidFree ? "The household has reached its member limit." : "A directly paid Premium subscription is required before another discounted seat can be added."}</p></header></section>`
               : "";
     const danger = owner
         ? settingGroup(
               "Dissolve household",
-              "This removes all paid member seats and permanently deletes shared household records. Personal member records remain with each account.",
+              androidFree
+                  ? "This permanently deletes shared household records. Each member's personal records remain with their account."
+                  : "This removes all paid member seats and permanently deletes shared household records. Personal member records remain with each account.",
               `<label class="settings-field"><span>Type DISSOLVE HOUSEHOLD to confirm</span><input id="dissolve-household-confirmation" autocomplete="off" placeholder="DISSOLVE HOUSEHOLD"></label><div class="settings-actions"><button class="button button-danger" data-action="household-dissolve">Dissolve household</button></div>`,
               "settings-danger",
           )
         : settingGroup(
               "Leave household",
-              "Your personal Munch account and private nutrition history stay intact. Household-provided Premium ends when you leave unless you also have your own active Premium subscription.",
+              androidFree
+                  ? "Your personal Munch account and private nutrition history stay intact. Leaving removes your access to shared household records."
+                  : "Your personal Munch account and private nutrition history stay intact. Household-provided Premium ends when you leave unless you also have your own active Premium subscription.",
               `<div class="settings-actions"><button class="button button-danger" data-action="household-leave">Leave household</button></div>`,
               "settings-danger",
           );
     const additionalSeatLimit = Math.max(0, policy.householdMemberLimit - 1);
-    return `${sectionHeading("Shared workspace", household.householdName, `You appear as ${household.displayName}. Household collaboration is ${data.canWrite ? "active" : "read only"} for your role.`)}${billing}<div class="household-layout"><div class="household-primary"><section class="settings-group"><header><div class="household-section-title"><div><h3>Members</h3><p>${data.members.length} of ${policy.householdMemberLimit} household accounts</p></div>${statusPill(`${Math.max(0, additionalSeatLimit - activeNonOwnerCount)} seats available`, "neutral")}</div></header><div class="household-member-list">${data.members.map((member) => householdMemberCard(member, owner, seatPrice)).join("")}</div></section>${invite}${danger}</div><aside class="household-sidebar"><section class="household-privacy-card"><span class="settings-card-label">Always shared</span><h3>Collaborative household</h3><ul><li>Household recipes</li><li>Meal plans and calendar</li><li>Grocery lists</li></ul><span class="settings-card-label spacer-top">Always private</span><ul><li>Personal meal history</li><li>Macros and goals</li><li>Water and weight</li><li>Personal saved foods</li></ul><a class="text-link" href="/privacy#households">Review household privacy →</a></section><a class="button button-secondary household-billing-link" href="/app/settings/billing">Plan & billing</a></aside></div>`;
+    return `${sectionHeading("Shared workspace", household.householdName, `You appear as ${household.displayName}. Household collaboration is ${data.canWrite ? "active" : "read only"} for your role.`)}${billing}<div class="household-layout"><div class="household-primary"><section class="settings-group"><header><div class="household-section-title"><div><h3>Members</h3><p>${data.members.length} of ${policy.householdMemberLimit} household accounts</p></div>${statusPill(`${Math.max(0, additionalSeatLimit - activeNonOwnerCount)} ${androidFree ? "places" : "seats"} available`, "neutral")}</div></header><div class="household-member-list">${data.members.map((member) => householdMemberCard(member, owner, seatPrice, androidFree)).join("")}</div></section>${invite}${danger}</div><aside class="household-sidebar"><section class="household-privacy-card"><span class="settings-card-label">Always shared</span><h3>Collaborative household</h3><ul><li>Household recipes</li><li>Meal plans and calendar</li><li>Grocery lists</li></ul><span class="settings-card-label spacer-top">Always private</span><ul><li>Personal meal history</li><li>Macros and goals</li><li>Water and weight</li><li>Personal saved foods</li></ul><a class="text-link" href="/privacy#households">Review household privacy →</a></section><a class="button button-secondary household-billing-link" href="/app/settings/billing">Plan & billing</a></aside></div>`;
 }
 
 function hydrateTimezoneSelect() {

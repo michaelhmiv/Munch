@@ -4,6 +4,7 @@ import {
     withUserDatabase,
     type DatabaseTransaction,
 } from "../platform/database.js";
+import { PRODUCT_CONFIG } from "../product-config.js";
 
 export type HouseholdRole = "owner" | "member" | "viewer";
 
@@ -14,6 +15,7 @@ export interface HouseholdMembershipContext {
     role: HouseholdRole;
     displayName: string;
     version: number;
+    androidFreeAccess: boolean;
 }
 
 export interface HouseholdMember {
@@ -22,6 +24,7 @@ export interface HouseholdMember {
     displayName: string;
     role: HouseholdRole;
     joinedAt: string;
+    androidFreeAccess: boolean;
 }
 
 export interface HouseholdInvitationResult {
@@ -36,6 +39,7 @@ export interface PendingHouseholdInvitation {
     role: Exclude<HouseholdRole, "owner">;
     createdAt: string;
     expiresAt: string;
+    androidFreeAccess: boolean;
 }
 
 export interface HouseholdSeatReservation {
@@ -80,12 +84,14 @@ async function desiredSeatQuantityTx(
               and status = 'active'
               and role <> 'owner'
               and user_id is not null
+              and android_free_access = false
         `,
         tx<Array<{ count: number }>>`
             select count(*)::int as count
             from munch.household_invitations
             where household_id = ${householdId}
               and seat_reserved_at is not null
+              and android_free_access = false
               and accepted_at is null
               and revoked_at is null
               and expires_at > now()
@@ -97,6 +103,7 @@ async function desiredSeatQuantityTx(
               and status = 'active'
               and role <> 'owner'
               and user_id is not null
+              and android_free_access = false
               and seat_release_reserved_at is not null
         `,
     ]);
@@ -122,6 +129,7 @@ export async function getHouseholdSeatCounts(householdId: string): Promise<{
               and status = 'active'
               and role <> 'owner'
               and user_id is not null
+              and android_free_access = false
         `;
         return {
             activeNonOwnerCount: Number(activeRows[0]?.count ?? 0),
@@ -169,6 +177,7 @@ export async function createHousehold(input: {
             role: "owner",
             displayName,
             version: 1,
+            androidFreeAccess: false,
         };
     });
 }
@@ -185,6 +194,7 @@ export async function getActiveHouseholdContext(
                 role: HouseholdRole;
                 display_name: string;
                 version: number;
+                android_free_access: boolean;
             }>
         >`
             select
@@ -193,7 +203,8 @@ export async function getActiveHouseholdContext(
                 household.owner_user_id,
                 membership.role,
                 membership.display_name,
-                household.version
+                household.version,
+                membership.android_free_access
             from munch.household_memberships membership
             join munch.households household on household.id = membership.household_id
             where membership.user_id = ${userId}
@@ -210,6 +221,7 @@ export async function getActiveHouseholdContext(
                   role: row.role,
                   displayName: row.display_name,
                   version: Number(row.version),
+                  androidFreeAccess: row.android_free_access,
               }
             : null;
     });
@@ -227,6 +239,7 @@ export async function listHouseholdMembers(
                 display_name: string;
                 role: HouseholdRole;
                 joined_at: Date;
+                android_free_access: boolean;
             }>
         >`
             select
@@ -234,7 +247,8 @@ export async function listHouseholdMembers(
                 user_id,
                 display_name,
                 role,
-                joined_at
+                joined_at,
+                android_free_access
             from munch.household_memberships
             where household_id = ${householdId}
               and status = 'active'
@@ -247,6 +261,7 @@ export async function listHouseholdMembers(
             displayName: row.display_name,
             role: row.role,
             joinedAt: new Date(row.joined_at).toISOString(),
+            androidFreeAccess: row.android_free_access,
         }));
     });
 }
@@ -274,6 +289,7 @@ export async function listPendingHouseholdInvitations(
                 role: Exclude<HouseholdRole, "owner">;
                 created_at: Date;
                 expires_at: Date;
+                android_free_access: boolean;
             }>
         >`
             select
@@ -281,7 +297,8 @@ export async function listPendingHouseholdInvitations(
                 email,
                 role,
                 created_at,
-                expires_at
+                expires_at,
+                android_free_access
             from munch.household_invitations
             where household_id = ${householdId}
               and accepted_at is null
@@ -295,6 +312,7 @@ export async function listPendingHouseholdInvitations(
             role: row.role,
             createdAt: new Date(row.created_at).toISOString(),
             expiresAt: new Date(row.expires_at).toISOString(),
+            androidFreeAccess: row.android_free_access,
         }));
     });
 }
@@ -304,6 +322,7 @@ export async function createHouseholdInvitation(input: {
     householdId: string;
     email: string;
     role: Exclude<HouseholdRole, "owner">;
+    androidFreeAccess?: boolean;
     ttlHours?: number;
 }): Promise<HouseholdInvitationResult> {
     const email = normalizeEmail(input.email);
@@ -321,6 +340,40 @@ export async function createHouseholdInvitation(input: {
     const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000);
 
     return withUserDatabase(input.userId, async (tx) => {
+        const householdRows = await tx<Array<{ id: string }>>`
+            select household.id
+            from munch.households household
+            join munch.household_memberships membership
+              on membership.household_id = household.id
+            where household.id = ${input.householdId}
+              and household.archived_at is null
+              and membership.user_id = ${input.userId}
+              and membership.role = 'owner'
+              and membership.status = 'active'
+            for update of household
+        `;
+        if (!householdRows[0]) throw new Error("Household owner required");
+        const capacityRows = await tx<Array<{ count: number }>>`
+            select (
+                (select count(*) from munch.household_memberships
+                 where household_id = ${input.householdId}
+                   and status = 'active'
+                   and user_id is not null)
+                +
+                (select count(*) from munch.household_invitations
+                 where household_id = ${input.householdId}
+                   and email <> ${email}
+                   and accepted_at is null
+                   and revoked_at is null
+                   and expires_at > now())
+            )::int as count
+        `;
+        if (
+            Number(capacityRows[0]?.count ?? 0) >=
+            PRODUCT_CONFIG.householdMemberLimit
+        ) {
+            throw new Error("Household member limit reached");
+        }
         const rows = await tx<Array<{ id: string }>>`
             insert into munch.household_invitations (
                 household_id,
@@ -328,14 +381,16 @@ export async function createHouseholdInvitation(input: {
                 role,
                 token_hash,
                 expires_at,
-                invited_by_user_id
+                invited_by_user_id,
+                android_free_access
             ) values (
                 ${input.householdId},
                 ${email},
                 ${input.role},
                 ${tokenHash(rawToken)},
                 ${expiresAt},
-                ${input.userId}
+                ${input.userId},
+                ${input.androidFreeAccess === true}
             )
             on conflict (household_id, email)
                 where accepted_at is null and revoked_at is null
@@ -345,7 +400,8 @@ export async function createHouseholdInvitation(input: {
                 expires_at = excluded.expires_at,
                 invited_by_user_id = excluded.invited_by_user_id,
                 created_at = now(),
-                seat_reserved_at = null
+                seat_reserved_at = null,
+                android_free_access = excluded.android_free_access
             returning id
         `;
         if (!rows[0]) throw new Error("Invitation creation returned no row");
@@ -371,6 +427,7 @@ export async function reserveHouseholdInvitationSeat(input: {
                 user_email: string;
                 invitation_email: string;
                 seat_reserved_at: Date | null;
+                android_free_access: boolean;
             }>
         >`
             select
@@ -379,7 +436,8 @@ export async function reserveHouseholdInvitationSeat(input: {
                 household.owner_user_id,
                 users.email as user_email,
                 invitation.email as invitation_email,
-                invitation.seat_reserved_at
+                invitation.seat_reserved_at,
+                invitation.android_free_access
             from munch.household_invitations invitation
             join munch.households household on household.id = invitation.household_id
             join munch.users users on users.id = ${input.userId}
@@ -394,6 +452,11 @@ export async function reserveHouseholdInvitationSeat(input: {
         if (!invitation) throw new Error("Invitation is invalid or expired");
         if (invitation.user_email !== invitation.invitation_email) {
             throw new Error("Invitation belongs to a different email address");
+        }
+        if (invitation.android_free_access) {
+            throw new Error(
+                "Free Android invitation does not reserve a paid seat",
+            );
         }
         const existing = await tx<Array<{ id: string }>>`
             select id from munch.household_memberships
@@ -418,6 +481,27 @@ export async function reserveHouseholdInvitationSeat(input: {
                 invitation.household_id,
             ),
         };
+    });
+}
+
+export async function householdInvitationUsesAndroidFreeAccess(
+    token: string,
+): Promise<boolean | null> {
+    const hash = tokenHash(token);
+    return withAuthDatabase(async (tx) => {
+        const rows = await tx<Array<{ android_free_access: boolean }>>`
+            select invitation.android_free_access
+            from munch.household_invitations invitation
+            join munch.households household
+              on household.id = invitation.household_id
+            where invitation.token_hash = ${hash}
+              and invitation.accepted_at is null
+              and invitation.revoked_at is null
+              and invitation.expires_at > now()
+              and household.archived_at is null
+            limit 1
+        `;
+        return rows[0]?.android_free_access ?? null;
     });
 }
 
@@ -452,6 +536,7 @@ export async function acceptHouseholdInvitation(input: {
                 role: Exclude<HouseholdRole, "owner">;
                 user_email: string;
                 invitation_email: string;
+                android_free_access: boolean;
                 version: number;
             }>
         >`
@@ -463,6 +548,7 @@ export async function acceptHouseholdInvitation(input: {
                 invitation.role,
                 users.email as user_email,
                 invitation.email as invitation_email,
+                invitation.android_free_access,
                 household.version
             from munch.household_invitations invitation
             join munch.households household on household.id = invitation.household_id
@@ -472,7 +558,7 @@ export async function acceptHouseholdInvitation(input: {
               and invitation.revoked_at is null
               and invitation.expires_at > now()
               and household.archived_at is null
-            for update of invitation
+            for update of invitation, household
         `;
         const invitation = rows[0];
         if (!invitation) throw new Error("Invitation is invalid or expired");
@@ -487,15 +573,38 @@ export async function acceptHouseholdInvitation(input: {
         `;
         if (existing[0]) throw new Error("User already belongs to a household");
 
+        const capacityRows = await tx<Array<{ count: number }>>`
+            select (
+                (select count(*) from munch.household_memberships
+                 where household_id = ${invitation.household_id}
+                   and status = 'active'
+                   and user_id is not null)
+                +
+                (select count(*) from munch.household_invitations
+                 where household_id = ${invitation.household_id}
+                   and accepted_at is null
+                   and revoked_at is null
+                   and expires_at > now())
+            )::int as count
+        `;
+        if (
+            Number(capacityRows[0]?.count ?? 0) >
+            PRODUCT_CONFIG.householdMemberLimit
+        ) {
+            throw new Error("Household member limit reached");
+        }
+
         await tx`
             insert into munch.household_memberships (
-                household_id, user_id, display_name, role, status
+                household_id, user_id, display_name, role, status,
+                android_free_access
             ) values (
                 ${invitation.household_id},
                 ${input.userId},
                 ${displayName},
                 ${invitation.role},
-                'active'
+                'active',
+                ${invitation.android_free_access}
             )
         `;
         await tx`
@@ -511,6 +620,7 @@ export async function acceptHouseholdInvitation(input: {
             role: invitation.role,
             displayName,
             version: Number(invitation.version),
+            androidFreeAccess: invitation.android_free_access,
         };
     });
 }

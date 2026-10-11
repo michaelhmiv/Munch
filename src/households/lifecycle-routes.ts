@@ -4,9 +4,15 @@ import { requireWebSession } from "../accounts/session.js";
 import {
     dissolvePaidHousehold,
     leavePaidHousehold,
+    ownerCanPurchaseHouseholdSeats,
 } from "../billing/household-seats.js";
+import { getHouseholdSeatCounts } from "./repository.js";
 import { StripeRequestError } from "../billing/stripe-client.js";
-import { getActiveHouseholdContext } from "./repository.js";
+import {
+    getActiveHouseholdContext,
+    listHouseholdMembers,
+} from "./repository.js";
+import { dissolveHousehold, leaveHousehold } from "./lifecycle.js";
 
 function failure(c: any, error: unknown) {
     if (error instanceof StripeRequestError) {
@@ -46,9 +52,31 @@ export function createHouseholdLifecycleRouter(): Hono {
                 if (body.confirm !== true) {
                     return c.json({ error: "confirmation_required" }, 400);
                 }
-                return c.json({
-                    left: await leavePaidHousehold(c.get("munchUserId")),
-                });
+                const userId = c.get("munchUserId");
+                const household = await getActiveHouseholdContext(userId);
+                const isAndroid = c.get("munchAuthTransport") === "bearer";
+                const selfMembership = household
+                    ? (
+                          await listHouseholdMembers(
+                              userId,
+                              household.householdId,
+                          )
+                      ).find((member) => member.userId === userId)
+                    : null;
+                const androidFreeMember =
+                    isAndroid && selfMembership?.androidFreeAccess === true;
+                const noBillableOwner =
+                    isAndroid &&
+                    !androidFreeMember &&
+                    household &&
+                    !(await ownerCanPurchaseHouseholdSeats(
+                        household.ownerUserId,
+                    ));
+                const left =
+                    androidFreeMember || noBillableOwner
+                        ? await leaveHousehold(userId)
+                        : await leavePaidHousehold(userId);
+                return c.json({ left });
             } catch (error) {
                 return failure(c, error);
             }
@@ -75,11 +103,29 @@ export function createHouseholdLifecycleRouter(): Hono {
                 if (!household || household.role !== "owner") {
                     return c.json({ error: "household_owner_required" }, 403);
                 }
+                const isAndroid = c.get("munchAuthTransport") === "bearer";
+                const seatCounts = isAndroid
+                    ? await getHouseholdSeatCounts(household.householdId)
+                    : null;
+                const billableOwner =
+                    isAndroid && (seatCounts?.activeNonOwnerCount ?? 0) > 0
+                        ? await ownerCanPurchaseHouseholdSeats(userId)
+                        : false;
+                const dissolved =
+                    isAndroid &&
+                    (!billableOwner ||
+                        (seatCounts?.activeNonOwnerCount === 0 &&
+                            seatCounts.desiredSeatQuantity === 0))
+                        ? await dissolveHousehold({
+                              userId,
+                              householdId: household.householdId,
+                          })
+                        : await dissolvePaidHousehold({
+                              ownerUserId: userId,
+                              householdId: household.householdId,
+                          });
                 return c.json({
-                    dissolved: await dissolvePaidHousehold({
-                        ownerUserId: userId,
-                        householdId: household.householdId,
-                    }),
+                    dissolved,
                 });
             } catch (error) {
                 return failure(c, error);
