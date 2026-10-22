@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+    COOK_EVENT_TYPES,
+    normalizeCookEventType,
+} from "./cooks/event-contract.js";
 import { resolveMunchCapabilities } from "./billing/capabilities.js";
 import { withAnalytics } from "./analytics.js";
 import {
@@ -54,7 +58,7 @@ const fileInput = z.object({
 });
 
 const eventInput = z.object({
-    event_type: z.string().min(1).max(50),
+    event_type: z.enum(COOK_EVENT_TYPES),
     event_at: z.string().optional(),
     event_timezone: z.string().max(100).optional(),
     time_precision: z.enum(["exact", "approximate", "unknown"]).optional(),
@@ -83,6 +87,7 @@ const eventInput = z.object({
     note: z.string().max(20_000).nullable().optional(),
     original_message: z.string().max(20_000).nullable().optional(),
     dish_id: z.string().uuid().nullable().optional(),
+    dish_ids: z.array(z.string().uuid()).max(20).optional(),
     idempotency_key: z.string().max(500).optional(),
     correction_of_event_id: z.string().uuid().nullable().optional(),
 });
@@ -174,7 +179,7 @@ function asScope(
 
 function mapEvent(event: z.infer<typeof eventInput>): CookEventInput {
     return {
-        eventType: event.event_type as CookEventInput["eventType"],
+        eventType: normalizeCookEventType(event.event_type),
         eventAt: event.event_at,
         eventTimezone: event.event_timezone,
         timePrecision: event.time_precision,
@@ -188,6 +193,7 @@ function mapEvent(event: z.infer<typeof eventInput>): CookEventInput {
         note: event.note,
         originalMessage: event.original_message,
         dishId: event.dish_id,
+        dishIds: event.dish_ids,
         idempotencyKey: event.idempotency_key,
         correctionOfEventId: event.correction_of_event_id,
     };
@@ -438,16 +444,17 @@ export function registerCookTools(
                 request_id: z.string().max(500).optional(),
             },
             outputSchema: z.object({
+                cook_id: z.string().uuid(),
                 update_id: z.string().uuid().nullable(),
+                event_ids: z.array(z.string().uuid()),
+                media_ids: z.array(z.string().uuid()),
                 recorded: z.boolean(),
+                summary: z.string(),
                 media_failures: z.array(z.record(z.string(), z.unknown())),
-                cook: cookDetailSchema,
             }),
-            ...widgetMeta(widgetsEnabled),
-            _meta: {
-                ...(widgetMeta(widgetsEnabled)._meta ?? {}),
-                "openai/fileParams": ["files"],
-            },
+            // Mutation results are intentionally compact. The full widget is
+            // reserved for explicit get_cook / start_cook read surfaces.
+            _meta: { "openai/fileParams": ["files"] },
         },
         async (args) =>
             withAnalytics(
@@ -457,7 +464,10 @@ export function registerCookTools(
                         typeof args.message === "string"
                             ? args.message
                             : undefined;
-                    const timezone = args.timezone ?? "UTC";
+                    const existingCook = await getCook(userId, args.cook_id);
+                    if (!existingCook) throw new Error("Cook not found");
+                    const timezone =
+                        args.timezone ?? existingCook.cook.timezone;
                     const parsed =
                         message && !args.events
                             ? parseNaturalCookUpdate(
@@ -478,19 +488,18 @@ export function registerCookTools(
                         mediaFailures: files.failures,
                         idempotencyKey: args.request_id,
                     });
-                    const detail = await getCook(userId, args.cook_id);
                     return {
                         content: [
-                            {
-                                type: "text" as const,
-                                text: `${update.summary}\n${detailText(detail)}${files.failures.length ? `\n${files.failures.length} photo upload${files.failures.length === 1 ? "" : "s"} need retry.` : ""}`,
-                            },
+                            { type: "text" as const, text: update.summary },
                         ],
                         structuredContent: {
+                            cook_id: args.cook_id,
                             update_id: update.updateId,
+                            event_ids: update.eventIds,
+                            media_ids: update.mediaIds,
                             recorded: update.recorded,
-                            media_failures: files.failures,
-                            cook: detail,
+                            summary: update.summary,
+                            media_failures: update.mediaFailures,
                         },
                     };
                 },
@@ -618,11 +627,7 @@ export function registerCookTools(
                 expected_version: z.coerce.number().int().positive(),
                 event: eventInput,
             },
-            outputSchema: z.object({
-                event: cookRecordSchema,
-                cook: cookDetailSchema,
-            }),
-            ...widgetMeta(widgetsEnabled),
+            outputSchema: z.object({ event: cookRecordSchema }),
         },
         async (args) =>
             withAnalytics(
@@ -635,7 +640,6 @@ export function registerCookTools(
                         mapEvent(args.event),
                         args.expected_version,
                     );
-                    const detail = await getCook(userId, args.cook_id);
                     return {
                         content: [
                             {
@@ -643,7 +647,7 @@ export function registerCookTools(
                                 text: "Cook timeline event corrected.",
                             },
                         ],
-                        structuredContent: { event, cook: detail },
+                        structuredContent: { event },
                     };
                 },
                 { userId },

@@ -1,4 +1,7 @@
 import type { DatabaseTransaction } from "../platform/database.js";
+import { normalizeCookEventType } from "./event-contract.js";
+import type { CookEventType } from "./event-contract.js";
+export type { CookEventType } from "./event-contract.js";
 import { withUserDatabase } from "../platform/database.js";
 import {
     cookMediaSha256,
@@ -21,19 +24,6 @@ const TEMPERATURE_RE = /(-?\d+(?:\.\d+)?)\s*°?\s*([fFcC])\b/g;
 
 export type CookStatus = "active" | "finished";
 export type CookSource = "website" | "mcp";
-export type CookEventType =
-    | "preparation"
-    | "preheat"
-    | "food_on"
-    | "temperature_change"
-    | "wrap"
-    | "sauce"
-    | "remove"
-    | "rest"
-    | "taste"
-    | "note"
-    | "correction"
-    | "custom";
 export type CookTimePrecision = "exact" | "approximate" | "unknown";
 
 export type CookScope =
@@ -67,6 +57,7 @@ export interface CookEventInput {
     note?: string | null;
     originalMessage?: string | null;
     dishId?: string | null;
+    dishIds?: string[];
     idempotencyKey?: string;
     correctionOfEventId?: string | null;
 }
@@ -259,8 +250,12 @@ function serializeEvent(row: Record<string, unknown>) {
         id: String(row.id),
         update_id: nullableString(row.update_id),
         dish_id: nullableString(row.dish_id),
+        dish_ids: Array.isArray(row.dish_ids) ? row.dish_ids.map(String) : [],
         event_type: String(row.event_type),
-        event_at: new Date(String(row.event_at)).toISOString(),
+        event_at:
+            row.event_at == null
+                ? null
+                : new Date(String(row.event_at)).toISOString(),
         submitted_at: new Date(String(row.submitted_at)).toISOString(),
         event_timezone: String(row.event_timezone),
         time_precision: String(row.time_precision),
@@ -351,19 +346,19 @@ function eventAtForInput(
     input: CookEventInput,
     submittedAt: string,
     timezone: string,
-): { eventAt: string; precision: CookTimePrecision } {
+): { eventAt: string | null; precision: CookTimePrecision } {
     if (input.eventAt) {
         const eventAt = isoOrNow(input.eventAt, "event time");
         return { eventAt, precision: input.timePrecision ?? "exact" };
     }
     return {
-        eventAt: submittedAt,
+        eventAt: null,
         precision: input.timePrecision ?? "unknown",
     };
 }
 
 function validateEventInput(input: CookEventInput): CookEventInput {
-    if (!input.eventType) throw new Error("Cook event type is required");
+    const eventType = normalizeCookEventType(input.eventType);
     const numbers = [
         input.setpointTemperature,
         input.ambientTemperature,
@@ -379,10 +374,16 @@ function validateEventInput(input: CookEventInput): CookEventInput {
         }
     }
     if (input.dishId) requireUuid(input.dishId, "dish ID");
+    if (input.dishIds !== undefined) {
+        if (!Array.isArray(input.dishIds) || input.dishIds.length > 20)
+            throw new Error("A Cook event may affect at most 20 dishes");
+        for (const id of input.dishIds) requireUuid(id, "dish ID");
+    }
     if (input.correctionOfEventId)
         requireUuid(input.correctionOfEventId, "correction event ID");
     return {
         ...input,
+        eventType,
         note: cleanText(input.note, "Cook event note"),
         relativePhrase: cleanText(
             input.relativePhrase,
@@ -553,7 +554,7 @@ function detectedEvent(
     const offset = relativePhrase ? phraseOffset(relativePhrase) : null;
     const eventAt =
         offset == null
-            ? submittedAt
+            ? undefined
             : new Date(new Date(submittedAt).getTime() - offset).toISOString();
     return {
         eventType,
@@ -625,6 +626,28 @@ export function parseNaturalCookUpdate(
     for (const clause of clauses) {
         if (/\?\s*$/.test(clause)) continue;
         const lowerClause = clause.toLowerCase();
+        // Deterministic extraction must abstain when completion or occurrence
+        // cannot be established. The original message is retained regardless.
+        if (
+            /\b(?:no|not|never|without|unknown|unconfirmed|uncertain|haven.t|hasn.t|didn.t|doesn.t|wasn.t|isn.t|aren.t|don.t|won.t|can.t)\b/i.test(
+                clause,
+            )
+        )
+            continue;
+        if (
+            /\b(?:might|may|should|could|would|perhaps|maybe|plan|planned|planning|recommend(?:ed)?|suggest(?:ed)?|proposed|hypothetical|later|going to|will)\b/i.test(
+                clause,
+            )
+        )
+            continue;
+        // An arbitrary historical clock time cannot safely be reconstructed
+        // from the submission time. The host may provide an explicit event_at.
+        if (
+            /\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|yesterday|last night|previously|earlier|recap|history)\b|\bat\s+\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)/i.test(
+                clause,
+            )
+        )
+            continue;
         const relativePhrase = clause.match(RELATIVE_TIME_RE)?.[0] ?? null;
         const types: CookEventType[] = [];
         if (
@@ -655,6 +678,12 @@ export function parseNaturalCookUpdate(
         )
             types.push("remove");
         if (/\b(rest|rested|resting)\b/.test(lowerClause)) types.push("rest");
+        if (/\b(spritz|spritzed|spraying|sprayed|spray)\b/.test(lowerClause))
+            types.push("spritz");
+        if (/\b(unwrapped|unwrap|unwrapping)\b/.test(lowerClause))
+            types.push("unwrap");
+        if (/\b(turned|flipped|flip|turning)\b/.test(lowerClause))
+            types.push("turn");
         if (/\b(tast(?:e|ed|ing)|bite|bit into)\b/.test(lowerClause))
             types.push("taste");
         if (
@@ -666,11 +695,13 @@ export function parseNaturalCookUpdate(
             !types.includes("wrap")
         )
             types.push("temperature_change");
+        if (!types.length && /\b(marinat\w*)\b/.test(lowerClause))
+            types.push("marinate");
+        if (!types.length && /\b(season\w*|dry rub|rubbed)\b/.test(lowerClause))
+            types.push("season");
         if (
             !types.length &&
-            /\b(start|starting|prep|prepped|season|seasoned|marinat|chop|mix|trim)\b/.test(
-                lowerClause,
-            )
+            /\b(start|starting|prep|prepped|chop|mix|trim)\b/.test(lowerClause)
         )
             types.push("preparation");
         for (const type of types)
@@ -694,7 +725,13 @@ export function parseNaturalCookUpdate(
                 events.splice(i, 1);
         }
     }
-    if (!events.length && !isQuestion) {
+    if (
+        !events.length &&
+        !isQuestion &&
+        !/\b(?:no|not|never|unknown|unconfirmed|should|might|planned|recommended|suggested|hypothetical)\b/i.test(
+            factualText,
+        )
+    ) {
         events.push(
             detectedEvent(
                 "note",
@@ -803,6 +840,25 @@ async function insertDish(
     return String(rows[0].id);
 }
 
+async function attachEventDishes(
+    tx: DatabaseTransaction,
+    cookId: string,
+    eventId: string,
+    dishIds: string[],
+): Promise<void> {
+    for (const dishId of new Set(dishIds)) {
+        const dishRows = await tx<Array<{ id: string }>>`
+            select id from munch.cook_dishes where id = ${dishId} and cook_id = ${cookId}
+        `;
+        if (!dishRows[0])
+            throw new Error("Cook event dish is not part of this cook");
+        await tx`
+            insert into munch.cook_event_dishes (cook_id, event_id, dish_id)
+            values (${cookId}, ${eventId}, ${dishId}) on conflict do nothing
+        `;
+    }
+}
+
 async function insertEvent(
     tx: DatabaseTransaction,
     userId: string,
@@ -816,6 +872,14 @@ async function insertEvent(
     const normalized = validateEventInput(input);
     const eventAt = eventAtForInput(normalized, submittedAt, timezone);
     const idempotencyKey = normalized.idempotencyKey ?? fallbackKey;
+    const dishIds = [
+        ...new Set([
+            ...(normalized.dishIds ?? []),
+            ...(normalized.dishId ? [normalized.dishId] : []),
+        ]),
+    ];
+    const primaryDishId =
+        normalized.dishId ?? (dishIds.length === 1 ? dishIds[0] : null);
     if (normalized.dishId) {
         const dishRows = await tx<Array<{ id: string }>>`
             select id from munch.cook_dishes
@@ -829,7 +893,10 @@ async function insertEvent(
         where cook_id = ${cookId} and idempotency_key = ${idempotencyKey}
         limit 1
     `;
-    if (existing[0]?.id) return String(existing[0].id);
+    if (existing[0]?.id) {
+        await attachEventDishes(tx, cookId, String(existing[0].id), dishIds);
+        return String(existing[0].id);
+    }
     const rows = await tx<Array<{ id: string }>>`
         insert into munch.cook_events (
             cook_id, update_id, dish_id, event_type, event_at, submitted_at,
@@ -838,7 +905,7 @@ async function insertEvent(
             internal_temperature, internal_unit, note, original_message,
             correction_of_event_id, idempotency_key, created_by_user_id
         ) values (
-            ${cookId}, ${updateId}, ${normalized.dishId ?? null}, ${normalized.eventType},
+            ${cookId}, ${updateId}, ${primaryDishId}, ${normalized.eventType},
             ${eventAt.eventAt}, ${submittedAt}, ${normalized.eventTimezone ?? timezone},
             ${eventAt.precision}, ${normalized.relativePhrase ?? null},
             ${normalized.setpointTemperature ?? null}, ${normalized.setpointUnit ?? null},
@@ -849,6 +916,7 @@ async function insertEvent(
         ) returning id
     `;
     if (!rows[0]?.id) throw new Error("Cook event creation failed");
+    await attachEventDishes(tx, cookId, String(rows[0].id), dishIds);
     return String(rows[0].id);
 }
 
@@ -1007,7 +1075,13 @@ async function insertCookUpdateInTransaction(
                 userId,
                 cookId,
                 updateId,
-                event,
+                {
+                    ...event,
+                    dishId:
+                        event.dishId === undefined && !event.dishIds?.length
+                            ? input.dishId
+                            : event.dishId,
+                },
                 submittedAt,
                 timezone,
                 `${input.idempotencyKey ?? updateId}:event:${index}`,
@@ -1330,14 +1404,8 @@ export async function correctCookEvent(
     const normalized = validateEventInput(input);
     return withUserDatabase(userId, async (tx) => {
         const submittedAt = new Date().toISOString();
-        const existingRows = await tx<
-            Array<{
-                event_at: string;
-                event_timezone: string;
-                time_precision: CookTimePrecision;
-            }>
-        >`
-            select event_at, event_timezone, time_precision
+        const existingRows = await tx<Array<Record<string, unknown>>>`
+            select *
             from munch.cook_events
             where id = ${eventId} and cook_id = ${cookId}
             limit 1
@@ -1349,28 +1417,50 @@ export async function correctCookEvent(
                 "Cook event changed, is unavailable, or was not found",
             );
         const timezone = validTimezone(
-            normalized.eventTimezone ?? existing.event_timezone,
+            normalized.eventTimezone ?? String(existing.event_timezone),
         );
+        if (normalized.dishId) {
+            const dish = await tx<Array<{ id: string }>>`
+                select id from munch.cook_dishes where id = ${normalized.dishId} and cook_id = ${cookId}
+            `;
+            if (!dish[0])
+                throw new Error("Cook event dish is not part of this cook");
+        }
         const eventAt = normalized.eventAt
             ? eventAtForInput(normalized, submittedAt, timezone)
             : {
-                  eventAt: new Date(existing.event_at).toISOString(),
+                  eventAt:
+                      normalized.timePrecision === "unknown"
+                          ? null
+                          : existing.event_at == null
+                            ? null
+                            : new Date(String(existing.event_at)).toISOString(),
                   precision:
-                      normalized.timePrecision ?? existing.time_precision,
+                      normalized.timePrecision ??
+                      (existing.time_precision as CookTimePrecision),
               };
+        if (Number(existing.version) !== expectedVersion)
+            throw new Error("Cook event changed, is unavailable, or was not found");
+        await tx`
+            insert into munch.cook_event_revisions (event_id, cook_id, prior_version, snapshot, changed_by_user_id)
+            select event.id, event.cook_id, event.version, to_jsonb(event), ${userId}
+            from munch.cook_events event
+            where event.id = ${eventId} and event.cook_id = ${cookId}
+        `;
         const rows = await tx<Array<Record<string, unknown>>>`
             update munch.cook_events
             set event_type = ${normalized.eventType}, event_at = ${eventAt.eventAt},
+                dish_id = case when ${normalized.dishId === undefined} then dish_id else ${normalized.dishId ?? null}::uuid end,
                 event_timezone = ${timezone}, time_precision = ${eventAt.precision},
-                relative_phrase = ${normalized.relativePhrase ?? null},
-                setpoint_temperature = ${normalized.setpointTemperature ?? null},
-                setpoint_unit = ${normalized.setpointUnit ?? null},
-                ambient_temperature = ${normalized.ambientTemperature ?? null},
-                ambient_unit = ${normalized.ambientUnit ?? null},
-                internal_temperature = ${normalized.internalTemperature ?? null},
-                internal_unit = ${normalized.internalUnit ?? null},
-                note = ${normalized.note ?? null}, original_message = ${normalized.originalMessage ?? null},
-                correction_of_event_id = ${eventId}, version = version + 1, updated_at = now()
+                relative_phrase = case when ${normalized.relativePhrase === undefined} then relative_phrase else ${normalized.relativePhrase ?? null} end,
+                setpoint_temperature = case when ${normalized.setpointTemperature === undefined} then setpoint_temperature else ${normalized.setpointTemperature ?? null} end,
+                setpoint_unit = case when ${normalized.setpointUnit === undefined} then setpoint_unit else ${normalized.setpointUnit ?? null} end,
+                ambient_temperature = case when ${normalized.ambientTemperature === undefined} then ambient_temperature else ${normalized.ambientTemperature ?? null} end,
+                ambient_unit = case when ${normalized.ambientUnit === undefined} then ambient_unit else ${normalized.ambientUnit ?? null} end,
+                internal_temperature = case when ${normalized.internalTemperature === undefined} then internal_temperature else ${normalized.internalTemperature ?? null} end,
+                internal_unit = case when ${normalized.internalUnit === undefined} then internal_unit else ${normalized.internalUnit ?? null} end,
+                note = case when ${normalized.note === undefined} then note else ${normalized.note ?? null} end, original_message = case when ${normalized.originalMessage === undefined} then original_message else ${normalized.originalMessage ?? null} end,
+                correction_of_event_id = coalesce(${normalized.correctionOfEventId ?? null}, correction_of_event_id), version = version + 1, updated_at = now()
             where id = ${eventId} and cook_id = ${cookId} and version = ${expectedVersion}
             returning *
         `;
@@ -1378,7 +1468,26 @@ export async function correctCookEvent(
             throw new Error(
                 "Cook event changed, is unavailable, or was not found",
             );
-        return serializeEvent(rows[0]);
+        if (
+            normalized.dishIds !== undefined ||
+            normalized.dishId !== undefined
+        ) {
+            await tx`delete from munch.cook_event_dishes where event_id = ${eventId} and cook_id = ${cookId}`;
+            await attachEventDishes(
+                tx,
+                cookId,
+                eventId,
+                normalized.dishIds ??
+                    (normalized.dishId ? [normalized.dishId] : []),
+            );
+        }
+        const links = await tx<Array<{ dish_id: string }>>`
+            select dish_id from munch.cook_event_dishes where event_id = ${eventId} order by dish_id
+        `;
+        return serializeEvent({
+            ...rows[0],
+            dish_ids: links.map((link) => link.dish_id),
+        });
     });
 }
 
@@ -1396,8 +1505,20 @@ export async function getCook(userId: string, cookId: string) {
             from munch.cook_updates where cook_id = ${cookId} order by submitted_at, id
         `;
         const events = await tx<Array<Record<string, unknown>>>`
-            select * from munch.cook_events where cook_id = ${cookId} order by event_at, submitted_at, id
+            select * from munch.cook_events
+            where cook_id = ${cookId}
+            order by event_at nulls last, submitted_at, id
         `;
+        const eventDishes = await tx<Array<{ event_id: string; dish_id: string }>>`
+            select event_id, dish_id from munch.cook_event_dishes
+            where cook_id = ${cookId} order by event_id, dish_id
+        `;
+        const eventDishIds = new Map<string, string[]>();
+        for (const link of eventDishes) {
+            const ids = eventDishIds.get(String(link.event_id)) ?? [];
+            ids.push(String(link.dish_id));
+            eventDishIds.set(String(link.event_id), ids);
+        }
         const outcomes = await tx<Array<Record<string, unknown>>>`
             select * from munch.cook_outcomes where cook_id = ${cookId}
             order by (dish_id is not null), updated_at desc, id
@@ -1424,7 +1545,12 @@ export async function getCook(userId: string, cookId: string) {
                 idempotency_key: nullableString(update.idempotency_key),
                 created_at: new Date(String(update.created_at)).toISOString(),
             })),
-            events: events.map(serializeEvent),
+            events: events.map((event) =>
+                serializeEvent({
+                    ...event,
+                    dish_ids: eventDishIds.get(String(event.id)) ?? [],
+                }),
+            ),
             outcomes: outcomes.map((outcome) => ({
                 id: String(outcome.id),
                 dish_id: nullableString(outcome.dish_id),
