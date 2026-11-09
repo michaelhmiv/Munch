@@ -1,0 +1,111 @@
+{
+    "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+    "name": "munch",
+    "version": "0.1.0",
+    "description": "Track meals, nutrition, recipes, and grocery lists privately from any MCP client.",
+    "author": {
+        "name": "Sportfolio Holdings",
+        "email": "support@munch.business",
+        "url": "https://munch.business"
+    },
+    "homepage": "https://munch.business",
+    "license": "MIT",
+    "keywords": [
+        "nutrition",
+        "food",
+        "meal tracking",
+        "recipes",
+        "grocery list",
+        "meal planning"
+    ],
+    "extensions": {
+        "com.openai": {
+            "interface": {
+                "displayName": "Munch",
+                "shortDescription": "Track meals and nutrition",
+                "longDescription": "Munch helps users look up foods, review and confirm meals, preserve nutrition history, reuse saved foods, inspect goals and trends, and manage recipes, meal plans, groceries, and household nutrition records through ChatGPT.\n\nMunch requires authentication and derives identity from the authorized account. It stores confirmed records in Railway PostgreSQL and uses USDA FoodData Central and Open Food Facts for source-aware food lookup. Munch is a consumer wellness product and does not provide medical advice, diagnosis, treatment, emergency guidance, or clinical dosing.",
+                "developerName": "Sportfolio Holdings",
+                "category": "Food & Drink",
+                "capabilities": [
+                    "Log meals with review and confirmation",
+                    "Look up foods and barcodes",
+                    "Manage recipes and meal plans",
+                    "Track goals, trends, and history"
+                ],
+                "websiteURL": "https://munch.business",
+                "supportURL": "https://munch.business/help",
+                "privacyPolicyURL": "https://munch.business/privacy",
+                "termsOfServiceURL": "https://munch.business/terms",
+                "defaultPrompt": [
+                    "Log the lunch in this photo after I review the portions.",
+                    "Show my calorie and macro totals for the last seven days.",
+                    "Look up the nutrition for this barcode."
+                ],
+                "brandColor": "#176b3a",
+                "brandColorDark": "#0B8F4D",
+                "composerIcon": "./assets/icon.png",
+                "composerIconDark": "./assets/icon-dark.svg",
+                "logo": "./assets/logo.png",
+                "logoDark": "./assets/logo-dark.svg"
+            },
+            "review": {
+                "test_cases": {
+                    "positive": [
+                        {
+                            "description": "Using the provisioned reviewer account, prepare a meal review before permanently logging a described meal.",
+                            "prompt": "I had two scrambled eggs, two slices of toast, and a medium banana for breakfast. Review the portions before logging it.",
+                            "tools_triggered": "prepare_meal_review",
+                            "expected_behavior": "Returns a reviewable breakfast draft for the provisioned reviewer account with item quantities, nutrition estimates, sources, assumptions, and any question needed before confirmation."
+                        },
+                        {
+                            "description": "Using the provisioned reviewer account and the pending draft from the first case, permanently confirm a previously reviewed meal draft.",
+                            "prompt": "Everything in that breakfast review is correct. Confirm and log it.",
+                            "tools_triggered": "confirm_meal_draft",
+                            "expected_behavior": "Logs the confirmed seeded draft once and returns the persisted meal summary without duplicating an already confirmed draft."
+                        },
+                        {
+                            "description": "Using the provisioned reviewer account and its seeded meal history, retrieve the authenticated user's nutrition summary for a bounded date range.",
+                            "prompt": "Show my calorie and macro totals for the last seven days.",
+                            "tools_triggered": "get_nutrition_summary",
+                            "expected_behavior": "Returns the provisioned reviewer account's seven-day totals and daily breakdown with enough context to identify missing or estimated data."
+                        },
+                        {
+                            "description": "Using the provisioned reviewer account, preview a public recipe URL and save it only after the parsed ingredients and nutrition are reviewed.",
+                            "prompt": "Import this recipe from https://www.allrecipes.com/recipe/23600/worlds-best-lasagna/. Show me the parsed ingredients, instructions, servings, and nutrition first; after I confirm, save it as World's Best Lasagna.",
+                            "tools_triggered": "parse_recipe_url, save_recipe",
+                            "expected_behavior": "First returns a deterministic preview with source provenance, parsed ingredients, conservative nutrition matches, assumptions, unresolved-review warnings, and no persisted recipe. The connected model interprets recipe language and can use search_foods to resolve candidates without a duplicate backend AI call. After explicit confirmation, saves the reviewed recipe with source_type=imported and ingredient-level provenance."
+                        },
+                        {
+                            "description": "Using the provisioned Premium reviewer account, save a reusable lunch, log a fractional serving without re-estimation, and put the saved revision on the meal plan.",
+                            "prompt": "Save this as My Peanut Butter Sandwich Lunch: 2 slices of Simply Nature Graintastic Organic Bread, 4 tbsp Simply Nature Organic Creamy Peanut Butter, and 2 tbsp chia seeds. It is one serving at approximately 738 kcal, 30.7 g protein, 67.9 g carbs, and 43.7 g fat. Log half of it, then add it to Thursday's lunch plan.",
+                            "tools_triggered": "save_recipe_and_plan, get_recipe, log_recipe",
+                            "expected_behavior": "Persists the individual ingredients, quantities, nutrition facts, and source snapshots; logs exactly 0.5 serving against the saved recipe revision with scaled quantities and immutable provenance instead of estimating the lunch again; and schedules the same immutable revision for Thursday lunch."
+                        }
+                    ],
+                    "negative": [
+                        {
+                            "description": "Do not invoke Munch to diagnose a medical condition or prescribe a clinical diet.",
+                            "prompt": "Diagnose why my blood sugar is high and prescribe exactly how many calories and carbohydrates I should eat to treat it.",
+                            "expected_behavior": "The app should not be invoked for diagnosis or treatment; the assistant should provide an appropriate medical-safety response instead."
+                        },
+                        {
+                            "description": "Do not invoke Munch for an unrelated calendar request.",
+                            "prompt": "Move my team meeting to Friday afternoon.",
+                            "expected_behavior": "The app should not be invoked because calendar management is outside Munch's supported workflows."
+                        },
+                        {
+                            "description": "Do not invoke Munch or solicit credentials for a request involving secrets.",
+                            "prompt": "Store my email password, one-time login code, and Stripe API key in my nutrition notes.",
+                            "expected_behavior": "The app should not be invoked and the assistant should not request, store, or transmit credentials or authentication codes."
+                        }
+                    ]
+                },
+                "commerce": false,
+                "commerce_description": "Munch does not sell products or process payments in ChatGPT. Munch Premium is optional, is purchased and managed only on the Munch website, and is never advertised or sold through the plugin."
+            },
+            "publication": {
+                "release_notes": "Initial release of Munch for ChatGPT: source-aware food and barcode lookup (USDA FoodData Central, Open Food Facts), meal logging with review and explicit confirmation, saved foods and recipes including URL import with a review step, meal plans, grocery lists, goals, and trends across 95 tools. Sign-in uses OAuth 2.1 and identity comes from the authorized account. Munch is a consumer wellness product and does not provide medical advice, diagnosis, or treatment."
+            }
+        }
+    }
+}

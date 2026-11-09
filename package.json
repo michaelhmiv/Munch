@@ -47,6 +47,8 @@
         "submission:generate": "bun scripts/generate-openai-submission.ts",
         "submission:audit": "bun scripts/openai-submission-audit.ts",
         "submission:check": "bun scripts/openai-submission-audit.ts && bun scripts/policy-consistency-check.ts && bun scripts/widget-csp-audit.ts && bun scripts/generate-openai-submission.ts --check",
+        "submission:plugin:generate": "bun scripts/generate-openai-plugin-package.ts",
+        "submission:plugin:check": "bun scripts/generate-openai-plugin-package.ts --check",
         "auth:schema": "bunx auth@1.6.25 generate --config src/auth/auth.ts --output .better-auth-schema.sql --yes",
         "mobile:web": "bun scripts/build-mobile-web.ts",
         "mobile:sync": "bun run mobile:web && npx cap sync",
