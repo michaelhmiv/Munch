@@ -15,14 +15,6 @@ const [html, js, css, routes, index, appHtml, appStyles, privacy] =
 const requiredHtml = [
     'id="pantry-enabled"',
     'id="manual-add"',
-    'id="pantry-photo"',
-    'id="receipt-photo"',
-    'id="review"',
-    'id="meal-planner"',
-    'id="meal-idea-form"',
-    'id="meal-goal"',
-    'id="meal-staples"',
-    'id="meal-ideas"',
     'id="inventory"',
     'name="viewport"',
 ];
@@ -35,10 +27,6 @@ for (const marker of requiredHtml) {
 for (const endpoint of [
     "/api/app/pantry/settings",
     "/api/app/pantry/reconcile",
-    "/api/app/pantry/scan-preview",
-    "/api/app/pantry/meal-ideas",
-    "/api/app/purchases/receipt-preview",
-    "/api/app/purchases/reconcile",
 ]) {
     if (!routes.includes(endpoint) || !js.includes(endpoint)) {
         throw new Error(
@@ -80,9 +68,6 @@ if (
         "Pantry route is missing surface-specific planning capability enforcement",
     );
 }
-if (!routes.includes("8 * 1024 * 1024")) {
-    throw new Error("Pantry image handlers are missing their 8 MB bound");
-}
 if (!index.includes("10 * 1024 * 1024")) {
     throw new Error(
         "Global request limit does not admit bounded Pantry image uploads",
@@ -103,22 +88,18 @@ if (/receipt_image|raw_image|image_bytes/.test(routes)) {
         "Pantry route source suggests raw receipt media persistence",
     );
 }
-if (
-    !html.includes("whole kitchen") ||
-    !html.includes("spices, sauces, condiments") ||
-    !routes.includes("generatePantryMealIdeas")
-) {
-    throw new Error(
-        "Pantry meal planning does not preserve the deliberate full-kitchen contract",
-    );
-}
-if (
-    js.includes("mealIdeasEl.innerHTML") ||
-    js.includes("candidate.description}`")
-) {
-    throw new Error(
-        "AI meal-idea strings must be rendered with safe text nodes",
-    );
+for (const removed of [
+    "/api/app/pantry/scan-preview",
+    "/api/app/pantry/meal-ideas",
+    "/api/app/purchases/receipt-preview",
+    "generatePantryMealIdeas",
+    "previewInventoryImage",
+]) {
+    if (routes.includes(removed) || js.includes(removed)) {
+        throw new Error(
+            `Removed website AI surface is still wired: ${removed}`,
+        );
+    }
 }
 const pantryLinks = appHtml.match(/href="\/app\/pantry"/g) ?? [];
 if (pantryLinks.length < 2) {
@@ -132,10 +113,15 @@ if (!appStyles.includes("grid-template-columns: repeat(6, 1fr)")) {
 if (
     !privacy.includes("Pantry and receipt images") ||
     !privacy.includes("Pantry meal planning") ||
-    !privacy.includes("<strong>OpenRouter</strong>") ||
-    !privacy.includes("not a promise of zero retention")
+    !privacy.includes("does not accept Pantry or receipt") ||
+    !privacy.includes("does not generate Pantry meal")
 ) {
-    throw new Error("Pantry image-processing privacy disclosure is incomplete");
+    throw new Error("Pantry AI-removal privacy disclosure is incomplete");
+}
+if (privacy.includes("<strong>OpenRouter</strong>")) {
+    throw new Error(
+        "Privacy policy still lists OpenRouter as a website data recipient",
+    );
 }
 
 console.log("Munch premium Pantry web surface static smoke test passed.");

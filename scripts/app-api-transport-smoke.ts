@@ -66,7 +66,7 @@ try {
 
     const form = new FormData();
     form.append("file", new Blob(["image"]), "receipt.txt");
-    await requestJson("/api/app/purchases/receipt-preview", {
+    await requestJson("/api/app/import/parse", {
         method: "POST",
         body: form,
     });

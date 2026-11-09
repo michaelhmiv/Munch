@@ -44,8 +44,6 @@ import {
 } from "../storage.js";
 import { getFoodSearchService } from "../food-providers/service.js";
 import { RecipeImportError } from "../recipe-import/fetch.js";
-import { previewRecipeUrl } from "../recipe-import/service.js";
-import { getWebsiteRecipeImportSemanticResolver } from "../recipe-import/semantic-resolver.js";
 import {
     assertSavedFoodCapacity,
     deleteSavedFood,
@@ -120,7 +118,6 @@ import {
     deleteCook,
     finishCook,
     getCook,
-    parseNaturalCookUpdate,
     prepareCookRecipeDraft,
     recordCookOutcome,
     reopenCook,
@@ -382,16 +379,10 @@ export function resolveCookUpdateTimezone(
         : cookTimezone;
 }
 
-function cookEventsFromBody(
-    body: Record<string, unknown>,
-    message: string | undefined,
-    submittedAt: string | undefined,
-    timezone: string,
-): CookEventInput[] {
+function cookEventsFromBody(body: Record<string, unknown>): CookEventInput[] {
     const rawEvents = jsonField(body, "events");
     if (Array.isArray(rawEvents)) return rawEvents.map(cookEventInput);
-    if (!message) return [];
-    return parseNaturalCookUpdate(message, submittedAt, timezone).events;
+    return [];
 }
 
 function cookDishesFromBody(
@@ -1425,39 +1416,6 @@ export function createAppRouter(): Hono {
         });
     });
 
-    app.post(
-        "/api/app/recipes/import-preview",
-        requireSameOrigin,
-        async (c) => {
-            const userId = c.get("munchUserId");
-            const body = recordValue(
-                await c.req.json(),
-                "Recipe import preview",
-            );
-            const capabilities = await resolveRequestMunchCapabilities(
-                c,
-                userId,
-            );
-            if (
-                !capabilities.personalRecipesRead &&
-                !capabilities.householdRead
-            ) {
-                throw new Error("Recipe capability is unavailable");
-            }
-            const draft = await previewRecipeUrl(
-                typeof body.url === "string" ? body.url : "",
-                {
-                    rateLimitKey: userId,
-                    semanticResolver:
-                        capabilitySurfaceFromRequest(c) === "android"
-                            ? undefined
-                            : getWebsiteRecipeImportSemanticResolver(),
-                },
-            );
-            return privateJson(c, { draft });
-        },
-    );
-
     app.post("/api/app/recipes/compose", requireSameOrigin, async (c) => {
         const userId = c.get("munchUserId");
         const body = recordValue(await c.req.json(), "Recipe compose");
@@ -1652,37 +1610,11 @@ export function createAppRouter(): Hono {
             typeof body.timezone === "string" ? body.timezone : "UTC";
         const submittedAt =
             typeof body.started_at === "string" ? body.started_at : undefined;
-        const message =
-            typeof body.message === "string" ? body.message.trim() : undefined;
-        const parsed = message
-            ? parseNaturalCookUpdate(
-                  message,
-                  submittedAt
-                      ? new Date(submittedAt).toISOString()
-                      : new Date().toISOString(),
-                  timezone,
-              )
-            : null;
-        const dishes =
-            cookDishesFromBody(body) ??
-            (parsed?.suggestions.dish
-                ? [
-                      {
-                          name: parsed.suggestions.dish,
-                          method: parsed.suggestions.method,
-                          flavor: parsed.suggestions.flavor,
-                          equipment: parsed.suggestions.equipment,
-                          ingredientOrCut: parsed.suggestions.ingredientOrCut,
-                      },
-                  ]
-                : undefined);
+        const dishes = cookDishesFromBody(body);
         const capabilities = await resolveRequestMunchCapabilities(c, userId);
         const result = await createCook(userId, {
             scope: cookScopeFromBody(body, capabilities),
-            title:
-                typeof body.title === "string"
-                    ? body.title
-                    : parsed?.suggestions.dish,
+            title: typeof body.title === "string" ? body.title : undefined,
             cookDate: cookDateValue(body.cook_date),
             timezone,
             startedAt: submittedAt,
@@ -1698,11 +1630,7 @@ export function createAppRouter(): Hono {
                 typeof body.source_cook_id === "string"
                     ? body.source_cook_id
                     : null,
-            originalMessage: message,
-            message,
-            events: Array.isArray(jsonField(body, "events"))
-                ? (jsonField(body, "events") as unknown[]).map(cookEventInput)
-                : parsed?.events,
+            events: cookEventsFromBody(body),
             photos: cookPhotosFromBody(request.photos, body),
             mediaFailures: request.mediaFailures,
             idempotencyKey:
@@ -1850,15 +1778,7 @@ export function createAppRouter(): Hono {
                 : undefined;
         const message =
             typeof body.message === "string" ? body.message.trim() : undefined;
-        const explicitEvents = jsonField(body, "events");
-        const events = Array.isArray(explicitEvents)
-            ? explicitEvents.map(cookEventInput)
-            : cookEventsFromBody(
-                  body,
-                  message,
-                  submittedAt ? new Date(submittedAt).toISOString() : undefined,
-                  timezone,
-              );
+        const events = cookEventsFromBody(body);
         const update = await addCookUpdate(userId, c.req.param("id")!, {
             source: "website",
             message,

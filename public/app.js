@@ -59,35 +59,6 @@ const recipeCompose = {
     groceryItems: [],
 };
 
-const recipeImport = {
-    draft: null,
-    progressTimer: null,
-    controller: null,
-};
-
-const recipeImportSteps = [
-    {
-        label: "Checking the URL",
-        detail: "Verifying the address and contacting the public recipe page.",
-    },
-    {
-        label: "Parsing recipe details",
-        detail: "Reading ingredients, servings, timing, and instructions.",
-    },
-    {
-        label: "Interpreting ingredient language",
-        detail: "Applying reasonable defaults to alternatives, ranges, and preparation words.",
-    },
-    {
-        label: "Matching ingredients",
-        detail: "Comparing ingredients with nutrition sources.",
-    },
-    {
-        label: "Preparing your review",
-        detail: "Calculating nutrition and building the editable recipe.",
-    },
-];
-
 const savedFoodManager = {
     options: new Map(),
     foods: [],
@@ -678,16 +649,13 @@ async function renderRecipes() {
         state.bootstrap?.capabilities?.recipeWrite ||
         state.bootstrap?.capabilities?.householdRecipeWrite,
     );
-    const importButton = canCreate
-        ? '<button class="button button-primary button-small" data-action="import-recipe-url">Import recipe from website</button>'
-        : "";
     const createButton = canCreate
-        ? '<button class="button button-secondary button-small" data-action="create-recipe">Create manually</button>'
+        ? '<button class="button button-primary button-small" data-action="create-recipe">Create manually</button>'
         : "";
     const composeButton = canCreate
         ? '<button class="button button-secondary button-small" data-action="compose-recipe">Compose + plan</button>'
         : "";
-    content.innerHTML = `<div class="page-heading"><div><h2>Recipe library</h2><p>${data.recipes.length} structured recipe${data.recipes.length === 1 ? "" : "s"}. Import from a website for review, or create a recipe manually.</p></div><div class="auth-actions">${importButton}${createButton}${composeButton}<input class="input" id="recipe-filter" type="search" placeholder="Filter recipes" aria-label="Filter recipes" /></div></div><div class="capability-grid" id="recipe-grid">${data.recipes.length ? data.recipes.map((recipe) => `<article class="capability-card" data-recipe-name="${escapeHtml(recipe.name.toLowerCase())}"><span class="source-chip ${recipe.ownership === "household" ? "source-saved" : "source-usda"}">${escapeHtml(recipe.ownership)}</span><h3 class="spacer-top">${escapeHtml(recipe.name)}</h3><p>${number(recipe.servings, 1)} servings · ${escapeHtml(recipe.nutrition_status)}</p><div class="meal-macros"><span class="macro-chip">${number(recipe.nutrition_per_serving?.calories)} kcal</span><span class="macro-chip">P ${number(recipe.nutrition_per_serving?.protein_g, 1)}g</span><span class="macro-chip">C ${number(recipe.nutrition_per_serving?.carbs_g, 1)}g</span><span class="macro-chip">F ${number(recipe.nutrition_per_serving?.fat_g, 1)}g</span></div><p class="tiny spacer-top">Scheduled ${number(recipe.times_scheduled)} times · logged ${number(recipe.times_logged)} times</p><button class="button button-secondary button-small spacer-top" type="button" data-action="view-recipe" data-id="${escapeHtml(recipe.recipe_id)}">View recipe</button></article>`).join("") : `<div class="empty-state"><div><h3>No recipes yet</h3><p>Import a recipe from a public website and review it before saving, or create one manually.</p>${canCreate ? `<div class="auth-actions spacer-top">${importButton}${createButton}</div>` : ""}</div></div>`}</div>`;
+    content.innerHTML = `<div class="page-heading"><div><h2>Recipe library</h2><p>${data.recipes.length} structured recipe${data.recipes.length === 1 ? "" : "s"}. Create recipes manually here, or import from a website through ChatGPT or another connected app.</p></div><div class="auth-actions">${createButton}${composeButton}<input class="input" id="recipe-filter" type="search" placeholder="Filter recipes" aria-label="Filter recipes" /></div></div><div class="capability-grid" id="recipe-grid">${data.recipes.length ? data.recipes.map((recipe) => `<article class="capability-card" data-recipe-name="${escapeHtml(recipe.name.toLowerCase())}"><span class="source-chip ${recipe.ownership === "household" ? "source-saved" : "source-usda"}">${escapeHtml(recipe.ownership)}</span><h3 class="spacer-top">${escapeHtml(recipe.name)}</h3><p>${number(recipe.servings, 1)} servings · ${escapeHtml(recipe.nutrition_status)}</p><div class="meal-macros"><span class="macro-chip">${number(recipe.nutrition_per_serving?.calories)} kcal</span><span class="macro-chip">P ${number(recipe.nutrition_per_serving?.protein_g, 1)}g</span><span class="macro-chip">C ${number(recipe.nutrition_per_serving?.carbs_g, 1)}g</span><span class="macro-chip">F ${number(recipe.nutrition_per_serving?.fat_g, 1)}g</span></div><p class="tiny spacer-top">Scheduled ${number(recipe.times_scheduled)} times · logged ${number(recipe.times_logged)} times</p><button class="button button-secondary button-small spacer-top" type="button" data-action="view-recipe" data-id="${escapeHtml(recipe.recipe_id)}">View recipe</button></article>`).join("") : `<div class="empty-state"><div><h3>No recipes yet</h3><p>Create one manually, or import a recipe from a public website through ChatGPT or another connected app.</p>${canCreate ? `<div class="auth-actions spacer-top">${createButton}</div>` : ""}</div></div>`}</div>`;
 }
 
 function recipeIngredientFromFood(food, portionId) {
@@ -1021,162 +989,6 @@ function recipePayloadFromForm(values) {
     };
 }
 
-function stopRecipeImportProgress() {
-    if (recipeImport.progressTimer) {
-        window.clearTimeout(recipeImport.progressTimer);
-        recipeImport.progressTimer = null;
-    }
-    if (recipeImport.controller) {
-        recipeImport.controller.abort();
-        recipeImport.controller = null;
-    }
-}
-
-function updateRecipeImportProgress(index) {
-    const root = document.getElementById("recipe-import-progress");
-    if (!root) return;
-    const stepIndex = Math.max(
-        0,
-        Math.min(index, recipeImportSteps.length - 1),
-    );
-    const step = recipeImportSteps[stepIndex];
-    root.hidden = false;
-    root.dataset.state = "loading";
-    root.setAttribute("aria-busy", "true");
-    root.querySelector("[data-import-progress-title]").textContent =
-        `${step.label}…`;
-    root.querySelector("[data-import-progress-detail]").textContent =
-        step.detail;
-    root.querySelectorAll("[data-import-step]").forEach((element) => {
-        const elementIndex = Number(element.dataset.importStep);
-        const state =
-            elementIndex < stepIndex
-                ? "complete"
-                : elementIndex === stepIndex
-                  ? "active"
-                  : "pending";
-        element.dataset.state = state;
-        const marker = element.querySelector("[data-import-step-marker]");
-        if (marker)
-            marker.textContent =
-                state === "complete" ? "✓" : `${elementIndex + 1}`;
-    });
-}
-
-function startRecipeImportProgress() {
-    stopRecipeImportProgress();
-    updateRecipeImportProgress(0);
-    const delays = [700, 1100, 1800, 1800];
-    const advance = (index) => {
-        if (index >= recipeImportSteps.length - 1) return;
-        recipeImport.progressTimer = window.setTimeout(() => {
-            updateRecipeImportProgress(index + 1);
-            advance(index + 1);
-        }, delays[index] || 1800);
-    };
-    advance(0);
-}
-
-function setRecipeImportProgressError(message) {
-    stopRecipeImportProgress();
-    const root = document.getElementById("recipe-import-progress");
-    if (!root) return;
-    root.hidden = false;
-    root.dataset.state = "error";
-    root.setAttribute("aria-busy", "false");
-    root.querySelector("[data-import-progress-title]").textContent =
-        "We could not import that page";
-    root.querySelector("[data-import-progress-detail]").textContent =
-        message || "Try another public recipe URL.";
-    root.querySelectorAll("[data-import-step]").forEach((element) => {
-        if (element.dataset.state === "active") element.dataset.state = "error";
-    });
-}
-
-function recipeImportProgressMarkup() {
-    return `<section id="recipe-import-progress" class="recipe-import-progress" hidden role="status" aria-live="polite" aria-busy="true"><div class="recipe-import-progress-heading"><span class="recipe-import-spinner" aria-hidden="true"></span><div><strong data-import-progress-title>Ready to check the page</strong><p data-import-progress-detail>Nothing is saved until you review and submit the recipe.</p></div></div><ol class="recipe-import-steps" aria-label="Recipe import progress">${recipeImportSteps.map((step, index) => `<li data-import-step="${index}" data-state="pending"><span data-import-step-marker aria-hidden="true">${index + 1}</span><span>${escapeHtml(step.label)}</span></li>`).join("")}</ol></section>`;
-}
-
-function recipeImportReviewMarkup(draft) {
-    const review = draft.ingredient_review || [];
-    const unresolved = review.filter(
-        (item) =>
-            item.resolution === "ambiguous" || item.resolution === "unresolved",
-    );
-    const resolved = review.filter(
-        (item) =>
-            item.resolution === "matched" || item.resolution === "assumed",
-    );
-    const warningMarkup = (draft.warnings || []).length
-        ? `<div class="panel spacer-top"><strong>Review warnings</strong><ul class="food-items spacer-top">${draft.warnings.map((item) => `<li><span>${escapeHtml(item.message)}</span></li>`).join("")}</ul></div>`
-        : "";
-    const assumptionMarkup = (draft.assumptions || []).length
-        ? `<div class="panel spacer-top"><strong>Assumptions applied automatically</strong><p class="tiny spacer-top">You can edit these below, but no ingredient-by-ingredient confirmation is required.</p><ul class="food-items spacer-top">${draft.assumptions.map((item) => `<li><span><strong>${escapeHtml(item.message)}</strong><small>${escapeHtml(item.raw_text)}</small></span></li>`).join("")}</ul></div>`
-        : "";
-    const unresolvedMarkup = unresolved.length
-        ? `<div class="panel spacer-top"><strong>${unresolved.length} ingredient${unresolved.length === 1 ? "" : "s"} need${unresolved.length === 1 ? "s" : ""} review</strong><ul class="food-items spacer-top">${unresolved.map((item) => `<li><span><strong>${escapeHtml(item.raw_text)}</strong><small>${escapeHtml(item.resolution)} match · use the food search or edit the fields below</small></span></li>`).join("")}</ul></div>`
-        : "";
-    const nutrition = draft.nutrition?.per_serving || {};
-    return `<div class="recipe-detail"><p>Preview only — nothing has been saved. Munch resolved what it could, applied reasonable assumptions, and left only materially uncertain ingredients for review.</p><p class="tiny"><a href="${escapeHtml(draft.source.final_url)}" target="_blank" rel="noreferrer">${escapeHtml(draft.source.final_url)}</a> · ${escapeHtml(draft.parser.strategy)} · ${resolved.length}/${review.length} ingredients resolved</p><div class="meal-macros spacer-top"><span class="macro-chip">${number(nutrition.calories)} kcal/serving</span><span class="macro-chip">P ${number(nutrition.protein_g, 1)}g</span><span class="macro-chip">C ${number(nutrition.carbs_g, 1)}g</span><span class="macro-chip">F ${number(nutrition.fat_g, 1)}g</span></div>${warningMarkup}${assumptionMarkup}${unresolvedMarkup}</div>`;
-}
-
-function recipeFormRecordFromImport(draft) {
-    return {
-        name: draft.recipe.name,
-        servings: draft.recipe.servings,
-        description: draft.recipe.description,
-        instructions: draft.recipe.instructions,
-        preparation_minutes: draft.recipe.preparation_minutes,
-        cooking_minutes: draft.recipe.cooking_minutes,
-        source_type: draft.recipe.source_type,
-        source_title: draft.recipe.source_title,
-        source_url: draft.recipe.source_url,
-    };
-}
-
-function recipeComposerIngredientFromImport(ingredient) {
-    return {
-        name: ingredient.name,
-        quantity: ingredient.quantity,
-        unit: ingredient.unit || "",
-        preparation: ingredient.preparation || "",
-        optional: Boolean(ingredient.optional),
-        gramWeight: ingredient.gram_weight,
-        nutrients: ingredient.nutrients || {},
-        provider: ingredient.provider,
-        providerFoodId: ingredient.provider_food_id,
-        sourceType: ingredient.source_type || "user_supplied",
-        sourceUrl: ingredient.source_url,
-        confidence: ingredient.confidence,
-        sourceSnapshot: ingredient.source_snapshot || {},
-    };
-}
-
-function openRecipeImportReview(draft) {
-    stopRecipeImportProgress();
-    recipeImport.draft = draft;
-    recipeComposer.ingredients = draft.recipe.ingredients.map(
-        recipeComposerIngredientFromImport,
-    );
-    recipeComposer.options.clear();
-    recipeCompose.groceryItems = [];
-    openDialog(
-        "Review imported recipe",
-        `${recipeImportReviewMarkup(draft)}${recipeFormMarkup("create", recipeFormRecordFromImport(draft))}`,
-    );
-    renderRecipeIngredients();
-    searchRecipeFoods("");
-}
-
-function openRecipeImport() {
-    stopRecipeImportProgress();
-    recipeImport.draft = null;
-    openDialog(
-        "Import recipe from a website",
-        `<form id="recipe-import-url-form" class="auth-form"><p>Paste a public HTTPS recipe page. Munch will check the page, parse the recipe, interpret the ingredient language, match nutrition sources, and show you an editable review before anything is saved.</p><p class="tiny">This is separate from <strong>Create manually</strong>; you do not need to open the recipe editor first.</p><label class="field"><span>Recipe URL</span><input name="url" type="url" inputmode="url" maxlength="2000" placeholder="https://example.com/recipe" required /></label>${recipeImportProgressMarkup()}<button class="button button-primary" type="submit">Check recipe page</button></form>`,
-    );
-}
-
 function openRecipeCreate() {
     recipeComposer.ingredients = [];
     recipeComposer.options.clear();
@@ -1341,7 +1153,7 @@ async function openGuidedPlanner() {
         : "";
     openDialog(
         "Guided weekly plan",
-        `<p>Choose saved recipes for any days, or ask the website model for recipe proposals. Every proposal is checked and its nutrition is resolved by Munch before you review it.</p>${existingPlanNote}<div class="auth-actions spacer-top"><button class="button button-secondary button-small" type="button" data-action="guidance-preferences">Edit preferences</button></div><form id="guided-plan-form" class="auth-form" data-start="${weekStart}" data-end="${weekEnd}">${scopeSelector}<div class="spacer-top">${rows}</div><label class="check-row spacer-top"><input type="checkbox" name="replace_existing" /><span>Replace existing meals in the date and meal slots I include</span></label><details class="spacer-top"><summary>Temporary plan overrides</summary><p class="tiny">Enable a field to replace its saved preference for this plan only.</p>${["allergies", "excluded_ingredients", "equipment"].map((key) => `<label class="check-row"><input type="checkbox" data-guided-override="${key}" /><span>Override ${key.replaceAll("_", " ")}</span></label><label class="field"><span>${key.replaceAll("_", " ")}</span><input class="input" name="override_${key}" placeholder="Comma-separated list" /></label>`).join("")}</details><label class="field spacer-top"><span>Optional request for recipe variety</span><textarea class="input" name="request" maxlength="800" rows="2" placeholder="For example, include two vegetarian dinners"></textarea></label><div class="auth-actions"><button class="button button-primary" type="submit">Create saved-recipe draft</button><button class="button button-secondary" type="button" data-action="guided-ai-create">Suggest recipes with AI</button></div>${recipes.length ? "" : `<p class="tiny">No saved recipes yet. Use AI suggestions or create recipes in the Recipe library first.</p>`}</form>`,
+        `<p>Choose saved recipes for any days. Every plan is checked and its nutrition is resolved by Munch before you review it. For AI recipe suggestions, ask ChatGPT or another connected app — it can prepare a draft here for your review.</p>${existingPlanNote}<div class="auth-actions spacer-top"><button class="button button-secondary button-small" type="button" data-action="guidance-preferences">Edit preferences</button></div><form id="guided-plan-form" class="auth-form" data-start="${weekStart}" data-end="${weekEnd}">${scopeSelector}<div class="spacer-top">${rows}</div><label class="check-row spacer-top"><input type="checkbox" name="replace_existing" /><span>Replace existing meals in the date and meal slots I include</span></label><details class="spacer-top"><summary>Temporary plan overrides</summary><p class="tiny">Enable a field to replace its saved preference for this plan only.</p>${["allergies", "excluded_ingredients", "equipment"].map((key) => `<label class="check-row"><input type="checkbox" data-guided-override="${key}" /><span>Override ${key.replaceAll("_", " ")}</span></label><label class="field"><span>${key.replaceAll("_", " ")}</span><input class="input" name="override_${key}" placeholder="Comma-separated list" /></label>`).join("")}</details><div class="auth-actions"><button class="button button-primary" type="submit">Create saved-recipe draft</button></div>${recipes.length ? "" : `<p class="tiny">No saved recipes yet. Create recipes in the Recipe library first.</p>`}</form>`,
     );
 }
 
@@ -1547,7 +1359,7 @@ async function renderCooks() {
             ? '<div class="cook-list">' +
               finished.map(cookSummaryCard).join("") +
               "</div>"
-            : '<div class="empty-state"><div><h3>No cooks yet</h3><p>Start before cooking, add a photo and message while cooking, or record a past attempt.</p><button class="button button-primary button-small spacer-top" type="button" data-action="new-cook">Start your first cook</button></div></div>';
+            : '<div class="empty-state"><div><h3>No cooks yet</h3><p>Start before cooking, add photos and updates while cooking, or record a past attempt.</p><button class="button button-primary button-small spacer-top" type="button" data-action="new-cook">Start your first cook</button></div></div>';
     content.innerHTML = `<div class="page-heading"><div><h2>Cooks</h2><p>Persistent cooking sessions with photos, timeline, results, and attempts—separate from food logging.</p></div><div class="auth-actions"><button class="button button-primary button-small" type="button" data-action="new-cook">Start cook</button><button class="button button-secondary button-small" type="button" data-action="compare-cooks">Compare selected</button></div></div><section class="panel cook-search-panel"><form id="cook-search-form" class="inline-form"><input class="input" name="query" type="search" value="${escapeHtml(state.cookQuery)}" placeholder="Search wings, notes, updates…" /><input class="input" name="dish" value="${escapeHtml(filters.dish)}" placeholder="Dish" /><input class="input" name="method" value="${escapeHtml(filters.method)}" placeholder="Method" /><input class="input" name="flavor" value="${escapeHtml(filters.flavor)}" placeholder="Flavor / seasoning" /><label class="tiny">From <input name="date_from" type="date" value="${escapeHtml(filters.dateFrom)}" /></label><label class="tiny">To <input name="date_to" type="date" value="${escapeHtml(filters.dateTo)}" /></label><select name="status" aria-label="Cook status"><option value="all" ${filters.status === "all" ? "selected" : ""}>All statuses</option><option value="active" ${filters.status === "active" ? "selected" : ""}>Active</option><option value="finished" ${filters.status === "finished" ? "selected" : ""}>Finished</option></select><button class="button button-secondary button-small" type="submit">Search history</button></form><p class="tiny">Searches cook history directly, including original updates, timeline notes, results, dish labels, seasoning, method, and date.</p></section>${activeMarkup}<section class="panel"><div class="panel-title"><div><h3>${query || filters.dish || filters.method || filters.flavor || filters.dateFrom || filters.dateTo ? "Matching history" : "Recent history"}</h3><span>${cooks.length} cook${cooks.length === 1 ? "" : "s"}</span></div></div>${historyMarkup}</section>`;
 }
 
@@ -1561,7 +1373,7 @@ function openCookCreate() {
         : '<input type="hidden" name="scope" value="personal" />';
     openDialog(
         "Start a cook",
-        `<form id="cook-create-form" class="auth-form" enctype="multipart/form-data"><p>Create a cook before, during, or after the fact. This does not log a meal or change pantry inventory.</p>${scopeOptions}<label class="field"><span>Cook title</span><input name="title" maxlength="200" placeholder="Smoked lemon pepper wings" required /></label><div class="meal-composer-grid"><label class="field"><span>Date</span><input name="cook_date" type="date" value="${escapeHtml(state.date)}" required /></label><label class="field"><span>Timezone</span><input name="timezone" value="${escapeHtml(state.bootstrap?.profile?.timezone || "UTC")}" maxlength="100" /></label></div><section id="cook-create-dishes" class="cook-create-dishes">${cookDishFormMarkup()}</section><button class="button button-quiet button-small" type="button" data-action="add-cook-dish">Add another dish</button><label class="field"><span>What are you doing?</span><textarea name="message" rows="3" maxlength="20000" placeholder="I’m starting these wings. I heated the grill to 250°F a couple minutes ago."></textarea></label><label class="field"><span>Photos</span><input name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple /><small class="tiny">JPEG, PNG, or WebP; up to 8 MB each. Notes are kept if a photo transfer fails.</small></label><button class="button button-primary" type="submit">Create cook</button></form>`,
+        `<form id="cook-create-form" class="auth-form" enctype="multipart/form-data"><p>Create a cook before, during, or after the fact. This does not log a meal or change pantry inventory.</p>${scopeOptions}<label class="field"><span>Cook title</span><input name="title" maxlength="200" placeholder="Smoked lemon pepper wings" required /></label><div class="meal-composer-grid"><label class="field"><span>Date</span><input name="cook_date" type="date" value="${escapeHtml(state.date)}" required /></label><label class="field"><span>Timezone</span><input name="timezone" value="${escapeHtml(state.bootstrap?.profile?.timezone || "UTC")}" maxlength="100" /></label></div><section id="cook-create-dishes" class="cook-create-dishes">${cookDishFormMarkup()}</section><button class="button button-quiet button-small" type="button" data-action="add-cook-dish">Add another dish</button><label class="field"><span>Notes</span><textarea name="notes" rows="3" maxlength="20000" placeholder="Anything to remember about this cook (optional)"></textarea></label><label class="field"><span>Photos</span><input name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple /><small class="tiny">JPEG, PNG, or WebP; up to 8 MB each. Notes are kept if a photo transfer fails.</small></label><button class="button button-primary" type="submit">Create cook</button></form>`,
     );
 }
 
@@ -1709,7 +1521,7 @@ function cookDetailMarkup(detail) {
             : '<button class="button button-secondary button-small" type="button" data-action="reopen-cook" data-id="' +
               escapeHtml(cook.id) +
               '">Reopen</button>';
-    return `<div class="cook-detail-view"><div class="cook-detail-head"><div><p class="section-kicker">${escapeHtml(cook.status === "active" ? "Active cook" : "Completed cook")}</p><h2>${escapeHtml(cook.title)}</h2><p class="tiny">${escapeHtml(formatDate(cook.cook_date, { year: true }))} · ${escapeHtml(cook.timezone)} · version ${number(cook.version)}</p></div><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="edit-cook" data-id="${escapeHtml(cook.id)}">Edit details</button>${lifecycle}<button class="button button-quiet button-small" type="button" data-action="repeat-cook" data-id="${escapeHtml(cook.id)}">Cook again</button><button class="button button-quiet button-small" type="button" data-action="delete-cook" data-id="${escapeHtml(cook.id)}">Delete</button></div></div>${cook.original_message ? '<details class="cook-original"><summary>Original context</summary><p>' + escapeHtml(cook.original_message) + "</p></details>" : ""}<section class="cook-detail-section"><div class="panel-title"><div><h3>Dishes</h3><span>${detail.dishes.length} recorded</span></div></div><div class="cook-dishes">${dishes}</div></section><section class="cook-detail-section"><div class="panel-title"><div><h3>Photos</h3><span>${detail.media.length} saved</span></div></div>${photoMarkup}</section><section class="cook-detail-section"><div class="panel-title"><div><h3>Timeline</h3><span>${detail.events.length} event${detail.events.length === 1 ? "" : "s"}</span></div></div>${cookTimelineMarkup(detail)}</section><section class="cook-detail-section"><div class="panel-title"><div><h3>Record an update</h3><span>One message can add multiple events and photos.</span></div></div><form id="cook-update-form" class="auth-form" data-id="${escapeHtml(cook.id)}" enctype="multipart/form-data"><input type="hidden" name="timezone" value="${escapeHtml(cook.timezone)}" /><label class="field"><span>What happened?</span><textarea name="message" rows="3" maxlength="20000" placeholder="A couple minutes ago I wrapped the wings. Internal temp was 155°F."></textarea></label><label class="field"><span>Add photos</span><input name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple /></label><button class="button button-primary" type="submit">Record update</button></form></section><section class="cook-detail-section"><div class="panel-title"><div><h3>Result</h3><span>User observations stay separate from suggestions.</span></div></div><form id="cook-outcome-form" class="auth-form" data-id="${escapeHtml(cook.id)}" data-version="${escapeHtml(outcome?.version || "")}"><label class="field"><span>Feedback</span><textarea name="written_feedback" rows="3" maxlength="20000" placeholder="What did it taste and feel like?">${escapeHtml(outcome?.written_feedback || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Overall assessment (1–5)</span><input name="overall_assessment" type="number" min="1" max="5" step="0.1" value="${escapeHtml(outcome?.overall_assessment || "")}" /></label><label class="field"><span>Characteristics JSON</span><input name="characteristics" value="${escapeHtml(JSON.stringify(outcome?.characteristics || {}))}" placeholder='{"smoke_intensity":"medium"}' /></label></div><label class="field"><span>What worked</span><textarea name="worked" rows="2" maxlength="10000">${escapeHtml(outcome?.worked || "")}</textarea></label><label class="field"><span>What disappointed you</span><textarea name="disappointed" rows="2" maxlength="10000">${escapeHtml(outcome?.disappointed || "")}</textarea></label><label class="field"><span>Change next time</span><textarea name="next_time_notes" rows="2" maxlength="10000">${escapeHtml(outcome?.next_time_notes || "")}</textarea></label><label class="checkbox-row"><input name="is_preferred" type="checkbox" ${outcome?.is_preferred ? "checked" : ""} /> Preferred attempt</label><button class="button button-primary" type="submit">Save result</button></form></section><section class="cook-detail-section"><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="cook-recipe-draft" data-id="${escapeHtml(cook.id)}">Save as recipe</button><button class="button button-secondary button-small" type="button" data-action="set-preferred-cook" data-id="${escapeHtml(cook.id)}">Choose preferred attempt</button></div>${updateMarkup}</section></div>`;
+    return `<div class="cook-detail-view"><div class="cook-detail-head"><div><p class="section-kicker">${escapeHtml(cook.status === "active" ? "Active cook" : "Completed cook")}</p><h2>${escapeHtml(cook.title)}</h2><p class="tiny">${escapeHtml(formatDate(cook.cook_date, { year: true }))} · ${escapeHtml(cook.timezone)} · version ${number(cook.version)}</p></div><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="edit-cook" data-id="${escapeHtml(cook.id)}">Edit details</button>${lifecycle}<button class="button button-quiet button-small" type="button" data-action="repeat-cook" data-id="${escapeHtml(cook.id)}">Cook again</button><button class="button button-quiet button-small" type="button" data-action="delete-cook" data-id="${escapeHtml(cook.id)}">Delete</button></div></div>${cook.original_message ? '<details class="cook-original"><summary>Original context</summary><p>' + escapeHtml(cook.original_message) + "</p></details>" : ""}<section class="cook-detail-section"><div class="panel-title"><div><h3>Dishes</h3><span>${detail.dishes.length} recorded</span></div></div><div class="cook-dishes">${dishes}</div></section><section class="cook-detail-section"><div class="panel-title"><div><h3>Photos</h3><span>${detail.media.length} saved</span></div></div>${photoMarkup}</section><section class="cook-detail-section"><div class="panel-title"><div><h3>Timeline</h3><span>${detail.events.length} event${detail.events.length === 1 ? "" : "s"}</span></div></div>${cookTimelineMarkup(detail)}</section><section class="cook-detail-section"><div class="panel-title"><div><h3>Record an update</h3><span>Notes are saved exactly as written, with any photos.</span></div></div><form id="cook-update-form" class="auth-form" data-id="${escapeHtml(cook.id)}" enctype="multipart/form-data"><input type="hidden" name="timezone" value="${escapeHtml(cook.timezone)}" /><label class="field"><span>Update note</span><textarea name="message" rows="3" maxlength="20000" placeholder="Wrapped the wings; resting now."></textarea></label><label class="field"><span>Add photos</span><input name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple /></label><button class="button button-primary" type="submit">Record update</button></form></section><section class="cook-detail-section"><div class="panel-title"><div><h3>Result</h3><span>User observations stay separate from suggestions.</span></div></div><form id="cook-outcome-form" class="auth-form" data-id="${escapeHtml(cook.id)}" data-version="${escapeHtml(outcome?.version || "")}"><label class="field"><span>Feedback</span><textarea name="written_feedback" rows="3" maxlength="20000" placeholder="What did it taste and feel like?">${escapeHtml(outcome?.written_feedback || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Overall assessment (1–5)</span><input name="overall_assessment" type="number" min="1" max="5" step="0.1" value="${escapeHtml(outcome?.overall_assessment || "")}" /></label><label class="field"><span>Characteristics JSON</span><input name="characteristics" value="${escapeHtml(JSON.stringify(outcome?.characteristics || {}))}" placeholder='{"smoke_intensity":"medium"}' /></label></div><label class="field"><span>What worked</span><textarea name="worked" rows="2" maxlength="10000">${escapeHtml(outcome?.worked || "")}</textarea></label><label class="field"><span>What disappointed you</span><textarea name="disappointed" rows="2" maxlength="10000">${escapeHtml(outcome?.disappointed || "")}</textarea></label><label class="field"><span>Change next time</span><textarea name="next_time_notes" rows="2" maxlength="10000">${escapeHtml(outcome?.next_time_notes || "")}</textarea></label><label class="checkbox-row"><input name="is_preferred" type="checkbox" ${outcome?.is_preferred ? "checked" : ""} /> Preferred attempt</label><button class="button button-primary" type="submit">Save result</button></form></section><section class="cook-detail-section"><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="cook-recipe-draft" data-id="${escapeHtml(cook.id)}">Save as recipe</button><button class="button button-secondary button-small" type="button" data-action="set-preferred-cook" data-id="${escapeHtml(cook.id)}">Choose preferred attempt</button></div>${updateMarkup}</section></div>`;
 }
 
 function openCookDishEditor(dish, cookId, cookVersion) {
@@ -1931,7 +1743,6 @@ function openDialog(title, body, actions = "") {
     if (!dialog.open) dialog.showModal();
 }
 
-dialog.addEventListener("close", stopRecipeImportProgress);
 new MutationObserver(syncAndroidAdPlacement).observe(dialog, {
     attributes: true,
     attributeFilter: ["open"],
@@ -3033,65 +2844,6 @@ async function handleAction(button) {
         toast("Nutrition targets saved and added to goal history.");
         return renderRoute();
     }
-    if (action === "guided-ai-create") {
-        const form = document.querySelector("#guided-plan-form");
-        if (!form) throw new Error("Plan form is no longer available.");
-        const savedItems = selectedGuidedSavedItems(form);
-        const slots = [...form.querySelectorAll(".guided-plan-row")]
-            .filter(
-                (row) => !row.querySelector('[name="recipe_choice"]')?.value,
-            )
-            .map((row) => ({
-                date: row.dataset.guidedDate,
-                meal_slot: row.querySelector('[name="meal_slot"]')?.value,
-                servings: Number(
-                    row.querySelector('[name="servings"]')?.value || 1,
-                ),
-            }));
-        if (!slots.length) {
-            toast(
-                "Choose at least one empty day for AI recipe proposals.",
-                "error",
-            );
-            return;
-        }
-        const proposal = await api("/api/app/planning/propose", {
-            method: "POST",
-            body: JSON.stringify({
-                start_date: form.dataset.start,
-                end_date: form.dataset.end,
-                timezone: state.bootstrap?.profile?.timezone || "UTC",
-                scope:
-                    form.elements.scope?.value ||
-                    state.guided.scope ||
-                    "personal",
-                ...(form.elements.scope?.value === "household"
-                    ? {
-                          household_id:
-                              state.bootstrap?.household?.householdId ||
-                              state.bootstrap?.household?.id,
-                      }
-                    : {}),
-                meal_slots: slots,
-                request: form.elements.request?.value || "",
-            }),
-            keepPrevious: true,
-        });
-        if (proposal.status !== "proposed") {
-            toast(
-                proposal.message ||
-                    "AI recipe suggestions are unavailable. Continue manually.",
-                "error",
-            );
-            return;
-        }
-        const candidateItems = [...savedItems, ...proposal.items];
-        return createGuidedDraftFromForm(
-            form,
-            savedItems.length ? "mixed" : "generated_only",
-            candidateItems,
-        );
-    }
     if (action === "guided-draft-commit") {
         const draft = state.guided.draft;
         if (
@@ -3650,7 +3402,6 @@ async function handleAction(button) {
         return renderInsights();
     }
     if (action === "create-recipe") return openRecipeCreate();
-    if (action === "import-recipe-url") return openRecipeImport();
     if (action === "compose-recipe") return openRecipeCompose();
     if (action === "add-recipe-ingredient") {
         syncRecipeComposerFromDom();
@@ -4068,10 +3819,7 @@ document.addEventListener("submit", async (event) => {
         try {
             const items = selectedGuidedSavedItems(form);
             if (!items.length) {
-                toast(
-                    "Choose at least one saved recipe, or request AI proposals.",
-                    "error",
-                );
+                toast("Choose at least one saved recipe.", "error");
                 return;
             }
             await createGuidedDraftFromForm(form, "saved_only", items);
@@ -4164,44 +3912,6 @@ document.addEventListener("submit", async (event) => {
             await handleAccountSubmit(form, accountContext());
         } catch (error) {
             toast(error.message || "Save failed", "error");
-        }
-        return;
-    }
-    if (form.id === "recipe-import-url-form") {
-        event.preventDefault();
-        const submit = form.querySelector("button[type='submit']");
-        submit.disabled = true;
-        submit.setAttribute("aria-busy", "true");
-        submit.textContent = "Checking recipe page…";
-        startRecipeImportProgress();
-        const controller = new AbortController();
-        recipeImport.controller = controller;
-        try {
-            const values = Object.fromEntries(new FormData(form));
-            const data = await api("/api/app/recipes/import-preview", {
-                method: "POST",
-                body: JSON.stringify({ url: String(values.url || "").trim() }),
-                keepPrevious: true,
-                signal: controller.signal,
-            });
-            openRecipeImportReview(data.draft);
-        } catch (error) {
-            if (error?.name === "AbortError") return;
-            setRecipeImportProgressError(
-                error.message || "Try another public recipe URL.",
-            );
-            toast(
-                error.message || "The recipe URL could not be imported.",
-                "error",
-            );
-        } finally {
-            if (recipeImport.controller === controller)
-                recipeImport.controller = null;
-            if (submit.isConnected) {
-                submit.disabled = false;
-                submit.removeAttribute("aria-busy");
-                submit.textContent = "Check recipe page";
-            }
         }
         return;
     }
@@ -4711,7 +4421,6 @@ document.addEventListener("submit", async (event) => {
                     ? "Imported recipe saved."
                     : "Recipe created.",
             );
-            recipeImport.draft = null;
         }
         if (form.id === "recipe-compose-form") {
             const result = await api("/api/app/recipes/compose", {

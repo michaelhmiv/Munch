@@ -1,12 +1,10 @@
 import { Hono, type Context } from "hono";
 import { requireSameOrigin } from "../accounts/csrf.js";
 import { requireWebSession } from "../accounts/session.js";
-import { androidAiTaskCreditsUnavailable } from "../billing/android-ai-credits.js";
 import {
     resolveRequestMunchCapabilities,
     type MunchCapabilities,
 } from "../billing/capabilities.js";
-import { generatePantryMealIdeas } from "./meal-ideas.js";
 import { getPantryPlanningContext } from "./meal-planning.js";
 import {
     enrichPantryItemsBestEffort,
@@ -23,7 +21,6 @@ import {
     type PantryOperation,
     type PurchaseLineInput,
 } from "./repository.js";
-import { previewInventoryImage } from "./vision.js";
 
 function privateJson(c: Context, data: unknown, status = 200) {
     return c.json(data, status as 200, {
@@ -410,111 +407,6 @@ export function createInventoryRouter(): Hono {
         }
         return privateJson(c, result);
     });
-
-    app.post("/api/app/pantry/meal-ideas", requireSameOrigin, async (c) => {
-        const unavailable = androidAiTaskCreditsUnavailable(c);
-        if (unavailable) return unavailable;
-        const context = await premiumContext(c);
-        if (!context.premium)
-            return privateJson(c, { error: "premium_required" }, 403);
-        if (!(await getPantryPreference(context.userId)))
-            return privateJson(c, { error: "pantry_not_enabled" }, 409);
-        if (!pantryPlanningEnabled())
-            return privateJson(c, { error: "pantry_planning_disabled" }, 503);
-        const body = objectValue(await c.req.json(), "Pantry meal ideas");
-        const goal = body.goal ?? "balanced";
-        if (
-            goal !== "high_protein" &&
-            goal !== "low_calorie" &&
-            goal !== "high_fiber" &&
-            goal !== "use_what_i_have" &&
-            goal !== "balanced"
-        ) {
-            throw new Error("Invalid Pantry meal goal");
-        }
-        const mealType = body.meal_type ?? "dinner";
-        if (
-            mealType !== "breakfast" &&
-            mealType !== "lunch" &&
-            mealType !== "dinner" &&
-            mealType !== "snack"
-        ) {
-            throw new Error("Invalid meal type");
-        }
-        const assumedStaples = Array.isArray(body.assumed_staples)
-            ? body.assumed_staples
-                  .filter((value): value is string => typeof value === "string")
-                  .map((value) => value.trim())
-                  .filter(Boolean)
-                  .slice(0, 20)
-            : [];
-        const scope = scopeFromValue(body.scope, context.capabilities, false);
-        const generated = await generatePantryMealIdeas({
-            userId: context.userId,
-            scope,
-            goal,
-            mealType,
-            servings: numberValue(body.servings, "Servings"),
-            maxMinutes: numberValue(body.max_minutes, "Maximum minutes"),
-            allowMissingItems:
-                body.allow_missing_items === undefined
-                    ? 1
-                    : numberValue(
-                          body.allow_missing_items,
-                          "Allowed missing items",
-                          true,
-                      ),
-            assumedStaples,
-        });
-        return privateJson(c, {
-            result: generated.result,
-            context_summary: {
-                pantry_items: generated.context.pantry.length,
-                saved_recipe_candidates:
-                    generated.context.saved_recipe_candidates.length,
-                enrichment: generated.context.pantry_enrichment,
-            },
-        });
-    });
-
-    async function imagePreview(c: Context, mode: "receipt" | "pantry_photo") {
-        const unavailable = androidAiTaskCreditsUnavailable(c);
-        if (unavailable) return unavailable;
-        const context = await premiumContext(c);
-        if (!context.premium)
-            return privateJson(c, { error: "premium_required" }, 403);
-        if (!(await getPantryPreference(context.userId)))
-            return privateJson(c, { error: "pantry_not_enabled" }, 409);
-        const form = await c.req.parseBody();
-        const uploaded = form.file;
-        if (
-            !uploaded ||
-            typeof uploaded !== "object" ||
-            typeof (uploaded as File).arrayBuffer !== "function"
-        ) {
-            throw new Error("Image file is required");
-        }
-        const file = uploaded as File;
-        if (file.size > 8 * 1024 * 1024)
-            throw new Error("Image exceeds the 8 MB Pantry limit");
-        const preview = await previewInventoryImage({
-            mode,
-            mimeType: file.type,
-            bytes: new Uint8Array(await file.arrayBuffer()),
-        });
-        return privateJson(c, {
-            file_name: file.name.slice(0, 200),
-            transient_media: true,
-            preview,
-        });
-    }
-
-    app.post("/api/app/purchases/receipt-preview", requireSameOrigin, (c) =>
-        imagePreview(c, "receipt"),
-    );
-    app.post("/api/app/pantry/scan-preview", requireSameOrigin, (c) =>
-        imagePreview(c, "pantry_photo"),
-    );
 
     return app;
 }

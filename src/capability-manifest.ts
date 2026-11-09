@@ -497,14 +497,10 @@ export const CAPABILITY_MANIFEST = [
     {
         id: "recipe.import",
         mcp: complete(["parse_recipe_url"]),
-        web: complete([
-            "POST /api/app/recipes/import-preview",
-            '[data-action="import-recipe-url"]',
-            "/app/recipes",
-        ]),
+        web: missing(),
         intentionalChannelException: null,
-        gap: null,
-        targetPr: null,
+        gap: "Website recipe URL import was removed by the 2026-11-09 MCP-only AI ruling; URL import is available through MCP clients (parse_recipe_url) only.",
+        targetPr: "none — deliberate removal, not planned work",
     },
     {
         id: "recipe.read",
@@ -605,11 +601,10 @@ export const CAPABILITY_MANIFEST = [
     {
         id: "mealPlan.recipeGenerate",
         mcp: complete(["validate_meal_plan_recipe"]),
-        web: complete(["POST /api/app/planning/propose"]),
-        intentionalChannelException:
-            "Website can call its configured model; MCP hosts provide recipe proposals and Munch applies the same schema, nutrition resolution and constraints.",
-        gap: null,
-        targetPr: null,
+        web: missing(),
+        intentionalChannelException: null,
+        gap: "Website AI recipe proposals were removed by the 2026-11-09 MCP-only AI ruling; MCP hosts provide recipe proposals and Munch applies the same schema, nutrition resolution and constraints. The website builds plans from saved recipes only.",
+        targetPr: "none — deliberate removal, not planned work",
     },
     {
         id: "mealPlan.recipeCustomize",
@@ -977,7 +972,10 @@ export function assertCapabilityManifest(): string[] {
     const ids = new Set<string>();
     const mappedTools = new Map<string, string>();
 
-    for (const capability of CAPABILITY_MANIFEST) {
+    // Widened from the manifest's literal types: a capability may now pair a
+    // null channel exception with a documented gap (deliberate removals), a
+    // combination the literal union would narrow to never.
+    for (const capability of CAPABILITY_MANIFEST as readonly CapabilityContract[]) {
         if (ids.has(capability.id)) {
             errors.push(`Duplicate capability id: ${capability.id}`);
         }
