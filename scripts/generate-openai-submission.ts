@@ -49,7 +49,7 @@ function createSubmission(entries: ToolInventoryEntry[]) {
             display_name: "Munch",
             subtitle: "Track meals and nutrition",
             description:
-                "Munch helps users document cooking sessions with durable photos, editable timelines, results, and repeat attempts, alongside looking up foods, reviewing and confirming meals, preserving nutrition history, reusing saved foods, inspecting goals and trends, and managing recipes, meal plans, groceries, optional Premium Pantry inventory, and household nutrition records through ChatGPT.",
+                "Munch helps users look up foods, review and confirm meals, preserve nutrition history, reuse saved foods, inspect goals and trends, and manage recipes, meal plans, groceries, and household nutrition records through ChatGPT.\n\nMunch requires authentication and derives identity from the authorized account. It stores confirmed records in Railway PostgreSQL and uses USDA FoodData Central and Open Food Facts for source-aware food lookup. Munch is a consumer wellness product and does not provide medical advice, diagnosis, treatment, emergency guidance, or clinical dosing.",
             category: "FOOD",
         },
         tools,
