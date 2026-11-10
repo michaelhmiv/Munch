@@ -14,7 +14,6 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
-import java.security.SecureRandom;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
@@ -147,10 +146,19 @@ public class MunchSecureSessionPlugin extends Plugin {
     }
 
     static String encrypt(SecretKey key, String value) throws Exception {
-        byte[] iv = new byte[IV_BYTES];
-        new SecureRandom().nextBytes(iv);
+        // AndroidKeyStore forbids caller-specified IVs for GCM
+        // encryption ("Caller-provided IV not permitted" — the
+        // 2026-11-10 sign-in defect, reproduced by
+        // SecureSessionCryptoTest): the provider generates the IV, and
+        // the writer reads it back via cipher.getIV(). Specifying the
+        // stored IV on DECRYPT stays legal and is unchanged below, so
+        // the envelope format is identical either way.
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_BITS, iv));
+        cipher.init(Cipher.ENCRYPT_MODE, key);
+        byte[] iv = cipher.getIV();
+        if (iv == null || iv.length != IV_BYTES) {
+            throw new IllegalStateException("Unexpected GCM IV from provider");
+        }
         byte[] encrypted = cipher.doFinal(value.getBytes(StandardCharsets.UTF_8));
         return Base64.encodeToString(iv, Base64.NO_WRAP)
             + "."
