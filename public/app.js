@@ -21,6 +21,21 @@ import {
     isAccountRoute,
     renderAccountRoute,
 } from "./app-account.js";
+import {
+    downscaleImageFile,
+    installPhotoCapture,
+    photoCaptureMarkup,
+} from "./photo-capture.js";
+import {
+    ROUTE_FEATURE_MODULES,
+    applyFeatureNav,
+    moduleOffNotice,
+    normalizeFeatureFlags,
+    queueModuleOffNotice,
+    takeModuleOffNotice,
+} from "./feature-nav.js";
+
+installPhotoCapture();
 
 const state = {
     bootstrap: null,
@@ -28,7 +43,18 @@ const state = {
     date: null,
     mealHistoryDays: 1,
     mealHistoryQuery: "",
-    insightsDays: 30,
+    trendsRangeDays: 30,
+    trendsEditing: false,
+    trendsData: null,
+    trendsCheckin: null,
+    trendsDonutModes: new Map(),
+    // Today navigation (brief items 1–2): month summaries cached per
+    // displayed month ("YYYY-MM" → Map<date, counts>) so flipping back
+    // to a seen month never refetches; todayDayData stashes the day's
+    // meals/totals/goals for the macro breakdown sheet (item 5).
+    calendarMonths: new Map(),
+    todayDayData: null,
+    shoppingMode: false,
     cookQuery: "",
     cookFilters: {
         dish: "",
@@ -56,6 +82,14 @@ const mealDraftReview = {
     pendingManual: [],
     searchTimer: null,
     addTextMessage: null,
+    // Photo-flow P4 (one coherent save model): unsaved edits are
+    // tracked explicitly, survive re-renders via a DOM snapshot, and
+    // are committed by the single Save changes action.
+    dirtyItems: new Set(),
+    detailsDirty: false,
+    expandedItems: new Set(),
+    savedMessage: null,
+    suppressSnapshot: false,
 };
 
 const recipeComposer = {
@@ -136,6 +170,7 @@ const routes = {
     "/app/": "today",
     "/app/log": "log",
     "/app/insights": "insights",
+    "/app/trends": "trends",
     "/app/foods": "foods",
     "/app/recipes": "recipes",
     "/app/cooks": "cooks",
@@ -152,8 +187,8 @@ const routes = {
 // keeps the shape of the shared accountTitles map from app-account.js.
 const titles = {
     today: ["Daily workspace", "Today"],
-    log: ["Nutrition history", "Food Log"],
-    insights: ["Patterns and progress", "Insights"],
+    log: ["Nutrition history", "History"],
+    trends: ["Patterns and progress", "Trends"],
     foods: ["Reusable nutrition data", "Foods"],
     recipes: ["Structured cooking memory", "Recipes"],
     cooks: ["Cooking sessions", "Cooks"],
@@ -276,6 +311,27 @@ function toast(message, kind = "success") {
     window.setTimeout(() => element.remove(), 4200);
 }
 
+// A toast carrying one action (recipe experience R3: the grocery
+// confirmation reports added/merged counts with a one-tap jump to
+// the list). Lives longer than a plain toast because it asks for a tap.
+function toastAction(message, actionLabel, onAction) {
+    const element = document.createElement("div");
+    element.className = "toast toast-action";
+    const text = document.createElement("span");
+    text.textContent = message;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "button button-secondary button-small";
+    button.textContent = actionLabel;
+    button.addEventListener("click", () => {
+        element.remove();
+        onAction();
+    });
+    element.append(text, button);
+    toastRegion.append(element);
+    window.setTimeout(() => element.remove(), 9000);
+}
+
 async function api(path, options = {}) {
     if (state.controller) state.controller.abort();
     const controller = new AbortController();
@@ -361,9 +417,14 @@ function setActiveRoute(route) {
     const moreRoutes = new Set([
         "more",
         "household",
-        "insights",
+        "trends",
         "foods",
-        "recipes",
+        // Today navigation (brief items 4+6): Recipes holds a bottom-
+        // nav slot now, so it marks its own link current; Cooks and
+        // History live behind More on mobile, so More is their
+        // current-link stand-in.
+        "cooks",
+        "log",
         "settings",
         "settings-profile",
         "settings-goals",
@@ -416,6 +477,26 @@ function metricDetailRow(label, valueText) {
     return `<div class="metric-detail-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(valueText)}</strong></div>`;
 }
 
+// Photo-flow P5 (client belt-and-braces): photo meals confirmed
+// before the server-side fix can still carry the placeholder
+// description. On every surface a confirmed meal is named from its
+// items instead — the first item, plus how many more.
+const PHOTO_PLACEHOLDER_DESCRIPTION = "Photo estimate — check portions";
+
+function mealDisplayName(meal) {
+    const description = String(meal?.description ?? "").trim();
+    if (description && description !== PHOTO_PLACEHOLDER_DESCRIPTION) {
+        return description;
+    }
+    const items = meal?.items ?? [];
+    const firstName = String(items[0]?.name ?? "").trim();
+    if (firstName) {
+        const extra = items.length - 1;
+        return extra > 0 ? `${firstName} + ${extra} more` : firstName;
+    }
+    return description || "Untitled meal";
+}
+
 // The decomposition behind a meal-based total (F2): every meal's
 // contribution, so the aggregate visibly adds up. Multi-day ranges
 // group by day — a per-meal list for a 90-day total would bury the
@@ -446,7 +527,7 @@ function mealMetricDetail(meals, field, unit, { groupByDay = false } = {}) {
             .map((meal) => {
                 total += meal[field] || 0;
                 return metricDetailRow(
-                    `${formatTime(meal.logged_at)} · ${meal.description || "Untitled meal"}`,
+                    `${formatTime(meal.logged_at)} · ${mealDisplayName(meal)}`,
                     format(meal[field]),
                 );
             })
@@ -537,32 +618,6 @@ function weightEntryRows(entries, fallbackUnit) {
         )}</div>${entries.length > visible.length ? `<p class="tiny">Showing the most recent ${visible.length} of ${entries.length} entries.</p>` : ""}`;
 }
 
-function weightChart(days, unit, target) {
-    if (!days?.length)
-        return `<div class="empty-state"><div><h3>No weight trend yet</h3><p>Log a measurement to see the range trend.</p></div></div>`;
-    const width = 720;
-    const height = 140;
-    const padX = 38;
-    const padY = 18;
-    const values = days.map((day) => Number(day.weight));
-    const allValues = target == null ? values : [...values, Number(target)];
-    const min = Math.min(...allValues);
-    const max = Math.max(...allValues);
-    const span = max - min || 1;
-    const x = (index) =>
-        days.length === 1
-            ? width / 2
-            : padX + (index / (days.length - 1)) * (width - padX * 2);
-    const y = (value) =>
-        height - padY - ((value - min) / span) * (height - padY * 2);
-    const points = days.map((day, index) => `${x(index)},${y(day.weight)}`);
-    const targetLine =
-        target == null
-            ? ""
-            : `<line x1="${padX}" y1="${y(target)}" x2="${width - padX}" y2="${y(target)}" stroke="var(--amber-600)" stroke-dasharray="6 5" /><text x="${width - padX}" y="${Math.max(14, y(target) - 7)}" text-anchor="end" fill="var(--amber-700)" font-size="12">Target ${number(target, 1)} ${escapeHtml(unit)}</text>`;
-    return `<div role="img" aria-label="Weight trend in ${escapeHtml(unit)}"><svg viewBox="0 0 ${width} ${height}" width="100%" height="140" preserveAspectRatio="none" style="overflow:visible"><line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" stroke="var(--ink-200)" />${targetLine}<polyline points="${points.join(" ")}" fill="none" stroke="var(--green-600)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />${days.map((day, index) => `<circle cx="${x(index)}" cy="${y(day.weight)}" r="5" fill="var(--green-700)" /><text x="${x(index)}" y="${height - 5}" text-anchor="middle" fill="var(--ink-500)" font-size="11">${escapeHtml(day.date.slice(5))}</text>`).join("")}</svg></div><p class="tiny">Daily values average multiple weigh-ins; displayed in ${escapeHtml(unit)}.</p>`;
-}
-
 function mealCard(meal) {
     mealDescriptionsById.set(
         String(meal.id),
@@ -570,7 +625,7 @@ function mealCard(meal) {
     );
     mealTypesById.set(String(meal.id), meal.meal_type || "snack");
     const type = meal.meal_type || "snack";
-    return `<article class="meal-card" data-meal-id="${escapeHtml(meal.id)}"><div class="meal-card-head"><div><h4>${escapeHtml(meal.description || "Untitled meal")}</h4><div class="meal-meta"><span>${escapeHtml(formatTime(meal.logged_at))}</span><span>${escapeHtml(type)}</span>${meal.notes ? `<span>${escapeHtml(meal.notes)}</span>` : ""}</div></div><strong>${meal.calories == null ? "—" : `${number(meal.calories)} kcal`}</strong></div><div class="meal-macros"><span class="macro-chip">Protein ${number(meal.protein_g, 1)}g</span><span class="macro-chip">Carbs ${number(meal.carbs_g, 1)}g</span><span class="macro-chip">Fat ${number(meal.fat_g, 1)}g</span>${meal.fiber_g == null ? "" : `<span class="macro-chip">Fiber ${number(meal.fiber_g, 1)}g</span>`}${meal.sugar_g == null ? "" : `<span class="macro-chip">Sugar ${number(meal.sugar_g, 1)}g</span>`}</div>${mealItems(meal.items)}<div class="auth-actions"><button class="button button-secondary button-small" data-action="view-meal-details" data-id="${escapeHtml(meal.id)}">View details</button><button class="button button-secondary button-small" data-action="edit-meal" data-id="${escapeHtml(meal.id)}">Edit</button><button class="button button-quiet button-small" data-action="duplicate-meal" data-id="${escapeHtml(meal.id)}">Duplicate</button><button class="button button-quiet button-small" data-action="delete-meal" data-id="${escapeHtml(meal.id)}">Delete</button></div></article>`;
+    return `<article class="meal-card" data-meal-id="${escapeHtml(meal.id)}"><div class="meal-card-head"><div><h4>${escapeHtml(mealDisplayName(meal))}</h4><div class="meal-meta"><span>${escapeHtml(formatTime(meal.logged_at))}</span><span>${escapeHtml(type)}</span>${meal.notes ? `<span>${escapeHtml(meal.notes)}</span>` : ""}</div></div><strong>${meal.calories == null ? "—" : `${number(meal.calories)} kcal`}</strong></div><div class="meal-macros"><span class="macro-chip">Protein ${number(meal.protein_g, 1)}g</span><span class="macro-chip">Carbs ${number(meal.carbs_g, 1)}g</span><span class="macro-chip">Fat ${number(meal.fat_g, 1)}g</span>${meal.fiber_g == null ? "" : `<span class="macro-chip">Fiber ${number(meal.fiber_g, 1)}g</span>`}${meal.sugar_g == null ? "" : `<span class="macro-chip">Sugar ${number(meal.sugar_g, 1)}g</span>`}</div>${mealItems(meal.items)}<div class="auth-actions"><button class="button button-secondary button-small" data-action="view-meal-details" data-id="${escapeHtml(meal.id)}">View details</button><button class="button button-secondary button-small" data-action="edit-meal" data-id="${escapeHtml(meal.id)}">Edit</button><button class="button button-quiet button-small" data-action="duplicate-meal" data-id="${escapeHtml(meal.id)}">Duplicate</button><button class="button button-quiet button-small" data-action="delete-meal" data-id="${escapeHtml(meal.id)}">Delete</button></div></article>`;
 }
 
 function groupedMeals(meals) {
@@ -601,13 +656,50 @@ function pendingDraftCard(draft) {
     return `<article class="meal-card"><strong>${escapeHtml(draft.description || `${draft.sourceMode} meal`)}</strong><p>${escapeHtml(status)} · ${draft.itemCount} item${draft.itemCount === 1 ? "" : "s"}</p><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="open-meal-draft" data-id="${escapeHtml(draft.id)}">Review draft</button></div></article>`;
 }
 
+// Next up (guidance rework D1–D7): the proactive suggestion section
+// that replaced the restating "Today's guidance" panel. The server
+// composes ONE grounded suggestion (or one honest quiet line); this
+// renders it compactly — title, reason, expected nutrition, landing —
+// with its actions, and the "Ask about today" chat entry stays at
+// the section's foot in every state (D7). The objective enum never
+// renders; the one-time goal prompt (D6) offers the existing
+// preferences flow as three plain choices plus a permanent dismiss.
+function nextUpGoalPrompt() {
+    return `<div class="next-up-goal-prompt"><p>Suggestions can aim at a goal once you set one.</p><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="next-up-goal" data-objective="lose">Lose weight</button><button class="button button-secondary button-small" type="button" data-action="next-up-goal" data-objective="maintain">Maintain</button><button class="button button-secondary button-small" type="button" data-action="next-up-goal" data-objective="gain">Gain weight</button><button class="button button-quiet button-small" type="button" data-action="next-up-goal-dismiss" aria-label="Dismiss goal prompt">Dismiss</button></div></div>`;
+}
+
+function nextUpPanel(nextUp) {
+    const chatRow = chatEntryRow(
+        "today",
+        "Ask about today",
+        "Opens with today's log and goals attached",
+    );
+    if (!nextUp) {
+        return `<section class="panel panel-span-12 next-up-panel" data-testid="next-up"><div class="panel-title"><h3>Next up</h3></div>${chatRow}</section>`;
+    }
+    let body = "";
+    const primary = nextUp.primary;
+    if (nextUp.state === "suggestion" && primary) {
+        const slotLabel = primary.slot[0].toUpperCase() + primary.slot.slice(1);
+        const nutrition = `${number(primary.nutrition.calories)} kcal · P ${number(primary.nutrition.protein_g, 1)}g · C ${number(primary.nutrition.carbs_g, 1)}g · F ${number(primary.nutrition.fat_g, 1)}g`;
+        const servingsNote =
+            primary.kind === "recipe"
+                ? ` · ${number(primary.servings, 2)} serving${primary.servings === 1 ? "" : "s"}`
+                : "";
+        body = `<article class="next-up-card"><div class="next-up-head"><h4 class="next-up-title">${escapeHtml(primary.name)}</h4><p class="next-up-kicker">${escapeHtml(slotLabel)}${primary.kind === "recipe" ? " · from your recipes" : " · you logged it before"}</p></div><p class="next-up-reason">${escapeHtml(primary.reason)}</p><p class="next-up-nutrition">${escapeHtml(nutrition)}${escapeHtml(servingsNote)}</p>${primary.landing_text ? `<p class="next-up-landing">${escapeHtml(primary.landing_text)}</p>` : ""}${primary.missing_ingredients?.length ? `<p class="next-up-needs">Needs: ${escapeHtml(primary.missing_ingredients.join(", "))}</p>` : ""}<div class="next-up-actions"><button class="button button-primary next-up-log-action" type="button" data-action="next-up-log" data-candidate="${escapeHtml(primary.candidate_id)}" data-slot="${escapeHtml(primary.slot)}" data-servings="${escapeHtml(primary.servings)}">Log it</button>${primary.actions.plan ? `<button class="button button-secondary" type="button" data-action="next-up-plan" data-candidate="${escapeHtml(primary.candidate_id)}" data-slot="${escapeHtml(primary.slot)}" data-servings="${escapeHtml(primary.servings)}">Plan it</button>` : ""}${primary.actions.groceries ? `<button class="button button-secondary next-up-groceries-action" type="button" data-action="next-up-groceries" data-candidate="${escapeHtml(primary.candidate_id)}">Add missing to groceries</button>` : ""}</div></article>${(nextUp.secondary || []).length ? `<ul class="next-up-secondary">${nextUp.secondary.map((line) => `<li>${escapeHtml(line.text)}</li>`).join("")}</ul>` : ""}${nextUp.goal_prompt?.show ? nextUpGoalPrompt() : ""}`;
+    } else {
+        body = `${nextUp.quiet_line ? `<p class="next-up-quiet">${escapeHtml(nextUp.quiet_line)}</p>` : ""}${nextUp.goal_prompt?.show ? nextUpGoalPrompt() : ""}`;
+    }
+    return `<section class="panel panel-span-12 next-up-panel" data-testid="next-up"><div class="panel-title"><h3>Next up</h3></div>${body}${chatRow}</section>`;
+}
+
 async function renderToday() {
     setLoading("Loading today’s meals and progress…");
     const data = await api(
         `/api/app/today?date=${encodeURIComponent(state.date)}`,
     );
-    const guidance = await api(
-        `/api/app/guidance/today?date=${encodeURIComponent(state.date)}`,
+    const nextUp = await api(
+        `/api/app/guidance/next-up?date=${encodeURIComponent(state.date)}`,
         { keepPrevious: true },
     );
     state.waterEntries = data.water?.entries || [];
@@ -620,12 +712,205 @@ async function renderToday() {
     const latestWeightValue = latestWeight
         ? weightFromGrams(latestWeight.weight_g, weightUnit)
         : null;
-    const guidancePanel = `<section class="panel panel-span-12"><div class="panel-title"><div><h3>Today’s guidance</h3><span>${guidance.source_status === "sparse_data" ? "Limited recorded data" : "Based on recorded data"}</span></div><span class="source-chip source-saved">${escapeHtml(guidance.objective || "Track only")}</span></div><ul>${(guidance.actions || []).map((action) => `<li>${escapeHtml(action)}</li>`).join("")}</ul><p class="tiny spacer-top">Planned meals are not counted as eaten. Unlogged meals remain unknown.</p>${chatEntryRow("today", "Ask about today", "Opens with today's log and goals attached")}</section>`;
+    const guidancePanel = nextUpPanel(nextUp);
     // S6 slice 1 (Editorial Serif fusion, tightened Today mock): order is
-    // heading → day totals → Today's guidance → the single ad slot →
+    // heading → day totals → Next up → the single ad slot →
     // Meals / Daily details. The ad slot markup is empty unless the
     // ADS-FOUNDATION flag is on for a free packaged account.
-    content.innerHTML = `<div class="operate-view today-view"><div class="page-heading"><div><h2>${escapeHtml(formatDate(state.date, { weekday: true }))}</h2><p>Your structured nutrition record for this day.</p></div><div class="auth-actions"><button class="button button-secondary button-small" data-action="date-prev">Previous</button><button class="button button-secondary button-small" data-action="date-today">Today</button><button class="button button-secondary button-small" data-action="date-next">Next</button></div></div><section class="panel"><div class="summary-grid">${metricCard("Calories", data.totals.calories, " kcal", goals.daily_calories, true, { key: "today-calories", targetLink: true, body: mealMetricDetail(data.meals, "calories", " kcal") })}${metricCard("Protein", data.totals.proteinG, "g", goals.daily_protein_g, false, { key: "today-protein", targetLink: true, body: mealMetricDetail(data.meals, "protein_g", "g") })}${metricCard("Carbohydrates", data.totals.carbsG, "g", goals.daily_carbs_g, false, { key: "today-carbs", targetLink: true, body: mealMetricDetail(data.meals, "carbs_g", "g") })}${metricCard("Fat", data.totals.fatG, "g", goals.daily_fat_g, false, { key: "today-fat", targetLink: true, body: mealMetricDetail(data.meals, "fat_g", "g") })}</div></section>${guidancePanel}${todayAdSlotMarkup()}<div class="dashboard-grid"><section class="panel panel-span-8"><div class="panel-title"><h3>Meals</h3><span>${data.meals.length} logged</span></div>${groupedMeals(data.meals)}</section><aside class="panel panel-span-4"><div class="panel-title"><h3>Daily details</h3></div><div class="summary-grid" style="grid-template-columns:1fr 1fr">${metricCard("Water", data.water.totalMl, " ml", goals.daily_water_ml, false, { key: "today-water", targetLink: true, body: waterMetricDetail(data.water.entries) })}${metricCard("Weight", latestWeightValue, ` ${weightUnit}`, null, false, { key: "today-weight", body: weightMetricDetail(data.weight, weightUnit) })}</div><div class="auth-actions"><button class="button button-secondary button-small" data-action="add-water">Add water</button><button class="button button-secondary button-small" data-action="add-weight">Add weight</button></div><div class="panel-title spacer-top"><h3>Hydration entries</h3><span>${state.waterEntries.length}</span></div>${waterEntryRows(state.waterEntries)}<div class="panel-title spacer-top"><h3>Weight entries</h3><span>${state.weightEntries.length}</span></div>${weightEntryRows(state.weightEntries, weightUnit)}${data.drafts?.length ? `<div class="panel-title spacer-top"><h3>Pending drafts</h3><span>${data.drafts.length}</span></div><div class="meal-groups">${data.drafts.map(pendingDraftCard).join("")}</div>` : ""}${data.plannedMeals?.length ? `<div class="panel-title spacer-top"><h3>Planned today</h3><span>${data.plannedMeals.length}</span></div>${data.plannedMeals.map((meal) => `<div class="food-row"><div><strong>${escapeHtml(meal.recipe_name)}</strong><small>${escapeHtml(meal.meal_slot || "Meal")} · ${number(meal.servings, 1)} servings</small></div><span>${meal.nutrition_per_serving?.calories ? `${number(meal.nutrition_per_serving.calories * meal.servings)} kcal` : ""}</span><button class="button button-quiet button-small" type="button" data-action="view-recipe" data-id="${escapeHtml(meal.recipe_id)}">View recipe</button></div>`).join("")}` : ""}</aside></div></div>`;
+    content.innerHTML = `<div class="operate-view today-view"><div class="page-heading"><div class="today-heading-row"><h2>${escapeHtml(formatDate(state.date, { weekday: true }))}</h2><div class="today-heading-icons"><button class="button button-secondary button-small trends-icon-btn" type="button" data-action="open-calendar" aria-label="Open calendar" title="Calendar"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg></button><button class="button button-secondary button-small trends-icon-btn" type="button" data-action="open-trends" aria-label="Open Trends" title="Trends"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><rect x="4" y="12" width="3.4" height="7" rx="1"/><rect x="10.3" y="7" width="3.4" height="12" rx="1"/><rect x="16.6" y="9.5" width="3.4" height="9.5" rx="1"/></svg></button></div></div><div class="auth-actions"></div></div><section class="panel">${todayMacrosPanel(data, goals)}</section>${guidancePanel}${todayAdSlotMarkup()}<div class="dashboard-grid"><section class="panel panel-span-8"><div class="panel-title"><h3>Meals</h3><span>${data.meals.length} logged</span></div>${groupedMeals(data.meals)}</section><aside class="panel panel-span-4"><div class="panel-title"><h3>Daily details</h3></div><div class="summary-grid" style="grid-template-columns:1fr 1fr">${metricCard("Water", data.water.totalMl, " ml", goals.daily_water_ml, false, { key: "today-water", targetLink: true, body: waterMetricDetail(data.water.entries) })}${metricCard("Weight", latestWeightValue, ` ${weightUnit}`, null, false, { key: "today-weight", body: weightMetricDetail(data.weight, weightUnit) })}</div><div class="auth-actions"><button class="button button-secondary button-small" data-action="add-water">Add water</button><button class="button button-secondary button-small" data-action="add-weight">Add weight</button></div><div class="panel-title spacer-top"><h3>Hydration entries</h3><span>${state.waterEntries.length}</span></div>${waterEntryRows(state.waterEntries)}<div class="panel-title spacer-top"><h3>Weight entries</h3><span>${state.weightEntries.length}</span></div>${weightEntryRows(state.weightEntries, weightUnit)}${data.drafts?.length ? `<div class="panel-title spacer-top"><h3>Pending drafts</h3><span>${data.drafts.length}</span></div><div class="meal-groups">${data.drafts.map(pendingDraftCard).join("")}</div>` : ""}${data.plannedMeals?.length ? `<div class="panel-title spacer-top"><h3>Planned today</h3><span>${data.plannedMeals.length}</span></div>${data.plannedMeals.map((meal) => `<div class="food-row"><div><strong>${escapeHtml(meal.recipe_name)}</strong><small>${escapeHtml(meal.meal_slot || "Meal")} · ${number(meal.servings, 1)} servings</small></div><span>${meal.nutrition_per_serving?.calories ? `${number(meal.nutrition_per_serving.calories * meal.servings)} kcal` : ""}</span><button class="button button-quiet button-small" type="button" data-action="view-recipe" data-id="${escapeHtml(meal.recipe_id)}">View recipe</button></div>`).join("")}` : ""}</aside></div></div>`;
+}
+
+// =====================================================================
+// Today navigation — calendar + macro breakdown (brief items 1–6).
+// The calendar icon in Today's header is the only day navigation on
+// Today: it opens a house-themed month calendar whose dots come from
+// ONE month-summary request per displayed month. The macros are the
+// winning 2×2 tile grid; a tile opens the breakdown sheet (by meal,
+// then by ingredient) instead of expanding inline, so the page never
+// reflows. Design reference: today-macros-2x2-popup.html.
+// =====================================================================
+
+function calendarMonthOf(date) {
+    return String(date).slice(0, 7);
+}
+
+function shiftMonth(month, delta) {
+    const [year, mon] = month.split("-").map(Number);
+    const value = new Date(Date.UTC(year, mon - 1 + delta, 1));
+    return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function calendarGridDates(month) {
+    // Sunday-start, six rows; adjacent-month days ride along muted.
+    const first = `${month}-01`;
+    const startDow = new Date(`${first}T12:00:00Z`).getUTCDay();
+    const start = shiftDate(first, -startDow);
+    return Array.from({ length: 42 }, (_, index) => shiftDate(start, index));
+}
+
+const calendarView = { month: null, token: 0 };
+
+async function openCalendar(month) {
+    calendarView.month = month || calendarMonthOf(state.date);
+    const token = ++calendarView.token;
+    paintCalendar();
+    if (state.calendarMonths.has(calendarView.month)) return;
+    try {
+        const summary = await api(
+            `/api/app/calendar/month?month=${encodeURIComponent(calendarView.month)}`,
+            { keepPrevious: true },
+        );
+        state.calendarMonths.set(
+            calendarView.month,
+            new Map((summary.days || []).map((day) => [day.date, day])),
+        );
+    } catch {
+        // The calendar still navigates without dots; absence of a dot
+        // must never block picking a day.
+        state.calendarMonths.set(calendarView.month, new Map());
+    }
+    if (
+        calendarView.token === token &&
+        dialog.open &&
+        dialog.querySelector(".cal-grid")
+    ) {
+        paintCalendar();
+    }
+}
+
+function paintCalendar() {
+    const month = calendarView.month;
+    const title = new Intl.DateTimeFormat("en-US", {
+        month: "long",
+        year: "numeric",
+        timeZone: "UTC",
+    }).format(new Date(`${month}-15T12:00:00Z`));
+    const summary = state.calendarMonths.get(month);
+    const todayDate = dateInTimezone(
+        state.bootstrap?.profile?.timezone || "UTC",
+    );
+    const cells = calendarGridDates(month)
+        .map((date) => {
+            const classes = ["cal-day"];
+            if (calendarMonthOf(date) !== month) classes.push("is-outside");
+            if (date === todayDate) classes.push("is-today");
+            if (date === state.date) classes.push("is-selected");
+            const dotted = summary?.has(date);
+            return `<button type="button" class="${classes.join(" ")}" data-action="calendar-day" data-date="${date}" aria-label="${escapeHtml(formatDate(date, { weekday: true, year: true }))}"${date === todayDate ? ' aria-current="date"' : ""}><span class="cal-day-num">${Number(date.slice(8, 10))}</span><span class="${dotted ? "cal-dot" : "cal-dot-space"}" aria-hidden="true"></span></button>`;
+        })
+        .join("");
+    openDialog(
+        "Calendar",
+        `<div class="cal-nav"><button type="button" class="cal-chevron" data-action="calendar-prev-month" aria-label="Previous month">‹</button><span class="cal-nav-label">${escapeHtml(title)}</span><button type="button" class="cal-chevron" data-action="calendar-next-month" aria-label="Next month">›</button></div><div class="cal-week" aria-hidden="true">${["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((day) => `<span>${day}</span>`).join("")}</div><div class="cal-grid">${cells}</div><button type="button" class="cal-history-row" data-action="calendar-history"><span>Search history</span><span aria-hidden="true">›</span></button>`,
+    );
+}
+
+const MACRO_BREAKDOWN = {
+    calories: {
+        label: "Calories",
+        mealField: "calories",
+        itemField: "calories",
+        totalsField: "calories",
+        unit: " kcal",
+        digits: 0,
+        goal: (goals) => goals.daily_calories,
+    },
+    protein: {
+        label: "Protein",
+        mealField: "protein_g",
+        itemField: "proteinG",
+        totalsField: "proteinG",
+        unit: " g",
+        digits: 1,
+        goal: (goals) => goals.daily_protein_g,
+    },
+    carbs: {
+        label: "Carbohydrates",
+        mealField: "carbs_g",
+        itemField: "carbsG",
+        totalsField: "carbsG",
+        unit: " g",
+        digits: 1,
+        goal: (goals) => goals.daily_carbs_g,
+    },
+    fat: {
+        label: "Fat",
+        mealField: "fat_g",
+        itemField: "fatG",
+        totalsField: "fatG",
+        unit: " g",
+        digits: 1,
+        goal: (goals) => goals.daily_fat_g,
+    },
+};
+
+const MICRO_BREAKDOWN = [
+    ["Fiber", "fiberG", " g", 1],
+    ["Sugar", "sugarG", " g", 1],
+    ["Sodium", "sodiumMg", " mg", 0],
+    ["Sat. fat", "saturatedFatG", " g", 1],
+    ["Potassium", "potassiumMg", " mg", 0],
+    ["Cholesterol", "cholesterolMg", " mg", 0],
+];
+
+function todayMacrosPanel(data, goals) {
+    // Stash the day for the breakdown sheet: the sheet reads the same
+    // meals the tiles summarize, so its numbers always add up.
+    state.todayDayData = {
+        meals: data.meals || [],
+        totals: data.totals || {},
+        goals: goals || {},
+    };
+    const tile = (key, label, value, target) => {
+        const progress = percent(value, target);
+        return `<button type="button" class="macro-tile" data-action="open-macro-breakdown" data-macro="${key}"><span class="macro-tile-label">${label}<span class="macro-tile-chev" aria-hidden="true">›</span></span><span class="macro-tile-value">${number(value, 0)}<small>${key === "calories" ? " kcal" : " g"}</small></span><span class="macro-tile-target">${target ? `of ${number(target, 0)}${key === "calories" ? " kcal" : " g"} target` : "No target set"}</span>${progress == null ? "" : `<span class="macro-tile-bar" aria-hidden="true"><i style="width:${progress}%"></i></span>`}</button>`;
+    };
+    const microTotal = (field) =>
+        (data.meals || []).reduce(
+            (sum, meal) =>
+                sum +
+                (meal.items || []).reduce(
+                    (itemSum, item) => itemSum + (item[field] || 0),
+                    0,
+                ),
+            0,
+        );
+    const microRows = MICRO_BREAKDOWN.map(
+        ([label, field, unit, digits]) =>
+            `<div class="macro-micro-row"><span>${label}</span><span>${number(microTotal(field), digits)}${unit}</span></div>`,
+    );
+    const microColumns = `<div><div class="macro-micro-col">${microRows.slice(0, 3).join("")}</div></div><div><div class="macro-micro-col">${microRows.slice(3).join("")}</div></div>`;
+    return `<div class="macro-grid">${tile("calories", "Calories", data.totals.calories, goals.daily_calories)}${tile("protein", "Protein", data.totals.proteinG, goals.daily_protein_g)}${tile("carbs", "Carbohydrates", data.totals.carbsG, goals.daily_carbs_g)}${tile("fat", "Fat", data.totals.fatG, goals.daily_fat_g)}</div><button type="button" class="macro-expand" data-action="toggle-micros" aria-expanded="false" aria-controls="today-micros"><span>Micronutrients</span><span class="macro-expand-chev" aria-hidden="true">▾</span></button><div class="macro-micros" id="today-micros" hidden><div class="macro-micros-cols">${microColumns}</div></div>`;
+}
+
+function openMacroBreakdown(key) {
+    const config = MACRO_BREAKDOWN[key];
+    const day = state.todayDayData;
+    if (!config || !day) return;
+    const format = (value) =>
+        `${number(value || 0, config.digits)}${config.unit}`;
+    const dayTotal = day.totals[config.totalsField] || 0;
+    const target = config.goal(day.goals);
+    const groups = (day.meals || [])
+        .map((meal) => {
+            const items = meal.items || [];
+            const rows = items
+                .map(
+                    (item) =>
+                        `<div class="macro-sheet-item"><span class="macro-sheet-item-name">${escapeHtml(item.name)}<span class="macro-sheet-item-portion">${escapeHtml(item.portionLabel || (item.quantity ? `${number(item.quantity, 2)} serving` : "Portion not recorded"))}</span></span><span class="macro-sheet-item-value">${format(item[config.itemField])}</span></div>`,
+                )
+                .join("");
+            const mealType = meal.meal_type
+                ? `${meal.meal_type[0].toUpperCase()}${meal.meal_type.slice(1)} · `
+                : "";
+            return `<div class="macro-sheet-group"><div class="macro-sheet-group-head"><div><strong>${escapeHtml(mealDisplayName(meal))}</strong><small>${escapeHtml(mealType)}${escapeHtml(formatTime(meal.logged_at))}</small></div><b>${format(meal[config.mealField])}</b></div>${rows || `<p class="tiny">Item-level details were not recorded for this meal.</p>`}</div>`;
+        })
+        .join("");
+    openDialog(
+        config.label,
+        `<p class="macro-sheet-total"><b>${format(dayTotal)}</b>${target ? ` of ${format(target)} target` : ""} today</p>${groups || `<p class="tiny">No meals logged for this day.</p>`}`,
+        `<div class="macro-sheet-foot"><span>Day total</span><b>${format(dayTotal)}</b></div>`,
+    );
 }
 
 function mealSearchSummary(search) {
@@ -741,124 +1026,687 @@ async function openSavedFoodCandidate(key) {
     );
 }
 
-function barChart(days, key, label, unit = "") {
-    const values = days.map((day) => Number((day.totals || day)[key] || 0));
-    const max = Math.max(1, ...values);
-    return `<div class="insights-spark" role="img" aria-label="${escapeHtml(label)} by logged day">${days
-        .map((day, index) => {
-            const height = values[index]
-                ? Math.max(4, Math.round((values[index] / max) * 56))
-                : 0;
-            const faded = day.hasLog === false ? " is-empty" : "";
-            return `<i class="insights-spark-bar${faded}" style="height:${height}px" title="${escapeHtml(day.date)}: ${number(values[index])}"></i>`;
-        })
-        .join(
-            "",
-        )}</div><p class="tiny">${escapeHtml(label)} is shown for the selected calendar range${unit ? ` in ${escapeHtml(unit)}` : ""}; days without logs are shown as empty columns.</p>`;
-}
+// TRENDS-START
+// Trends dashboard (brief T1-T14). The server computes every card
+// payload (src/trends.ts); this block renders payloads as inline SVG
+// with collision-aware on-chart labels (T13/T14) and wires the global
+// range, edit mode, the two-step catalog, and drill-down sheets (T11).
 
-function insightRule(label, valueHtml) {
-    return `<div class="insight-rule"><span>${escapeHtml(label)}</span><b>${valueHtml}</b></div>`;
-}
+const TRENDS_RANGE_LABELS = { 7: "Week", 30: "Month", 90: "3 Mo" };
 
-function insightProgressRule(label, value, unit, target) {
-    const progress = percent(value, target);
-    return `<div class="insight-rule insight-rule-progress"><span>${escapeHtml(label)}</span><b>${number(value, 1)}<small> ${escapeHtml(unit)}</small></b><small class="insight-target">${target ? `${number(target, 1)} ${escapeHtml(unit)} target` : "No target set"}</small>${progress == null ? "" : `<div class="progress" aria-label="${progress}% of target"><span style="width:${progress}%"></span></div>`}</div>`;
-}
-
-async function renderInsights() {
-    setLoading("Calculating trends and patterns…");
-    const end = state.date;
-    const days = [7, 30, 90].includes(state.insightsDays)
-        ? state.insightsDays
+function trendsRange() {
+    return [7, 30, 90].includes(state.trendsRangeDays)
+        ? state.trendsRangeDays
         : 30;
-    const start = shiftDate(end, -(days - 1));
-    const data = await api(`/api/app/insights?start=${start}&end=${end}`);
-    // The weekly check-in is a seven-day panel, so window its request to the
-    // most recent seven days of the selected range. The check-in endpoint
-    // only accepts one to seven days; passing the full 30/90-day trend range
-    // made this request fail and took the whole Insights view down with it.
-    const checkinStart = shiftDate(end, -6);
-    const checkin = await api(
-        `/api/app/insights/checkin?start=${checkinStart}&end=${end}`,
-        { keepPrevious: true },
-    );
-    const vitals = data.vitals || {};
-    const waterHistory = vitals.water || {};
-    const weightTrend = vitals.weight || {};
-    state.waterEntries = waterHistory.entries || [];
-    state.weightEntries = weightTrend.entries || [];
-    const rangeButtons = [7, 30, 90]
-        .map(
-            (range) =>
-                `<button class="button ${range === days ? "button-primary" : "button-secondary"} button-small" data-action="insight-range" data-days="${range}" aria-pressed="${range === days}">${range} days</button>`,
-        )
-        .join("");
-    const trendDays = data.trends?.days || data.days || [];
-    const progress = data.progress || {};
-    const progressGoals = progress.goals || {};
-    const provenance = data.provenance || {};
-    const coverage = provenance.coverage || {};
-    const confidence = provenance.confidence || {};
-    const sourceRows = (provenance.sources || [])
-        .map(
-            (source) =>
-                `<tr><td>${escapeHtml(source.source)}</td><td>${number(source.itemCount)}</td><td>${number(source.percentOfItems, 1)}%</td><td>${number(source.calories, 1)} kcal</td></tr>`,
-        )
-        .join("");
-    const calorieContributors = (provenance.contributors?.calories || [])
-        .slice(0, 5)
-        .map(
-            (item) =>
-                `<li><strong>${escapeHtml(item.name)}</strong> · ${number(item.value, 1)} kcal <span class="tiny">${escapeHtml(item.source)}</span></li>`,
-        )
-        .join("");
-    // S6 slice 7 (Insights fusion): the surface renders in the
-    // tightened mock's grammar (selected/src/insights/theme4-tight.html)
-    // inside slice 1's .operate-view scope — hairline panels, metric
-    // facts as rule rows, the daily-calories spark at mock height, and
-    // the trend / pattern narratives as open prose (they are the
-    // server's deterministic summaries, unchanged — no new narrative
-    // is generated anywhere on this surface). Every panel the surface
-    // had keeps its data and actions; the mock's merged panels merge
-    // the same facts (Daily calories + Average intake in one panel,
-    // Weight trend + Hydration in one, Data coverage + Largest
-    // contributors in one). NO ADS on this surface — the Insights
-    // banner placement is retired; the app's only ad slot is on Today.
-    const weightDisplayUnit =
-        weightTrend.unit ||
-        displayWeightUnit(state.bootstrap?.profile?.preferred_weight_unit);
-    const weightDays = weightTrend.days || [];
-    const latestWeightDay = weightDays.at(-1);
-    const earliestWeightDay = weightDays[0];
-    const weightChange =
-        latestWeightDay && earliestWeightDay
-            ? Number(latestWeightDay.weight) - Number(earliestWeightDay.weight)
-            : null;
-    const weeklyPanel = `<section class="panel insights-panel"><div class="panel-title"><div><h3>Weekly check-in</h3><span>Coverage first; gaps are unknown, not zero · ${number(checkin.coverage_percent)}% coverage</span></div></div>${insightRule("Days with recorded nutrition", `${number(checkin.nutrition_target_coverage_days)} of ${number(checkin.calendar_days)}`)}${insightRule("Recorded-day calories (average)", `${number(checkin.averages_on_recorded_days.calories?.value, 1)} kcal`)}${insightRule("Recorded-day protein (average)", `${number(checkin.averages_on_recorded_days.protein_g?.average, 1)} g`)}${insightRule("Meals with uncertain nutrition", `${number(checkin.uncertain_nutrition_meals)} meals`)}${checkin.observations.length ? `<ul class="insights-observations">${checkin.observations.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}<p class="tiny spacer-top">Targets reflect the goal revision effective during the selected week.</p>${chatEntryRow("insights", "Explain my week", "Opens with this check-in attached")}</section>`;
-    const dailyPanel = `<section class="panel insights-panel"><div class="panel-title"><div><h3>Daily calories</h3><span>${trendDays.length} calendar days</span></div><span class="source-chip source-usda">Trend</span></div>${trendDays.length ? barChart(trendDays, "calories", "Daily calories", "kilocalories") : `<div class="empty-state"><div><h3>No logged days</h3><p>Log meals to build a trend.</p></div></div>`}<h4 class="insights-subhead">Average intake — across logged days</h4>${insightRule("Calories", `${number(data.averages.calories, 1)} kcal`)}${insightRule("Protein", `${number(data.averages.proteinG, 1)} g`)}${insightRule("Carbohydrates", `${number(data.averages.carbsG, 1)} g`)}${insightRule("Fat", `${number(data.averages.fatG, 1)} g`)}</section>`;
-    const weightPanel = `<section class="panel insights-panel"><div class="panel-title"><div><h3>Weight trend</h3><span>${number(weightDays.length)} recorded days</span></div><span class="source-chip source-saved">Weight</span></div>${weightDays.length ? `${insightRule(`Latest — ${formatDate(latestWeightDay.date)}`, `${number(latestWeightDay.weight, 1)} ${escapeHtml(weightDisplayUnit)}`)}${insightRule(`Range start — ${formatDate(earliestWeightDay.date)}`, `${number(earliestWeightDay.weight, 1)} ${escapeHtml(weightDisplayUnit)}`)}${insightRule("Change in range", `${weightChange > 0 ? "+" : ""}${number(weightChange, 1)} ${escapeHtml(weightDisplayUnit)}`)}${weightTrend.target == null ? "" : insightRule("Your target", `${number(weightTrend.target, 1)} ${escapeHtml(weightDisplayUnit)}`)}<p class="tiny spacer-top">Daily values average multiple weigh-ins; displayed in ${escapeHtml(weightDisplayUnit)}. Recorded measurements only — no projections.</p>` : `<p class="tiny">No weight data in range.</p>`}<div class="auth-actions spacer-top"><button class="button button-secondary button-small" type="button" data-action="add-weight">Add weight</button></div><h4 class="insights-subhead">Hydration</h4>${insightRule("Total water in range", `${number(waterHistory.totalMl)} ml`)}${insightRule("Entries", `${number(waterHistory.entries?.length || 0)}`)}<div class="auth-actions spacer-top"><button class="button button-secondary button-small" type="button" data-action="add-water">Add water</button></div></section>`;
-    const progressPanel = `<section class="panel insights-panel"><div class="panel-title"><div><h3>Selected-day progress</h3><span>${escapeHtml(formatDate(progress.date || end))}</span></div></div>${insightProgressRule("Calories", progress.totals?.calories, "kcal", progressGoals.daily_calories)}${insightProgressRule("Protein", progress.totals?.proteinG, "g", progressGoals.daily_protein_g)}${insightProgressRule("Carbohydrates", progress.totals?.carbsG, "g", progressGoals.daily_carbs_g)}${insightProgressRule("Fat", progress.totals?.fatG, "g", progressGoals.daily_fat_g)}${insightProgressRule("Water", progress.totals?.waterMl, "ml", progressGoals.daily_water_ml)}${insightRule("Meals", `${number(progress.mealCount)}`)}<p class="tiny spacer-top">Progress is calculated for the selected range end date. Use Today to review a different day.</p></section>`;
-    const coveragePanel = `<section class="panel insights-panel"><div class="panel-title"><div><h3>Data coverage — where your nutrition came from</h3></div></div>${sourceRows ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Source</th><th>Items</th><th>Share</th><th>Calories</th></tr></thead><tbody>${sourceRows}</tbody></table></div>` : `<p class="tiny">No item-level provenance is recorded in this range.</p>`}${insightRule("Itemized calories", `${number(coverage.itemizedCaloriePercent, 1)}%`)}${insightRule("Food items", `${number(coverage.itemCount)}`)}${insightRule("Structured meals", `${number(coverage.structuredMealCount)}`)}${insightRule("Legacy meals", `${number(coverage.legacyMealCount)}`)}${insightRule("Recorded confidence", `${number(confidence.recordedItemCount)} items`)}${insightRule("Average recorded confidence", `${confidence.average == null ? "—" : `${number(confidence.average * 100, 1)}%`}`)}<h4 class="insights-subhead">Largest calorie contributors</h4>${
-        calorieContributors
-            ? `<div class="insights-contributors">${(
-                  provenance.contributors?.calories || []
-              )
-                  .slice(0, 5)
-                  .map(
-                      (item, index) =>
-                          `<div class="insight-rule"><span>${index + 1}. ${escapeHtml(item.name)} <span class="source-chip">${escapeHtml(item.source)}</span></span><b>${number(item.value, 1)} kcal</b></div>`,
-                  )
-                  .join("")}</div>`
-            : `<p class="tiny">No itemized foods are available.</p>`
-    }</section>`;
-    const waterHistoryPanel = `<section id="water-history" class="panel insights-panel"><div class="panel-title"><div><h3>Hydration history</h3><span>${number(waterHistory.entries?.length || 0)} entries in range</span></div><span class="source-chip source-saved">Water</span></div>${insightRule("Total water", `${number(waterHistory.totalMl)} ml`)}${insightRule("Entries", `${number(waterHistory.entries?.length || 0)}`)}<div class="spacer-top">${waterEntryRows(state.waterEntries)}</div></section>`;
-    const weightHistoryPanel = `<section id="weight-history" class="panel insights-panel"><div class="panel-title"><div><h3>Weight history</h3><span>${number(weightTrend.entries?.length || 0)} entries in range</span></div><span class="source-chip source-saved">Weight</span></div>${weightChart(weightDays, weightDisplayUnit, weightTrend.target)}<details class="spacer-top"><summary class="tiny">Trend explanation</summary><p class="tiny spacer-top">${escapeHtml(weightTrend.narrative || "No weight data in range.")}</p></details><div class="spacer-top">${weightEntryRows(state.weightEntries, weightDisplayUnit)}</div></section>`;
-    const weightContextPanel = `<section class="panel insights-panel"><div class="panel-title"><div><h3>Weight context</h3><span>Latest standing measurement</span></div></div>${progress.weight ? `${insightRule("Latest weight", `${number(progress.weight.current, 1)} ${escapeHtml(progress.weight.unit)}`)}${insightRule("Target", `${number(progress.weight.target, 1)} ${escapeHtml(progress.weight.unit)}`)}${insightRule("Meals on selected day", `${number(progress.mealCount)}`)}<p class="tiny spacer-top">Last logged ${escapeHtml(progress.weight.loggedOn || "date unavailable")}.</p>` : `<p class="tiny">No weight target or measurement is available yet.</p>`}</section>`;
-    const narrativePanel = (title, text) =>
-        `<section class="panel insights-panel insights-narrative"><div class="panel-title"><div><h3>${escapeHtml(title)}</h3></div></div><p>${escapeHtml(text || "No data in range.")}</p></section>`;
-    content.innerHTML = `<div class="operate-view insights-view"><div class="page-heading"><div><h2>Last ${days} days</h2><p>${data.loggedDays} logged days and ${data.mealCount} meals from ${escapeHtml(formatDate(start))} through ${escapeHtml(formatDate(end))}.</p></div></div><div class="auth-actions insights-range-row" role="group" aria-label="Insights range">${rangeButtons}</div>${weeklyPanel}<div class="insights-grid">${dailyPanel}${weightPanel}</div>${progressPanel}${coveragePanel}<div class="insights-grid">${waterHistoryPanel}${weightHistoryPanel}</div>${weightContextPanel}${narrativePanel("Trend analysis", data.trends?.narrative)}${narrativePanel("Meal patterns", data.patterns?.narrative)}</div>`;
 }
+
+function trendsCardKey(card) {
+    return `${card.shape}:${card.data}`;
+}
+
+function trendsRound2(value) {
+    return Math.round(value * 100) / 100;
+}
+
+function trendsBoxesOverlap(a, b) {
+    return (
+        a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+    );
+}
+
+// Collision-aware label placement (T14): try each candidate anchor in
+// order; the first whose box clears every obstacle (bar tops, line
+// points, other labels) and stays inside the plot wins. Falls back to
+// above the plot, clamped inside.
+function trendsPlaceLabel(text, candidates, obstacles, width, height) {
+    const w = Math.ceil(text.length * 5.9) + 6;
+    const h = 13;
+    for (const candidate of candidates) {
+        const box = {
+            x: candidate.anchor === "end" ? candidate.x - w : candidate.x,
+            y: candidate.y - 10,
+            w,
+            h,
+        };
+        if (box.x < 0 || box.x + w > width || box.y < 0 || box.y + h > height)
+            continue;
+        if (obstacles.some((o) => trendsBoxesOverlap(box, o))) continue;
+        return {
+            x: candidate.x,
+            y: candidate.y,
+            anchor: candidate.anchor,
+            box,
+        };
+    }
+    return {
+        x: width - 2,
+        y: 11,
+        anchor: "end",
+        box: { x: Math.max(0, width - 2 - w), y: 1, w, h },
+    };
+}
+
+function trendsReferenceLabel(reference, yTop, obstacles, width, height) {
+    const candidates = [
+        { x: width - 2, y: yTop - 4, anchor: "end" },
+        { x: 2, y: yTop - 4, anchor: "start" },
+        { x: width - 2, y: yTop + 14, anchor: "end" },
+        { x: 2, y: yTop + 14, anchor: "start" },
+        { x: width - 2, y: 11, anchor: "end" },
+        { x: 2, y: 11, anchor: "start" },
+    ];
+    const placed = trendsPlaceLabel(
+        reference.label,
+        candidates,
+        obstacles,
+        width,
+        height,
+    );
+    obstacles.push(placed.box);
+    return `<text data-chart-label x="${placed.x}" y="${placed.y}" text-anchor="${placed.anchor}" class="trends-ref-label">${escapeHtml(reference.label)}</text>`;
+}
+
+function trendsDayLabel(date, rangeDays) {
+    if (rangeDays <= 7)
+        return "SMTWTFS"[new Date(`${date}T12:00:00Z`).getUTCDay()];
+    return String(Number(date.slice(8, 10)));
+}
+
+function trendsHourLabel(hour) {
+    const h24 = Math.floor(hour);
+    const minutes = Math.round((hour - h24) * 60);
+    const suffix = h24 >= 12 ? "p" : "a";
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    return `${h12}:${String(minutes).padStart(2, "0")}${suffix}`;
+}
+
+function trendsBarChart(card) {
+    const chart = card.chart;
+    const W = 326;
+    const H = card.size === "compact" ? 96 : 118;
+    const top = 18;
+    const plotH = H - top - 4;
+    const baseY = top + plotH;
+    const days = chart.days;
+    const refHigh = chart.reference
+        ? chart.reference.type === "band"
+            ? chart.reference.value2
+            : chart.reference.value
+        : 0;
+    const dataMax = Math.max(0, ...days.map((d) => d.value ?? 0));
+    const domain = Math.max(dataMax, refHigh) * 1.15 || 1;
+    const slot = W / days.length;
+    const barW = Math.max(2, Math.min(30, slot * 0.6));
+    const yFor = (v) => baseY - (v / domain) * plotH;
+    const obstacles = [];
+    const bars = [];
+    const hits = [];
+    days.forEach((day, i) => {
+        const cx = (slot * i + slot / 2).toFixed(2);
+        if (day.value != null && day.value > 0) {
+            const h = Math.max(3, (day.value / domain) * plotH);
+            const rect = {
+                x: Number(cx) - barW / 2,
+                y: baseY - h,
+                w: barW,
+                h,
+            };
+            obstacles.push(rect);
+            bars.push(
+                `<rect data-bar-date="${day.date}" x="${trendsRound2(rect.x)}" y="${trendsRound2(rect.y)}" width="${trendsRound2(barW)}" height="${trendsRound2(h)}" rx="2.5" class="trends-bar" />`,
+            );
+        } else if (day.value != null) {
+            bars.push(
+                `<rect x="${trendsRound2(Number(cx) - barW / 2)}" y="${baseY - 1.5}" width="${trendsRound2(barW)}" height="1.5" class="trends-tick" />`,
+            );
+        }
+        hits.push(
+            `<rect class="trends-hit" data-action="trends-drill-day" data-date="${day.date}" data-metric="${escapeHtml(chart.metric)}" x="${trendsRound2(slot * i)}" y="${top}" width="${trendsRound2(slot)}" height="${plotH}" fill="transparent"><title>${escapeHtml(day.date)}</title></rect>`,
+        );
+    });
+    let rollingSvg = "";
+    if (chart.rolling) {
+        const points = [];
+        chart.rolling.forEach((point, i) => {
+            if (point.value != null)
+                points.push({
+                    x: slot * i + slot / 2,
+                    y: yFor(point.value),
+                });
+        });
+        points.forEach((p) =>
+            obstacles.push({ x: p.x - 3, y: p.y - 3, w: 6, h: 6 }),
+        );
+        if (points.length > 1)
+            rollingSvg = `<polyline points="${points.map((p) => `${trendsRound2(p.x)},${trendsRound2(p.y)}`).join(" ")}" class="trends-rolling" />`;
+    }
+    let referenceBg = "";
+    let referenceLabel = "";
+    if (chart.reference) {
+        if (chart.reference.type === "band") {
+            const y1 = yFor(chart.reference.value2);
+            const y2 = yFor(chart.reference.value);
+            referenceBg = `<rect x="0" y="${trendsRound2(y1)}" width="${W}" height="${trendsRound2(Math.max(2, y2 - y1))}" class="trends-band" />`;
+            referenceLabel = trendsReferenceLabel(
+                chart.reference,
+                y1,
+                obstacles,
+                W,
+                H,
+            );
+        } else {
+            const y = yFor(chart.reference.value);
+            referenceBg = `<line x1="0" y1="${trendsRound2(y)}" x2="${W}" y2="${trendsRound2(y)}" class="trends-refline" />`;
+            referenceLabel = trendsReferenceLabel(
+                chart.reference,
+                y,
+                obstacles,
+                W,
+                H,
+            );
+        }
+    }
+    const rangeDays = state.trendsData?.rangeDays || 30;
+    const dayLabels = days
+        .map((day, i) => {
+            const show =
+                days.length <= 31 ||
+                i % 7 === 0 ||
+                Number(day.date.slice(8, 10)) === 1;
+            return `<span>${show ? escapeHtml(trendsDayLabel(day.date, rangeDays)) : ""}</span>`;
+        })
+        .join("");
+    return `<div class="trends-chart"><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${escapeHtml(card.title)} chart">${referenceBg}${bars.join("")}${rollingSvg}${hits.join("")}${referenceLabel}</svg><div class="trends-daylabels" aria-hidden="true">${dayLabels}</div></div>`;
+}
+
+function trendsLineChart(card) {
+    const chart = card.chart;
+    const W = 326;
+    const H = 112;
+    const top = 18;
+    const plotH = H - top - 6;
+    const baseY = top + plotH;
+    const trendPoints = (chart.trend || []).filter((p) => p.value != null);
+    const domainValues = [
+        ...trendPoints.map((p) => p.value),
+        ...(chart.target != null ? [chart.target] : []),
+    ];
+    let lo;
+    let hi;
+    if (chart.metric === "weight") {
+        const min = Math.min(...domainValues);
+        const max = Math.max(...domainValues);
+        const span = Math.max(1, max - min);
+        lo = min - span * 0.18;
+        hi = max + span * 0.18;
+    } else {
+        lo = 0;
+        hi = (Math.max(1, ...domainValues) || 1) * 1.15;
+    }
+    const startMs = Date.parse(`${chart.startLabel}T00:00:00Z`);
+    const totalDays = Math.max(
+        1,
+        (Date.parse(`${chart.endLabel}T00:00:00Z`) - startMs) / 86400000,
+    );
+    const xFor = (date) =>
+        4 +
+        ((Date.parse(`${date}T00:00:00Z`) - startMs) / 86400000 / totalDays) *
+            (W - 8);
+    const yFor = (v) => baseY - ((v - lo) / (hi - lo)) * plotH;
+    const clampY = (y) => Math.min(baseY, Math.max(top, y));
+    const obstacles = trendPoints.map((p) => ({
+        x: xFor(p.date) - 3,
+        y: yFor(p.value) - 3,
+        w: 6,
+        h: 6,
+    }));
+    let area = "";
+    if (chart.area && trendPoints.length > 1) {
+        const line = trendPoints
+            .map(
+                (p) =>
+                    `${trendsRound2(xFor(p.date))},${trendsRound2(yFor(p.value))}`,
+            )
+            .join(" ");
+        area = `<polygon points="4,${baseY} ${line} ${trendsRound2(xFor(trendPoints[trendPoints.length - 1].date))},${baseY}" class="trends-area" />`;
+    }
+    const path = trendPoints.length
+        ? `<polyline points="${trendPoints.map((p) => `${trendsRound2(xFor(p.date))},${trendsRound2(yFor(p.value))}`).join(" ")}" class="trends-line" />`
+        : "";
+    const dots = (chart.points || [])
+        .map((p) => {
+            const cx = xFor(p.date);
+            const cy = clampY(yFor(p.value));
+            obstacles.push({ x: cx - 3, y: cy - 3, w: 6, h: 6 });
+            return `<circle data-chart-dot data-date="${p.date}" cx="${trendsRound2(cx)}" cy="${trendsRound2(cy)}" r="3" class="trends-dot" /><circle class="trends-hit" data-action="trends-drill-day" data-date="${p.date}" data-metric="${escapeHtml(chart.metric)}" cx="${trendsRound2(cx)}" cy="${trendsRound2(cy)}" r="11" fill="transparent"><title>${escapeHtml(p.date)}</title></circle>`;
+        })
+        .join("");
+    let targetSvg = "";
+    let targetLabel = "";
+    if (chart.target != null) {
+        const y = yFor(chart.target);
+        targetSvg = `<line x1="0" y1="${trendsRound2(y)}" x2="${W}" y2="${trendsRound2(y)}" class="trends-refline" />`;
+        targetLabel = trendsReferenceLabel(
+            {
+                label: `target ${chart.target} ${chart.unit}`,
+                value: chart.target,
+            },
+            y,
+            obstacles,
+            W,
+            H,
+        );
+    }
+    return `<div class="trends-chart"><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${escapeHtml(card.title)} chart">${targetSvg}${area}${path}${dots}${targetLabel}</svg><div class="trends-daylabels trends-endlabels" aria-hidden="true"><span>${escapeHtml(formatDate(chart.startLabel))}</span><span>${escapeHtml(formatDate(chart.endLabel))}</span></div></div>`;
+}
+
+function trendsDonutChart(card) {
+    const chart = card.chart;
+    const key = trendsCardKey(card);
+    const mode = state.trendsDonutModes.get(key) || "snapshot";
+    const colors = {
+        protein_g: "#2E5B34",
+        carbs_g: "#C9BFA3",
+        fat_g: "#8A6D3B",
+        alcohol_g: "#C0562F",
+    };
+    const legend = chart.segments
+        .map(
+            (segment) =>
+                `<div class="trends-legend-row"><span class="trends-legend-dot" style="background:${colors[segment.key] || "#6E7462"}"></span><span>${escapeHtml(segment.label)}</span><b>${segment.share}%</b><small>${number(segment.grams)} g</small></div>`,
+        )
+        .join("");
+    const toggle = `<div class="trends-toggle" role="group" aria-label="Macro split view"><button type="button" class="${mode === "snapshot" ? "is-on" : ""}" data-action="trends-donut-mode" data-cardkey="${key}" data-mode="snapshot">Snapshot</button><button type="button" class="${mode === "columns" ? "is-on" : ""}" data-action="trends-donut-mode" data-cardkey="${key}" data-mode="columns">Over time</button></div>`;
+    if (mode === "columns") {
+        const columns = chart.columns
+            .map((column) => {
+                const parts = chart.segments
+                    .map((segment) => {
+                        const share = column.shares[segment.key] || 0;
+                        return share > 0
+                            ? `<i style="height:${share}%;background:${colors[segment.key] || "#6E7462"}"></i>`
+                            : "";
+                    })
+                    .join("");
+                return `<div class="trends-column"><div class="trends-column-stack">${parts}</div><span>${escapeHtml(formatDate(column.label))}</span></div>`;
+            })
+            .join("");
+        return `<div class="trends-donut-wrap"><div class="trends-columns">${columns}</div><div class="trends-legend">${legend}${toggle}</div></div>`;
+    }
+    const C = 2 * Math.PI * 34;
+    let acc = 0;
+    const rings = chart.segments
+        .map((segment) => {
+            const len = (segment.share / 100) * C;
+            const el = `<circle data-action="trends-drill-segment" data-metric="${segment.key}" cx="46" cy="46" r="34" fill="none" stroke="${colors[segment.key] || "#6E7462"}" stroke-width="15" stroke-dasharray="${trendsRound2(Math.max(0, len - 1.5))} ${trendsRound2(C)}" stroke-dashoffset="${trendsRound2(-acc)}" transform="rotate(-90 46 46)" class="trends-ring"><title>${escapeHtml(segment.label)} ${segment.share}%</title></circle>`;
+            acc += len;
+            return el;
+        })
+        .join("");
+    return `<div class="trends-donut-wrap"><svg viewBox="0 0 92 92" class="trends-donut" role="img" aria-label="Macro split donut">${rings}<text x="46" y="43" text-anchor="middle" class="trends-donut-value">${escapeHtml(number(chart.centerValue))}</text><text x="46" y="56" text-anchor="middle" class="trends-donut-unit">kcal</text></svg><div class="trends-legend">${legend}${toggle}</div></div>`;
+}
+
+function trendsStackedChart(card) {
+    const chart = card.chart;
+    const colors = {
+        breakfast: "#C9A86A",
+        lunch: "#2E5B34",
+        dinner: "#22301F",
+        snack: "#8A6D3B",
+    };
+    const bar = chart.segments
+        .map(
+            (segment) =>
+                `<i style="width:${segment.share}%;background:${colors[segment.key] || "#6E7462"}" title="${escapeHtml(segment.label)} ${segment.share}%"></i>`,
+        )
+        .join("");
+    const legend = chart.segments
+        .map(
+            (segment) =>
+                `<div class="trends-legend-row"><span class="trends-legend-dot" style="background:${colors[segment.key] || "#6E7462"}"></span><span>${escapeHtml(segment.label)}</span><b>${segment.share}%</b><small>${number(segment.kcal)} kcal</small></div>`,
+        )
+        .join("");
+    return `<div class="trends-stacked">${bar}</div><div class="trends-legend">${legend}</div>`;
+}
+
+function trendsWeekdayChart(card) {
+    const chart = card.chart;
+    const W = 326;
+    const H = 118;
+    const top = 18;
+    const plotH = H - top - 4;
+    const baseY = top + plotH;
+    const dataMax = Math.max(0, ...chart.days.map((d) => d.avg ?? 0));
+    const domain = Math.max(dataMax, chart.reference?.value ?? 0) * 1.15 || 1;
+    const slot = W / 7;
+    const barW = Math.min(30, slot * 0.6);
+    const yFor = (v) => baseY - (v / domain) * plotH;
+    const obstacles = [];
+    const bars = [];
+    const hits = [];
+    chart.days.forEach((day, i) => {
+        const cx = slot * i + slot / 2;
+        if (day.avg != null && day.avg > 0) {
+            const h = Math.max(3, (day.avg / domain) * plotH);
+            const rect = { x: cx - barW / 2, y: baseY - h, w: barW, h };
+            obstacles.push(rect);
+            bars.push(
+                `<rect data-bar-dow="${day.dow}" x="${trendsRound2(rect.x)}" y="${trendsRound2(rect.y)}" width="${trendsRound2(barW)}" height="${trendsRound2(h)}" rx="2.5" class="trends-bar${day.weekend ? " is-weekend" : ""}" />`,
+            );
+        }
+        hits.push(
+            `<rect class="trends-hit" data-action="trends-drill-weekday" data-cardkey="${escapeHtml(trendsCardKey(card))}" data-dow="${day.dow}" x="${trendsRound2(slot * i)}" y="${top}" width="${trendsRound2(slot)}" height="${plotH}" fill="transparent"><title>${escapeHtml(day.label)}</title></rect>`,
+        );
+    });
+    let referenceBg = "";
+    let referenceLabel = "";
+    if (chart.reference) {
+        const y = yFor(chart.reference.value);
+        referenceBg = `<line x1="0" y1="${trendsRound2(y)}" x2="${W}" y2="${trendsRound2(y)}" class="trends-refline" />`;
+        referenceLabel = trendsReferenceLabel(
+            chart.reference,
+            y,
+            obstacles,
+            W,
+            H,
+        );
+    }
+    const labels = chart.days
+        .map((day) => `<span>${escapeHtml(day.label)}</span>`)
+        .join("");
+    return `<div class="trends-chart"><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${escapeHtml(card.title)} chart">${referenceBg}${bars.join("")}${hits.join("")}${referenceLabel}</svg><div class="trends-daylabels" aria-hidden="true">${labels}</div></div>`;
+}
+
+function trendsConsistencyChart(card) {
+    const chart = card.chart;
+    const cell = (c) =>
+        `<button type="button" class="trends-cell l${c.level}${c.active ? "" : " is-off"}" data-action="trends-drill-day" data-date="${c.date}" data-metric="${escapeHtml(chart.metric)}" title="${escapeHtml(c.date)}" aria-label="${escapeHtml(c.date)}"></button>`;
+    if (!chart.full)
+        return `<div class="trends-dots">${chart.cells.map(cell).join("")}</div>`;
+    const firstDow =
+        (new Date(`${chart.cells[0].date}T12:00:00Z`).getUTCDay() + 6) % 7;
+    const blanks = Array.from(
+        { length: firstDow },
+        () => `<span class="trends-cell is-blank"></span>`,
+    ).join("");
+    // Month labels: one span per month, sized by the weeks it spans.
+    const columns = [];
+    const totalCells = firstDow + chart.cells.length;
+    for (let col = 0; col * 7 < totalCells; col += 1) {
+        const firstReal = chart.cells[Math.max(0, col * 7 - firstDow)];
+        columns.push(firstReal ? firstReal.date.slice(0, 7) : "");
+    }
+    const monthSpans = [];
+    columns.forEach((month) => {
+        const last = monthSpans[monthSpans.length - 1];
+        if (last && last.month === month) last.weeks += 1;
+        else monthSpans.push({ month, weeks: 1 });
+    });
+    const months = monthSpans
+        .map(
+            (span) =>
+                `<span style="flex:${span.weeks}">${span.month ? escapeHtml(formatDate(`${span.month}-01`).split(" ")[0]) : ""}</span>`,
+        )
+        .join("");
+    return `<div class="trends-heat-wrap"><div class="trends-months">${months}</div><div class="trends-heat">${blanks}${chart.cells.map(cell).join("")}</div></div>`;
+}
+
+function trendsWindowChart(card) {
+    const chart = card.chart;
+    const band = (first, last) =>
+        `<span class="trends-window-track"><i style="left:${trendsRound2((first / 24) * 100)}%;width:${trendsRound2(Math.max(2.5, ((last - first) / 24) * 100))}%"></i></span>`;
+    const avg = `<div class="trends-window-row is-avg"><span class="trends-window-date">Avg</span>${band(chart.avgFirst, chart.avgLast)}<small>${trendsHourLabel(chart.avgFirst)} – ${trendsHourLabel(chart.avgLast)}</small></div>`;
+    const rows = chart.rows
+        .slice(-14)
+        .map(
+            (row) =>
+                `<button type="button" class="trends-window-row" data-action="trends-drill-day" data-date="${row.date}" data-metric="calories"><span class="trends-window-date">${escapeHtml(formatDate(row.date))}</span>${band(row.first, row.last)}<small>${trendsHourLabel(row.first)} – ${trendsHourLabel(row.last)}</small></button>`,
+        )
+        .join("");
+    return `<div class="trends-window">${avg}${rows}</div>`;
+}
+
+function trendsRhythmChart(card) {
+    const chart = card.chart;
+    const totalDays = state.trendsData?.rangeDays || 0;
+    return `<div class="trends-rhythm">${chart.rows
+        .map(
+            (row) =>
+                `<div class="trends-rhythm-row"><span>${escapeHtml(row.label)}</span><span class="trends-rhythm-track"><i style="width:${row.rate}%"></i></span><small>${row.present} of ${totalDays} days</small></div>`,
+        )
+        .join("")}</div>`;
+}
+
+function trendsChartMarkup(card) {
+    switch (card.chart?.kind) {
+        case "bars":
+            return trendsBarChart(card);
+        case "line":
+            return trendsLineChart(card);
+        case "consistency":
+            return trendsConsistencyChart(card);
+        case "donut":
+            return trendsDonutChart(card);
+        case "stacked":
+            return trendsStackedChart(card);
+        case "weekday":
+            return trendsWeekdayChart(card);
+        case "window":
+            return trendsWindowChart(card);
+        case "rhythm":
+            return trendsRhythmChart(card);
+        default:
+            return "";
+    }
+}
+
+function trendsCardMarkup(card, index) {
+    const editing = state.trendsEditing;
+    const body = card.empty
+        ? `<div class="trends-empty"><strong>${escapeHtml(card.empty.title)}</strong><p>${escapeHtml(card.empty.message)}</p></div>`
+        : trendsChartMarkup(card);
+    const editControls = editing
+        ? `<div class="trends-editbar"><button type="button" class="trends-move" data-action="trends-move" data-index="${index}" data-dir="-1" aria-label="Move ${escapeHtml(card.title)} earlier">↑</button><button type="button" class="trends-move" data-action="trends-move" data-index="${index}" data-dir="1" aria-label="Move ${escapeHtml(card.title)} later">↓</button><button type="button" class="trends-sizechip" data-action="trends-size" data-index="${index}">${card.size === "full" ? "Full width" : "Half width"}</button></div>`
+        : "";
+    return `<section class="panel trends-card${card.size === "compact" ? " is-compact" : ""}" data-card-key="${escapeHtml(trendsCardKey(card))}"><div class="trends-card-head"><div><h3>${escapeHtml(card.title)}</h3><p class="trends-sub">${escapeHtml(card.subtitle)}</p></div>${card.headline ? `<div class="trends-headline"><b>${escapeHtml(card.headline.value)}</b><span>${escapeHtml(card.headline.unit)}</span><small>${escapeHtml(card.headline.note)}</small></div>` : ""}${editing ? `<button type="button" class="trends-x" data-action="trends-remove" data-index="${index}" aria-label="Remove ${escapeHtml(card.title)}">×</button>` : ""}</div>${body}${card.coverage ? `<p class="trends-coverage">From ${card.coverage.carriedDays} of ${card.coverage.totalDays} days — the rest don't record it.</p>` : ""}${card.verdict ? `<p class="trends-verdict">${escapeHtml(card.verdict.lead)}<strong>${escapeHtml(card.verdict.strong)}</strong></p>` : ""}${editControls}</section>`;
+}
+
+function trendsDigestMarkup(data) {
+    const digest = data.digest;
+    const checkin = state.trendsCheckin;
+    return `<section class="panel trends-card trends-digest" data-card-key="digest"><div class="trends-card-head"><div><h3>The week in words</h3><p class="trends-sub">Digest</p></div><span class="trends-pin">Pinned</span></div><p class="trends-digest-lede">${escapeHtml(digest.weekly)}</p><details class="trends-more"><summary>Trend analysis</summary><p>${escapeHtml(digest.trends || "No data in range.")}</p></details><details class="trends-more"><summary>Meal patterns</summary><p>${escapeHtml(digest.patterns || "No data in range.")}</p></details>${checkin ? `<div class="trends-checkin"><h4>Weekly check-in</h4><p>${number(checkin.coverage_percent)}% coverage · ${number(checkin.nutrition_target_coverage_days)} of ${number(checkin.calendar_days)} days with recorded nutrition.</p>${checkin.observations?.length ? `<ul>${checkin.observations.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}</div>` : ""}${chatEntryRow("insights", "Explain my week", "Opens with this check-in attached")}</section>`;
+}
+
+function paintTrends() {
+    const data = state.trendsData;
+    if (!data) return;
+    const days = trendsRange();
+    const editing = state.trendsEditing;
+    const rangeLabel =
+        days === 7
+            ? "Last 7 days"
+            : days === 30
+              ? "Last 30 days"
+              : "Last 3 months";
+    let cardsHtml = "";
+    if (!data.cards.length) {
+        cardsHtml = `<section class="panel trends-card"><div class="trends-empty"><strong>Your dashboard is empty</strong><p>Add a chart below and it will live here — your pick of shapes and data, in your order.</p></div></section>`;
+    } else {
+        const parts = [];
+        let pair = [];
+        const flushPair = () => {
+            if (pair.length) {
+                parts.push(`<div class="trends-pair">${pair.join("")}</div>`);
+                pair = [];
+            }
+        };
+        data.cards.forEach((card, index) => {
+            const html = trendsCardMarkup(card, index);
+            if (card.size === "compact") pair.push(html);
+            else {
+                flushPair();
+                parts.push(html);
+            }
+        });
+        flushPair();
+        cardsHtml = parts.join("");
+    }
+    content.innerHTML = `<div class="operate-view trends-view"><div class="page-heading"><div><h2>Trends</h2><p>${rangeLabel} · ${escapeHtml(formatDate(data.startDate))} – ${escapeHtml(formatDate(data.endDate))}</p></div><div class="auth-actions"><button class="button ${editing ? "button-primary" : "button-secondary"} button-small" type="button" data-action="trends-edit-toggle">${editing ? "Done" : "Edit"}</button></div></div><div class="trends-pills" role="group" aria-label="Trends range">${[7, 30, 90].map((d) => `<button type="button" class="trends-pill${d === days ? " is-on" : ""}" data-action="trends-range" data-days="${d}" aria-pressed="${d === days}">${TRENDS_RANGE_LABELS[d]}</button>`).join("")}</div>${cardsHtml}${trendsDigestMarkup(data)}<button class="trends-add" type="button" data-action="trends-add">+ Add a chart</button></div>`;
+}
+
+async function renderTrends() {
+    setLoading("Loading your trends…");
+    const end = state.date;
+    const days = trendsRange();
+    const start = shiftDate(end, -(days - 1));
+    const data = await api(`/api/app/trends?start=${start}&end=${end}`);
+    // The weekly check-in inside the Digest is a seven-day panel, so
+    // window its request to the most recent seven days — the check-in
+    // endpoint only accepts one to seven days (the PR #184 bug class).
+    const checkin = await api(
+        `/api/app/insights/checkin?start=${shiftDate(end, -6)}&end=${end}`,
+        { keepPrevious: true },
+    ).catch(() => null);
+    state.trendsData = data;
+    state.trendsCheckin = checkin;
+    paintTrends();
+}
+
+async function refreshTrendsWorkspace() {
+    const end = state.date;
+    const days = trendsRange();
+    const start = shiftDate(end, -(days - 1));
+    state.trendsData = await api(`/api/app/trends?start=${start}&end=${end}`);
+    paintTrends();
+}
+
+async function saveTrendsLayout(cards) {
+    try {
+        await api("/api/app/trends/layout", {
+            method: "PUT",
+            body: JSON.stringify({ layout: { version: 1, cards } }),
+        });
+    } catch {
+        toast("Couldn't save your dashboard — showing the saved version.");
+    }
+    await refreshTrendsWorkspace();
+}
+
+function trendsLayoutCards() {
+    return (state.trendsData?.layout?.cards || []).map((card) => ({
+        shape: card.shape,
+        data: card.data,
+        size: card.size,
+    }));
+}
+
+const TRENDS_SHAPE_GLYPHS = {
+    bar: `<svg viewBox="0 0 30 22" aria-hidden="true"><rect x="2" y="10" width="5" height="9"/><rect x="9" y="5" width="5" height="14"/><rect x="16" y="13" width="5" height="6"/><rect x="23" y="8" width="5" height="11"/></svg>`,
+    line: `<svg viewBox="0 0 30 22" aria-hidden="true"><polyline points="2,16 10,9 17,12 27,4"/></svg>`,
+    consistency: `<svg viewBox="0 0 30 22" aria-hidden="true"><circle cx="5" cy="6" r="2.6"/><circle cx="12" cy="6" r="2.6"/><circle cx="19" cy="6" r="2.6"/><circle cx="26" cy="6" r="2.6"/><circle cx="5" cy="15" r="2.6"/><circle cx="12" cy="15" r="2.6"/><circle cx="19" cy="15" r="2.6"/><circle cx="26" cy="15" r="2.6"/></svg>`,
+    breakdown: `<svg viewBox="0 0 30 22" aria-hidden="true"><circle cx="11" cy="11" r="7.5" class="donut-base"/><path d="M11 3.5 A7.5 7.5 0 0 1 18.5 11 L11 11 Z" class="donut-slice"/></svg>`,
+    patterns: `<svg viewBox="0 0 30 22" aria-hidden="true"><rect x="2" y="12" width="4" height="7"/><rect x="8" y="9" width="4" height="10"/><rect x="14" y="13" width="4" height="6"/><rect x="20" y="7" width="4" height="12"/><rect x="26" y="10" width="3" height="9"/></svg>`,
+};
+
+function openTrendsCatalog() {
+    const catalog = state.trendsData?.catalog || [];
+    openDialog(
+        "Add a chart",
+        `<p class="tiny">First — what kind of chart?</p><div class="trends-catalog">${catalog
+            .map(
+                (entry) =>
+                    `<button type="button" class="trends-catalog-row" data-action="trends-catalog-shape" data-shape="${escapeHtml(entry.shape)}"><span class="trends-glyph">${TRENDS_SHAPE_GLYPHS[entry.shape] || ""}</span><span class="trends-catalog-text"><strong>${escapeHtml(entry.label)}</strong><small>${escapeHtml(entry.blurb)}</small></span><span class="trends-chev">›</span></button>`,
+            )
+            .join("")}</div>`,
+    );
+}
+
+function openTrendsCatalogData(shape) {
+    const entry = (state.trendsData?.catalog || []).find(
+        (item) => item.shape === shape,
+    );
+    if (!entry) return;
+    const existing = new Set(
+        (state.trendsData?.layout?.cards || []).map((card) =>
+            trendsCardKey(card),
+        ),
+    );
+    openDialog(
+        "Add a chart",
+        `<p class="tiny">${escapeHtml(entry.label)} — showing what?</p><div class="trends-catalog">${entry.data
+            .map((point) => {
+                const onDashboard = existing.has(`${shape}:${point.key}`);
+                return `<button type="button" class="trends-catalog-row" data-action="trends-catalog-add" data-shape="${escapeHtml(shape)}" data-data="${escapeHtml(point.key)}" ${onDashboard ? "disabled" : ""}><span class="trends-catalog-text"><strong>${escapeHtml(point.label)}</strong>${point.note ? `<small>${escapeHtml(point.note)}</small>` : ""}</span>${onDashboard ? `<span class="trends-have">On dashboard</span>` : `<span class="trends-chev">+</span>`}</button>`;
+            })
+            .join(
+                "",
+            )}</div><div class="auth-actions"><button class="button button-quiet" type="button" data-action="trends-catalog">Back</button></div>`,
+    );
+}
+
+async function openTrendsDaySheet(date, metric) {
+    const detail = await api(
+        `/api/app/trends/day?date=${encodeURIComponent(date)}&metric=${encodeURIComponent(metric)}`,
+    );
+    let body = "";
+    if (detail.kind === "weight") {
+        body = detail.weight
+            ? `<p class="trends-sheet-total">${detail.weight.entries.map((entry) => `${number(entry.value, 1)} ${escapeHtml(detail.weight.unit)} · ${escapeHtml(formatTime(entry.loggedAt))}`).join("<br />")}</p>`
+            : `<p>No weigh-in recorded this day.</p>`;
+    } else {
+        const meals = (detail.meals || [])
+            .map(
+                (meal) =>
+                    `<div class="trends-sheet-meal"><div class="trends-sheet-row"><strong>${escapeHtml(meal.description)}</strong><b>${number(meal.total)} ${escapeHtml(detail.unit)}</b></div><small>${escapeHtml(meal.mealType)} · ${escapeHtml(formatTime(meal.loggedAt))}</small>${(meal.items || []).map((item) => `<div class="trends-sheet-row trends-sheet-item"><span>${escapeHtml(item.name)}</span><span>${number(item.value)} ${escapeHtml(detail.unit)}</span></div>`).join("")}</div>`,
+            )
+            .join("");
+        body = `<p class="trends-sheet-total">${escapeHtml(detail.label)}: <strong>${number(detail.total)} ${escapeHtml(detail.unit)}</strong>${detail.reference ? ` · ${escapeHtml(detail.reference.label)} ${number(detail.reference.value)} ${escapeHtml(detail.unit)} (${escapeHtml(detail.reference.source)})` : ""}</p>${meals || `<p class="tiny">Nothing itemized for this measure on this day.</p>`}<p class="trends-sheet-total">That day: ${number(detail.summary.calories)} kcal · ${number(detail.summary.proteinG)} g protein · ${number(detail.summary.mealCount)} meals · ${number(detail.summary.waterMl)} ml water</p>`;
+    }
+    openDialog(
+        `${formatDate(date, { year: true })} — ${detail.kind === "weight" ? "Weight" : escapeHtml(detail.label)}`,
+        body,
+        `<div class="auth-actions"><button class="button button-primary" type="button" data-action="trends-open-day" data-date="${escapeHtml(date)}">Open that day's log</button></div>`,
+    );
+}
+
+async function openTrendsContributors(metric) {
+    const data = state.trendsData;
+    if (!data) return;
+    const result = await api(
+        `/api/app/trends/contributors?metric=${encodeURIComponent(metric)}&start=${data.startDate}&end=${data.endDate}`,
+    );
+    const rows = (result.foods || [])
+        .map(
+            (food) =>
+                `<button type="button" class="trends-sheet-row trends-food-row" data-action="trends-open-day" data-date="${escapeHtml(food.lastDate)}"><span><strong>${escapeHtml(food.name)}</strong><small>Most recently ${escapeHtml(formatDate(food.lastDate))}</small></span><b>${number(food.value)} ${escapeHtml(result.unit)}</b></button>`,
+        )
+        .join("");
+    openDialog(
+        `Where your ${result.label.toLowerCase()} came from`,
+        rows ||
+            `<p class="tiny">No itemized foods carry this measure in the period.</p>`,
+    );
+}
+
+function openTrendsWeekdaySheet(cardKey, dow) {
+    const card = (state.trendsData?.cards || []).find(
+        (item) => trendsCardKey(item) === cardKey,
+    );
+    const day = card?.chart?.days?.find((item) => item.dow === Number(dow));
+    if (!day) return;
+    const rows = (day.dates || [])
+        .map(
+            (entry) =>
+                `<button type="button" class="trends-sheet-row trends-food-row" data-action="trends-open-day" data-date="${escapeHtml(entry.date)}"><span><strong>${escapeHtml(formatDate(entry.date, { year: true }))}</strong></span><b>${number(entry.value)} kcal</b></button>`,
+        )
+        .join("");
+    openDialog(
+        `Recent ${day.label}s`,
+        rows ||
+            `<p class="tiny">No logged ${day.label}s in this period yet.</p>`,
+    );
+}
+// TRENDS-END
 
 async function renderFoods() {
     setLoading("Loading saved foods…");
@@ -887,9 +1735,26 @@ async function renderRecipes() {
     const createButton = canCreate
         ? '<button class="button button-secondary button-small" data-action="create-recipe">Create manually</button>'
         : "";
-    const composeButton = canCreate
-        ? '<button class="button button-secondary button-small" data-action="compose-recipe">Compose + plan</button>'
-        : "";
+    // Feature toggles (T7): compose is a plan flow end to end (its
+    // endpoint saves, schedules, and stocks groceries atomically), so
+    // with Meal Plan off the entry goes away — recipes are still
+    // created and imported above. The per-card Add to plan button
+    // hides on the same flag.
+    const composeButton =
+        canCreate && featureFlags().plan
+            ? '<button class="button button-secondary button-small" data-action="compose-recipe">Compose + plan</button>'
+            : "";
+    const planRecipeButton = (recipeId) =>
+        featureFlags().plan
+            ? `<button class="button button-secondary button-small" type="button" data-action="plan-recipe" data-id="${escapeHtml(recipeId)}">Add to plan</button>`
+            : "";
+    // Recipe experience R3: the card carries Add to grocery list too
+    // (detail has it as well). Born flag-aware (toggles #241 rider):
+    // with Groceries off the button is never rendered.
+    const groceryRecipeButton = (recipe) =>
+        featureFlags().groceries
+            ? `<button class="button button-secondary button-small" type="button" data-action="recipe-groceries" data-id="${escapeHtml(recipe.recipe_id)}" data-name="${escapeHtml(recipe.name)}" data-servings="${escapeHtml(recipe.servings)}">Add to grocery list</button>`
+            : "";
     // S6 slice 4 (Recipes fusion): the library renders in the tightened
     // mock's grammar — one hairline panel per recipe, the servings /
     // nutrition / usage facts merged into a single meta line, and the
@@ -897,7 +1762,7 @@ async function renderRecipes() {
     // handlers the detail dialog has always offered; the list data
     // already carries revision_id). No ad slot exists on this surface:
     // the app's only slot is on Today (final ad law).
-    content.innerHTML = `<div class="operate-view recipes-view"><div class="page-heading"><div><h2>Recipe library</h2><p>${data.recipes.length} structured recipe${data.recipes.length === 1 ? "" : "s"}. Import from a website for review, or create a recipe manually.</p></div></div><div class="auth-actions recipe-actions">${importButton}${createButton}${composeButton}</div><div class="recipe-filter-row"><label class="field" for="recipe-filter"><span>Filter recipes</span><input class="input" id="recipe-filter" type="search" placeholder="Search by name" aria-label="Filter recipes" /></label></div><div class="recipe-list" id="recipe-grid">${data.recipes.length ? data.recipes.map((recipe) => `<section class="panel recipe-panel" data-recipe-name="${escapeHtml(recipe.name.toLowerCase())}"><span class="source-chip ${recipe.ownership === "household" ? "source-saved" : "source-usda"}">${escapeHtml(recipe.ownership)}</span><h3 class="recipe-title">${escapeHtml(recipe.name)}</h3><p class="recipe-meta">${number(recipe.servings, 1)} servings · ${escapeHtml(recipe.nutrition_status)} nutrition · per serving: <strong>${number(recipe.nutrition_per_serving?.calories)} kcal · P ${number(recipe.nutrition_per_serving?.protein_g, 1)}g · C ${number(recipe.nutrition_per_serving?.carbs_g, 1)}g · F ${number(recipe.nutrition_per_serving?.fat_g, 1)}g</strong> · Scheduled ${number(recipe.times_scheduled)} times · logged ${number(recipe.times_logged)} times</p><div class="auth-actions recipe-panel-actions"><button class="button button-primary button-small" type="button" data-action="view-recipe" data-id="${escapeHtml(recipe.recipe_id)}">View recipe</button><button class="button button-secondary button-small" type="button" data-action="log-recipe" data-id="${escapeHtml(recipe.recipe_id)}" data-revision="${escapeHtml(recipe.revision_id || "")}">Log recipe</button><button class="button button-secondary button-small" type="button" data-action="plan-recipe" data-id="${escapeHtml(recipe.recipe_id)}">Add to plan</button></div></section>`).join("") : `<div class="empty-state"><div><h3>No recipes yet</h3><p>Import a recipe from a public website and review it before saving, or create one manually.</p>${canCreate ? `<div class="auth-actions spacer-top">${importButton}${createButton}</div>` : ""}</div></div>`}</div></div>`;
+    content.innerHTML = `<div class="operate-view recipes-view"><div class="page-heading"><div><h2>Recipe library</h2><p>${data.recipes.length} structured recipe${data.recipes.length === 1 ? "" : "s"}.</p></div></div><div class="auth-actions recipe-actions">${importButton}${createButton}${composeButton}</div><div class="recipe-filter-row"><label class="field" for="recipe-filter"><span>Filter recipes</span><input class="input" id="recipe-filter" type="search" placeholder="Search by name" aria-label="Filter recipes" /></label></div><div class="recipe-list" id="recipe-grid">${data.recipes.length ? data.recipes.map((recipe) => `<section class="panel recipe-panel" data-recipe-name="${escapeHtml(recipe.name.toLowerCase())}"><span class="source-chip ${recipe.ownership === "household" ? "source-saved" : "source-usda"}">${escapeHtml(recipe.ownership)}</span><h3 class="recipe-title">${escapeHtml(recipe.name)}</h3><p class="recipe-meta">${number(recipe.servings, 1)} servings · ${escapeHtml(recipe.nutrition_status)} nutrition · per serving: <strong>${number(recipe.nutrition_per_serving?.calories)} kcal · P ${number(recipe.nutrition_per_serving?.protein_g, 1)}g · C ${number(recipe.nutrition_per_serving?.carbs_g, 1)}g · F ${number(recipe.nutrition_per_serving?.fat_g, 1)}g</strong> · Scheduled ${number(recipe.times_scheduled)} times · logged ${number(recipe.times_logged)} times</p><div class="auth-actions recipe-panel-actions"><button class="button button-primary button-small" type="button" data-action="view-recipe" data-id="${escapeHtml(recipe.recipe_id)}">View recipe</button><button class="button button-secondary button-small" type="button" data-action="log-recipe" data-id="${escapeHtml(recipe.recipe_id)}" data-revision="${escapeHtml(recipe.revision_id || "")}">Log recipe</button>${planRecipeButton(recipe.recipe_id)}${groceryRecipeButton(recipe)}</div></section>`).join("") : `<div class="empty-state"><div><h3>No recipes yet</h3><p>Import a recipe from a public website and review it before saving, or create one manually.</p>${canCreate ? `<div class="auth-actions spacer-top">${importButton}${createButton}</div>` : ""}</div></div>`}</div></div>`;
 }
 
 function recipeIngredientFromFood(food, portionId) {
@@ -971,7 +1836,17 @@ function recipeIngredientFromRecent(recent) {
 }
 
 function recipeComposeSectionMarkup() {
-    return `<section class="recipe-editor-section"><div class="panel-title"><div><h3>Plan this recipe</h3><span>Save the recipe, schedule it, and add only the groceries you explicitly still need.</span></div></div><div class="meal-composer-grid"><label class="field"><span>Planned date</span><input name="planned_date" type="date" value="${escapeHtml(state.date)}" required /></label><label class="field"><span>Meal slot</span><select name="meal_slot"><option value="breakfast">Breakfast</option><option value="lunch">Lunch</option><option value="dinner" selected>Dinner</option><option value="snack">Snack</option></select></label><label class="field"><span>Servings planned</span><input name="planned_servings" type="number" min="0.01" step="0.01" value="1" required /></label></div><label class="field"><span>Planning note</span><input name="note" maxlength="500" placeholder="Optional note for this planned meal" /></label><div class="panel-title spacer-top"><div><h3>Explicit grocery items</h3><span>Munch does not infer pantry inventory.</span></div><button class="button button-secondary button-small" type="button" data-action="add-recipe-grocery">Add grocery item</button></div><div id="recipe-compose-groceries"></div></section>`;
+    // Feature toggles (T7): the compose flow's grocery step hides
+    // when Groceries is off — the plan fields stay, and the submit
+    // sends an empty grocery list.
+    const groceriesOn = featureFlags().groceries;
+    const groceryBlock = groceriesOn
+        ? `<div class="panel-title spacer-top"><div><h3>Explicit grocery items</h3><span>Munch does not infer pantry inventory.</span></div><button class="button button-secondary button-small" type="button" data-action="add-recipe-grocery">Add grocery item</button></div><div id="recipe-compose-groceries"></div>`
+        : "";
+    const summary = groceriesOn
+        ? "Save the recipe, schedule it, and add only the groceries you explicitly still need."
+        : "Save the recipe and schedule it.";
+    return `<section class="recipe-editor-section"><div class="panel-title"><div><h3>Plan this recipe</h3><span>${summary}</span></div></div><div class="meal-composer-grid"><label class="field"><span>Planned date</span><input name="planned_date" type="date" value="${escapeHtml(state.date)}" required /></label><label class="field"><span>Meal slot</span><select name="meal_slot"><option value="breakfast">Breakfast</option><option value="lunch">Lunch</option><option value="dinner" selected>Dinner</option><option value="snack">Snack</option></select></label><label class="field"><span>Servings planned</span><input name="planned_servings" type="number" min="0.01" step="0.01" value="1" required /></label></div><label class="field"><span>Planning note</span><input name="note" maxlength="500" placeholder="Optional note for this planned meal" /></label>${groceryBlock}</section>`;
 }
 
 function recipeFormMarkup(mode, recipe = null) {
@@ -1001,7 +1876,9 @@ function recipeFormMarkup(mode, recipe = null) {
     const submitLabel = editing
         ? "Save new revision"
         : composing
-          ? "Save, plan, and add groceries"
+          ? featureFlags().groceries
+              ? "Save, plan, and add groceries"
+              : "Save and plan"
           : imported
             ? "Save imported recipe"
             : "Create recipe";
@@ -1406,19 +2283,114 @@ function openRecipeCompose() {
     searchRecipeFoods("");
 }
 
+// Recipe experience R1: an ingredient counts as resolved only when
+// its pinned snapshot carries the full core panel — the same test the
+// server resolver applies. Anything else renders as "Not resolved",
+// never as a silent zero.
+function recipeIngredientResolved(ingredient) {
+    const nutrients = ingredient.nutrients || {};
+    return ["calories", "protein_g", "carbs_g", "fat_g"].every(
+        (key) => nutrients[key] != null,
+    );
+}
+
+function recipeUnresolvedIngredients(recipe) {
+    return (recipe.ingredients || []).filter(
+        (ingredient) => !recipeIngredientResolved(ingredient),
+    );
+}
+
+// The detail action row, shared by openRecipe and the archive
+// dismiss path (which restores exactly what was rendered).
+let recipeDetailActionsHtml = "";
+
+function recipeDetailActionsMarkup(recipe) {
+    const flags = featureFlags();
+    const unresolved = recipeUnresolvedIngredients(recipe);
+    // Start cook is the primary action (brief R2) and is born
+    // flag-aware (toggles #241 rider): Cooks off, no button.
+    const startCook = flags.cooks
+        ? `<button class="button button-primary" type="button" data-action="start-recipe-cook" data-id="${escapeHtml(recipe.id)}">Start cook</button>`
+        : "";
+    const calculate =
+        unresolved.length > 0
+            ? `<button class="button button-secondary" type="button" data-action="calculate-recipe-nutrition" data-id="${escapeHtml(recipe.id)}">Calculate nutrition</button>`
+            : "";
+    const groceries = flags.groceries
+        ? `<button class="button button-secondary" type="button" data-action="recipe-groceries" data-id="${escapeHtml(recipe.id)}" data-name="${escapeHtml(recipe.name)}" data-servings="${escapeHtml(recipe.servings)}">Add to grocery list</button>`
+        : "";
+    return `${startCook}<button class="button button-secondary" type="button" data-action="log-recipe" data-id="${escapeHtml(recipe.id)}" data-revision="${escapeHtml(recipe.revision_id)}">Log recipe</button>${flags.plan ? `<button class="button button-secondary" type="button" data-action="plan-recipe" data-id="${escapeHtml(recipe.id)}" data-revision="${escapeHtml(recipe.revision_id)}">Add to plan</button>` : ""}${groceries}${calculate}<button class="button button-secondary" type="button" data-action="archive-recipe" data-id="${escapeHtml(recipe.id)}" data-version="${escapeHtml(recipe.version)}" data-revision="${escapeHtml(recipe.revision_id)}">Archive</button>`;
+}
+
+async function calculateRecipeNutrition(id) {
+    const data = await api(
+        `/api/app/recipes/${encodeURIComponent(id)}/calculate-nutrition`,
+        {
+            method: "POST",
+            body: JSON.stringify({}),
+            keepPrevious: true,
+        },
+    );
+    return data.result;
+}
+
+function recipeHealSummary(result) {
+    if (!result.healed) return "Nutrition is already calculated.";
+    if (result.unresolved_ingredients?.length) {
+        return `Nutrition calculated — ${result.unresolved_ingredients.length} ingredient${result.unresolved_ingredients.length === 1 ? "" : "s"} still couldn't be matched to a verified source.`;
+    }
+    return "Nutrition calculated for every ingredient.";
+}
+
+// Brief R1: opening an unresolved recipe for editing performs the
+// heal attempt once per revision, so the editor opens on calculated
+// numbers instead of blanks. The attempt is keyed by revision — a
+// healed recipe writes a new revision, and the key moves with it.
+const recipeHealAttempts = new Set();
+
+async function maybeAutoHealRecipe(recipe) {
+    const unresolved = recipeUnresolvedIngredients(recipe);
+    if (unresolved.length === 0) return;
+    const key = `${recipe.id}:${recipe.revision_id}`;
+    if (recipeHealAttempts.has(key)) return;
+    recipeHealAttempts.add(key);
+    try {
+        const result = await calculateRecipeNutrition(recipe.id);
+        toast(recipeHealSummary(result));
+        await openRecipe(recipe.id);
+        const details = dialog.querySelector(".recipe-edit-details");
+        if (details) details.open = true;
+    } catch (error) {
+        toast(
+            error.message || "Nutrition couldn't be calculated automatically.",
+            "error",
+        );
+    }
+}
+
 async function openRecipe(id) {
     const data = await api(`/api/app/recipes/${encodeURIComponent(id)}`);
     const recipe = data.recipe;
+    const unresolved = recipeUnresolvedIngredients(recipe);
     const ingredients = recipe.ingredients
-        .map(
-            (ingredient) =>
-                `<li class="recipe-ingredient-row"><span class="recipe-ingredient-main"><strong>${escapeHtml(ingredient.name)}</strong>${ingredient.quantity == null ? "" : ` — ${number(ingredient.quantity, 3)} ${escapeHtml(ingredient.unit || "")}`} ${sourceBadge(ingredient.source_type)}</span><strong class="recipe-ingredient-kcal">${number(ingredient.nutrients?.calories)} kcal</strong></li>`,
-        )
+        .map((ingredient) => {
+            const resolved = recipeIngredientResolved(ingredient);
+            return `<li class="recipe-ingredient-row"><span class="recipe-ingredient-main"><strong>${escapeHtml(ingredient.name)}</strong>${ingredient.quantity == null ? "" : ` — ${number(ingredient.quantity, 3)} ${escapeHtml(ingredient.unit || "")}`} ${sourceBadge(ingredient.source_type)}</span>${resolved ? `<strong class="recipe-ingredient-kcal">${number(ingredient.nutrients?.calories)} kcal</strong>` : `<span class="recipe-unresolved">Not resolved</span>`}</li>`;
+        })
         .join("");
+    const perServing =
+        recipe.nutrition_status === "unavailable"
+            ? `<p class="recipe-note">No per-serving nutrition yet — this recipe's ingredients were saved without nutrition sources. Calculate nutrition to fill it in from each ingredient's verified source.</p>`
+            : `<div class="recipe-per-serving"><span><strong>Per serving</strong></span><strong class="recipe-per-serving-values">${number(recipe.nutrition_per_serving?.calories)} kcal · P ${number(recipe.nutrition_per_serving?.protein_g, 1)}g · C ${number(recipe.nutrition_per_serving?.carbs_g, 1)}g · F ${number(recipe.nutrition_per_serving?.fat_g, 1)}g</strong></div><p class="recipe-note">${unresolved.length ? `Calculated from ${recipe.ingredients.length - unresolved.length} of ${recipe.ingredients.length} ingredients. The ${unresolved.length === 1 ? "ingredient" : "ingredients"} marked Not resolved ${unresolved.length === 1 ? "counts" : "count"} as nothing until matched.` : "Per-serving nutrition is calculated from the ingredient source snapshots pinned to this revision."}</p>`;
+    recipeDetailActionsHtml = recipeDetailActionsMarkup(recipe);
     openDialog(
         recipe.name,
-        `<div class="recipe-detail"><p class="recipe-meta">${number(recipe.servings, 3)} servings · revision ${number(recipe.revision_number)} · ${escapeHtml(recipe.nutrition_status)} nutrition</p><div class="recipe-per-serving"><span><strong>Per serving</strong></span><strong class="recipe-per-serving-values">${number(recipe.nutrition_per_serving?.calories)} kcal · P ${number(recipe.nutrition_per_serving?.protein_g, 1)}g · C ${number(recipe.nutrition_per_serving?.carbs_g, 1)}g · F ${number(recipe.nutrition_per_serving?.fat_g, 1)}g</strong></div><p class="recipe-note">Per-serving nutrition is calculated from the ingredient source snapshots pinned to this revision.</p><h3 class="spacer-top">Ingredients</h3><ul class="food-items recipe-ingredients">${ingredients}</ul><h3 class="spacer-top">Instructions</h3><ol class="recipe-instructions">${recipe.instructions.map((instruction, index) => `<li><span class="recipe-step-number">${index + 1}.</span> ${escapeHtml(instruction)}</li>`).join("") || "<li>No instructions recorded.</li>"}</ol><p class="tiny spacer-top">Every ingredient includes the source snapshot used to calculate this revision. Editing creates a new revision; historical logs stay pinned.</p><div class="auth-actions spacer-top recipe-detail-actions"><button class="button button-primary" type="button" data-action="log-recipe" data-id="${escapeHtml(recipe.id)}" data-revision="${escapeHtml(recipe.revision_id)}">Log recipe</button><button class="button button-secondary" type="button" data-action="plan-recipe" data-id="${escapeHtml(recipe.id)}" data-revision="${escapeHtml(recipe.revision_id)}">Add to plan</button><button class="button button-secondary" type="button" data-action="archive-recipe" data-id="${escapeHtml(recipe.id)}" data-version="${escapeHtml(recipe.version)}" data-revision="${escapeHtml(recipe.revision_id)}">Archive</button></div><details class="spacer-top recipe-edit-details"><summary>Edit recipe revision</summary>${recipeFormMarkup("edit", recipe)}</details></div>`,
+        `<div class="recipe-detail"><p class="recipe-meta">${number(recipe.servings, 3)} servings · revision ${number(recipe.revision_number)} · ${escapeHtml(recipe.nutrition_status)} nutrition</p>${perServing}<h3 class="spacer-top">Ingredients</h3><ul class="food-items recipe-ingredients">${ingredients}</ul><h3 class="spacer-top">Instructions</h3><ol class="recipe-instructions">${recipe.instructions.map((instruction, index) => `<li><span class="recipe-step-number">${index + 1}.</span> ${escapeHtml(instruction)}</li>`).join("") || "<li>No instructions recorded.</li>"}</ol><p class="tiny spacer-top">Every ingredient includes the source snapshot used to calculate this revision. Editing creates a new revision; historical logs stay pinned.</p><div class="auth-actions spacer-top recipe-detail-actions">${recipeDetailActionsHtml}</div><details class="spacer-top recipe-edit-details"><summary>Edit recipe revision</summary>${recipeFormMarkup("edit", recipe)}</details></div>`,
     );
+    const editDetails = dialog.querySelector(".recipe-edit-details");
+    editDetails?.addEventListener("toggle", () => {
+        if (editDetails.open) void maybeAutoHealRecipe(recipe);
+    });
     recipeComposer.ingredients = recipe.ingredients.map(
         recipeIngredientFromRecord,
     );
@@ -1438,6 +2410,16 @@ function openRecipePlan(id) {
     openDialog(
         "Add recipe to meal plan",
         `<form id="recipe-plan-form" class="auth-form" data-id="${escapeHtml(id)}"><label class="field"><span>Date</span><input name="planned_date" type="date" value="${escapeHtml(state.date)}" required /></label><label class="field"><span>Meal slot</span><select name="meal_slot"><option value="breakfast">Breakfast</option><option value="lunch" selected>Lunch</option><option value="dinner">Dinner</option><option value="snack">Snack</option></select></label><label class="field"><span>Servings planned</span><input name="servings" type="number" min="0.01" step="0.01" value="1" required /></label><button class="button button-primary" type="submit">Add to plan</button></form>`,
+    );
+}
+
+// Recipe experience R3: the servings prompt. Default is the recipe
+// as written; amounts scale to whatever the user is cooking.
+function openRecipeGroceries(id, name, servings) {
+    const recipeServings = Number(servings) || 1;
+    openDialog(
+        "Add to grocery list",
+        `<form id="recipe-groceries-form" class="auth-form" data-id="${escapeHtml(id)}"><p>Every ingredient in <strong>${escapeHtml(name || "this recipe")}</strong> that isn't marked optional goes on your grocery list. Items already on the list merge by name and unit — quantities add.</p><label class="field"><span>Servings you're cooking</span><input name="servings" type="number" min="0.01" step="0.01" value="${escapeHtml(recipeServings)}" required /></label><p class="tiny">The recipe makes ${number(recipeServings, 3)} servings; ingredient amounts scale to the servings you enter.</p><button class="button button-primary" type="submit">Add to grocery list</button></form>`,
     );
 }
 
@@ -1473,7 +2455,7 @@ async function renderPlan() {
     const weekSummary = plannedCount
         ? ` ${number(plannedCount)} planned across ${daysPlanned} of 7 days · ${number(totalCalories / Math.max(daysPlanned, 1))} kcal daily average on planned days.`
         : "";
-    content.innerHTML = `<div class="operate-view plan-view"><div class="page-heading"><div><h2>Week of ${escapeHtml(formatDate(start))}</h2><p>Planned meals stay separate from foods you actually logged.${weekSummary}</p></div><div class="auth-actions"><button class="button button-primary button-small" type="button" data-action="guided-planner">Guided planner</button><button class="button button-secondary button-small" type="button" data-action="guidance-preferences">Preferences</button><button class="button button-secondary button-small" data-action="date-week-prev">Previous week</button><button class="button button-secondary button-small" data-action="date-today">This week</button><button class="button button-secondary button-small" data-action="date-week-next">Next week</button></div></div><div class="meal-groups">${weekDays(
+    content.innerHTML = `<div class="operate-view plan-view"><div class="page-heading"><div><h2>Week of ${escapeHtml(formatDate(start))}</h2><p>Planned meals stay separate from logged meals.${weekSummary}</p></div><div class="auth-actions"><button class="button button-primary button-small" type="button" data-action="guided-planner">Guided planner</button><button class="button button-secondary button-small" type="button" data-action="guidance-preferences">Preferences</button><button class="button button-secondary button-small" data-action="date-week-prev">Previous week</button><button class="button button-secondary button-small" data-action="date-today">This week</button><button class="button button-secondary button-small" data-action="date-week-next">Next week</button></div></div><div class="meal-groups">${weekDays(
         start,
     )
         .map(
@@ -1756,10 +2738,16 @@ async function renderGuidedDraftReview(draft) {
             return `<div class="meal-card guided-draft-item" data-guided-item="${item.position}"><input type="hidden" name="date" value="${escapeHtml(item.date)}" /><div class="meal-card-head"><strong>${escapeHtml(formatDate(item.date, { weekday: true }))} · ${escapeHtml(item.meal_slot)}</strong><span>${escapeHtml(item.nutrition_status)}</span></div>${sourceControl}${!isGenerated || draft.mode === "mixed" ? `<label class="field"><span>Saved recipe</span><select class="input" name="recipe_choice"><option value="">Choose a saved recipe</option>${savedRecipeChoices(item.recipe_id, item.recipe_revision_id, recipes)}</select></label>` : ""}${isGenerated || draft.mode === "mixed" ? `<label class="field"><span>${isGenerated ? "Editable recipe proposal (nutrition is calculated separately)" : "Recipe proposal"}</span><textarea class="input" name="generated_recipe" rows="8" ${isGenerated ? "" : "disabled"}>${isGenerated ? escapeHtml(JSON.stringify(item.generated_recipe, null, 2)) : ""}</textarea></label>` : ""}<div class="meal-macros"><span class="macro-chip">${number(nutrition.calories)} kcal/serving</span><span class="macro-chip">P ${number(nutrition.protein_g, 1)}g</span><span class="macro-chip">C ${number(nutrition.carbs_g, 1)}g</span><span class="macro-chip">F ${number(nutrition.fat_g, 1)}g</span></div>${item.blockers?.length ? `<p class="error-text">Blocked: ${item.blockers.map(escapeHtml).join("; ")}</p>` : ""}${item.warnings?.length ? `<ul class="tiny">${item.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>` : ""}</div>`;
         })
         .join("");
+    // Feature toggles (T7): the committed plan's grocery-review
+    // step is a Plan → Groceries action; with Groceries off it hides
+    // and the plan simply stands on its own.
+    const groceryStep = featureFlags().groceries
+        ? `<div class="auth-actions spacer-top"><button class="button button-primary" type="button" data-action="guided-groceries">Review groceries separately</button></div>`
+        : "";
     const editForm =
         draft.status === "draft"
             ? `<form id="guided-plan-edit-form" class="auth-form" data-version="${draft.version}">${items}<div class="auth-actions">${planDraftActionsMarkup(blockers)}</div></form>`
-            : `<div class="meal-groups">${items}</div><div class="auth-actions spacer-top"><button class="button button-primary" type="button" data-action="guided-groceries">Review groceries separately</button></div><p class="tiny spacer-top">The plan is scheduled. Nothing has been logged as eaten, and no groceries have been added.</p>`;
+            : `<div class="meal-groups">${items}</div>${groceryStep}<p class="tiny spacer-top">The plan is scheduled. Nothing has been logged as eaten, and no groceries have been added.</p>`;
     openDialog(
         draft.status === "committed" ? "Plan committed" : "Review meal plan",
         `<p>${draft.items.length} meal${draft.items.length === 1 ? "" : "s"} · ${escapeHtml(draft.start_date)} to ${escapeHtml(draft.end_date)}. ${draft.status === "draft" ? "Review every blocker and warning before confirming." : ""}</p>${editForm}`,
@@ -1871,6 +2859,106 @@ function dismissGroceryInlineConfirm(button) {
     box?.remove();
 }
 
+// Grocery fix G1: a check-off updates the rendered list in place —
+// the row's purchased styling, the version stamps the next toggle
+// sends, the list header's checked count, the page heading's totals
+// and the Clear-purchased button's presence/count — instead of
+// rebuilding the whole view (the old renderRoute() call flickered
+// and put scroll position at the rebuild's mercy on every tap).
+// Counts are recounted from the DOM itself, so the headers can never
+// drift from the rows on screen.
+function syncGroceryPurchasedInPlace(input, updatedItem, purchased) {
+    const row = input.closest(".grocery-item-row");
+    if (!row) return;
+    row.classList.toggle("is-purchased", purchased);
+    const version = updatedItem?.version;
+    if (version != null) {
+        for (const stamped of row.querySelectorAll("[data-version]")) {
+            stamped.dataset.version = String(version);
+        }
+    }
+    const section = row.closest(".grocery-list");
+    if (section) {
+        const total = section.querySelectorAll(".grocery-item-row").length;
+        const checked = section.querySelectorAll(
+            ".grocery-item-row.is-purchased",
+        ).length;
+        const counts = section.querySelector(".grocery-list-counts");
+        if (counts) {
+            counts.textContent = `${total} item${total === 1 ? "" : "s"} · ${checked} checked`;
+        }
+        const actions = section.querySelector(".grocery-list-actions");
+        let clear = actions?.querySelector('[data-action="clear-purchased"]');
+        if (clear) {
+            clear.dataset.count = String(checked);
+            // The button leaves with the last purchased item — unless
+            // its inline confirmation is open, in which case the
+            // confirmation owns the button until it resolves.
+            if (checked === 0 && !clear.dataset.confirmPending) {
+                clear.remove();
+            }
+        } else if (checked > 0 && actions && !input.disabled) {
+            // First item checked on an editable list: the button
+            // appears with the same markup a fresh render emits.
+            clear = document.createElement("button");
+            clear.className = "button button-quiet button-small";
+            clear.type = "button";
+            clear.dataset.action = "clear-purchased";
+            clear.dataset.scope = input.dataset.scope;
+            clear.dataset.count = String(checked);
+            clear.textContent = "Clear purchased";
+            actions.append(clear);
+        }
+    }
+    const view = row.closest(".groceries-view");
+    if (view) {
+        const totalAll = view.querySelectorAll(".grocery-item-row").length;
+        const checkedAll = view.querySelectorAll(
+            ".grocery-item-row.is-purchased",
+        ).length;
+        const summary = view.querySelector(".grocery-total-counts");
+        if (summary) {
+            summary.textContent = ` ${totalAll} item${totalAll === 1 ? "" : "s"} · ${checkedAll} checked.`;
+        }
+    }
+}
+
+// Grocery fix G2: shopping mode is a session-level preference. The
+// flag survives in-app navigation and same-session reloads
+// (sessionStorage), and the body class — the only thing the mode's
+// CSS keys on — is applied solely while the groceries route is on
+// screen, so its chrome (sidebar and bottom nav hidden, content
+// centered) can never leak onto another surface.
+const SHOPPING_MODE_STORAGE_KEY = "munch-shopping-mode";
+
+function readShoppingModePreference() {
+    try {
+        return sessionStorage.getItem(SHOPPING_MODE_STORAGE_KEY) === "1";
+    } catch {
+        return false;
+    }
+}
+
+function writeShoppingModePreference(enabled) {
+    try {
+        if (enabled) {
+            sessionStorage.setItem(SHOPPING_MODE_STORAGE_KEY, "1");
+        } else {
+            sessionStorage.removeItem(SHOPPING_MODE_STORAGE_KEY);
+        }
+    } catch {
+        // Storage unavailable (private WebView): the in-memory flag
+        // still holds the mode for this page session.
+    }
+}
+
+function applyShoppingModeChrome() {
+    document.body.classList.toggle(
+        "shopping-mode",
+        Boolean(state.shoppingMode) && state.route === "groceries",
+    );
+}
+
 async function renderGroceries() {
     setLoading("Loading grocery lists…");
     const data = await planningData();
@@ -1903,10 +2991,10 @@ async function renderGroceries() {
                         `<div class="grocery-group"><div class="grocery-group-head"><h4>${group.label}</h4><span class="grocery-group-count">${group.items.length} item${group.items.length === 1 ? "" : "s"}</span></div><div class="grocery-items">${group.items.map((item) => groceryItemRowMarkup(item, list.scope, editable)).join("")}</div></div>`,
                 )
                 .join("");
-            return `<section class="panel grocery-list" data-grocery-scope="${list.scope}"><div class="panel-title"><div><h3>${list.scope === "household" ? "Household list" : "Personal list"}</h3><span>${list.scope === "household" && data.permissions?.householdRole ? `${escapeHtml(data.permissions.householdRole)} · ` : ""}${list.items.length} items · ${purchasedCount} checked</span></div><div class="auth-actions grocery-list-actions">${listAddButton}${editable && purchasedCount ? `<button class="button button-quiet button-small" type="button" data-action="clear-purchased" data-scope="${list.scope}" data-count="${purchasedCount}">Clear purchased</button>` : ""}</div></div>${list.items.length ? groupedItems : `<div class="empty-state"><div><h3>The list is empty</h3><p>Add an item manually or ask your AI assistant to record an explicit shopping need.</p>${editable ? `<div class="auth-actions spacer-top"><button class="button button-primary button-small" type="button" data-action="add-grocery" data-scope="${list.scope}">Add item</button></div>` : ""}</div></div>`}</section>`;
+            return `<section class="panel grocery-list" data-grocery-scope="${list.scope}"><div class="panel-title"><div><h3>${list.scope === "household" ? "Household list" : "Personal list"}</h3><span>${list.scope === "household" && data.permissions?.householdRole ? `${escapeHtml(data.permissions.householdRole)} · ` : ""}<span class="grocery-list-counts">${list.items.length} items · ${purchasedCount} checked</span></span></div><div class="auth-actions grocery-list-actions">${listAddButton}${editable && purchasedCount ? `<button class="button button-quiet button-small" type="button" data-action="clear-purchased" data-scope="${list.scope}" data-count="${purchasedCount}">Clear purchased</button>` : ""}</div></div>${list.items.length ? groupedItems : `<div class="empty-state"><div><h3>The list is empty</h3><p>Add an item manually or ask your AI assistant to record an explicit shopping need.</p>${editable ? `<div class="auth-actions spacer-top"><button class="button button-primary button-small" type="button" data-action="add-grocery" data-scope="${list.scope}">Add item</button></div>` : ""}</div></div>`}</section>`;
         })
         .join("");
-    content.innerHTML = `<div class="operate-view groceries-view"><div class="page-heading"><div><h2>Groceries</h2><p>Explicit shopping lists only. Munch does not infer pantry inventory.${listSummary}</p></div><div class="auth-actions"><button class="button button-secondary button-small" data-action="shopping-mode">Shopping mode</button></div></div>${lists || `<section class="panel"><div class="empty-state"><div><h3>No grocery lists</h3><p>Grocery lists are not available for this account.</p></div></div></section>`}</div>`;
+    content.innerHTML = `<div class="operate-view groceries-view"><div class="page-heading"><div><h2>Groceries</h2><p>Explicit lists only — nothing is inferred from your pantry.<span class="grocery-total-counts">${listSummary}</span></p>${state.shoppingMode ? `<p class="shopping-mode-caption">Bigger targets, distractions hidden — for checking off in the store</p>` : ""}</div><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="shopping-mode" aria-pressed="${state.shoppingMode ? "true" : "false"}">${state.shoppingMode ? "Exit shopping mode" : "Shopping mode"}</button></div></div>${lists || `<section class="panel"><div class="empty-state"><div><h3>No grocery lists</h3><p>Grocery lists are not available for this account.</p></div></div></section>`}</div>`;
 }
 
 function cookCardActionsMarkup(cook) {
@@ -2010,7 +3098,7 @@ async function renderCooks() {
           : active.length
             ? '<p class="cook-none-line">No finished cooks yet.</p>'
             : '<div class="empty-state"><div><h3>No cooks yet</h3><p>Start before cooking, add a photo and message while cooking, or record a past attempt.</p><button class="button button-primary button-small spacer-top" type="button" data-action="new-cook">Start your first cook</button></div></div>';
-    content.innerHTML = `<div class="operate-view cooks-view"><div class="page-heading"><div><h2>Cooks</h2><p>Persistent cooking sessions with photos, timeline, results, and attempts—separate from food logging.</p></div><div class="auth-actions"><button class="button button-primary button-small" type="button" data-action="new-cook">Start cook</button><button class="button button-secondary button-small" type="button" data-action="compare-cooks">Compare selected</button></div></div><section class="panel cook-search-panel"><form id="cook-search-form" class="cook-search-form"><div class="cook-search-row"><label class="field cook-search-query"><span>Search history</span><input class="input" name="query" type="search" value="${escapeHtml(state.cookQuery)}" placeholder="Search wings, notes, updates…" autocomplete="off" /></label><button class="button button-primary button-small" type="submit">Search history</button></div><details class="cook-filters"${hasFilters ? " open" : ""}><summary>Filters${[filters.dish, filters.method, filters.flavor, filters.dateFrom, filters.dateTo].filter(Boolean).length + (filters.status !== "all" ? 1 : 0) ? ` · ${[filters.dish, filters.method, filters.flavor, filters.dateFrom, filters.dateTo].filter(Boolean).length + (filters.status !== "all" ? 1 : 0)} set` : ""}</summary><div class="cook-filter-grid"><label class="field"><span>Dish</span><input class="input" name="dish" value="${escapeHtml(filters.dish)}" placeholder="Dish" /></label><label class="field"><span>Method</span><input class="input" name="method" value="${escapeHtml(filters.method)}" placeholder="Method" /></label><label class="field"><span>Flavor / seasoning</span><input class="input" name="flavor" value="${escapeHtml(filters.flavor)}" placeholder="Flavor / seasoning" /></label><label class="field"><span>Status</span><select name="status" aria-label="Cook status"><option value="all" ${filters.status === "all" ? "selected" : ""}>All statuses</option><option value="active" ${filters.status === "active" ? "selected" : ""}>Active</option><option value="finished" ${filters.status === "finished" ? "selected" : ""}>Finished</option></select></label><label class="field"><span>From</span><input class="input" name="date_from" type="date" value="${escapeHtml(filters.dateFrom)}" /></label><label class="field"><span>To</span><input class="input" name="date_to" type="date" value="${escapeHtml(filters.dateTo)}" /></label></div></details>${hasFilters ? '<div class="auth-actions cook-search-actions"><button class="button button-quiet button-small" type="button" data-action="clear-cook-search">Clear search</button></div>' : ""}<p class="tiny cook-search-note">Searches cook history directly, including original updates, timeline notes, results, dish labels, seasoning, method, and date.</p></form></section>${activeMarkup}<section class="panel"><div class="panel-title"><div><h3>${hasFilters ? "Matching history" : "Recent history"}</h3><span>${cooks.length} cook${cooks.length === 1 ? "" : "s"}</span></div></div>${historyMarkup}</section></div>`;
+    content.innerHTML = `<div class="operate-view cooks-view"><div class="page-heading"><div><h2>Cooks</h2></div><div class="auth-actions"><button class="button button-primary button-small" type="button" data-action="new-cook">Start cook</button><button class="button button-secondary button-small" type="button" data-action="compare-cooks">Compare selected</button></div></div><section class="panel cook-search-panel"><form id="cook-search-form" class="cook-search-form"><div class="cook-search-row"><label class="field cook-search-query"><span>Search history</span><input class="input" name="query" type="search" value="${escapeHtml(state.cookQuery)}" placeholder="Search wings, notes, updates…" autocomplete="off" /></label><button class="button button-primary button-small" type="submit">Search history</button></div><details class="cook-filters"${hasFilters ? " open" : ""}><summary>Filters${[filters.dish, filters.method, filters.flavor, filters.dateFrom, filters.dateTo].filter(Boolean).length + (filters.status !== "all" ? 1 : 0) ? ` · ${[filters.dish, filters.method, filters.flavor, filters.dateFrom, filters.dateTo].filter(Boolean).length + (filters.status !== "all" ? 1 : 0)} set` : ""}</summary><div class="cook-filter-grid"><label class="field"><span>Dish</span><input class="input" name="dish" value="${escapeHtml(filters.dish)}" placeholder="Dish" /></label><label class="field"><span>Method</span><input class="input" name="method" value="${escapeHtml(filters.method)}" placeholder="Method" /></label><label class="field"><span>Flavor / seasoning</span><input class="input" name="flavor" value="${escapeHtml(filters.flavor)}" placeholder="Flavor / seasoning" /></label><label class="field"><span>Status</span><select name="status" aria-label="Cook status"><option value="all" ${filters.status === "all" ? "selected" : ""}>All statuses</option><option value="active" ${filters.status === "active" ? "selected" : ""}>Active</option><option value="finished" ${filters.status === "finished" ? "selected" : ""}>Finished</option></select></label><label class="field"><span>From</span><input class="input" name="date_from" type="date" value="${escapeHtml(filters.dateFrom)}" /></label><label class="field"><span>To</span><input class="input" name="date_to" type="date" value="${escapeHtml(filters.dateTo)}" /></label></div></details>${hasFilters ? '<div class="auth-actions cook-search-actions"><button class="button button-quiet button-small" type="button" data-action="clear-cook-search">Clear search</button></div>' : ""}<p class="tiny cook-search-note">Searches cook history directly, including original updates, timeline notes, results, dish labels, seasoning, method, and date.</p></form></section>${activeMarkup}<section class="panel"><div class="panel-title"><div><h3>${hasFilters ? "Matching history" : "Recent history"}</h3><span>${cooks.length} cook${cooks.length === 1 ? "" : "s"}</span></div></div>${historyMarkup}</section></div>`;
 }
 
 function cookDishFormMarkup() {
@@ -2023,7 +3111,7 @@ function openCookCreate() {
         : '<input type="hidden" name="scope" value="personal" />';
     openDialog(
         "Start a cook",
-        `<form id="cook-create-form" class="auth-form" enctype="multipart/form-data"><p>Create a cook before, during, or after the fact. This does not log a meal or change pantry inventory.</p>${scopeOptions}<label class="field"><span>Cook title</span><input name="title" maxlength="200" placeholder="Smoked lemon pepper wings" required /></label><div class="meal-composer-grid"><label class="field"><span>Date</span><input name="cook_date" type="date" value="${escapeHtml(state.date)}" required /></label><label class="field"><span>Timezone</span><input name="timezone" value="${escapeHtml(state.bootstrap?.profile?.timezone || "UTC")}" maxlength="100" /></label></div><section id="cook-create-dishes" class="cook-create-dishes">${cookDishFormMarkup()}</section><button class="button button-quiet button-small" type="button" data-action="add-cook-dish">Add another dish</button><label class="field"><span>What are you doing?</span><textarea name="message" rows="3" maxlength="20000" placeholder="I’m starting these wings. I heated the grill to 250°F a couple minutes ago."></textarea></label><label class="field"><span>Photos</span><input name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple /><small class="tiny">JPEG, PNG, or WebP; up to 8 MB each. Notes are kept if a photo transfer fails.</small></label><button class="button button-primary" type="submit">Create cook</button></form>`,
+        `<form id="cook-create-form" class="auth-form" enctype="multipart/form-data"><p>Create a cook before, during, or after the fact. This does not log a meal or change pantry inventory.</p>${scopeOptions}<label class="field"><span>Cook title</span><input name="title" maxlength="200" placeholder="Smoked lemon pepper wings" required /></label><div class="meal-composer-grid"><label class="field"><span>Date</span><input name="cook_date" type="date" value="${escapeHtml(state.date)}" required /></label><label class="field"><span>Timezone</span><input name="timezone" value="${escapeHtml(state.bootstrap?.profile?.timezone || "UTC")}" maxlength="100" /></label></div><section id="cook-create-dishes" class="cook-create-dishes">${cookDishFormMarkup()}</section><button class="button button-quiet button-small" type="button" data-action="add-cook-dish">Add another dish</button><label class="field"><span>What are you doing?</span><textarea name="message" rows="3" maxlength="20000" placeholder="I’m starting these wings. I heated the grill to 250°F a couple minutes ago."></textarea></label><div class="field">${photoCaptureMarkup({ name: "photos", label: "Photos", multiple: true })}<small class="tiny">JPEG, PNG, or WebP; up to 8 MB each. Notes are kept if a photo transfer fails.</small></div><button class="button button-primary" type="submit">Create cook</button></form>`,
     );
 }
 
@@ -2077,6 +3165,103 @@ function cookTimelineMarkup(detail) {
         )
         .join("");
     return '<div class="cook-timeline">' + rows + "</div>";
+}
+
+function cookModeIngredientLabel(ingredient) {
+    if (typeof ingredient === "string") return ingredient;
+    const parts = [
+        ingredient.quantity != null
+            ? `${number(ingredient.quantity, 3)}${ingredient.unit ? ` ${ingredient.unit}` : ""}`
+            : "",
+        ingredient.name || "Ingredient",
+        ingredient.preparation ? `(${ingredient.preparation})` : "",
+    ].filter(Boolean);
+    return parts.join(" ");
+}
+
+// Recipe experience R2 — cook mode. A dish started from a recipe
+// carries recipe_progress (steps pinned from the revision + checked
+// positions); the panel renders it as two checklists with the current
+// step obvious, and — once every step is checked — offers Log recipe
+// and Finish cook. State persists server-side on the dish; this panel
+// only renders and toggles it.
+function cookModeMarkup(detail) {
+    const sessions = (detail.dishes || []).filter(
+        (dish) => dish.recipe_progress,
+    );
+    if (!sessions.length) return "";
+    return sessions
+        .map((dish) => {
+            const progress = dish.recipe_progress;
+            const steps = progress.steps || [];
+            const checkedSteps = new Set(progress.checked_steps || []);
+            const checkedIngredients = new Set(
+                progress.checked_ingredients || [],
+            );
+            const currentStep = steps.findIndex(
+                (_, index) => !checkedSteps.has(index),
+            );
+            const allStepsDone =
+                steps.length > 0 && checkedSteps.size >= steps.length;
+            const ingredients = (dish.actual_ingredients || [])
+                .map((ingredient, index) => {
+                    const checked = checkedIngredients.has(index);
+                    return `<label class="cook-mode-row${checked ? " is-checked" : ""}"><input type="checkbox" class="cook-mode-check" data-kind="ingredients" data-cook-id="${escapeHtml(detail.cook.id)}" data-dish-id="${escapeHtml(dish.id)}" data-index="${index}" ${checked ? "checked" : ""} /><span>${escapeHtml(cookModeIngredientLabel(ingredient))}</span></label>`;
+                })
+                .join("");
+            const stepRows = steps
+                .map((step, index) => {
+                    const checked = checkedSteps.has(index);
+                    const current = index === currentStep;
+                    return `<label class="cook-mode-row cook-mode-step${checked ? " is-checked" : ""}${current ? " is-current" : ""}"><input type="checkbox" class="cook-mode-check" data-kind="steps" data-cook-id="${escapeHtml(detail.cook.id)}" data-dish-id="${escapeHtml(dish.id)}" data-index="${index}" ${checked ? "checked" : ""} /><span class="cook-mode-step-number">${index + 1}</span><span class="cook-mode-step-text">${escapeHtml(step)}${current ? ' <span class="cook-mode-current-tag">Up next</span>' : ""}</span></label>`;
+                })
+                .join("");
+            const finishBlock =
+                allStepsDone && detail.cook.status === "active"
+                    ? `<div class="cook-mode-finish"><p><strong>Every step is checked off.</strong></p><div class="auth-actions" data-cook-actions data-context="detail" data-id="${escapeHtml(detail.cook.id)}" data-status="${escapeHtml(detail.cook.status)}"><button class="button button-primary" type="button" data-action="log-recipe" data-id="${escapeHtml(dish.recipe_id)}" data-revision="${escapeHtml(dish.recipe_revision_id)}">Log recipe</button><button class="button button-secondary" type="button" data-action="finish-cook" data-id="${escapeHtml(detail.cook.id)}">Finish cook</button></div></div>`
+                    : "";
+            return `<section class="cook-detail-section cook-mode" data-cook-mode data-dish-id="${escapeHtml(dish.id)}"><div class="panel-title"><div><h3>Cook mode</h3><span data-cook-mode-progress>${checkedIngredients.size} of ${(dish.actual_ingredients || []).length} ingredients · ${checkedSteps.size} of ${steps.length} steps</span></div></div>${ingredients ? `<h4 class="cook-mode-heading">Ingredients</h4><div class="cook-mode-list">${ingredients}</div>` : ""}${steps.length ? `<h4 class="cook-mode-heading">Steps</h4><div class="cook-mode-list">${stepRows}</div>` : `<p class="tiny">This recipe has no recorded steps.</p>`}${finishBlock}</section>`;
+        })
+        .join("");
+}
+
+// Recompute a cook-mode panel's row states + progress line + finish
+// block after a toggle, without re-fetching (the cook dialog keeps
+// its scroll position mid-cook).
+function refreshCookModePanel(panel) {
+    const boxes = [...panel.querySelectorAll(".cook-mode-check")];
+    const ingredientBoxes = boxes.filter(
+        (box) => box.dataset.kind === "ingredients",
+    );
+    const stepBoxes = boxes.filter((box) => box.dataset.kind === "steps");
+    for (const box of boxes) {
+        box.closest(".cook-mode-row")?.classList.toggle(
+            "is-checked",
+            box.checked,
+        );
+    }
+    const currentStep = stepBoxes.findIndex((box) => !box.checked);
+    stepBoxes.forEach((box, index) => {
+        const row = box.closest(".cook-mode-row");
+        if (!row) return;
+        const isCurrent = index === currentStep;
+        row.classList.toggle("is-current", isCurrent);
+        const tag = row.querySelector(".cook-mode-current-tag");
+        if (isCurrent && !tag) {
+            row.querySelector(".cook-mode-step-text")?.insertAdjacentHTML(
+                "beforeend",
+                ' <span class="cook-mode-current-tag">Up next</span>',
+            );
+        }
+        if (!isCurrent && tag) tag.remove();
+    });
+    const progress = panel.querySelector("[data-cook-mode-progress]");
+    if (progress) {
+        progress.textContent = `${ingredientBoxes.filter((box) => box.checked).length} of ${ingredientBoxes.length} ingredients · ${stepBoxes.filter((box) => box.checked).length} of ${stepBoxes.length} steps`;
+    }
+    // The finish block depends on server-rendered cook status, so a
+    // final-step toggle re-opens the cook to render it authoritatively.
+    return stepBoxes.length > 0 && stepBoxes.every((box) => box.checked);
 }
 
 function cookDetailMarkup(detail) {
@@ -2167,7 +3352,7 @@ function cookDetailMarkup(detail) {
               .join("") +
           "</details>"
         : "";
-    return `<div class="cook-detail-view"><div class="cook-detail-head"><div><p class="section-kicker">${escapeHtml(cook.status === "active" ? "Active cook" : "Completed cook")}</p><h2>${escapeHtml(cook.title)}</h2><p class="tiny">${escapeHtml(formatDate(cook.cook_date, { year: true }))} · ${escapeHtml(cook.timezone)} · version ${number(cook.version)}</p></div><div class="auth-actions cook-actions" data-cook-actions data-context="detail" data-id="${escapeHtml(cook.id)}" data-status="${escapeHtml(cook.status)}">${cookDetailActionsMarkup(cook)}</div></div>${cook.original_message ? '<details class="cook-original"><summary>Original context</summary><p>' + escapeHtml(cook.original_message) + "</p></details>" : ""}<section class="cook-detail-section"><div class="panel-title"><div><h3>Dishes</h3><span>${detail.dishes.length} recorded</span></div></div><div class="cook-dishes">${dishes}</div></section><section class="cook-detail-section"><div class="panel-title"><div><h3>Photos</h3><span>${detail.media.length} saved</span></div></div>${photoMarkup}</section><section class="cook-detail-section"><div class="panel-title"><div><h3>Timeline</h3><span>${detail.events.length} event${detail.events.length === 1 ? "" : "s"}</span></div></div>${cookTimelineMarkup(detail)}</section><section class="cook-detail-section"><div class="panel-title"><div><h3>Record an update</h3><span>One message can add multiple events and photos.</span></div></div><form id="cook-update-form" class="auth-form" data-id="${escapeHtml(cook.id)}" enctype="multipart/form-data"><input type="hidden" name="timezone" value="${escapeHtml(cook.timezone)}" /><label class="field"><span>What happened?</span><textarea name="message" rows="3" maxlength="20000" placeholder="A couple minutes ago I wrapped the wings. Internal temp was 155°F."></textarea></label><label class="field"><span>Add photos</span><input name="photos" type="file" accept="image/jpeg,image/png,image/webp" multiple /></label><button class="button button-primary" type="submit">Record update</button></form></section><section class="cook-detail-section"><div class="panel-title"><div><h3>Result</h3><span>User observations stay separate from suggestions.</span></div></div><form id="cook-outcome-form" class="auth-form" data-id="${escapeHtml(cook.id)}" data-version="${escapeHtml(outcome?.version || "")}"><label class="field"><span>Feedback</span><textarea name="written_feedback" rows="3" maxlength="20000" placeholder="What did it taste and feel like?">${escapeHtml(outcome?.written_feedback || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Overall assessment (1–5)</span><input name="overall_assessment" type="number" min="1" max="5" step="0.1" value="${escapeHtml(outcome?.overall_assessment || "")}" /></label><label class="field"><span>Characteristics JSON</span><input name="characteristics" value="${escapeHtml(JSON.stringify(outcome?.characteristics || {}))}" placeholder='{"smoke_intensity":"medium"}' /></label></div><label class="field"><span>What worked</span><textarea name="worked" rows="2" maxlength="10000">${escapeHtml(outcome?.worked || "")}</textarea></label><label class="field"><span>What disappointed you</span><textarea name="disappointed" rows="2" maxlength="10000">${escapeHtml(outcome?.disappointed || "")}</textarea></label><label class="field"><span>Change next time</span><textarea name="next_time_notes" rows="2" maxlength="10000">${escapeHtml(outcome?.next_time_notes || "")}</textarea></label><label class="checkbox-row"><input name="is_preferred" type="checkbox" ${outcome?.is_preferred ? "checked" : ""} /> Preferred attempt</label><button class="button button-primary" type="submit">Save result</button></form></section><section class="cook-detail-section"><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="cook-recipe-draft" data-id="${escapeHtml(cook.id)}">Save as recipe</button><button class="button button-secondary button-small" type="button" data-action="set-preferred-cook" data-id="${escapeHtml(cook.id)}">Choose preferred attempt</button></div>${updateMarkup}</section></div>`;
+    return `<div class="cook-detail-view"><div class="cook-detail-head"><div><p class="section-kicker">${escapeHtml(cook.status === "active" ? "Active cook" : "Completed cook")}</p><h2>${escapeHtml(cook.title)}</h2><p class="tiny">${escapeHtml(formatDate(cook.cook_date, { year: true }))} · ${escapeHtml(cook.timezone)} · version ${number(cook.version)}</p></div><div class="auth-actions cook-actions" data-cook-actions data-context="detail" data-id="${escapeHtml(cook.id)}" data-status="${escapeHtml(cook.status)}">${cookDetailActionsMarkup(cook)}</div></div>${cook.original_message ? '<details class="cook-original"><summary>Original context</summary><p>' + escapeHtml(cook.original_message) + "</p></details>" : ""}${cookModeMarkup(detail)}<section class="cook-detail-section"><div class="panel-title"><div><h3>Dishes</h3><span>${detail.dishes.length} recorded</span></div></div><div class="cook-dishes">${dishes}</div></section><section class="cook-detail-section"><div class="panel-title"><div><h3>Photos</h3><span>${detail.media.length} saved</span></div></div>${photoMarkup}</section><section class="cook-detail-section"><div class="panel-title"><div><h3>Timeline</h3><span>${detail.events.length} event${detail.events.length === 1 ? "" : "s"}</span></div></div>${cookTimelineMarkup(detail)}</section><section class="cook-detail-section"><div class="panel-title"><div><h3>Record an update</h3><span>One message can add multiple events and photos.</span></div></div><form id="cook-update-form" class="auth-form" data-id="${escapeHtml(cook.id)}" enctype="multipart/form-data"><input type="hidden" name="timezone" value="${escapeHtml(cook.timezone)}" /><label class="field"><span>What happened?</span><textarea name="message" rows="3" maxlength="20000" placeholder="A couple minutes ago I wrapped the wings. Internal temp was 155°F."></textarea></label><div class="field">${photoCaptureMarkup({ name: "photos", label: "Add photos", multiple: true })}</div><button class="button button-primary" type="submit">Record update</button></form></section><section class="cook-detail-section"><div class="panel-title"><div><h3>Result</h3><span>User observations stay separate from suggestions.</span></div></div><form id="cook-outcome-form" class="auth-form" data-id="${escapeHtml(cook.id)}" data-version="${escapeHtml(outcome?.version || "")}"><label class="field"><span>Feedback</span><textarea name="written_feedback" rows="3" maxlength="20000" placeholder="What did it taste and feel like?">${escapeHtml(outcome?.written_feedback || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Overall assessment (1–5)</span><input name="overall_assessment" type="number" min="1" max="5" step="0.1" value="${escapeHtml(outcome?.overall_assessment || "")}" /></label><label class="field"><span>Characteristics JSON</span><input name="characteristics" value="${escapeHtml(JSON.stringify(outcome?.characteristics || {}))}" placeholder='{"smoke_intensity":"medium"}' /></label></div><label class="field"><span>What worked</span><textarea name="worked" rows="2" maxlength="10000">${escapeHtml(outcome?.worked || "")}</textarea></label><label class="field"><span>What disappointed you</span><textarea name="disappointed" rows="2" maxlength="10000">${escapeHtml(outcome?.disappointed || "")}</textarea></label><label class="field"><span>Change next time</span><textarea name="next_time_notes" rows="2" maxlength="10000">${escapeHtml(outcome?.next_time_notes || "")}</textarea></label><label class="checkbox-row"><input name="is_preferred" type="checkbox" ${outcome?.is_preferred ? "checked" : ""} /> Preferred attempt</label><button class="button button-primary" type="submit">Save result</button></form></section><section class="cook-detail-section"><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="cook-recipe-draft" data-id="${escapeHtml(cook.id)}">Save as recipe</button><button class="button button-secondary button-small" type="button" data-action="set-preferred-cook" data-id="${escapeHtml(cook.id)}">Choose preferred attempt</button></div>${updateMarkup}</section></div>`;
 }
 
 function openCookDishEditor(dish, cookId, cookVersion) {
@@ -2296,7 +3481,18 @@ function accountContext() {
         setLoading,
         renderRoute,
         navigate,
+        // Feature toggles (T5/T6): a saved flag set updates the
+        // in-memory bootstrap and re-renders both navs in place.
+        applyFeatures: (features) => {
+            if (state.bootstrap) state.bootstrap.features = features;
+            applyFeatureNav(features);
+        },
     };
+}
+
+/** The account's feature flags, normalized (missing = all on). */
+function featureFlags() {
+    return normalizeFeatureFlags(state.bootstrap?.features);
 }
 
 // ---------------------------------------------------------------------
@@ -2335,7 +3531,7 @@ const CHAT_SURFACE_LABELS = {
     today: "Today",
     meal_plan: "Meal Plan",
     pantry: "Pantry",
-    insights: "Insights",
+    insights: "Trends",
 };
 
 function chatDraftCard(message) {
@@ -2539,6 +3735,10 @@ async function startNewChat() {
 }
 
 async function renderRoute() {
+    // T8: the Insights destination retired — its route lands on Trends.
+    if (location.pathname === "/app/insights") {
+        history.replaceState({}, "", "/app/trends");
+    }
     const previousRoute = state.route;
     state.route = routes[location.pathname] || "today";
     // S8: entering Chat from another surface refetches the persisted
@@ -2548,6 +3748,9 @@ async function renderRoute() {
     }
     syncAndroidAdPlacement();
     setActiveRoute(state.route);
+    // Grocery fix G2: the shopping-mode class follows the route —
+    // present only while Groceries is the surface on screen.
+    applyShoppingModeChrome();
     try {
         if (!state.bootstrap) {
             state.bootstrap = await api("/api/app/bootstrap");
@@ -2555,13 +3758,26 @@ async function renderRoute() {
                 state.bootstrap.profile?.timezone || "UTC",
             );
         }
+        // Feature toggles (T6): both navs render from the account's
+        // flags every route render, so a toggle saved anywhere —
+        // including another device — is honored on the next render.
+        applyFeatureNav(state.bootstrap?.features);
+        // Feature toggles (T3): a disabled module's route lands on
+        // Today with the one-line notice — never a dead page.
+        const gatedModule = ROUTE_FEATURE_MODULES[state.route];
+        if (gatedModule && !featureFlags()[gatedModule]) {
+            history.replaceState({}, "", "/app");
+            queueModuleOffNotice(gatedModule);
+            state.route = "today";
+            setActiveRoute("today");
+        }
         if (isAccountRoute(state.route) && !accountTitles[state.route]) {
             throw new Error("Unknown account route");
         }
         const renderers = {
             today: renderToday,
             log: renderLog,
-            insights: renderInsights,
+            trends: renderTrends,
             foods: renderFoods,
             recipes: renderRecipes,
             cooks: renderCooks,
@@ -2573,6 +3789,8 @@ async function renderRoute() {
             settings: () => renderAccountRoute("settings", accountContext()),
             "settings-profile": () =>
                 renderAccountRoute("settings-profile", accountContext()),
+            "settings-features": () =>
+                renderAccountRoute("settings-features", accountContext()),
             "settings-goals": () =>
                 renderAccountRoute("settings-goals", accountContext()),
             "settings-billing": () =>
@@ -2586,6 +3804,12 @@ async function renderRoute() {
         };
         await (renderers[state.route] || renderToday)();
         syncAndroidAdPlacement();
+        // Feature toggles (T3): surface the queued module-off notice
+        // once, on the Today landing it redirected to.
+        if (state.route === "today") {
+            const noticeModule = takeModuleOffNotice();
+            if (noticeModule) toast(moduleOffNotice(noticeModule));
+        }
         if (state.route === "today" || state.route === "log") {
             const actions = content.querySelector(
                 ".page-heading .auth-actions",
@@ -3282,7 +4506,15 @@ function draftItemEditor(item, index) {
         )
         .join("");
     const portionField = draftPortionField(item);
-    return `<article class="meal-draft-item meal-composer-item" data-draft-item-index="${index}"><div class="meal-composer-item-head"><div><strong>${escapeHtml(item.name)}</strong><small>${sourceBadge(item.source_type)} ${confidenceBadge(item.confidence)}</small></div><div class="auth-actions"><button class="button button-primary button-small" type="button" data-action="save-draft-item" data-index="${index}">Save item</button><button class="button button-quiet button-small" type="button" data-action="remove-draft-item" data-index="${index}">Remove</button></div></div><div class="meal-composer-grid"><label class="field"><span>Name</span><input data-draft-field="name" value="${escapeHtml(item.name)}" maxlength="500" required /></label>${portionField}<label class="field"><span>Quantity</span><input data-draft-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity ?? 1)}" /></label><label class="field"><span>Gram weight</span><input data-draft-field="gram_weight" type="number" min="0.01" step="0.1" value="${escapeHtml(item.gram_weight ?? "")}" /></label></div><div class="meal-composer-nutrients">${nutrientFields}</div><details class="food-audit"><summary>Provenance and assumptions</summary><div class="food-audit-body"><div>${sourceBadge(item.source_type)} ${escapeHtml(item.provider || "Source snapshot preserved")}</div>${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noreferrer">View source</a>` : ""}${item.assumptions?.length ? `<div>Assumptions: ${escapeHtml(item.assumptions.join("; "))}</div>` : ""}</div></details></article>`;
+    // Photo-flow P3: item editors are collapsed by default — the
+    // review reads as a compact list (name, provenance, kcal, portion)
+    // and the full editor opens on tap. Expanded state lives in
+    // mealDraftReview.expandedItems so re-renders preserve it.
+    const expanded = mealDraftReview.expandedItems.has(
+        item.id ?? `index:${index}`,
+    );
+    const calories = item.nutrients?.calories;
+    return `<article class="meal-draft-item meal-composer-item" data-draft-item-index="${index}"><div class="meal-composer-item-head meal-draft-item-head"><button class="meal-draft-item-toggle" type="button" data-action="toggle-draft-item" data-index="${index}" aria-expanded="${expanded}"><span class="meal-draft-item-summary"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.portion_label || "")}${calories != null ? ` · ${number(calories)} kcal` : ""}</small></span><span class="meal-draft-item-chevron" aria-hidden="true">${expanded ? "▾" : "▸"}</span></button><small class="meal-draft-item-badges">${sourceBadge(item.source_type)} ${confidenceBadge(item.confidence)}</small><button class="button button-quiet button-small" type="button" data-action="remove-draft-item" data-index="${index}">Remove</button></div><div class="meal-draft-item-fields" ${expanded ? "" : "hidden"}><div class="meal-composer-grid"><label class="field"><span>Name</span><input data-draft-field="name" value="${escapeHtml(item.name)}" maxlength="500" required /></label>${portionField}<label class="field"><span>Quantity</span><input data-draft-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity ?? 1)}" /></label><label class="field"><span>Gram weight</span><input data-draft-field="gram_weight" type="number" min="0.01" step="0.1" value="${escapeHtml(item.gram_weight ?? "")}" /></label></div><div class="meal-composer-nutrients">${nutrientFields}</div><details class="food-audit"><summary>Provenance and assumptions</summary><div class="food-audit-body"><div>${sourceBadge(item.source_type)} ${escapeHtml(item.provider || "Source snapshot preserved")}</div>${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noreferrer">View source</a>` : ""}${item.assumptions?.length ? `<div>Assumptions: ${escapeHtml(item.assumptions.join("; "))}</div>` : ""}</div></details></div></article>`;
 }
 
 function draftManualEditor(item, index) {
@@ -3295,9 +4527,178 @@ function draftManualEditor(item, index) {
     return `<article class="meal-draft-item meal-composer-item" data-draft-pending-index="${index}"><div class="meal-composer-item-head"><div><strong>New manual food</strong><small>${sourceBadge("user_supplied")} Enter the nutrition used</small></div><button class="button button-primary button-small" type="button" data-action="save-draft-manual" data-index="${index}">Add item</button></div><div class="meal-composer-grid"><label class="field"><span>Name</span><input data-draft-field="name" value="${escapeHtml(item.name || "")}" maxlength="500" required /></label><label class="field"><span>Portion</span><input data-draft-field="portion_label" value="${escapeHtml(item.portion_label || "")}" placeholder="1 bowl, 1 slice…" /></label><label class="field"><span>Quantity</span><input data-draft-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity ?? 1)}" /></label><label class="field"><span>Gram weight</span><input data-draft-field="gram_weight" type="number" min="0.01" step="0.1" value="${escapeHtml(item.gram_weight ?? "")}" /></label></div><div class="meal-composer-nutrients">${nutrientFields}</div></article>`;
 }
 
-function renderMealDraftReview(draft) {
-    mealDraftReview.draft = draft;
+// --- Photo-flow P4: ONE save model for the draft review -----------
+// Every edit (item fields, meal details) is local until "Save
+// changes" commits it. Dirty state is tracked per item + details,
+// shown in the save bar, and unsaved editor contents are snapshotted
+// before any re-render and restored after it, so a re-render caused
+// by another action (add text, add food, remove, question answer)
+// can never silently discard an unsaved edit — the two-save trap
+// this replaces (Save details re-rendered and dropped item edits).
+
+function draftItemKey(item, index) {
+    return item?.id ?? `index:${index}`;
+}
+
+function captureDraftUnsavedEdits() {
     const root = document.getElementById("meal-draft-review");
+    const draft = mealDraftReview.draft;
+    if (!root || !draft) return null;
+    const readFields = (editor) => {
+        const values = {};
+        editor.querySelectorAll("[data-draft-field]").forEach((field) => {
+            values[field.dataset.draftField] = field.value;
+        });
+        return values;
+    };
+    const items = new Map();
+    root.querySelectorAll("[data-draft-item-index]").forEach((editor) => {
+        const index = Number(editor.dataset.draftItemIndex);
+        const record = draft.items[index];
+        if (record) items.set(draftItemKey(record, index), readFields(editor));
+    });
+    const pending = new Map();
+    root.querySelectorAll("[data-draft-pending-index]").forEach((editor) => {
+        pending.set(
+            Number(editor.dataset.draftPendingIndex),
+            readFields(editor),
+        );
+    });
+    const details = {};
+    root.querySelectorAll("[data-draft-details] [data-draft-field]").forEach(
+        (field) => {
+            details[field.dataset.draftField] = field.value;
+        },
+    );
+    return { items, pending, details };
+}
+
+function applyDraftUnsavedEdits(snapshot, draft) {
+    if (!snapshot) return;
+    const root = document.getElementById("meal-draft-review");
+    if (!root) return;
+    const writeFields = (editor, values) => {
+        editor.querySelectorAll("[data-draft-field]").forEach((field) => {
+            if (field.dataset.draftField in values) {
+                field.value = values[field.dataset.draftField];
+            }
+        });
+    };
+    root.querySelectorAll("[data-draft-item-index]").forEach((editor) => {
+        const index = Number(editor.dataset.draftItemIndex);
+        const record = draft.items[index];
+        const values = record
+            ? snapshot.items.get(draftItemKey(record, index))
+            : null;
+        if (values) writeFields(editor, values);
+    });
+    root.querySelectorAll("[data-draft-pending-index]").forEach((editor) => {
+        const values = snapshot.pending.get(
+            Number(editor.dataset.draftPendingIndex),
+        );
+        if (values) writeFields(editor, values);
+    });
+    root.querySelectorAll("[data-draft-details] [data-draft-field]").forEach(
+        (field) => {
+            if (field.dataset.draftField in snapshot.details) {
+                field.value = snapshot.details[field.dataset.draftField];
+            }
+        },
+    );
+}
+
+function draftHasUnsavedChanges() {
+    return mealDraftReview.detailsDirty || mealDraftReview.dirtyItems.size > 0;
+}
+
+function refreshDraftSaveBar() {
+    const bar = document.querySelector("[data-draft-savebar]");
+    if (!bar) return;
+    const dirty = draftHasUnsavedChanges();
+    const button = bar.querySelector('[data-action="save-draft-all"]');
+    if (button) button.disabled = !dirty;
+    const note = bar.querySelector("[data-draft-save-note]");
+    if (note) {
+        note.textContent = dirty
+            ? "Unsaved changes"
+            : (mealDraftReview.savedMessage ?? "");
+        note.className = dirty ? "meal-draft-dirty" : "meal-draft-saved";
+    }
+}
+
+/** Commit every dirty item, then the details, threading the draft
+ * version through each PATCH. Returns the freshest draft. */
+async function saveDraftChanges() {
+    if (!mealDraftReview.draft || !draftHasUnsavedChanges()) {
+        return mealDraftReview.draft;
+    }
+    const root = document.getElementById("meal-draft-review");
+    const editors = [
+        ...(root?.querySelectorAll("[data-draft-item-index]") ?? []),
+    ];
+    for (const editor of editors) {
+        const index = Number(editor.dataset.draftItemIndex);
+        const record = mealDraftReview.draft.items[index];
+        if (
+            !record ||
+            !mealDraftReview.dirtyItems.has(draftItemKey(record, index))
+        ) {
+            continue;
+        }
+        const item = draftItemPayloadFromDom(index);
+        const result = await api(
+            `/api/app/meal-drafts/${mealDraftReview.draft.id}/items/${record.id}`,
+            {
+                method: "PATCH",
+                body: JSON.stringify({
+                    expected_version: mealDraftReview.draft.version,
+                    item,
+                }),
+                keepPrevious: true,
+            },
+        );
+        mealDraftReview.draft = result.draft;
+        mealDraftReview.dirtyItems.delete(draftItemKey(record, index));
+    }
+    if (mealDraftReview.detailsDirty) {
+        const detailsRoot = root?.querySelector("[data-draft-details]");
+        const field = (name) =>
+            detailsRoot?.querySelector(`[data-draft-field="${name}"]`);
+        const loggedAt = field("logged_at")?.value;
+        const result = await api(
+            `/api/app/meal-drafts/${mealDraftReview.draft.id}`,
+            {
+                method: "PATCH",
+                body: JSON.stringify({
+                    expected_version: mealDraftReview.draft.version,
+                    description: field("description")?.value.trim() || null,
+                    meal_type:
+                        field("meal_type")?.value ||
+                        mealDraftReview.draft.meal_type,
+                    logged_at: loggedAt
+                        ? new Date(loggedAt).toISOString()
+                        : mealDraftReview.draft.logged_at,
+                    notes: field("notes")?.value.trim() || null,
+                }),
+                keepPrevious: true,
+            },
+        );
+        mealDraftReview.draft = result.draft;
+        mealDraftReview.detailsDirty = false;
+    }
+    mealDraftReview.savedMessage = "All changes saved.";
+    return mealDraftReview.draft;
+}
+
+function renderMealDraftReview(draft) {
+    const root = document.getElementById("meal-draft-review");
+    const snapshot = mealDraftReview.suppressSnapshot
+        ? null
+        : captureDraftUnsavedEdits();
+    mealDraftReview.suppressSnapshot = false;
+    const scrollHost = root?.closest("dialog");
+    const scrollTop = scrollHost?.scrollTop ?? 0;
+    mealDraftReview.draft = draft;
     if (!root) return;
     const openQuestions = draft.questions.filter(
         (question) => question.status === "open",
@@ -3308,7 +4709,10 @@ function renderMealDraftReview(draft) {
         "awaiting_answers",
         "awaiting_confirmation",
     ].includes(draft.status);
-    root.innerHTML = `<div class="meal-draft-review"><div class="panel-title"><div><span class="section-kicker">${escapeHtml(draft.status.replaceAll("_", " "))}</span><h3>${escapeHtml(draft.description || "Meal draft")}</h3></div><span>Version ${draft.version}</span></div><p class="tiny">${draft.expires_at ? `Expires ${escapeHtml(formatTime(draft.expires_at))}` : ""} ${draft.source_mode ? `· Source: ${escapeHtml(draft.source_mode)}` : ""}</p><div class="summary-grid">${metricCard("Calories", totals.calories, " kcal", null, true)}${metricCard("Protein", totals.protein_g, "g", null)}${metricCard("Carbs", totals.carbs_g, "g", null)}${metricCard("Fat", totals.fat_g, "g", null)}</div>${editable ? `<section class="meal-draft-section"><div class="panel-title"><h4>Meal details</h4><button class="button button-primary button-small" type="button" data-action="save-meal-draft">Save details</button></div><div class="meal-composer-grid"><label class="field"><span>Description</span><input data-draft-field="description" value="${escapeHtml(draft.description || "")}" maxlength="2000" /></label><label class="field"><span>Meal type</span><select data-draft-field="meal_type"><option value="breakfast" ${draft.meal_type === "breakfast" ? "selected" : ""}>Breakfast</option><option value="lunch" ${draft.meal_type === "lunch" ? "selected" : ""}>Lunch</option><option value="dinner" ${draft.meal_type === "dinner" ? "selected" : ""}>Dinner</option><option value="snack" ${draft.meal_type === "snack" ? "selected" : ""}>Snack</option></select></label><label class="field"><span>Logged at</span><input data-draft-field="logged_at" type="datetime-local" value="${escapeHtml(draftDateTimeValue(draft.logged_at))}" /></label></div><label class="field"><span>Notes</span><textarea data-draft-field="notes" rows="2" maxlength="4000">${escapeHtml(draft.notes || "")}</textarea></label></section>` : ""}<section class="meal-draft-section"><div class="panel-title"><h4>Foods and provenance</h4><span>${draft.items.length} item${draft.items.length === 1 ? "" : "s"}</span></div>${draft.items.map(draftItemEditor).join("") || `<p class="tiny">No foods are in this draft yet.</p>`}${mealDraftReview.pendingManual.map(draftManualEditor).join("")}</section>${editable && draft.source_mode === "photo" ? `<section class="meal-draft-section meal-draft-add-text"><div class="panel-title"><h4>Anything else to add?</h4></div><label class="field"><span class="sr-only">Anything else to add?</span><input class="input meal-draft-add-text-input" id="meal-draft-add-text-input" type="text" placeholder="I added a good bit of butter…" maxlength="500" autocomplete="off" /></label><button class="button button-secondary meal-draft-add-text-button" type="button" data-action="add-draft-text">Add to draft</button>${mealDraftReview.addTextMessage ? `<p class="tiny meal-draft-add-text-message" role="status">${escapeHtml(mealDraftReview.addTextMessage)}</p>` : ""}</section>` : ""}${editable ? `<section class="meal-draft-section meal-composer-search"><div class="panel-title"><h4>Add another food</h4><button class="button button-secondary button-small" type="button" data-action="add-draft-manual">Add manual food</button></div><div class="meal-composer-search-row"><input class="input" id="meal-draft-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><input class="input" id="meal-draft-food-barcode" inputmode="numeric" placeholder="Barcode" aria-label="Food barcode" /><button class="button button-secondary" type="button" data-action="lookup-draft-food-barcode">Look up</button></div><div id="meal-draft-food-results" class="meal-food-results"></div></section>` : ""}${openQuestions.length ? `<section class="meal-draft-section"><div class="panel-title"><h4>Questions</h4><span>${openQuestions.length} open</span></div>${openQuestions.map((question) => `<div class="meal-draft-question" data-draft-question-id="${escapeHtml(question.id)}"><strong>${escapeHtml(question.prompt)}</strong><div class="meal-composer-search-row"><input class="input" data-draft-question-answer placeholder="Answer or correction" maxlength="2000" /><button class="button button-secondary button-small" type="button" data-action="answer-meal-draft-question" data-question-id="${escapeHtml(question.id)}">Save answer</button></div></div>`).join("")}<label class="checkbox-row"><input type="checkbox" data-draft-accept-assumptions /> Accept the remaining assumptions as shown</label></section>` : ""}<div class="auth-actions meal-draft-actions">${editable ? `<button class="button button-primary" type="button" data-action="confirm-meal-draft">${openQuestions.length ? "Confirm and accept assumptions" : "Confirm and log meal"}</button><button class="button button-quiet" type="button" data-action="cancel-meal-draft">Abandon draft</button>` : `<p class="tiny">This draft is ${escapeHtml(draft.status)}.</p>`}</div></div>`;
+    const dirty = draftHasUnsavedChanges();
+    root.innerHTML = `<div class="meal-draft-review"><div class="panel-title"><div><span class="section-kicker">${escapeHtml(draft.status.replaceAll("_", " "))}</span><h3>${escapeHtml(draft.description || "Meal draft")}</h3></div><span>Version ${draft.version}</span></div><p class="tiny">${draft.expires_at ? `Expires ${escapeHtml(formatTime(draft.expires_at))}` : ""} ${draft.source_mode ? `· Source: ${escapeHtml(draft.source_mode)}` : ""}</p><div class="summary-grid">${metricCard("Calories", totals.calories, " kcal", null, true)}${metricCard("Protein", totals.protein_g, "g", null)}${metricCard("Carbs", totals.carbs_g, "g", null)}${metricCard("Fat", totals.fat_g, "g", null)}</div>${editable && draft.source_mode === "photo" ? `<section class="meal-draft-section meal-draft-add-text"><div class="panel-title"><h4>Anything else to add?</h4></div><label class="field"><span class="sr-only">Anything else to add?</span><input class="input meal-draft-add-text-input" id="meal-draft-add-text-input" type="text" placeholder="I added a good bit of butter…" maxlength="500" autocomplete="off" /></label><button class="button button-secondary meal-draft-add-text-button" type="button" data-action="add-draft-text">Add to draft</button>${mealDraftReview.addTextMessage ? `<p class="tiny meal-draft-add-text-message" role="status">${escapeHtml(mealDraftReview.addTextMessage)}</p>` : ""}</section>` : ""}${editable ? `<section class="meal-draft-section" data-draft-details><div class="panel-title"><h4>Meal details</h4></div><div class="meal-composer-grid"><label class="field"><span>Description</span><input data-draft-field="description" value="${escapeHtml(draft.description || "")}" maxlength="2000" /></label><label class="field"><span>Meal type</span><select data-draft-field="meal_type"><option value="breakfast" ${draft.meal_type === "breakfast" ? "selected" : ""}>Breakfast</option><option value="lunch" ${draft.meal_type === "lunch" ? "selected" : ""}>Lunch</option><option value="dinner" ${draft.meal_type === "dinner" ? "selected" : ""}>Dinner</option><option value="snack" ${draft.meal_type === "snack" ? "selected" : ""}>Snack</option></select></label><label class="field"><span>Logged at</span><input data-draft-field="logged_at" type="datetime-local" value="${escapeHtml(draftDateTimeValue(draft.logged_at))}" /></label></div><label class="field"><span>Notes</span><textarea data-draft-field="notes" rows="2" maxlength="4000">${escapeHtml(draft.notes || "")}</textarea></label></section>` : ""}<section class="meal-draft-section"><div class="panel-title"><h4>Foods and provenance</h4><span>${draft.items.length} item${draft.items.length === 1 ? "" : "s"}</span></div>${draft.items.map(draftItemEditor).join("") || `<p class="tiny">No foods are in this draft yet.</p>`}${mealDraftReview.pendingManual.map(draftManualEditor).join("")}</section>${editable ? `<section class="meal-draft-section meal-composer-search"><div class="panel-title"><h4>Add another food</h4><button class="button button-secondary button-small" type="button" data-action="add-draft-manual">Add manual food</button></div><div class="meal-composer-search-row"><input class="input" id="meal-draft-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><input class="input" id="meal-draft-food-barcode" inputmode="numeric" placeholder="Barcode" aria-label="Food barcode" /><button class="button button-secondary" type="button" data-action="lookup-draft-food-barcode">Look up</button></div><div id="meal-draft-food-results" class="meal-food-results"></div></section>` : ""}${openQuestions.length ? `<section class="meal-draft-section"><div class="panel-title"><h4>Questions</h4><span>${openQuestions.length} open</span></div>${openQuestions.map((question) => `<div class="meal-draft-question" data-draft-question-id="${escapeHtml(question.id)}"><strong>${escapeHtml(question.prompt)}</strong><div class="meal-composer-search-row"><input class="input" data-draft-question-answer placeholder="Answer or correction" maxlength="2000" /><button class="button button-secondary button-small" type="button" data-action="answer-meal-draft-question" data-question-id="${escapeHtml(question.id)}">Save answer</button></div></div>`).join("")}<label class="checkbox-row"><input type="checkbox" data-draft-accept-assumptions /> Accept the remaining assumptions as shown</label></section>` : ""}${editable ? `<div class="meal-draft-savebar" data-draft-savebar><span data-draft-save-note class="${dirty ? "meal-draft-dirty" : "meal-draft-saved"}">${dirty ? "Unsaved changes" : escapeHtml(mealDraftReview.savedMessage ?? "")}</span><button class="button button-primary" type="button" data-action="save-draft-all" ${dirty ? "" : "disabled"}>Save changes</button></div>` : ""}<div class="auth-actions meal-draft-actions">${editable ? `<button class="button button-primary" type="button" data-action="confirm-meal-draft">${openQuestions.length ? "Confirm and accept assumptions" : "Confirm and log meal"}</button><button class="button button-quiet" type="button" data-action="cancel-meal-draft">Abandon draft</button>` : `<p class="tiny">This draft is ${escapeHtml(draft.status)}.</p>`}</div></div>`;
+    applyDraftUnsavedEdits(snapshot, draft);
+    if (scrollHost) scrollHost.scrollTop = scrollTop;
 }
 
 function renderDraftFoodResults(data) {
@@ -3441,6 +4845,11 @@ async function openMealDraft(id) {
     mealDraftReview.options.clear();
     mealDraftReview.pendingManual = [];
     mealDraftReview.addTextMessage = null;
+    mealDraftReview.dirtyItems.clear();
+    mealDraftReview.detailsDirty = false;
+    mealDraftReview.expandedItems.clear();
+    mealDraftReview.savedMessage = null;
+    mealDraftReview.suppressSnapshot = true;
     openDialog(
         "Review meal draft",
         `<div id="meal-draft-review"><p class="tiny">Loading draft…</p></div>`,
@@ -3460,7 +4869,7 @@ async function openMealPhotoDialog() {
         "Log by photo",
         `<div class="meal-photo-capture">
             <p class="meal-photo-lede">Photograph your meal and Munch will estimate the items and portions into a reviewable draft. Nothing is logged until you confirm the draft, and the photo itself is processed transiently — it is never kept.</p>
-            <label class="field"><span>Meal photo</span><input id="meal-photo-file" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" /></label>
+            <div class="field">${photoCaptureMarkup({ inputId: "meal-photo-file", label: "Meal photo" })}</div>
             <label class="field"><span>Meal type</span><select id="meal-photo-meal-type"><option value="breakfast">Breakfast</option><option value="lunch" selected>Lunch</option><option value="dinner">Dinner</option><option value="snack">Snack</option></select></label>
             <p class="tiny meal-photo-status" id="meal-photo-status" role="alert"></p>
             <div class="auth-actions">
@@ -3479,22 +4888,42 @@ async function submitMealPhoto() {
     const say = (message) => {
         if (status) status.textContent = message;
     };
-    if (!file) return say("Choose a meal photo first.");
-    if (file.size > 8 * 1024 * 1024) {
+    if (!file) return say("Take or choose a meal photo first.");
+    // Photo-flow P7: shrink the frame client-side before upload —
+    // the vision pass needs none of a phone camera's megapixels, and
+    // every megabyte is upload time on a mobile connection.
+    say("Preparing photo…");
+    const prepared = await downscaleImageFile(file);
+    if (prepared.size > 8 * 1024 * 1024) {
         return say("That photo is over the 8 MB limit — choose a smaller one.");
     }
     const form = new FormData();
-    form.append("file", file);
+    form.append("file", prepared);
     form.append(
         "meal_type",
         document.getElementById("meal-photo-meal-type")?.value || "lunch",
     );
-    form.append("logged_at", `${state.date}T12:00:00.000Z`);
+    // Photo-flow P6: a photo is taken when it is taken — stamp NOW,
+    // not a synthetic date slot; the server defaults to now as well.
+    form.append("logged_at", new Date().toISOString());
     if (mealPhotoCapture.idempotencyKey) {
         form.append("idempotency_key", mealPhotoCapture.idempotencyKey);
     }
     if (submit) submit.disabled = true;
-    say("Estimating items and portions…");
+    // Photo-flow P7: real staged progress instead of one static
+    // line — the wait stays, the silence goes.
+    say("Sending photo…");
+    const stageTimers = [
+        setTimeout(() => say("Identifying foods and portions…"), 2500),
+        setTimeout(() => say("Looking up nutrition…"), 6500),
+        setTimeout(
+            () =>
+                say(
+                    "Still working — this photo is taking a little longer than usual.",
+                ),
+            12000,
+        ),
+    ];
     try {
         const result = await api("/api/app/meal-photo", {
             method: "POST",
@@ -3504,6 +4933,8 @@ async function submitMealPhoto() {
     } catch (error) {
         if (submit) submit.disabled = false;
         say(error.message || "The photo estimate failed. Nothing was logged.");
+    } finally {
+        for (const timer of stageTimers) clearTimeout(timer);
     }
 }
 
@@ -3932,6 +5363,99 @@ async function handleAction(button) {
     }
     if (action === "guided-planner") return openGuidedPlanner();
     if (action === "guidance-preferences") return openGuidancePreferences();
+    if (action === "next-up-plan") {
+        // D3: schedule the suggested recipe for the suggested slot.
+        button.disabled = true;
+        const result = await api("/api/app/guidance/next-up/plan", {
+            method: "POST",
+            body: JSON.stringify({
+                date: state.date,
+                candidate_id: button.dataset.candidate,
+                slot: button.dataset.slot,
+                servings: Number(button.dataset.servings || 1),
+            }),
+            keepPrevious: true,
+        });
+        toast(`Planned for ${result.slot}.`);
+        await renderRoute();
+        return;
+    }
+    if (action === "next-up-log") {
+        // D3: pre-filled draft through confirm-before-save — this
+        // only OPENS the review; nothing logs until Confirm there.
+        button.disabled = true;
+        const result = await api("/api/app/guidance/next-up/log", {
+            method: "POST",
+            body: JSON.stringify({
+                date: state.date,
+                candidate_id: button.dataset.candidate,
+                slot: button.dataset.slot,
+                servings: Number(button.dataset.servings || 1),
+            }),
+            keepPrevious: true,
+        });
+        await openMealDraft(result.draft_id);
+        return;
+    }
+    if (action === "next-up-groceries") {
+        button.disabled = true;
+        const result = await api("/api/app/guidance/next-up/groceries", {
+            method: "POST",
+            body: JSON.stringify({
+                date: state.date,
+                candidate_id: button.dataset.candidate,
+            }),
+            keepPrevious: true,
+        });
+        toast(
+            result.added || result.merged
+                ? `Groceries updated — ${result.added} added, ${result.merged} merged.`
+                : "Everything for that meal is already on hand or listed.",
+        );
+        await renderRoute();
+        return;
+    }
+    if (action === "next-up-goal") {
+        // D6: set the objective through the existing preferences
+        // flow (the same confirmed, versioned write the Preferences
+        // dialog makes) — targets stay editable in Settings.
+        button.disabled = true;
+        const current = await api("/api/app/guidance/preferences", {
+            keepPrevious: true,
+        });
+        // The read model embeds `version` in the preferences object,
+        // but the write schema is strict — version travels as
+        // expected_version only, never inside the preferences body.
+        const { version: _readVersion, ...currentPreferences } =
+            current.preferences;
+        await api("/api/app/guidance/preferences", {
+            method: "PUT",
+            body: JSON.stringify({
+                preferences: {
+                    ...currentPreferences,
+                    objective: button.dataset.objective,
+                },
+                expected_version: Number(current.preferences.version),
+                confirm: true,
+            }),
+            keepPrevious: true,
+        });
+        toast("Goal set. You can fine-tune targets in Settings.");
+        await renderRoute();
+        return;
+    }
+    if (action === "next-up-goal-dismiss") {
+        // D6: one-time — the dismissal is stored on the account, so
+        // the prompt never renders again on any surface.
+        button.disabled = true;
+        await api("/api/app/guidance/next-up/goal-prompt/dismiss", {
+            method: "POST",
+            body: JSON.stringify({}),
+            keepPrevious: true,
+        });
+        await renderRoute();
+        return;
+    }
     if (action === "guidance-preferences-confirm") {
         const form = document.querySelector("#guidance-preferences-form");
         if (!form) return;
@@ -4292,6 +5816,35 @@ async function handleAction(button) {
         ].includes(action)
     )
         return renderRoute();
+    // Today navigation (brief items 1–3, 5): the calendar is Today's
+    // only day-stepping UI; picking a day re-renders Today on it via
+    // the same state.date plumbing the removed buttons used.
+    if (action === "open-calendar") return openCalendar();
+    if (action === "calendar-prev-month")
+        return openCalendar(shiftMonth(calendarView.month, -1));
+    if (action === "calendar-next-month")
+        return openCalendar(shiftMonth(calendarView.month, 1));
+    if (action === "calendar-day") {
+        state.date = button.dataset.date;
+        if (dialog.open) dialog.close();
+        return renderRoute();
+    }
+    if (action === "calendar-history") {
+        if (dialog.open) dialog.close();
+        return navigate("/app/log");
+    }
+    if (action === "open-macro-breakdown")
+        return openMacroBreakdown(button.dataset.macro);
+    if (action === "toggle-micros") {
+        const panel = document.getElementById("today-micros");
+        if (!panel) return;
+        const open = panel.hidden;
+        panel.hidden = !open;
+        button.setAttribute("aria-expanded", String(open));
+        const chevron = button.querySelector(".macro-expand-chev");
+        if (chevron) chevron.textContent = open ? "▴" : "▾";
+        return;
+    }
     if (action === "add-meal") return openMealComposer();
     if (action === "start-meal-draft") return openMealDraftComposer();
     if (action === "log-by-photo") return openMealPhotoDialog();
@@ -4515,6 +6068,8 @@ async function handleAction(button) {
             renderMealDraftReview(result.draft);
             if (result.add?.status === "added") {
                 toast("Added to the draft.");
+            } else if (result.add?.status === "updated") {
+                toast("Draft updated.");
             }
         } finally {
             button.disabled = false;
@@ -4551,49 +6106,38 @@ async function handleAction(button) {
         toast("Manual food added to draft.");
         return;
     }
-    if (action === "save-meal-draft") {
-        const draft = mealDraftReview.draft;
-        if (!draft) return;
-        const root = document.getElementById("meal-draft-review");
-        const field = (name) =>
-            root?.querySelector(`[data-draft-field="${name}"]`);
-        const loggedAt = field("logged_at")?.value
-            ? new Date(field("logged_at").value).toISOString()
-            : null;
-        const result = await api(
-            `/api/app/meal-drafts/${encodeURIComponent(draft.id)}`,
-            {
-                method: "PATCH",
-                body: JSON.stringify({
-                    expected_version: draft.version,
-                    description: field("description")?.value || null,
-                    meal_type: field("meal_type")?.value,
-                    logged_at: loggedAt,
-                    notes: field("notes")?.value || null,
-                }),
-                keepPrevious: true,
-            },
-        );
-        renderMealDraftReview(result.draft);
-        toast("Draft details saved.");
-        return;
-    }
-    if (action === "save-draft-item") {
+    if (action === "toggle-draft-item") {
+        // Photo-flow P3: expand/collapse an item editor in place —
+        // no re-render, so in-progress edits and scroll survive.
         const draft = mealDraftReview.draft;
         if (!draft) return;
         const index = Number(button.dataset.index);
-        const item = draftItemPayloadFromDom(index);
         const record = draft.items[index];
-        const result = await api(
-            `/api/app/meal-drafts/${encodeURIComponent(draft.id)}/items/${encodeURIComponent(record.id)}`,
-            {
-                method: "PATCH",
-                body: JSON.stringify({ expected_version: draft.version, item }),
-                keepPrevious: true,
-            },
-        );
-        renderMealDraftReview(result.draft);
-        toast("Draft item saved.");
+        const key = draftItemKey(record, index);
+        const editor = button.closest("[data-draft-item-index]");
+        const fields = editor?.querySelector(".meal-draft-item-fields");
+        const expanded = !mealDraftReview.expandedItems.has(key);
+        if (expanded) mealDraftReview.expandedItems.add(key);
+        else mealDraftReview.expandedItems.delete(key);
+        if (fields) fields.hidden = !expanded;
+        button.setAttribute("aria-expanded", String(expanded));
+        const chevron = button.querySelector(".meal-draft-item-chevron");
+        if (chevron) chevron.textContent = expanded ? "▾" : "▸";
+        return;
+    }
+    if (action === "save-draft-all") {
+        // Photo-flow P4: the ONE save action — dirty items and
+        // details commit together, version-threaded.
+        if (!mealDraftReview.draft) return;
+        button.disabled = true;
+        try {
+            const saved = await saveDraftChanges();
+            mealDraftReview.suppressSnapshot = true;
+            renderMealDraftReview(saved);
+            toast("Draft saved.");
+        } finally {
+            refreshDraftSaveBar();
+        }
         return;
     }
     if (action === "remove-draft-item") {
@@ -4629,6 +6173,11 @@ async function handleAction(button) {
                 keepPrevious: true,
             },
         );
+        // The removed item's unsaved edits and expansion state go
+        // with it (photo-flow P4 bookkeeping).
+        const removedKey = draftItemKey(record, Number(button.dataset.index));
+        mealDraftReview.dirtyItems.delete(removedKey);
+        mealDraftReview.expandedItems.delete(removedKey);
         renderMealDraftReview(result.draft);
         toast("Draft item removed.");
         return;
@@ -4659,8 +6208,14 @@ async function handleAction(button) {
         return;
     }
     if (action === "confirm-meal-draft") {
+        if (!mealDraftReview.draft) return;
+        // Photo-flow P4: confirming is also a save — unsaved edits
+        // commit first, so the logged meal is the one on screen,
+        // never the stale server copy.
+        if (draftHasUnsavedChanges()) {
+            await saveDraftChanges();
+        }
         const draft = mealDraftReview.draft;
-        if (!draft) return;
         const accepted = Boolean(
             document.querySelector("[data-draft-accept-assumptions]")?.checked,
         );
@@ -4785,11 +6340,79 @@ async function handleAction(button) {
         state.mealHistoryQuery = "";
         return renderLog();
     }
-    if (action === "insight-range") {
+    if (action === "open-trends") return navigate("/app/trends");
+    if (action === "trends-range") {
         const days = Number(button.dataset.days);
         if (![7, 30, 90].includes(days)) return;
-        state.insightsDays = days;
-        return renderInsights();
+        state.trendsRangeDays = days;
+        return renderTrends();
+    }
+    if (action === "trends-edit-toggle") {
+        state.trendsEditing = !state.trendsEditing;
+        paintTrends();
+        return;
+    }
+    if (action === "trends-remove") {
+        const cards = trendsLayoutCards();
+        cards.splice(Number(button.dataset.index), 1);
+        return saveTrendsLayout(cards);
+    }
+    if (action === "trends-move") {
+        const cards = trendsLayoutCards();
+        const index = Number(button.dataset.index);
+        const target = index + Number(button.dataset.dir);
+        if (target < 0 || target >= cards.length) return;
+        [cards[index], cards[target]] = [cards[target], cards[index]];
+        return saveTrendsLayout(cards);
+    }
+    if (action === "trends-size") {
+        const cards = trendsLayoutCards();
+        const card = cards[Number(button.dataset.index)];
+        if (!card) return;
+        card.size = card.size === "full" ? "compact" : "full";
+        return saveTrendsLayout(cards);
+    }
+    if (action === "trends-add" || action === "trends-catalog")
+        return openTrendsCatalog();
+    if (action === "trends-catalog-shape")
+        return openTrendsCatalogData(button.dataset.shape);
+    if (action === "trends-catalog-add") {
+        const shape = button.dataset.shape;
+        const dataKey = button.dataset.data;
+        const entry = (state.trendsData?.catalog || []).find(
+            (item) => item.shape === shape,
+        );
+        const point = entry?.data.find((item) => item.key === dataKey);
+        if (!point) return;
+        const cards = trendsLayoutCards();
+        if (
+            cards.some((card) => card.shape === shape && card.data === dataKey)
+        ) {
+            toast("That chart is already on your dashboard.");
+            return;
+        }
+        cards.push({ shape, data: dataKey, size: point.defaultSize });
+        dialog.close();
+        return saveTrendsLayout(cards);
+    }
+    if (action === "trends-donut-mode") {
+        state.trendsDonutModes.set(button.dataset.cardkey, button.dataset.mode);
+        paintTrends();
+        return;
+    }
+    if (action === "trends-drill-day")
+        return openTrendsDaySheet(button.dataset.date, button.dataset.metric);
+    if (action === "trends-drill-weekday")
+        return openTrendsWeekdaySheet(
+            button.dataset.cardkey,
+            button.dataset.dow,
+        );
+    if (action === "trends-drill-segment")
+        return openTrendsContributors(button.dataset.metric);
+    if (action === "trends-open-day") {
+        state.date = button.dataset.date;
+        if (dialog.open) dialog.close();
+        return navigate("/app");
     }
     if (action === "create-recipe") return openRecipeCreate();
     if (action === "import-recipe-url") return openRecipeImport();
@@ -4842,6 +6465,50 @@ async function handleAction(button) {
     if (action === "log-cook-dish")
         return openRecipeLog(button.dataset.id, button.dataset.revision);
     if (action === "plan-recipe") return openRecipePlan(button.dataset.id);
+    if (action === "recipe-groceries")
+        return openRecipeGroceries(
+            button.dataset.id,
+            button.dataset.name,
+            button.dataset.servings,
+        );
+    if (action === "start-recipe-cook") {
+        // Brief R2: create the cook session on the existing cooks
+        // machinery, then open it — the cook view leads with cook mode.
+        button.disabled = true;
+        try {
+            const data = await api(
+                `/api/app/recipes/${encodeURIComponent(button.dataset.id)}/start-cook`,
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        timezone: state.bootstrap?.profile?.timezone || "UTC",
+                        idempotency_key: crypto.randomUUID(),
+                    }),
+                    keepPrevious: true,
+                },
+            );
+            await openCook(data.cook_id);
+        } catch (error) {
+            button.disabled = false;
+            toast(error.message || "Couldn't start the cook.", "error");
+        }
+        return;
+    }
+    if (action === "calculate-recipe-nutrition") {
+        // Brief R1: the explicit heal action. On success the detail
+        // re-renders on the new revision (per-serving values, sources,
+        // and any still-unresolved ingredients flagged).
+        button.disabled = true;
+        try {
+            const result = await calculateRecipeNutrition(button.dataset.id);
+            toast(recipeHealSummary(result));
+            await openRecipe(button.dataset.id);
+        } catch (error) {
+            button.disabled = false;
+            toast(error.message || "Couldn't calculate nutrition.", "error");
+        }
+        return;
+    }
     if (action === "archive-recipe") {
         // S6 slice 4: archiving is this surface's destructive action, so
         // it follows slice 1's inline-confirmation pattern instead of
@@ -4859,12 +6526,13 @@ async function handleAction(button) {
         return;
     }
     if (action === "dismiss-archive-recipe") {
-        // Restore the detail action row exactly as it was (the row is
-        // deterministic from the recipe's id / revision / version);
-        // nothing was sent and any open edit form is untouched.
+        // Restore the detail action row exactly as it was rendered
+        // (openRecipe keeps the markup — it depends on the recipe's
+        // flags and nutrition state, not just its ids); nothing was
+        // sent and any open edit form is untouched.
         const actions = button.closest(".recipe-detail-actions");
         if (!actions) return;
-        actions.innerHTML = `<button class="button button-primary" type="button" data-action="log-recipe" data-id="${escapeHtml(button.dataset.id)}" data-revision="${escapeHtml(button.dataset.revision || "")}">Log recipe</button><button class="button button-secondary" type="button" data-action="plan-recipe" data-id="${escapeHtml(button.dataset.id)}" data-revision="${escapeHtml(button.dataset.revision || "")}">Add to plan</button><button class="button button-secondary" type="button" data-action="archive-recipe" data-id="${escapeHtml(button.dataset.id)}" data-version="${escapeHtml(button.dataset.version)}" data-revision="${escapeHtml(button.dataset.revision || "")}">Archive</button>`;
+        actions.innerHTML = recipeDetailActionsHtml;
         actions.querySelector('[data-action="archive-recipe"]')?.focus();
         return;
     }
@@ -5139,8 +6807,9 @@ async function handleAction(button) {
     }
     if (action === "toggle-grocery-purchased") {
         const purchased = Boolean(button.checked);
+        let result;
         try {
-            await api(
+            result = await api(
                 `/api/app/groceries/items/${encodeURIComponent(button.dataset.id)}/purchased`,
                 {
                     method: "POST",
@@ -5157,7 +6826,11 @@ async function handleAction(button) {
             throw error;
         }
         toast(purchased ? "Marked purchased." : "Restored to the list.");
-        return renderRoute();
+        // Grocery fix G1: sync the row, counts and Clear-purchased in
+        // place — no renderRoute(), so the list never flickers or
+        // loses its scroll position mid-shop.
+        syncGroceryPurchasedInPlace(button, result?.grocery_item, purchased);
+        return;
     }
     if (action === "clear-purchased") {
         // S6 slice 6: clearing purchased items is this surface's other
@@ -5188,8 +6861,15 @@ async function handleAction(button) {
         );
         return renderRoute();
     }
-    if (action === "shopping-mode")
-        document.body.classList.toggle("shopping-mode");
+    if (action === "shopping-mode") {
+        // Grocery fix G2: the mode is a session-level preference —
+        // flipping it records the choice, and the re-render swaps the
+        // button to its Exit label plus the caption that says what
+        // the mode does (renderRoute reapplies the chrome class).
+        state.shoppingMode = !state.shoppingMode;
+        writeShoppingModePreference(state.shoppingMode);
+        return renderRoute();
+    }
 }
 
 document.addEventListener("click", async (event) => {
@@ -5235,8 +6915,68 @@ document.addEventListener("click", async (event) => {
     }
 });
 
+/** Photo-flow P4: any edit inside the draft review marks its owner
+ * dirty and refreshes the save bar in place (no re-render). */
+function markDraftFieldDirty(target) {
+    if (!target?.closest?.("#meal-draft-review")) return;
+    if (!target.matches?.("[data-draft-field]")) return;
+    const itemEditor = target.closest("[data-draft-item-index]");
+    if (itemEditor) {
+        const index = Number(itemEditor.dataset.draftItemIndex);
+        const record = mealDraftReview.draft?.items?.[index];
+        mealDraftReview.dirtyItems.add(draftItemKey(record, index));
+        mealDraftReview.savedMessage = null;
+        refreshDraftSaveBar();
+        return;
+    }
+    if (target.closest("[data-draft-details]")) {
+        mealDraftReview.detailsDirty = true;
+        mealDraftReview.savedMessage = null;
+        refreshDraftSaveBar();
+    }
+}
+
 document.addEventListener("change", async (event) => {
+    markDraftFieldDirty(event.target);
     const target = event.target;
+    if (target?.matches?.(".cook-mode-check")) {
+        // Recipe experience R2: a checklist toggle persists the full
+        // checked arrays for that kind on the dish, server-side.
+        const panel = target.closest("[data-cook-mode]");
+        if (!panel) return;
+        const kind = target.dataset.kind;
+        const boxes = [
+            ...panel.querySelectorAll(`.cook-mode-check[data-kind="${kind}"]`),
+        ];
+        const checked = boxes
+            .filter((box) => box.checked)
+            .map((box) => Number(box.dataset.index));
+        const body =
+            kind === "ingredients"
+                ? { checked_ingredients: checked }
+                : { checked_steps: checked };
+        try {
+            await api(
+                `/api/app/cooks/${encodeURIComponent(target.dataset.cookId)}/dishes/${encodeURIComponent(target.dataset.dishId)}/progress`,
+                {
+                    method: "PATCH",
+                    body: JSON.stringify(body),
+                    keepPrevious: true,
+                },
+            );
+            const allStepsDone = refreshCookModePanel(panel);
+            if (allStepsDone) {
+                // Render the finish block (Log recipe / Finish cook)
+                // from the authoritative cook record.
+                await openCook(target.dataset.cookId);
+            }
+        } catch (error) {
+            target.checked = !target.checked;
+            refreshCookModePanel(panel);
+            toast(error.message || "That check couldn't be saved.", "error");
+        }
+        return;
+    }
     if (target?.matches?.('#guided-plan-form select[name="scope"]')) {
         try {
             const form = target.closest("form");
@@ -5269,6 +7009,7 @@ document.addEventListener("change", async (event) => {
 });
 
 document.addEventListener("input", (event) => {
+    markDraftFieldDirty(event.target);
     if (event.target.id === "meal-food-search") {
         window.clearTimeout(mealComposer.searchTimer);
         mealComposer.searchTimer = window.setTimeout(
@@ -5674,6 +7415,7 @@ document.addEventListener("submit", async (event) => {
             "recipe-edit-form",
             "recipe-log-form",
             "recipe-plan-form",
+            "recipe-groceries-form",
             "grocery-add-form",
             "grocery-edit-form",
             "saved-food-form",
@@ -6150,6 +7892,39 @@ document.addEventListener("submit", async (event) => {
             );
             toast("Recipe added to the meal plan.");
         }
+        if (form.id === "recipe-groceries-form") {
+            // Brief R3: counts come back from the shared merge path;
+            // the toast carries the one-tap jump to the list. (The
+            // generic tail closes the dialog and re-renders behind it.)
+            const data = await api(
+                `/api/app/recipes/${encodeURIComponent(form.dataset.id)}/groceries`,
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        servings: Number(values.servings),
+                        idempotency_key: crypto.randomUUID(),
+                    }),
+                    keepPrevious: true,
+                },
+            );
+            const result = data.result || {};
+            const parts = [];
+            if (result.added)
+                parts.push(
+                    `${result.added} item${result.added === 1 ? "" : "s"} added`,
+                );
+            if (result.merged)
+                parts.push(
+                    `${result.merged} merged with items already on the list`,
+                );
+            toastAction(
+                parts.length
+                    ? `Groceries: ${parts.join(", ")}.`
+                    : "Nothing to add — every ingredient is marked optional.",
+                "View list",
+                () => navigate("/app/groceries"),
+            );
+        }
         if (form.id === "grocery-add-form") {
             await api("/api/app/groceries/items", {
                 method: "POST",
@@ -6216,4 +7991,8 @@ window.addEventListener("online", () => {
         void renderRoute();
     }
 });
+// Grocery fix G2: restore the session's shopping-mode preference
+// before the first render so the mode (and its Exit label) is
+// already in place when Groceries is the landing route.
+state.shoppingMode = readShoppingModePreference();
 renderRoute();

@@ -46,11 +46,11 @@ conservative rule:
 
 ## Layout
 
-| Path                | Contents                                                                 |
-| ------------------- | ------------------------------------------------------------------------ |
-| `photos/`           | 30 real meal photos (JPEG, 800px-wide Commons thumbnails).               |
+| Path                | Contents                                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `photos/`           | 30 real meal photos (JPEG, 800px-wide Commons thumbnails).                                                               |
 | `expectations.json` | Per fixture: expected item set; portion range or `null` (unscored); expected grounding provider per item; category tags. |
-| `manifest.json`     | Per-photo provenance: source page, original file, license, artist credit, ground-truth note. |
+| `manifest.json`     | Per-photo provenance: source page, original file, license, artist credit, ground-truth note.                             |
 
 Categories mirror the synthetic set where photographs allow:
 single item ×5, mixed plate ×7, sauced/hidden-ingredient ×4,

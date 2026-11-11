@@ -66,10 +66,17 @@ test.beforeAll(async () => {
                     drafts: [],
                     plannedMeals: [],
                 },
-                "/api/app/guidance/today": {
-                    source_status: "sparse_data",
-                    objective: "Track only",
-                    actions: [],
+                "/api/app/guidance/next-up": {
+                    date: "2026-11-10",
+                    day_part: "midday",
+                    is_today: true,
+                    state: "quiet",
+                    objective_set: true,
+                    goal_prompt: { show: false },
+                    quiet_line:
+                        "Nothing needs deciding right now — log the next meal when you eat it.",
+                    primary: null,
+                    secondary: [],
                 },
             };
             response.writeHead(200, {
@@ -220,6 +227,9 @@ export async function takeInstalledPhoto() {
 export async function chooseInstalledPhoto() {
     return null;
 }
+export async function chooseInstalledPhotos() {
+    return [];
+}
 `;
 
 /**
@@ -318,9 +328,15 @@ test("packaged shell renders the can't-reach state when the API dies mid-session
     // the next view must render the designed can't-reach state with a
     // retry action — not a hanging spinner or a raw error.
     await page.route("**/api/app/**", (route) => route.abort());
-    // :visible picks the bottom nav at phone widths and the sidebar
-    // under the default config's desktop project.
-    await page.locator('a[data-route="log"]:visible').first().click();
+    // Today navigation (brief item 6): History left the bottom nav,
+    // so at phone widths the way there is the More door; on desktop
+    // the sidebar History link (same data-route) is the visible one.
+    if ((page.viewportSize()?.width ?? 0) > 768) {
+        await page.locator('a[data-route="log"]:visible').first().click();
+    } else {
+        await page.locator('a[data-route="more"]:visible').first().click();
+        await page.locator('.more-card[href="/app/log"]').click();
+    }
     await expect(page.getByTestId("api-down-state")).toBeVisible();
     await expect(page.getByTestId("api-down-state")).toContainText(
         "Can't reach Munch",
@@ -570,17 +586,16 @@ test("packaged bundle ships the mobile runtime and the Pantry page", async ({
     expect(shellBody).not.toContain("quick-action");
     expect(shellBody).not.toContain("refresh-button");
 
-    // S4: the native meal-photo capture module ships in the bundle and
-    // carries the Pantry-pattern markers (pending-capture restore key,
-    // 8 MB cap, DataTransfer handoff into the existing dialog input).
-    const mealPhotoNative = await request.get(
-        `${baseURL}/meal-photo-native.js`,
-    );
-    expect(mealPhotoNative.ok()).toBe(true);
-    const mealPhotoBody = await mealPhotoNative.text();
-    expect(mealPhotoBody).toContain("munch.pendingMealPhotoCapture");
-    expect(mealPhotoBody).toContain("#meal-photo-file");
-    expect(mealPhotoBody).toContain("new DataTransfer()");
+    // S4 → photo-flow P8: the shared native capture module ships in
+    // the bundle and carries the capture markers (pending-capture
+    // restore key, 8 MB cap, DataTransfer handoff into the control's
+    // own input).
+    const captureNative = await request.get(`${baseURL}/capture-native.js`);
+    expect(captureNative.ok()).toBe(true);
+    const captureBody = await captureNative.text();
+    expect(captureBody).toContain("munch.pendingCapture");
+    expect(captureBody).toContain("meal-photo-file");
+    expect(captureBody).toContain("new DataTransfer()");
 });
 
 // ---------------------------------------------------------------------------
@@ -770,11 +785,18 @@ test.beforeAll(async () => {
             });
             return;
         }
-        if (path === "/api/app/guidance/today") {
+        if (path === "/api/app/guidance/next-up") {
             sendApiJson(response, 200, {
-                source_status: "sparse_data",
-                objective: "Track only",
-                actions: [],
+                date: "2026-11-10",
+                day_part: "midday",
+                is_today: true,
+                state: "quiet",
+                objective_set: true,
+                goal_prompt: { show: false },
+                quiet_line:
+                    "Nothing needs deciding right now — log the next meal when you eat it.",
+                primary: null,
+                secondary: [],
             });
             return;
         }

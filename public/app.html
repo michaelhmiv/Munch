@@ -31,15 +31,15 @@
                         ><span class="nav-icon">◉</span><span>Today</span></a
                     >
                     <a data-route="log" href="/app/log"
-                        ><span class="nav-icon">▤</span><span>Food Log</span></a
+                        ><span class="nav-icon">▤</span><span>History</span></a
                     >
-                    <a data-route="insights" href="/app/insights"
-                        ><span class="nav-icon">↗</span><span>Insights</span></a
+                    <a data-route="trends" href="/app/trends"
+                        ><span class="nav-icon">↗</span><span>Trends</span></a
                     >
                     <!-- Chat v2 placement (Contextual only): there is
                          deliberately NO global Chat nav entry — the
                          agent is reached from the Today, Meal Plan,
-                         Pantry, and Insights entry rows only. -->
+                         Pantry, and Trends entry rows only. -->
                     <a data-route="recipes" href="/app/recipes"
                         ><span class="nav-icon">◇</span><span>Recipes</span></a
                     >
@@ -54,7 +54,7 @@
                         ><span class="nav-icon">✓</span
                         ><span>Groceries</span></a
                     >
-                    <a href="/app/pantry"
+                    <a data-route="pantry" href="/app/pantry"
                         ><span class="nav-icon">▦</span><span>Pantry</span></a
                     >
                     <a data-route="household" href="/app/household"
@@ -98,19 +98,18 @@
             <a data-route="today" href="/app"
                 ><span>◉</span><span>Today</span></a
             >
-            <a data-route="log" href="/app/log"
-                ><span>▤</span><span>Log</span></a
-            >
             <a data-route="plan" href="/app/plan"
                 ><span>□</span><span>Plan</span></a
             >
-            <a data-route="cooks" href="/app/cooks"
-                ><span>♨</span><span>Cooks</span></a
+            <a data-route="recipes" href="/app/recipes"
+                ><span>◇</span><span>Recipes</span></a
             >
             <a data-route="groceries" href="/app/groceries"
                 ><span>✓</span><span>Groceries</span></a
             >
-            <a href="/app/pantry"><span>▦</span><span>Pantry</span></a>
+            <a data-route="pantry" href="/app/pantry"
+                ><span>▦</span><span>Pantry</span></a
+            >
             <a data-route="more" href="/app/more"
                 ><span>•••</span><span>More</span></a
             >

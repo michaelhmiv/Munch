@@ -45,9 +45,14 @@ test("protects private data and supports the core website journey", async ({
     expect((await bootstrapResponse).status()).toBe(200);
     await expect(page).toHaveTitle(/^Today — Munch$/);
     await expect(visibleCurrentNav(page, ["today"])).toHaveCount(1);
+    // No-filler law (addendum 9): Today's old subtitle only restated
+    // the obvious and is deleted. The header instead carries the
+    // calendar icon — Today's only day navigation (today-navigation
+    // brief item 1).
     await expect(
         page.getByText("Your structured nutrition record for this day."),
-    ).toBeVisible();
+    ).toHaveCount(0);
+    await expect(page.locator('[data-action="open-calendar"]')).toBeVisible();
 
     if ((page.viewportSize()?.width ?? 0) > 768) {
         await page
@@ -82,9 +87,12 @@ test("protects private data and supports the core website journey", async ({
         fullPage: true,
     });
 
+    // T8: the Insights destination retired — its URL lands on Trends,
+    // with the Trends title and the Trends nav link marked current.
     await page.goto("/app/insights");
-    await expect(page).toHaveTitle(/^Insights — Munch$/);
-    await expect(visibleCurrentNav(page, ["insights", "more"])).toHaveCount(1);
+    await expect(page).toHaveURL(/\/app\/trends$/);
+    await expect(page).toHaveTitle(/^Trends — Munch$/);
+    await expect(visibleCurrentNav(page, ["trends", "more"])).toHaveCount(1);
     await expect
         .poll(() =>
             page.evaluate(

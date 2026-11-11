@@ -73,10 +73,12 @@ import {
 import { getStructuredMeal } from "../structured-meals/repository.js";
 import {
     addGroceryItems,
+    addRecipeToGroceryList,
     archiveRecipe,
     clearPurchasedGroceryItems,
     deleteGroceryItem,
     getRecipe,
+    healRecipeNutrition,
     logRecipe,
     markGroceryItemPurchased,
     saveRecipe,
@@ -129,10 +131,24 @@ import {
     getMealHistoryWorkspace,
     getPlanningWorkspace,
     getRecipeWorkspace,
+    getCalendarMonthSummary,
     getTodayWorkspace,
+    getTrendsDayDetail,
+    getTrendsPeriodContributors,
+    getTrendsWorkspace,
 } from "./repository.js";
 import {
+    getTrendsDashboardLayout,
+    saveTrendsDashboardLayout,
+} from "../trends-layout.js";
+import {
+    getFeatureModules,
+    saveFeatureModules,
+} from "../feature-modules-repository.js";
+import { featureModulePatch } from "../feature-modules.js";
+import {
     addCookUpdate,
+    buildRecipeCookDish,
     compareCooks,
     correctCookEvent,
     createCook,
@@ -149,6 +165,7 @@ import {
     setPreferredCook,
     updateCook,
     updateCookDish,
+    updateCookDishProgress,
     type CookDishInput,
     type CookEventInput,
     type CookMediaInput,
@@ -963,6 +980,18 @@ export function createAppRouter(): Hono {
             "Cache-Control": "no-cache",
         }),
     );
+    app.get("/photo-capture.js", async (c) =>
+        c.body(await Bun.file("./public/photo-capture.js").text(), 200, {
+            "Content-Type": "text/javascript; charset=utf-8",
+            "Cache-Control": "no-cache",
+        }),
+    );
+    app.get("/feature-nav.js", async (c) =>
+        c.body(await Bun.file("./public/feature-nav.js").text(), 200, {
+            "Content-Type": "text/javascript; charset=utf-8",
+            "Cache-Control": "no-cache",
+        }),
+    );
     app.get("/account-settings.css", async (c) =>
         c.body(await Bun.file("./public/account-settings.css").text(), 200, {
             "Content-Type": "text/css; charset=utf-8",
@@ -1000,6 +1029,18 @@ export function createAppRouter(): Hono {
                 c.get("munchUserId"),
                 requiredQuery(c.req.query("date"), "date"),
                 capabilitySurfaceFromRequest(c),
+            ),
+        ),
+    );
+
+    // Today-navigation calendar: the month summary behind the header
+    // calendar's data dots — one request per visible month.
+    app.get("/api/app/calendar/month", async (c) =>
+        privateJson(
+            c,
+            await getCalendarMonthSummary(
+                c.get("munchUserId"),
+                requiredQuery(c.req.query("month"), "month"),
             ),
         ),
     );
@@ -1361,10 +1402,12 @@ export function createAppRouter(): Hono {
                                       requests,
                                       visionConfig,
                                   ),
-                              parseWithModel: (text) =>
+                              parseWithModel: (text, context) =>
                                   parseDraftAddTextWithModel(
                                       text,
                                       visionConfig,
+                                      {},
+                                      context,
                                   ),
                           }
                         : {}),
@@ -1385,10 +1428,16 @@ export function createAppRouter(): Hono {
                                   assumptions: entry.draftItem.assumptions,
                               })),
                               replaced_item: outcome.replacedItemName,
+                              preparation: outcome.preparation,
                           }
-                        : outcome.status === "question"
-                          ? { parse_source: outcome.parseSource }
-                          : {}),
+                        : outcome.status === "updated"
+                          ? {
+                                parse_source: outcome.parseSource,
+                                preparation: outcome.preparation,
+                            }
+                          : outcome.status === "question"
+                            ? { parse_source: outcome.parseSource }
+                            : {}),
                 },
             });
         },
@@ -1595,6 +1644,13 @@ export function createAppRouter(): Hono {
     // transiently and never retained, and nothing is logged until the
     // user confirms the draft through the existing confirm path.
     app.post("/api/app/meal-photo", requireSameOrigin, async (c) => {
+        // Photo-flow P7: the request is timed phase by phase so the
+        // end-to-end latency is attributable — receive (upload +
+        // body parse), identify (vision.ts), grounding + draft build
+        // (here), request total (here). Before this instrumentation a
+        // 15.8 s request showed ~5 s of identified phases and ~10.7 s
+        // of unexplained pre-identify time.
+        const requestStartedAt = Date.now();
         const userId = c.get("munchUserId");
         const visionConfig = mealPhotoVisionConfig();
         if (!visionConfig) {
@@ -1659,13 +1715,18 @@ export function createAppRouter(): Hono {
                 ? mealTypeValue
                 : undefined;
         try {
+            const bytes = new Uint8Array(await file.arrayBuffer());
+            console.info(
+                `[meal_photo] phase=receive status=success bytes=${bytes.byteLength} duration_ms=${Math.max(0, Date.now() - requestStartedAt)}`,
+            );
             const vision = await identifyMealPhoto(
                 {
                     mimeType: file.type,
-                    bytes: new Uint8Array(await file.arrayBuffer()),
+                    bytes,
                 },
                 visionConfig,
             );
+            const draftStartedAt = Date.now();
             const foodSearch = getFoodSearchService();
             const result = await createMealPhotoDraft({
                 userId,
@@ -1683,6 +1744,12 @@ export function createAppRouter(): Hono {
                         estimateMealPhotoNutrients(requests, visionConfig),
                 },
             });
+            console.info(
+                `[meal_photo] phase=draft_build status=success duration_ms=${Math.max(0, Date.now() - draftStartedAt)}`,
+            );
+            console.info(
+                `[meal_photo] phase=request status=success duration_ms=${Math.max(0, Date.now() - requestStartedAt)}`,
+            );
             return privateJson(c, {
                 draft: serializeMealDraftForApp(result.draft),
                 transient_media: true,
@@ -1727,6 +1794,85 @@ export function createAppRouter(): Hono {
             c,
             await getInsightsWorkspace(
                 c.get("munchUserId"),
+                requiredQuery(c.req.query("start"), "start"),
+                requiredQuery(c.req.query("end"), "end"),
+            ),
+        ),
+    );
+
+    // Trends (T1–T14): the dashboard workspace, the per-account layout,
+    // and the two drill-down reads (one day's contributors; a period's
+    // top foods for a breakdown segment).
+    app.get("/api/app/trends", async (c) =>
+        privateJson(
+            c,
+            await getTrendsWorkspace(
+                c.get("munchUserId"),
+                requiredQuery(c.req.query("start"), "start"),
+                requiredQuery(c.req.query("end"), "end"),
+            ),
+        ),
+    );
+
+    app.get("/api/app/trends/layout", async (c) =>
+        privateJson(c, {
+            layout: await getTrendsDashboardLayout(c.get("munchUserId")),
+        }),
+    );
+
+    app.put("/api/app/trends/layout", requireSameOrigin, async (c) => {
+        const body = recordValue(await c.req.json(), "Trends layout");
+        const layout = recordValue(body.layout, "Trends layout");
+        if (!Array.isArray(layout.cards)) {
+            throw new Error("Trends layout requires a cards array");
+        }
+        return privateJson(c, {
+            layout: await saveTrendsDashboardLayout(
+                c.get("munchUserId"),
+                layout,
+            ),
+        });
+    });
+
+    // Feature toggles (addendum 10, T1/T5): the account-level module
+    // flags. PUT accepts a partial patch of the five module booleans;
+    // the "Just logging" preset is simply all five set false.
+    app.get("/api/app/features", async (c) =>
+        privateJson(c, {
+            features: await getFeatureModules(c.get("munchUserId")),
+        }),
+    );
+
+    app.put("/api/app/features", requireSameOrigin, async (c) => {
+        const body = recordValue(await c.req.json(), "Features");
+        const patch = featureModulePatch(body.features ?? body);
+        if (!patch) {
+            throw new Error(
+                "Features update requires at least one module flag",
+            );
+        }
+        return privateJson(c, {
+            features: await saveFeatureModules(c.get("munchUserId"), patch),
+        });
+    });
+
+    app.get("/api/app/trends/day", async (c) =>
+        privateJson(
+            c,
+            await getTrendsDayDetail(
+                c.get("munchUserId"),
+                requiredQuery(c.req.query("date"), "date"),
+                requiredQuery(c.req.query("metric"), "metric"),
+            ),
+        ),
+    );
+
+    app.get("/api/app/trends/contributors", async (c) =>
+        privateJson(
+            c,
+            await getTrendsPeriodContributors(
+                c.get("munchUserId"),
+                requiredQuery(c.req.query("metric"), "metric"),
                 requiredQuery(c.req.query("start"), "start"),
                 requiredQuery(c.req.query("end"), "end"),
             ),
@@ -1963,6 +2109,153 @@ export function createAppRouter(): Hono {
         return privateJson(c, { planned_meal: result });
     });
 
+    // Recipe experience R1: heal a stored recipe whose nutrition never
+    // resolved (saved before save-time resolution existed, or through
+    // a non-resolving path). Re-runs the current revision through the
+    // same resolver every save path uses and persists a NEW revision;
+    // the stored revision is never mutated. Unmatchable ingredients
+    // come back named in unresolved_ingredients — flagged, not zeroed.
+    app.post(
+        "/api/app/recipes/:id/calculate-nutrition",
+        requireSameOrigin,
+        async (c) => {
+            const userId = c.get("munchUserId");
+            const current = await getRecipe(userId, c.req.param("id")!);
+            if (!current) throw new Error("Recipe not found");
+            const body = recordValue(
+                await c.req.json().catch(() => ({})),
+                "Recipe nutrition calculation",
+            );
+            const capabilities = await resolveRequestMunchCapabilities(
+                c,
+                userId,
+            );
+            const expectedVersion =
+                body.expected_version === undefined
+                    ? current.version
+                    : Number(body.expected_version);
+            if (!Number.isInteger(expectedVersion) || expectedVersion < 1) {
+                throw new Error("Recipe expected_version is invalid");
+            }
+            const result = await healRecipeNutrition({
+                userId,
+                scope: recipeScopeForCapabilities(current, capabilities, true),
+                recipeId: current.id,
+                expectedVersion,
+                // One heal per stored revision: a double-tap or retry
+                // replays the same update instead of stacking revisions.
+                idempotencyKey:
+                    typeof body.idempotency_key === "string"
+                        ? body.idempotency_key
+                        : `heal:${current.id}:${current.revision_id}`,
+            });
+            return privateJson(c, {
+                result: {
+                    healed: result.healed,
+                    revision_id: result.revisionId,
+                    revision_number: result.revisionNumber,
+                    nutrition_status: result.nutritionStatus,
+                    nutrition_per_serving: result.perServing,
+                    resolved_ingredients: result.resolvedIngredients,
+                    unresolved_ingredients: result.unresolvedIngredients,
+                },
+                recipe: await getRecipe(userId, current.id),
+            });
+        },
+    );
+
+    // Recipe experience R2: "Start cook" — a cook session on the
+    // existing cooks machinery, its dish linked to the recipe's exact
+    // current revision with cook-mode progress pinned from it.
+    app.post(
+        "/api/app/recipes/:id/start-cook",
+        requireSameOrigin,
+        async (c) => {
+            const userId = c.get("munchUserId");
+            const current = await getRecipe(userId, c.req.param("id")!);
+            if (!current) throw new Error("Recipe not found");
+            const body = recordValue(
+                await c.req.json().catch(() => ({})),
+                "Recipe cook start",
+            );
+            const capabilities = await resolveRequestMunchCapabilities(
+                c,
+                userId,
+            );
+            const scope = recipeScopeForCapabilities(
+                current,
+                capabilities,
+                true,
+            );
+            const result = await createCook(userId, {
+                scope,
+                title: current.name,
+                timezone:
+                    typeof body.timezone === "string" ? body.timezone : "UTC",
+                dishes: [
+                    buildRecipeCookDish({
+                        name: current.name,
+                        recipeId: current.id,
+                        revisionId: current.revision_id,
+                        instructions: Array.isArray(current.instructions)
+                            ? (current.instructions as string[])
+                            : [],
+                        ingredients: current.ingredients,
+                    }),
+                ],
+                idempotencyKey:
+                    typeof body.idempotency_key === "string"
+                        ? body.idempotency_key
+                        : crypto.randomUUID(),
+                source: "website",
+            });
+            return privateJson(c, {
+                cook_id: result.cookId,
+                deduplicated: result.deduplicated,
+                cook: await getCook(userId, result.cookId),
+            });
+        },
+    );
+
+    // Recipe experience R3: "Add to grocery list" — every non-optional
+    // ingredient, scaled by the servings the user is cooking for
+    // (default: the recipe as written), merged by name+unit into the
+    // recipe scope's existing grocery list.
+    app.post("/api/app/recipes/:id/groceries", requireSameOrigin, async (c) => {
+        const userId = c.get("munchUserId");
+        const current = await getRecipe(userId, c.req.param("id")!);
+        if (!current) throw new Error("Recipe not found");
+        const body = recordValue(
+            await c.req.json().catch(() => ({})),
+            "Recipe grocery add",
+        );
+        const capabilities = await resolveRequestMunchCapabilities(c, userId);
+        const servings =
+            body.servings === undefined
+                ? undefined
+                : positiveNumber(body.servings);
+        if (body.servings !== undefined && !servings) {
+            throw new Error("Grocery servings are invalid");
+        }
+        const result = await addRecipeToGroceryList({
+            userId,
+            scope: recipeScopeForCapabilities(current, capabilities, true),
+            recipe: {
+                id: current.id,
+                revisionId: current.revision_id,
+                name: current.name,
+                servings: current.servings,
+                ingredients: current.ingredients,
+            },
+            servings,
+            idempotencyKey:
+                typeof body.idempotency_key === "string"
+                    ? body.idempotency_key
+                    : crypto.randomUUID(),
+        });
+        return privateJson(c, { result });
+    });
+
     app.get("/api/app/cooks", async (c) =>
         privateJson(c, {
             cooks: await searchCooks(c.get("munchUserId"), {
@@ -2159,6 +2452,56 @@ export function createAppRouter(): Hono {
                                   body.expected_version,
                                   "Cook expected_version",
                               ),
+                },
+            );
+            return privateJson(c, {
+                ...result,
+                cook: await getCook(
+                    c.get("munchUserId"),
+                    c.req.param("cookId")!,
+                ),
+            });
+        },
+    );
+
+    // Recipe experience R2: cook-mode checklist state. The client sends
+    // the full checked-position arrays for the dish's pinned steps /
+    // actual ingredients; the state persists on the cook session's dish
+    // and reads back through getCook (and the MCP get_cook tool).
+    app.patch(
+        "/api/app/cooks/:cookId/dishes/:dishId/progress",
+        requireSameOrigin,
+        async (c) => {
+            const body = recordValue(await c.req.json(), "Cook progress");
+            const positions = (
+                value: unknown,
+                label: string,
+            ): number[] | undefined => {
+                if (value === undefined) return undefined;
+                if (
+                    !Array.isArray(value) ||
+                    value.some(
+                        (entry) =>
+                            !Number.isInteger(entry) || Number(entry) < 0,
+                    )
+                ) {
+                    throw new Error(`${label} must be an array of positions`);
+                }
+                return value.map(Number);
+            };
+            const result = await updateCookDishProgress(
+                c.get("munchUserId"),
+                c.req.param("cookId")!,
+                c.req.param("dishId")!,
+                {
+                    checkedIngredients: positions(
+                        body.checked_ingredients,
+                        "Checked ingredients",
+                    ),
+                    checkedSteps: positions(
+                        body.checked_steps,
+                        "Checked steps",
+                    ),
                 },
             );
             return privateJson(c, {

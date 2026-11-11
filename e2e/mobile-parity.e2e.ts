@@ -31,7 +31,7 @@ import { CAPABILITY_MANIFEST } from "../src/capability-manifest.ts";
  * stub, both mirroring the real runtime (mobile/runtime.js): the stub
  * defines `window.MunchAds` (runtime.js:33 — its presence is what makes
  * the billing/household pages render their Android variants), and the
- * stub camera returns a real (1×1 PNG) photo so meal-photo-native.js's
+ * stub camera returns a real (1×1 PNG) photo so capture-native.js's
  * DataTransfer handoff into the S3 dialog is exercised for real.
  *
  * Requires `bun run mobile:web` first (CI does this in the website-e2e
@@ -82,6 +82,16 @@ const vitalsRemovedIds = new Set<string>();
 /** S6 slice 6: grocery items removed / purchased-cleared by the flows. */
 let groceryCleared = false;
 const groceryRemovedIds = new Set<string>();
+/** Grocery fix: purchased toggles the mock API applied, keyed by
+    item id — the fixture rebuilds with the new purchased_at and
+    version, exactly like the real server's write-then-read, and the
+    POST handler 409s a stale expected_version the way the real one
+    does. `groceryPurchasedFailure` fails the next purchased POST. */
+const groceryPurchasedOverrides = new Map<
+    string,
+    { purchased: boolean; version: number }
+>();
+let groceryPurchasedFailure = false;
 /** S6 slice 8: household flows exercised against the fixture server. */
 let householdMemberRemoved = false;
 let householdInviteRevoked = false;
@@ -89,6 +99,11 @@ let householdGone = false;
 /** S8: chat agent fixture states — Premium thread vs the Free gate. */
 let chatVariant: "premium" | "free" = "premium";
 let chatSent = false;
+/** Photo-flow wave: the add-text fixture answers "added" normally;
+ * the P2 test flips it to the preparation-correction shape. */
+let addTextVariant: "added" | "updated" = "added";
+/** Photo-flow P4: the last item PATCH the review sent, body included. */
+let lastDraftItemPatch: { path: string; body: unknown } | null = null;
 /** Chat v2: the entry surface of the currently seeded conversation. */
 let chatSeedSurface: string | null = null;
 
@@ -299,7 +314,19 @@ function groceryFixture() {
         {
             scope: "personal",
             groceryListId: "fixture-grocery-list",
-            items: GROCERY_FIXTURE_ITEMS.filter(
+            items: GROCERY_FIXTURE_ITEMS.map((item) => {
+                const override = groceryPurchasedOverrides.get(
+                    item.grocery_item_id,
+                );
+                if (!override) return item;
+                return {
+                    ...item,
+                    purchased_at: override.purchased
+                        ? "2026-11-09T13:00:00.000Z"
+                        : null,
+                    version: override.version,
+                };
+            }).filter(
                 (item) =>
                     !groceryRemovedIds.has(item.grocery_item_id) &&
                     !(groceryCleared && item.purchased_at),
@@ -311,6 +338,453 @@ function groceryFixture() {
 /** S6 slice 5: the fixture active cook, finished / deleted in tests. */
 let cookFinished = false;
 let cookDeleted = false;
+
+/** Recipe experience R2: cook-mode session state for the packaged
+    bundle. Start cook flips it on, the progress PATCH merges into
+    it, and the cook read path serves it back — mirroring the real
+    server-side persistence the website e2e proves against Postgres. */
+let cookModeStarted = false;
+let cookModeProgress: {
+    checked_ingredients: number[];
+    checked_steps: number[];
+} = { checked_ingredients: [], checked_steps: [] };
+
+function cookModeDetailFixture() {
+    const recipe = RECIPE_DETAIL_FIXTURE.recipe;
+    return {
+        cook: {
+            id: "fixture-cook-mode",
+            title: recipe.name,
+            status: "active",
+            cook_date: "2026-11-09",
+            timezone: "UTC",
+            version: 1,
+            notes: "",
+            original_message: null,
+            source_cook_id: null,
+        },
+        dishes: [
+            {
+                id: "fixture-cook-mode-dish",
+                name: recipe.name,
+                method: "",
+                flavor: "",
+                equipment: "",
+                ingredient_or_cut: "",
+                recipe_id: recipe.id,
+                recipe_revision_id: recipe.revision_id,
+                actual_ingredients: recipe.ingredients.map((ingredient) => ({
+                    name: ingredient.name,
+                    quantity: ingredient.quantity,
+                    unit: ingredient.unit,
+                })),
+                recipe_progress: {
+                    steps: recipe.instructions,
+                    checked_ingredients: [
+                        ...cookModeProgress.checked_ingredients,
+                    ],
+                    checked_steps: [...cookModeProgress.checked_steps],
+                },
+            },
+        ],
+        media: [],
+        events: [],
+        outcomes: [],
+        updates: [],
+    };
+}
+
+/** Trends: the mock server holds the account's dashboard layout;
+    the workspace fixture rebuilds its cards from it on every read,
+    so edit-mode PUTs re-render exactly like the real server. */
+type TrendsLayoutCard = { shape: string; data: string; size: string };
+function defaultTrendsLayout(): { version: number; cards: TrendsLayoutCard[] } {
+    return {
+        version: 1,
+        cards: [
+            { shape: "bar", data: "calories", size: "full" },
+            { shape: "line", data: "weight", size: "full" },
+            { shape: "bar", data: "protein_g", size: "full" },
+            { shape: "consistency", data: "logging", size: "compact" },
+            { shape: "bar", data: "water_ml", size: "compact" },
+        ],
+    };
+}
+let trendsLayoutFixture = defaultTrendsLayout();
+/** Feature toggles: the account's module flags the stub bootstrap
+    serves; tests flip them before boot to prove the packaged nav and
+    route guards render from the flags, not from constants. */
+let featureFlagsFixture = {
+    plan: true,
+    recipes: true,
+    groceries: true,
+    pantry: true,
+    cooks: true,
+};
+/** The vitals regression runs its delete flows on Today now that the
+    Insights destination retired; its entries ride the Today fixture
+    only when a test asks for them. */
+let vitalsOnToday = false;
+/** Today navigation: seeds the 15th of any requested month with one
+ * meal (calendar dot + a Today payload with items for that date). */
+let calendarSeedOn = false;
+
+const TRENDS_FIXTURE_DATES = [
+    "2026-11-03",
+    "2026-11-04",
+    "2026-11-05",
+    "2026-11-06",
+    "2026-11-07",
+    "2026-11-08",
+    "2026-11-09",
+];
+
+function trendsBarDaysFixture(values: (number | null)[]) {
+    return TRENDS_FIXTURE_DATES.map((date, i) => ({
+        date,
+        value: values[i] ?? null,
+        hasLog: values[i] != null,
+    }));
+}
+
+const TRENDS_CARD_FIXTURES: Record<string, Record<string, unknown>> = {
+    "bar:calories": {
+        shape: "bar",
+        data: "calories",
+        title: "Calories",
+        subtitle: "Daily total · kcal",
+        headline: { value: "1,940", unit: "kcal", note: "daily average" },
+        verdict: {
+            lead: "Target 2,200 kcal — ",
+            strong: "in range 1 of 6 days",
+        },
+        coverage: null,
+        empty: null,
+        chart: {
+            kind: "bars",
+            metric: "calories",
+            unit: "kcal",
+            days: trendsBarDaysFixture([
+                2010,
+                1885,
+                2140,
+                null,
+                1995,
+                2050,
+                1660,
+            ]),
+            reference: {
+                type: "band",
+                value: 2090,
+                value2: 2310,
+                label: "target 2,090–2,310",
+            },
+            rolling: TRENDS_FIXTURE_DATES.map((date, i) => ({
+                date,
+                value: [2010, 1947, 2011, 2011, 2007, 2018, 1968][i],
+            })),
+        },
+    },
+    "line:weight": {
+        shape: "line",
+        data: "weight",
+        title: "Weight",
+        subtitle: "Trend weight · lb",
+        headline: { value: "182.6", unit: "lb", note: "trend weight" },
+        verdict: {
+            lead: "Trend is easing down — ",
+            strong: "about −0.4 lb a week",
+        },
+        coverage: null,
+        empty: null,
+        chart: {
+            kind: "line",
+            metric: "weight",
+            unit: "lb",
+            points: [
+                { date: "2026-11-03", value: 184.1 },
+                { date: "2026-11-05", value: 183.6 },
+                { date: "2026-11-07", value: 183 },
+                { date: "2026-11-09", value: 182.4 },
+            ],
+            trend: [
+                { date: "2026-11-03", value: 184.1 },
+                { date: "2026-11-05", value: 183.9 },
+                { date: "2026-11-07", value: 183.6 },
+                { date: "2026-11-09", value: 183.2 },
+            ],
+            target: 175,
+            startLabel: "2026-10-11",
+            endLabel: "2026-11-09",
+        },
+    },
+    "bar:protein_g": {
+        shape: "bar",
+        data: "protein_g",
+        title: "Protein",
+        subtitle: "Daily total · g",
+        headline: { value: "131", unit: "g", note: "daily average" },
+        verdict: {
+            lead: "Target 150 g — ",
+            strong: "hit it 1 of 6 days",
+        },
+        coverage: null,
+        empty: null,
+        chart: {
+            kind: "bars",
+            metric: "protein_g",
+            unit: "g",
+            days: trendsBarDaysFixture([128, 142, 119, null, 135, 151, 110]),
+            reference: {
+                type: "line",
+                value: 150,
+                label: "target 150 g",
+            },
+            rolling: null,
+        },
+    },
+    "consistency:logging": {
+        shape: "consistency",
+        data: "logging",
+        title: "Consistency",
+        subtitle: "Logging",
+        headline: { value: "6", unit: "", note: "of 7 days logged" },
+        verdict: { lead: "", strong: "on a 3-day streak" },
+        coverage: null,
+        empty: null,
+        chart: {
+            kind: "consistency",
+            metric: "calories",
+            full: false,
+            cells: TRENDS_FIXTURE_DATES.map((date, i) => ({
+                date,
+                level: [3, 2, 3, 0, 2, 3, 2][i],
+                active: i !== 3,
+            })),
+        },
+    },
+    "bar:water_ml": {
+        shape: "bar",
+        data: "water_ml",
+        title: "Water",
+        subtitle: "Daily total · ml",
+        headline: { value: "1.8", unit: "L", note: "daily average" },
+        verdict: {
+            lead: "Target 2,500 ml — ",
+            strong: "hit it 0 of 6 days",
+        },
+        coverage: null,
+        empty: null,
+        chart: {
+            kind: "bars",
+            metric: "water_ml",
+            unit: "ml",
+            days: trendsBarDaysFixture([
+                1750,
+                2100,
+                1600,
+                null,
+                2250,
+                1900,
+                1250,
+            ]),
+            reference: {
+                type: "line",
+                value: 2500,
+                label: "target 2,500 ml",
+            },
+            rolling: null,
+        },
+    },
+    "bar:fiber_g": {
+        shape: "bar",
+        data: "fiber_g",
+        title: "Fiber",
+        subtitle: "Daily total · g",
+        headline: { value: "24", unit: "g", note: "daily average" },
+        verdict: {
+            lead: "Target 30 g — ",
+            strong: "hit it 0 of 4 days",
+        },
+        coverage: { carriedDays: 4, totalDays: 7 },
+        empty: null,
+        chart: {
+            kind: "bars",
+            metric: "fiber_g",
+            unit: "g",
+            days: trendsBarDaysFixture([22, null, 28, null, 25, null, 19]),
+            reference: {
+                type: "line",
+                value: 30,
+                label: "target 30 g",
+            },
+            rolling: null,
+        },
+    },
+    "breakdown:macro_split": {
+        shape: "breakdown",
+        data: "macro_split",
+        title: "Macro split",
+        subtitle: "Share of calories",
+        headline: { value: "1,940", unit: "kcal", note: "daily average" },
+        verdict: {
+            lead: "Protein is carrying ",
+            strong: "26% of calories",
+        },
+        coverage: null,
+        empty: null,
+        chart: {
+            kind: "donut",
+            segments: [
+                { key: "protein_g", label: "Protein", grams: 128, share: 26 },
+                { key: "carbs_g", label: "Carbs", grams: 205, share: 42 },
+                { key: "fat_g", label: "Fat", grams: 68, share: 29 },
+                { key: "alcohol_g", label: "Alcohol", grams: 13, share: 3 },
+            ],
+            columns: [
+                {
+                    label: "2026-10-26",
+                    shares: {
+                        protein_g: 25,
+                        carbs_g: 43,
+                        fat_g: 29,
+                        alcohol_g: 3,
+                    },
+                },
+                {
+                    label: "2026-11-02",
+                    shares: {
+                        protein_g: 26,
+                        carbs_g: 42,
+                        fat_g: 29,
+                        alcohol_g: 3,
+                    },
+                },
+            ],
+            centerValue: 1940,
+        },
+    },
+};
+
+const TRENDS_CATALOG_FIXTURE = [
+    {
+        shape: "bar",
+        label: "Bar chart",
+        blurb: "A column per day, judged against its line",
+        data: [
+            {
+                key: "calories",
+                label: "Calories",
+                note: "",
+                defaultSize: "full",
+            },
+            {
+                key: "protein_g",
+                label: "Protein",
+                note: "",
+                defaultSize: "full",
+            },
+            {
+                key: "fiber_g",
+                label: "Fiber",
+                note: "Recorded on some days only",
+                defaultSize: "full",
+            },
+            {
+                key: "water_ml",
+                label: "Water",
+                note: "",
+                defaultSize: "compact",
+            },
+        ],
+    },
+    {
+        shape: "line",
+        label: "Trend line",
+        blurb: "The smoothed story, not the daily noise",
+        data: [
+            { key: "weight", label: "Weight", note: "", defaultSize: "full" },
+            { key: "water_ml", label: "Water", note: "", defaultSize: "full" },
+        ],
+    },
+    {
+        shape: "consistency",
+        label: "Consistency",
+        blurb: "Show up, day after day",
+        data: [
+            {
+                key: "logging",
+                label: "Logging",
+                note: "",
+                defaultSize: "compact",
+            },
+            {
+                key: "weigh_ins",
+                label: "Weigh-ins",
+                note: "",
+                defaultSize: "compact",
+            },
+        ],
+    },
+    {
+        shape: "breakdown",
+        label: "Breakdown",
+        blurb: "Where the calories come from",
+        data: [
+            {
+                key: "macro_split",
+                label: "Macro split",
+                note: "",
+                defaultSize: "full",
+            },
+            {
+                key: "meal_type_split",
+                label: "Meal-type split",
+                note: "",
+                defaultSize: "full",
+            },
+        ],
+    },
+    {
+        shape: "patterns",
+        label: "Patterns",
+        blurb: "Rhythms across the week",
+        data: [
+            {
+                key: "weekday",
+                label: "Weekday pattern",
+                note: "",
+                defaultSize: "full",
+            },
+        ],
+    },
+];
+
+function trendsWorkspaceFixture() {
+    return {
+        startDate: "2026-10-11",
+        endDate: "2026-11-09",
+        rangeDays: 30,
+        timezone: "UTC",
+        weightUnit: "lb",
+        alcoholTrackingEnabled: true,
+        layout: trendsLayoutFixture,
+        catalog: TRENDS_CATALOG_FIXTURE,
+        cards: trendsLayoutFixture.cards
+            .map((card) => {
+                const fixture =
+                    TRENDS_CARD_FIXTURES[`${card.shape}:${card.data}`];
+                return fixture ? { ...fixture, size: card.size } : null;
+            })
+            .filter(Boolean),
+        digest: {
+            weekly: "You logged 6 of the last 7 days, averaging 1,940 kcal on the days you recorded. Your weight trend eased down across the week.",
+            trends: "Recorded calories averaged 1,940 kcal across the 6 logged days, against a 2,200 kcal goal. Protein averaged 128 g against a 150 g goal.",
+            patterns:
+                "Lunch is your most consistently logged meal (7 of 7 days). Snacks appear on 4 of 7 days.",
+        },
+    };
+}
 
 const COOK_FIXTURES = [
     {
@@ -623,6 +1097,9 @@ function bootstrapFixture() {
     return {
         profile: PROFILE,
         productPolicy: PRODUCT_POLICY,
+        // Feature toggles (addendum 10): bootstrap carries the
+        // account's module flags; the nav renders from them.
+        features: featureFlagsFixture,
         capabilities: {
             entitlementSource: "android_free_baseline",
             tier: "free",
@@ -823,6 +1300,7 @@ const PHOTO_DRAFT = {
     questions: [],
     items: [
         {
+            id: "fixture-item-rice",
             name: "Fixture rice bowl",
             source_type: "usda",
             confidence: 0.9,
@@ -887,11 +1365,39 @@ function fixtureJson(pathname: string, method: string): unknown | undefined {
         return { draft: CHAT_DRAFT };
     }
     if (pathname === "/api/app/today") {
+        const waterEntries = [
+            {
+                id: "fixture-water-1",
+                amount_ml: 500,
+                logged_at: "2026-11-09T08:15:00.000Z",
+                loggedOn: "2026-11-09",
+                notes: "",
+            },
+            {
+                id: "fixture-water-2",
+                amount_ml: 750,
+                logged_at: "2026-11-09T12:30:00.000Z",
+                loggedOn: "2026-11-09",
+                notes: "With lunch",
+            },
+        ].filter((entry) => !vitalsRemovedIds.has(entry.id));
+        const weightEntries = [
+            {
+                id: "fixture-weight-1",
+                value: 182.4,
+                unit: "lb",
+                logged_at: "2026-11-09T07:00:00.000Z",
+                loggedOn: "2026-11-09",
+                notes: "",
+            },
+        ].filter((entry) => !vitalsRemovedIds.has(entry.id));
         return {
             totals: { calories: 0, proteinG: 0, carbsG: 0, fatG: 0 },
             meals: [],
-            water: { entries: [], totalMl: 0 },
-            weight: [],
+            water: vitalsOnToday
+                ? { entries: waterEntries, totalMl: 1250 }
+                : { entries: [], totalMl: 0 },
+            weight: vitalsOnToday ? weightEntries : [],
             goals: {},
             drafts: pendingDraftOnToday
                 ? [
@@ -927,11 +1433,21 @@ function fixtureJson(pathname: string, method: string): unknown | undefined {
             },
         };
     }
-    if (pathname === "/api/app/guidance/today") {
+    if (pathname === "/api/app/guidance/next-up") {
+        // Next up (guidance rework): the parity fixtures exercise the
+        // honest quiet state; the populated card is covered by the
+        // dedicated mobile-next-up spec.
         return {
-            source_status: "sparse_data",
-            objective: "Track only",
-            actions: [],
+            date: "2026-11-10",
+            day_part: "midday",
+            is_today: true,
+            state: "quiet",
+            objective_set: true,
+            goal_prompt: { show: false },
+            quiet_line:
+                "Nothing needs deciding right now — log the next meal when you eat it.",
+            primary: null,
+            secondary: [],
         };
     }
     if (pathname === "/api/app/settings") return settingsFixture();
@@ -1101,7 +1617,22 @@ function fixtureJson(pathname: string, method: string): unknown | undefined {
                 ? { ...cook, status: "finished" }
                 : cook,
         );
+        if (cookModeStarted) {
+            cooks.push({
+                id: "fixture-cook-mode",
+                title: RECIPE_DETAIL_FIXTURE.recipe.name,
+                cook_date: "2026-11-09",
+                status: "active",
+                source_cook_id: null,
+                notes: "",
+                latest_photo_url: null,
+                photo_count: 0,
+            });
+        }
         return { cooks };
+    }
+    if (pathname === "/api/app/cooks/fixture-cook-mode") {
+        return cookModeDetailFixture();
     }
     if (pathname === "/api/app/cooks/fixture-chicken-rice") {
         return cookDetailFixture();
@@ -1113,173 +1644,69 @@ function fixtureJson(pathname: string, method: string): unknown | undefined {
         cookFinished = true;
         return {};
     }
-    if (pathname === "/api/app/insights") {
-        // S6 slice 7: rich fixture modeled on the tightened mock
-        // (selected/src/insights/theme4-tight.html) — 6 logged days,
-        // 23 meals, the mock's averages, sources and contributors.
-        const waterEntries = [
-            {
-                id: "fixture-water-1",
-                amount_ml: 500,
-                logged_at: "2026-11-09T08:15:00.000Z",
-                loggedOn: "2026-11-09",
-                notes: "",
-            },
-            {
-                id: "fixture-water-2",
-                amount_ml: 750,
-                logged_at: "2026-11-09T12:30:00.000Z",
-                loggedOn: "2026-11-09",
-                notes: "With lunch",
-            },
-        ].filter((entry) => !vitalsRemovedIds.has(entry.id));
-        const weightEntries = [
-            {
-                id: "fixture-weight-1",
-                value: 182.4,
-                unit: "lb",
-                logged_at: "2026-11-09T07:00:00.000Z",
-                loggedOn: "2026-11-09",
-                notes: "",
-            },
-        ].filter((entry) => !vitalsRemovedIds.has(entry.id));
+    if (pathname === "/api/app/features") {
+        if (method === "PUT") {
+            const patch = (body as { features?: Record<string, boolean> })
+                ?.features;
+            if (patch) {
+                featureFlagsFixture = { ...featureFlagsFixture, ...patch };
+            }
+        }
+        return { features: featureFlagsFixture };
+    }
+    if (pathname === "/api/app/trends") {
+        return trendsWorkspaceFixture();
+    }
+    if (pathname === "/api/app/trends/layout" && method === "GET") {
+        return { layout: trendsLayoutFixture };
+    }
+    if (pathname === "/api/app/trends/day") {
         return {
-            vitals: {
-                water: { totalMl: 11250, entries: waterEntries },
-                weight: {
-                    unit: "lb",
-                    target: 175,
-                    narrative:
-                        "Recorded measurements only — the trend follows the weigh-ins in range.",
-                    days: [
-                        { date: "2026-11-03", weight: 184.1 },
-                        { date: "2026-11-05", weight: 183.6 },
-                        { date: "2026-11-07", weight: 183 },
-                        { date: "2026-11-09", weight: 182.4 },
-                    ],
-                    entries: weightEntries,
+            kind: "nutrient",
+            metric: "calories",
+            label: "Calories",
+            unit: "kcal",
+            total: 2140,
+            reference: null,
+            meals: [
+                {
+                    id: "fixture-meal-1",
+                    description: "Chicken plate",
+                    mealType: "lunch",
+                    loggedAt: "2026-11-05T12:30:00.000Z",
+                    total: 1240,
+                    items: [{ name: "Grilled chicken breast", value: 1240 }],
                 },
+                {
+                    id: "fixture-meal-2",
+                    description: "Oats and berries",
+                    mealType: "breakfast",
+                    loggedAt: "2026-11-05T08:00:00.000Z",
+                    total: 900,
+                    items: [{ name: "Rolled oats", value: 900 }],
+                },
+            ],
+            summary: {
+                calories: 2140,
+                proteinG: 119,
+                mealCount: 2,
+                waterMl: 1600,
             },
-            trends: {
-                days: [
-                    {
-                        date: "2026-11-03",
-                        totals: { calories: 2010 },
-                        hasLog: true,
-                    },
-                    {
-                        date: "2026-11-04",
-                        totals: { calories: 1885 },
-                        hasLog: true,
-                    },
-                    {
-                        date: "2026-11-05",
-                        totals: { calories: 2140 },
-                        hasLog: true,
-                    },
-                    {
-                        date: "2026-11-06",
-                        totals: { calories: 0 },
-                        hasLog: false,
-                    },
-                    {
-                        date: "2026-11-07",
-                        totals: { calories: 1995 },
-                        hasLog: true,
-                    },
-                    {
-                        date: "2026-11-08",
-                        totals: { calories: 2050 },
-                        hasLog: true,
-                    },
-                    {
-                        date: "2026-11-09",
-                        totals: { calories: 1660 },
-                        hasLog: true,
-                    },
-                ],
-                narrative:
-                    "Recorded calories averaged 1,940 kcal across the 6 logged days, against a 2,200 kcal goal. Protein averaged 128 g against a 150 g goal. Thursday has no logged meals, so that day is unknown — it is not counted as zero anywhere in this view.",
-            },
-            patterns: {
-                narrative:
-                    "Lunch is your most consistently logged meal (7 of 7 days). Snacks appear on 4 of 7 days. These are observations about your records, nothing more.",
-            },
-            progress: {
-                date: "2026-11-09",
-                totals: {
-                    calories: 1660,
-                    proteinG: 110,
-                    carbsG: 180,
-                    fatG: 55,
-                    waterMl: 1750,
+        };
+    }
+    if (pathname === "/api/app/trends/contributors") {
+        return {
+            metric: "protein_g",
+            label: "Protein",
+            unit: "g",
+            foods: [
+                {
+                    name: "Grilled Chicken Breast",
+                    value: 212,
+                    lastDate: "2026-11-09",
                 },
-                mealCount: 3,
-                goals: {
-                    daily_calories: 2200,
-                    daily_protein_g: 150,
-                    daily_carbs_g: 250,
-                    daily_fat_g: 70,
-                    daily_water_ml: 2500,
-                },
-                weight: {
-                    current: 182.4,
-                    target: 175,
-                    unit: "lb",
-                    loggedOn: "2026-11-09",
-                },
-            },
-            provenance: {
-                coverage: {
-                    itemizedCaloriePercent: 96,
-                    itemCount: 62,
-                    structuredMealCount: 23,
-                    legacyMealCount: 0,
-                },
-                confidence: { recordedItemCount: 62, average: 0.91 },
-                sources: [
-                    {
-                        source: "USDA",
-                        itemCount: 42,
-                        percentOfItems: 68,
-                        calories: 8940,
-                    },
-                    {
-                        source: "Open Food Facts",
-                        itemCount: 14,
-                        percentOfItems: 23,
-                        calories: 2410,
-                    },
-                    {
-                        source: "Package label",
-                        itemCount: 6,
-                        percentOfItems: 9,
-                        calories: 1240,
-                    },
-                ],
-                contributors: {
-                    calories: [
-                        {
-                            name: "Grilled chicken breast",
-                            value: 1240,
-                            source: "USDA",
-                        },
-                        {
-                            name: "Atlantic salmon fillet",
-                            value: 1062,
-                            source: "USDA",
-                        },
-                        {
-                            name: "Peanut butter",
-                            value: 752,
-                            source: "Package label",
-                        },
-                    ],
-                },
-            },
-            averages: { calories: 1940, proteinG: 128, carbsG: 205, fatG: 68 },
-            loggedDays: 6,
-            mealCount: 23,
+                { name: "Greek Yogurt", value: 96, lastDate: "2026-11-08" },
+            ],
         };
     }
     if (pathname === "/api/app/insights/checkin") {
@@ -1326,6 +1753,30 @@ function fixtureJson(pathname: string, method: string): unknown | undefined {
         pathname === "/api/app/meal-drafts/fixture-photo-draft/add-text" &&
         method === "POST"
     ) {
+        if (addTextVariant === "updated") {
+            // Photo-flow P2: a preparation statement ("i deep fried
+            // it") returns the method-correction outcome — no items
+            // added, the existing item carries the correction.
+            return {
+                draft: {
+                    ...PHOTO_DRAFT,
+                    version: 2,
+                    items: [
+                        {
+                            ...PHOTO_DRAFT.items[0],
+                            assumptions: [
+                                'Cooking method corrected by you: "deep-fried" (photo estimate said "grilled").',
+                            ],
+                        },
+                    ],
+                },
+                add: {
+                    status: "updated",
+                    message:
+                        "Cooking method updated on Fixture rice bowl: deep-fried. Nothing else was added.",
+                },
+            };
+        }
         return {
             draft: {
                 ...PHOTO_DRAFT,
@@ -1517,6 +1968,66 @@ test.beforeAll(async () => {
                 return;
             }
             if (
+                method === "POST" &&
+                url.pathname === "/api/app/recipes/fixture-salmon/start-cook"
+            ) {
+                // Recipe experience R2: starting a cook-mode session.
+                cookModeStarted = true;
+                response.writeHead(200, {
+                    "content-type": "application/json",
+                    "cache-control": "no-store",
+                });
+                response.end(
+                    JSON.stringify({
+                        cook_id: "fixture-cook-mode",
+                        deduplicated: false,
+                        cook: cookModeDetailFixture(),
+                    }),
+                );
+                return;
+            }
+            if (
+                method === "PATCH" &&
+                url.pathname ===
+                    "/api/app/cooks/fixture-cook-mode/dishes/fixture-cook-mode-dish/progress"
+            ) {
+                const chunks: Buffer[] = [];
+                request.on("data", (chunk) => chunks.push(chunk as Buffer));
+                request.on("end", () => {
+                    try {
+                        const parsed = JSON.parse(
+                            Buffer.concat(chunks).toString("utf8") || "{}",
+                        ) as {
+                            checked_ingredients?: number[];
+                            checked_steps?: number[];
+                        };
+                        if (Array.isArray(parsed.checked_ingredients)) {
+                            cookModeProgress.checked_ingredients =
+                                parsed.checked_ingredients;
+                        }
+                        if (Array.isArray(parsed.checked_steps)) {
+                            cookModeProgress.checked_steps =
+                                parsed.checked_steps;
+                        }
+                    } catch {
+                        // Keep prior progress on a malformed body.
+                    }
+                    const detail = cookModeDetailFixture();
+                    response.writeHead(200, {
+                        "content-type": "application/json",
+                        "cache-control": "no-store",
+                    });
+                    response.end(
+                        JSON.stringify({
+                            dish: detail.dishes[0],
+                            cook_version: 2,
+                            cook: detail,
+                        }),
+                    );
+                });
+                return;
+            }
+            if (
                 method === "DELETE" &&
                 (url.pathname.startsWith("/api/app/water/") ||
                     url.pathname.startsWith("/api/app/weight/"))
@@ -1557,6 +2068,285 @@ test.beforeAll(async () => {
                 groceryCleared = true;
                 response.writeHead(200, { "content-type": "application/json" });
                 response.end(JSON.stringify({ clearedCount: 1 }));
+                return;
+            }
+            if (
+                method === "POST" &&
+                url.pathname.startsWith("/api/app/groceries/items/") &&
+                url.pathname.endsWith("/purchased")
+            ) {
+                // Grocery fix: the purchased write, with the real
+                // server's contract — the updated item comes back
+                // with its version bumped, and a stale
+                // expected_version is a 409, so a client that keeps
+                // sending the pre-toggle version fails loudly here.
+                const chunks: Buffer[] = [];
+                request.on("data", (chunk) => chunks.push(chunk as Buffer));
+                request.on("end", () => {
+                    if (groceryPurchasedFailure) {
+                        groceryPurchasedFailure = false;
+                        response.writeHead(500, {
+                            "content-type": "application/json",
+                        });
+                        response.end(
+                            JSON.stringify({
+                                error: "Fixture purchased failure",
+                            }),
+                        );
+                        return;
+                    }
+                    let body: {
+                        purchased?: boolean;
+                        expected_version?: number;
+                    } = {};
+                    try {
+                        body = JSON.parse(
+                            Buffer.concat(chunks).toString("utf8") || "{}",
+                        );
+                    } catch {
+                        body = {};
+                    }
+                    const id = decodeURIComponent(
+                        url.pathname.slice(
+                            "/api/app/groceries/items/".length,
+                            -"/purchased".length,
+                        ),
+                    );
+                    const base = GROCERY_FIXTURE_ITEMS.find(
+                        (item) => item.grocery_item_id === id,
+                    );
+                    const currentVersion = base
+                        ? (groceryPurchasedOverrides.get(id)?.version ??
+                          base.version)
+                        : 0;
+                    if (!base || body.expected_version !== currentVersion) {
+                        response.writeHead(409, {
+                            "content-type": "application/json",
+                        });
+                        response.end(
+                            JSON.stringify({
+                                error: "Grocery item version conflict",
+                            }),
+                        );
+                        return;
+                    }
+                    const updated = {
+                        ...base,
+                        purchased_at: body.purchased
+                            ? "2026-11-09T13:00:00.000Z"
+                            : null,
+                        version: currentVersion + 1,
+                    };
+                    groceryPurchasedOverrides.set(id, {
+                        purchased: Boolean(body.purchased),
+                        version: updated.version,
+                    });
+                    response.writeHead(200, {
+                        "content-type": "application/json",
+                    });
+                    response.end(JSON.stringify({ grocery_item: updated }));
+                });
+                return;
+            }
+            if (method === "PUT" && url.pathname === "/api/app/trends/layout") {
+                // Trends layout persistence: the mock server is the
+                // account store — a saved layout rebuilds the
+                // workspace fixture on the next read, like the real
+                // server-side preference row.
+                const chunks: Buffer[] = [];
+                request.on("data", (chunk) => chunks.push(chunk as Buffer));
+                request.on("end", () => {
+                    try {
+                        const parsed = JSON.parse(
+                            Buffer.concat(chunks).toString("utf8") || "{}",
+                        ) as {
+                            layout?: { cards?: TrendsLayoutCard[] };
+                        };
+                        if (Array.isArray(parsed.layout?.cards)) {
+                            trendsLayoutFixture = {
+                                version: 1,
+                                cards: parsed.layout.cards,
+                            };
+                        }
+                    } catch {
+                        // Keep the previous layout on a malformed body.
+                    }
+                    response.writeHead(200, {
+                        "content-type": "application/json",
+                    });
+                    response.end(
+                        JSON.stringify({ layout: trendsLayoutFixture }),
+                    );
+                });
+                return;
+            }
+            if (
+                method === "PATCH" &&
+                url.pathname.startsWith(
+                    "/api/app/meal-drafts/fixture-photo-draft/items/",
+                )
+            ) {
+                // Photo-flow P4: the review's single Save changes
+                // PATCHes dirty items here; record the body so the
+                // test can assert the edited values were committed,
+                // and answer with the merged draft, version bumped.
+                const chunks: Buffer[] = [];
+                request.on("data", (chunk) => chunks.push(chunk as Buffer));
+                request.on("end", () => {
+                    let body: {
+                        expected_version?: number;
+                        item?: Record<string, unknown>;
+                    } = {};
+                    try {
+                        body = JSON.parse(
+                            Buffer.concat(chunks).toString("utf8") || "{}",
+                        );
+                    } catch {
+                        body = {};
+                    }
+                    lastDraftItemPatch = { path: url.pathname, body };
+                    const item = {
+                        ...PHOTO_DRAFT.items[0],
+                        ...(body.item ?? {}),
+                    };
+                    response.writeHead(200, {
+                        "content-type": "application/json",
+                        "cache-control": "no-store",
+                    });
+                    response.end(
+                        JSON.stringify({
+                            draft: {
+                                ...PHOTO_DRAFT,
+                                version: (body.expected_version ?? 1) + 1,
+                                items: [item],
+                            },
+                        }),
+                    );
+                });
+                return;
+            }
+            if (url.pathname === "/api/app/calendar/month") {
+                // Today navigation (brief item 2): the month summary
+                // dots the 15th of whatever month is asked for when
+                // the calendar seed is on — one request per month.
+                const month = url.searchParams.get("month") ?? "";
+                response.writeHead(200, {
+                    "content-type": "application/json",
+                    "cache-control": "no-store",
+                });
+                response.end(
+                    JSON.stringify({
+                        month,
+                        timezone: "UTC",
+                        days: calendarSeedOn
+                            ? [
+                                  {
+                                      date: `${month}-15`,
+                                      meals: 1,
+                                      water: 1,
+                                      weight: 0,
+                                  },
+                              ]
+                            : [],
+                    }),
+                );
+                return;
+            }
+            if (
+                calendarSeedOn &&
+                url.pathname === "/api/app/today" &&
+                (url.searchParams.get("date") ?? "").endsWith("-15")
+            ) {
+                // The seeded day's Today payload: one meal whose
+                // items carry the nutrients the breakdown sheet and
+                // the micronutrient sums read.
+                const date = url.searchParams.get("date") ?? "";
+                const items = [
+                    {
+                        id: "fixture-calendar-item-1",
+                        mealId: "fixture-calendar-meal",
+                        name: "Grilled chicken",
+                        quantity: 1,
+                        portionLabel: "150 g",
+                        gramWeight: 150,
+                        calories: 248,
+                        proteinG: 46,
+                        carbsG: 0,
+                        fatG: 5,
+                        fiberG: 0,
+                        sugarG: 0,
+                        sodiumMg: 74,
+                        saturatedFatG: 1.4,
+                        potassiumMg: 650,
+                        cholesterolMg: 128,
+                        sourceType: "usda",
+                        provider: "USDA",
+                        confidence: 0.95,
+                        assumptions: [],
+                    },
+                    {
+                        id: "fixture-calendar-item-2",
+                        mealId: "fixture-calendar-meal",
+                        name: "Jasmine rice",
+                        quantity: 1,
+                        portionLabel: "1 cup cooked",
+                        gramWeight: 158,
+                        calories: 222,
+                        proteinG: 4,
+                        carbsG: 45,
+                        fatG: 1,
+                        fiberG: 1,
+                        sugarG: 0,
+                        sodiumMg: 4,
+                        saturatedFatG: 0.2,
+                        potassiumMg: 55,
+                        cholesterolMg: 0,
+                        sourceType: "usda",
+                        provider: "USDA",
+                        confidence: 0.95,
+                        assumptions: [],
+                    },
+                ];
+                response.writeHead(200, {
+                    "content-type": "application/json",
+                    "cache-control": "no-store",
+                });
+                response.end(
+                    JSON.stringify({
+                        totals: {
+                            calories: 470,
+                            proteinG: 50,
+                            carbsG: 45,
+                            fatG: 6,
+                            fiberG: 1,
+                            sugarG: 0,
+                            alcoholG: 0,
+                        },
+                        meals: [
+                            {
+                                id: "fixture-calendar-meal",
+                                description: "Calendar seed bowl",
+                                meal_type: "lunch",
+                                logged_at: `${date}T12:30:00.000Z`,
+                                calories: 470,
+                                protein_g: 50,
+                                carbs_g: 45,
+                                fat_g: 6,
+                                items,
+                            },
+                        ],
+                        water: { entries: [], totalMl: 0 },
+                        weight: [],
+                        goals: {
+                            daily_calories: 2000,
+                            daily_protein_g: 120,
+                            daily_carbs_g: 225,
+                            daily_fat_g: 67,
+                        },
+                        drafts: [],
+                        plannedMeals: [],
+                    }),
+                );
                 return;
             }
             const fixture = fixtureJson(url.pathname, method);
@@ -1685,10 +2475,19 @@ export async function openInstalledSubscriptionManagement() {
 const FIXTURE_PHOTO =
     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 export async function takeInstalledPhoto() {
+    (window.__cameraCalls ??= []).push("camera");
     return { webPath: FIXTURE_PHOTO, metadata: { format: "png" } };
 }
 export async function chooseInstalledPhoto() {
+    (window.__cameraCalls ??= []).push("library");
     return { webPath: FIXTURE_PHOTO, metadata: { format: "png" } };
+}
+export async function chooseInstalledPhotos() {
+    (window.__cameraCalls ??= []).push("library-multi");
+    return [{ webPath: FIXTURE_PHOTO, metadata: { format: "png" } }];
+}
+export async function scanInstalledBarcode() {
+    throw new Error("Barcode scanning is unavailable in the bundle e2e");
 }
 `;
 
@@ -1730,6 +2529,8 @@ test.beforeEach(() => {
     recipeArchived = false;
     groceryCleared = false;
     groceryRemovedIds.clear();
+    groceryPurchasedOverrides.clear();
+    groceryPurchasedFailure = false;
     householdMemberRemoved = false;
     householdInviteRevoked = false;
     householdGone = false;
@@ -1738,7 +2539,19 @@ test.beforeEach(() => {
     chatSeedSurface = null;
     cookFinished = false;
     cookDeleted = false;
+    cookModeStarted = false;
+    cookModeProgress = { checked_ingredients: [], checked_steps: [] };
     vitalsRemovedIds.clear();
+    trendsLayoutFixture = defaultTrendsLayout();
+    featureFlagsFixture = {
+        plan: true,
+        recipes: true,
+        groceries: true,
+        pantry: true,
+        cooks: true,
+    };
+    vitalsOnToday = false;
+    calendarSeedOn = false;
     connectionsFixture = [
         {
             clientName: "Fixture MCP Client",
@@ -1756,11 +2569,13 @@ test("every app-channel entry point ships inside the packaged bundle", async () 
         "app-account.js",
         "app-patches.js",
         "app-integrity.js",
+        "feature-nav.js",
         "pantry.js",
         "mobile-runtime.js",
         "mobile-entry.js",
         "billing-native.js",
-        "meal-photo-native.js",
+        "capture-native.js",
+        "photo-capture.js",
         "pantry-native.js",
         "index.html",
         "pantry.html",
@@ -1827,8 +2642,8 @@ test("packaged route sweep renders every Operate surface", async ({ page }) => {
     await bootPackagedApp(page);
 
     const surfaces: { href: string; landmark: RegExp }[] = [
-        { href: "/app/log", landmark: /Food log|Meals/i },
-        { href: "/app/insights", landmark: /Last 30 days|Weekly check-in/i },
+        { href: "/app/log", landmark: /History|Meals/i },
+        { href: "/app/trends", landmark: /Trends|The week in words/i },
         { href: "/app/foods", landmark: /Saved foods|Foods/i },
         { href: "/app/recipes", landmark: /Recipes/i },
         { href: "/app/cooks", landmark: /Cooks/i },
@@ -1853,6 +2668,44 @@ test("packaged route sweep renders every Operate surface", async ({ page }) => {
     // Pantry is the second packaged page (its own shell + script).
     await page.goto(`${baseURL}/pantry.html`);
     await expect(page).toHaveTitle(/Pantry/);
+});
+
+test("feature toggles: the packaged nav and guards render from the account flags", async ({
+    page,
+}) => {
+    // Plan and Pantry off before boot: the bundle's nav drops both,
+    // the disabled SPA route lands on Today with the notice, and the
+    // packaged Pantry page hands back to Today instead of loading.
+    featureFlagsFixture = {
+        plan: false,
+        recipes: true,
+        groceries: true,
+        pantry: false,
+        cooks: true,
+    };
+    await bootPackagedApp(page);
+    const navLabels = await page
+        .locator(".mobile-bottom-nav a")
+        .allTextContents();
+    expect(
+        navLabels.map((label) => label.replace(/^[^A-Za-z]+/, "").trim()),
+    ).toEqual(["Today", "Recipes", "Groceries", "More"]);
+
+    await gotoRoute(page, "/app/plan");
+    await expect(
+        page.locator(".toast", {
+            hasText: "Meal Plan is turned off — re-enable it in Settings",
+        }),
+    ).toBeVisible();
+    await expect(page).toHaveTitle(/^Today — Munch$/);
+
+    await page.goto(`${baseURL}/pantry.html`);
+    await expect(page).toHaveTitle(/^Today — Munch$/);
+    await expect(
+        page.locator(".toast", {
+            hasText: "Pantry is turned off — re-enable it in Settings",
+        }),
+    ).toBeVisible();
 });
 
 test("household.manage lives inside the packaged app", async ({ page }) => {
@@ -2386,6 +3239,182 @@ test("meal.photoLog runs end to end in the packaged bundle", async ({
     ).toBe(true);
 });
 
+test("photo-flow P4: one Save changes commits draft edits; unsaved edits survive other actions", async ({
+    page,
+}) => {
+    lastDraftItemPatch = null;
+    await bootPackagedApp(page);
+    await page.locator('[data-action="log-by-photo"]:visible').first().click();
+    await page.getByRole("button", { name: "Take photo" }).click();
+    await expect(page.locator("#meal-photo-status")).toContainText(
+        "Photo added",
+    );
+    await page.locator("#meal-photo-submit").click();
+    await expect(page.locator("#meal-draft-review")).toContainText(
+        "Fixture rice bowl",
+    );
+
+    // P3: item editors start collapsed — the fields stay hidden
+    // until the item's row is tapped open.
+    const editor = page.locator('[data-draft-item-index="0"]');
+    await expect(
+        editor.locator('[data-draft-field="gram_weight"]'),
+    ).toBeHidden();
+    await editor.locator('[data-action="toggle-draft-item"]').click();
+    await expect(
+        editor.locator('[data-draft-field="gram_weight"]'),
+    ).toBeVisible();
+
+    // P4: an edit marks the draft dirty, and the ONE Save changes
+    // action commits it — the item PATCH carries the edited value
+    // and the draft version it was made against.
+    await editor.locator('[data-draft-field="gram_weight"]').fill("250");
+    await expect(page.locator("[data-draft-save-note]")).toHaveText(
+        "Unsaved changes",
+    );
+    await page.locator('[data-action="save-draft-all"]').click();
+    await expect(page.locator("[data-draft-save-note]")).toHaveText(
+        "All changes saved.",
+    );
+    expect(lastDraftItemPatch?.path).toBe(
+        "/api/app/meal-drafts/fixture-photo-draft/items/fixture-item-rice",
+    );
+    const patchBody = lastDraftItemPatch?.body as {
+        expected_version?: number;
+        item?: { gram_weight?: number };
+    };
+    expect(patchBody?.expected_version).toBe(1);
+    expect(patchBody?.item?.gram_weight).toBe(250);
+
+    // The two-save trap, closed: edit again, then trigger a full
+    // re-render via another action (add-text answers with a fresh
+    // server draft) — the unsaved quantity is still in the editor
+    // afterwards, still marked unsaved.
+    await editor.locator('[data-draft-field="quantity"]').fill("2");
+    await page
+        .locator("#meal-draft-add-text-input")
+        .fill("I added a good bit of butter");
+    await page.locator('[data-action="add-draft-text"]').click();
+    await expect(page.locator("#meal-draft-review")).toContainText("Butter");
+    await expect(editor.locator('[data-draft-field="quantity"]')).toHaveValue(
+        "2",
+    );
+    await expect(page.locator("[data-draft-save-note]")).toHaveText(
+        "Unsaved changes",
+    );
+});
+
+test("photo-flow P2: a preparation statement updates the draft in place", async ({
+    page,
+}) => {
+    addTextVariant = "updated";
+    try {
+        await bootPackagedApp(page);
+        await page
+            .locator('[data-action="log-by-photo"]:visible')
+            .first()
+            .click();
+        await page.getByRole("button", { name: "Take photo" }).click();
+        await expect(page.locator("#meal-photo-status")).toContainText(
+            "Photo added",
+        );
+        await page.locator("#meal-photo-submit").click();
+        await expect(page.locator("#meal-draft-review")).toContainText(
+            "Fixture rice bowl",
+        );
+        await page
+            .locator("#meal-draft-add-text-input")
+            .fill("i deep fried it");
+        await page.locator('[data-action="add-draft-text"]').click();
+        // The outcome is the method-correction message, shown in the
+        // review — not silence, and not a mystery new food.
+        await expect(
+            page.locator(".meal-draft-add-text-message"),
+        ).toContainText("Cooking method updated on Fixture rice bowl");
+        await expect(page.locator("#meal-draft-review")).toContainText(
+            "Cooking method corrected by you",
+        );
+    } finally {
+        addTextVariant = "added";
+    }
+});
+
+test("photo-flow P8: cook photo attach uses the shared camera-first control", async ({
+    page,
+}) => {
+    await bootPackagedApp(page);
+    await gotoRoute(page, "/app/cooks");
+    await page.locator('[data-action="new-cook"]:visible').first().click();
+    const form = page.locator("#cook-create-form");
+    await expect(form).toBeVisible();
+    const control = form.locator("[data-photo-capture]");
+    await expect(
+        control.locator('[data-capture-action="camera"]'),
+    ).toBeVisible();
+    await expect(
+        control.locator('[data-capture-action="library"]'),
+    ).toBeVisible();
+    // The raw file input is never presented bare.
+    await expect(form.locator('input[type="file"]:visible')).toHaveCount(0);
+    await control.locator('[data-capture-action="camera"]').click();
+    await expect
+        .poll(() =>
+            page.evaluate(
+                () =>
+                    (
+                        window as unknown as {
+                            __cameraCalls?: string[];
+                        }
+                    ).__cameraCalls ?? [],
+            ),
+        )
+        .toContain("camera");
+    await expect(control.locator("[data-capture-files]")).toContainText(".png");
+    const fileCount = await control
+        .locator("input.photo-capture-input")
+        .evaluate((el) => (el as HTMLInputElement).files?.length ?? 0);
+    expect(fileCount).toBe(1);
+});
+
+test("photo-flow P8: pantry and receipt captures use the shared control, camera first", async ({
+    page,
+}) => {
+    await page.route(/\/mobile-runtime\.js$/, (route) =>
+        route.fulfill({ contentType: "text/javascript", body: STUB_RUNTIME }),
+    );
+    await page.goto(`${baseURL}/pantry.html`);
+    const pantryControl = page.locator(
+        "[data-photo-capture]:has(#pantry-photo)",
+    );
+    const receiptControl = page.locator(
+        "[data-photo-capture]:has(#receipt-photo)",
+    );
+    await expect(
+        pantryControl.locator('[data-capture-action="camera"]'),
+    ).toBeVisible();
+    await expect(
+        receiptControl.locator('[data-capture-action="camera"]'),
+    ).toBeVisible();
+    await expect(page.locator('input[type="file"]:visible')).toHaveCount(0);
+    await pantryControl.locator('[data-capture-action="camera"]').click();
+    await expect
+        .poll(() =>
+            page.evaluate(
+                () =>
+                    (
+                        window as unknown as {
+                            __cameraCalls?: string[];
+                        }
+                    ).__cameraCalls ?? [],
+            ),
+        )
+        .toContain("camera");
+    const fileCount = await page
+        .locator("#pantry-photo")
+        .evaluate((el) => (el as HTMLInputElement).files?.length ?? 0);
+    expect(fileCount).toBe(1);
+});
+
 test("S6 slice 1 regression: Abandon draft dismisses a pending draft with no native confirm", async ({
     page,
 }) => {
@@ -2477,7 +3506,7 @@ test("S6 slice 1: the single ad slot lives on Today, flag-gated and Premium-hidd
     ).toBe(true);
 
     // Flag ON for a free packaged account: exactly one slot, in-flow
-    // directly under Today's guidance and above Meals; the native
+    // directly under Next up and above Meals; the native
     // banner is requested visible with the flag forwarded.
     adsFlagOn = true;
     await page.reload();
@@ -2487,7 +3516,7 @@ test("S6 slice 1: the single ad slot lives on Today, flag-gated and Premium-hidd
     await expect(slot).toBeVisible();
     const slotBox = await slot.boundingBox();
     const guidanceBox = await page
-        .getByRole("heading", { name: "Today’s guidance" })
+        .getByRole("heading", { name: "Next up" })
         .boundingBox();
     const mealsBox = await page
         .getByRole("heading", { name: "Meals" })
@@ -2633,6 +3662,83 @@ test("S6 slice 4 regression: Archive recipe uses inline confirmation with no nat
     await expect(page.locator(".recipe-panel")).toHaveCount(3);
     await expect(salmonPanel).toHaveCount(0);
     expect(nativeDialogs).toEqual([]);
+});
+
+test("recipe experience R2: Start cook opens cook mode in the packaged bundle; checks persist through the read path", async ({
+    page,
+}) => {
+    await bootPackagedApp(page);
+    await gotoRoute(page, "/app/recipes");
+
+    const salmonPanel = page.locator(
+        '[data-recipe-name="sheet-pan salmon & broccoli"]',
+    );
+    await salmonPanel.locator('[data-action="view-recipe"]').click();
+    // Start cook is the detail's primary action (Cooks module on).
+    await page.locator('[data-action="start-recipe-cook"]').click();
+    expect(
+        observedRequest("POST", "/api/app/recipes/fixture-salmon/start-cook"),
+    ).toBe(true);
+
+    const panel = page.locator("[data-cook-mode]");
+    await expect(panel).toBeVisible();
+    const ingredientBoxes = panel.locator(
+        '.cook-mode-check[data-kind="ingredients"]',
+    );
+    const stepBoxes = panel.locator('.cook-mode-check[data-kind="steps"]');
+    await expect(ingredientBoxes).toHaveCount(3);
+    await expect(stepBoxes).toHaveCount(3);
+    await expect(panel.locator(".cook-mode-current-tag")).toHaveText("Up next");
+
+    await ingredientBoxes.first().check();
+    await stepBoxes.first().check();
+    expect(
+        observedRequest(
+            "PATCH",
+            "/api/app/cooks/fixture-cook-mode/dishes/fixture-cook-mode-dish/progress",
+        ),
+    ).toBe(true);
+    await expect(panel.locator("[data-cook-mode-progress]")).toContainText(
+        "1 of 3 ingredients · 1 of 3 steps",
+    );
+
+    // Close and reopen through the Cooks list: the checked state is
+    // served back by the read path, not held in the page.
+    await page.locator(".dialog-close").click();
+    await gotoRoute(page, "/app/cooks");
+    const card = page.locator('.cook-card[data-cook-id="fixture-cook-mode"]');
+    await card.locator('[data-action="open-cook"]').click();
+    const reopened = page.locator("[data-cook-mode]");
+    await expect(reopened).toBeVisible();
+    await expect(
+        reopened.locator('.cook-mode-check[data-kind="ingredients"]').first(),
+    ).toBeChecked();
+    await expect(
+        reopened.locator('.cook-mode-check[data-kind="steps"]').first(),
+    ).toBeChecked();
+
+    // Checking the remaining steps surfaces the finish block.
+    await reopened
+        .locator('.cook-mode-check[data-kind="steps"]')
+        .nth(1)
+        .check();
+    await reopened
+        .locator('.cook-mode-check[data-kind="steps"]')
+        .nth(2)
+        .check();
+    await expect(reopened.locator(".cook-mode-finish")).toContainText(
+        "Every step is checked off.",
+    );
+    await expect(
+        reopened
+            .locator(".cook-mode-finish")
+            .getByRole("button", { name: "Log recipe" }),
+    ).toBeVisible();
+    await expect(
+        reopened
+            .locator(".cook-mode-finish")
+            .getByRole("button", { name: "Finish cook" }),
+    ).toBeVisible();
 });
 
 test("S6 slice 3 regression: meal swap applies and undoes with no native confirm", async ({
@@ -3064,6 +4170,245 @@ test("S6 slice 6 regression: remove and clear-purchased use inline confirmation 
     expect(nativeDialogs).toEqual([]);
 });
 
+test("Grocery fix G1: check-off updates in place — the list is never rebuilt, counts stay true", async ({
+    page,
+}) => {
+    await bootPackagedApp(page);
+    await gotoRoute(page, "/app/groceries");
+    await expect(page.locator("#app-content")).toContainText(
+        "4 items · 1 checked",
+    );
+    await expect(
+        page.locator('[data-action="clear-purchased"]'),
+    ).toHaveAttribute("data-count", "1");
+
+    // Identity anchors: if any check-off rebuilt the view (the old
+    // renderRoute() behavior), these nodes would be replaced and the
+    // identity assertions below would fail.
+    await page.evaluate(() => {
+        const w = window as unknown as {
+            __groceryViewNode?: unknown;
+            __groceryListNode?: unknown;
+            __groceryRowNodes?: unknown[];
+            __groceryScrollTop?: number;
+        };
+        w.__groceryViewNode = document.querySelector(".groceries-view");
+        w.__groceryListNode = document.querySelector(".grocery-list");
+        w.__groceryRowNodes = [
+            ...document.querySelectorAll(".grocery-item-row"),
+        ];
+        const scroller = document.querySelector(".app-content");
+        w.__groceryScrollTop = scroller?.scrollTop ?? 0;
+    });
+    const viewIntact = () =>
+        page.evaluate(() => {
+            const w = window as unknown as {
+                __groceryViewNode?: unknown;
+                __groceryListNode?: unknown;
+                __groceryRowNodes?: unknown[];
+                __groceryScrollTop?: number;
+            };
+            const rows = [...document.querySelectorAll(".grocery-item-row")];
+            return (
+                document.querySelector(".groceries-view") ===
+                    w.__groceryViewNode &&
+                document.querySelector(".grocery-list") ===
+                    w.__groceryListNode &&
+                rows.length === w.__groceryRowNodes?.length &&
+                rows.every(
+                    (row, index) => row === w.__groceryRowNodes?.[index],
+                ) &&
+                (document.querySelector(".app-content")?.scrollTop ?? 0) ===
+                    w.__groceryScrollTop
+            );
+        });
+    const counts = page.locator(".grocery-list-counts");
+    const clear = page.locator('[data-action="clear-purchased"]');
+    const row = (id: string) => page.locator(`[data-grocery-item-id="${id}"]`);
+    const check = (id: string) => row(id).locator(".grocery-check-input");
+
+    // Check one: the checkbox itself.
+    await check("fixture-grocery-spinach").click();
+    await expect(page.locator("#toast-region")).toContainText(
+        "Marked purchased.",
+    );
+    await expect(counts).toHaveText("4 items · 2 checked");
+    await expect(page.locator("#app-content")).toContainText(
+        "4 items · 2 checked",
+    );
+    await expect(clear).toHaveAttribute("data-count", "2");
+    await expect(row("fixture-grocery-spinach")).toHaveClass(/is-purchased/);
+    await expect(check("fixture-grocery-spinach")).toHaveAttribute(
+        "data-version",
+        "2",
+    );
+    expect(await viewIntact()).toBe(true);
+
+    // Check two: tapping the item's name routes through the same
+    // checkbox (F11) and gets the same in-place update.
+    await row("fixture-grocery-rice").locator(".grocery-item-main").click();
+    await expect(counts).toHaveText("4 items · 3 checked");
+    await expect(clear).toHaveAttribute("data-count", "3");
+    await expect(row("fixture-grocery-rice")).toHaveClass(/is-purchased/);
+    expect(await viewIntact()).toBe(true);
+
+    // Check three in a row.
+    await check("fixture-grocery-milk").click();
+    await expect(counts).toHaveText("4 items · 4 checked");
+    await expect(clear).toHaveAttribute("data-count", "4");
+    expect(await viewIntact()).toBe(true);
+
+    // Uncheck: the version the row now sends is the one the last
+    // write returned (the mock 409s a stale version, so reaching the
+    // toast at all proves the in-place version threading).
+    await check("fixture-grocery-spinach").click();
+    await expect(page.locator("#toast-region")).toContainText(
+        "Restored to the list.",
+    );
+    await expect(counts).toHaveText("4 items · 3 checked");
+    await expect(clear).toHaveAttribute("data-count", "3");
+    await expect(row("fixture-grocery-spinach")).not.toHaveClass(
+        /is-purchased/,
+    );
+    await expect(check("fixture-grocery-spinach")).toHaveAttribute(
+        "data-version",
+        "3",
+    );
+    expect(await viewIntact()).toBe(true);
+
+    // The Clear-purchased confirmation reads the live in-place count.
+    await clear.click();
+    await expect(
+        page.getByText("Remove all 3 purchased items from this list?"),
+    ).toBeVisible();
+    await page.locator('[data-action="dismiss-grocery-confirm"]').click();
+    await expect(clear).toBeVisible();
+    await expect(counts).toHaveText("4 items · 3 checked");
+});
+
+test("Grocery fix G1 regression: a failed check-off reverts the checkbox and surfaces the error", async ({
+    page,
+}) => {
+    await bootPackagedApp(page);
+    await gotoRoute(page, "/app/groceries");
+    groceryPurchasedFailure = true;
+    const spinach = page.locator(
+        '[data-grocery-item-id="fixture-grocery-spinach"] .grocery-check-input',
+    );
+    await spinach.click();
+    await expect(page.locator("#toast-region")).toContainText(
+        "Fixture purchased failure",
+    );
+    await expect(spinach).not.toBeChecked();
+    await expect(
+        page.locator('[data-grocery-item-id="fixture-grocery-spinach"]'),
+    ).not.toHaveClass(/is-purchased/);
+    await expect(page.locator(".grocery-list-counts")).toHaveText(
+        "4 items · 1 checked",
+    );
+    expect(
+        observedRequest(
+            "POST",
+            "/api/app/groceries/items/fixture-grocery-spinach/purchased",
+        ),
+    ).toBe(true);
+});
+
+test("Grocery fix G2: shopping mode labels itself, persists for the session, and stays on the groceries surface", async ({
+    page,
+}) => {
+    await bootPackagedApp(page);
+    await gotoRoute(page, "/app/groceries");
+
+    // Off state: plain label, no caption, no chrome class.
+    const toggle = page.locator('[data-action="shopping-mode"]');
+    await expect(toggle).toHaveText("Shopping mode");
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await expect(page.locator(".shopping-mode-caption")).toHaveCount(0);
+    await expect(page.locator("body")).not.toHaveClass(/shopping-mode/);
+
+    // Captures at the program's 390x844 discipline: off, then on.
+    // (The viewport is set before the chrome assertions: this spec
+    // also runs under a desktop project in the website lane, where
+    // the mobile bottom nav is hidden by design at any mode.)
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.locator(".mobile-bottom-nav")).toBeVisible();
+    await page.screenshot({
+        path: "test-results/grocery-captures/shopping-mode-off-390.png",
+    });
+    await toggle.click();
+
+    // On state: the button is the exit, and the caption says what
+    // the mode does — the two things the old mode never told anyone.
+    await expect(toggle).toHaveText("Exit shopping mode");
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator(".shopping-mode-caption")).toHaveText(
+        "Bigger targets, distractions hidden — for checking off in the store",
+    );
+    await expect(page.locator("body")).toHaveClass(/shopping-mode/);
+    await expect(page.locator(".mobile-bottom-nav")).toBeHidden();
+    await page.screenshot({
+        path: "test-results/grocery-captures/shopping-mode-on-390.png",
+    });
+
+    // G1's in-place assertions also hold inside shopping mode.
+    await page.evaluate(() => {
+        const w = window as unknown as { __groceryListNode?: unknown };
+        w.__groceryListNode = document.querySelector(".grocery-list");
+    });
+    await page
+        .locator(
+            '[data-grocery-item-id="fixture-grocery-spinach"] .grocery-check-input',
+        )
+        .click();
+    await expect(page.locator(".grocery-list-counts")).toHaveText(
+        "4 items · 2 checked",
+    );
+    expect(
+        await page.evaluate(() => {
+            const w = window as unknown as { __groceryListNode?: unknown };
+            return (
+                document.querySelector(".grocery-list") === w.__groceryListNode
+            );
+        }),
+    ).toBe(true);
+
+    // Navigate away: the chrome class must not follow — the mode's
+    // hidden-sidebar/bottom-nav rules belong to Groceries alone.
+    await gotoRoute(page, "/app/plan");
+    await expect(page.locator(".groceries-view")).toHaveCount(0);
+    await expect(page.locator("body")).not.toHaveClass(/shopping-mode/);
+
+    // Return: the session preference is still on, label and caption
+    // as specified, and the in-mode check-off survived the trip.
+    await gotoRoute(page, "/app/groceries");
+    await expect(toggle).toHaveText("Exit shopping mode");
+    await expect(page.locator(".shopping-mode-caption")).toBeVisible();
+    await expect(page.locator("body")).toHaveClass(/shopping-mode/);
+    await expect(page.locator(".grocery-list-counts")).toHaveText(
+        "4 items · 2 checked",
+    );
+
+    // A same-session reload keeps the mode too.
+    await page.goto(`${baseURL}/`);
+    await expect(page.getByRole("button", { name: "Add water" })).toBeVisible();
+    await gotoRoute(page, "/app/groceries");
+    await expect(toggle).toHaveText("Exit shopping mode");
+    await expect(page.locator("body")).toHaveClass(/shopping-mode/);
+
+    // Exit restores everything, and the exit also persists.
+    await toggle.click();
+    await expect(toggle).toHaveText("Shopping mode");
+    await expect(page.locator(".shopping-mode-caption")).toHaveCount(0);
+    await expect(page.locator("body")).not.toHaveClass(/shopping-mode/);
+    await expect(page.locator(".mobile-bottom-nav")).toBeVisible();
+    await page.goto(`${baseURL}/`);
+    await expect(page.getByRole("button", { name: "Add water" })).toBeVisible();
+    await gotoRoute(page, "/app/groceries");
+    await expect(toggle).toHaveText("Shopping mode");
+    await expect(page.locator("body")).not.toHaveClass(/shopping-mode/);
+});
+
 test("S6 slice 5: Cooks list renders themed panels with row actions and no ad slot", async ({
     page,
 }) => {
@@ -3227,39 +4572,38 @@ function daySpan(params: URLSearchParams): number {
     return Math.round((end - start) / 86_400_000);
 }
 
-test("S6 slice 7: Insights renders the fused surface, check-in stays windowed to 7 days, no ad slot", async ({
+test("Trends: dashboard renders, check-in stays windowed, catalog builds a persistent custom dashboard, drill ends at the day, no ad slot", async ({
     page,
 }) => {
     await bootPackagedApp(page);
+    // T8: the retired Insights route lands on Trends.
     await gotoRoute(page, "/app/insights");
+    await expect(page.locator(".operate-view.trends-view")).toHaveCount(1);
+    expect(page.url()).toContain("/app/trends");
 
-    // The fused surface: Editorial Serif scope, mock grammar panels.
-    await expect(page.locator(".operate-view.insights-view")).toHaveCount(1);
-    await expect(page.locator("#app-content")).toContainText("Last 30 days");
-    await expect(page.locator("#app-content")).toContainText(
-        "6 logged days and 23 meals",
+    // The default dashboard (T2): calories first with its verdict and
+    // its labeled target band (T6/T13), one labeled bar per day.
+    const caloriesCard = page.locator(
+        '.trends-card[data-card-key="bar:calories"]',
     );
-    await expect(page.locator("#app-content")).toContainText("Weekly check-in");
-    await expect(page.locator("#app-content")).toContainText("86% coverage");
-    await expect(page.locator("#app-content")).toContainText("6 of 7");
-    await expect(page.locator(".insights-spark-bar")).toHaveCount(7);
-    await expect(page.locator("#app-content")).toContainText("Weight trend");
-    await expect(page.locator("#app-content")).toContainText("182.4 lb");
-    await expect(page.locator("#app-content")).toContainText("-1.7 lb");
-    await expect(page.locator("#app-content")).toContainText(
-        "Selected-day progress",
+    await expect(caloriesCard).toBeVisible();
+    await expect(caloriesCard).toContainText("in range 1 of 6 days");
+    await expect(caloriesCard.locator("[data-chart-label]")).toContainText(
+        "target 2,090–2,310",
     );
-    await expect(page.locator("#app-content")).toContainText(
-        "2,200 kcal target",
+    await expect(caloriesCard.locator("[data-bar-date]")).toHaveCount(6);
+    await expect(
+        page.locator('.trends-card[data-card-key="line:weight"]'),
+    ).toContainText("about −0.4 lb a week");
+    await expect(
+        page.locator('.trends-card[data-card-key="digest"]'),
+    ).toContainText("The week in words");
+    await expect(
+        page.locator('.trends-card[data-card-key="digest"]'),
+    ).toContainText("86% coverage");
+    await expect(page.getByTestId("chat-entry-insights")).toContainText(
+        "Explain my week",
     );
-    await expect(page.locator("#app-content")).toContainText(
-        "Data coverage — where your nutrition came from",
-    );
-    await expect(page.locator("#app-content")).toContainText(
-        "Grilled chicken breast",
-    );
-    // Trend + pattern narratives render as open prose (deterministic
-    // server text, unchanged), not collapsed disclosures.
     await expect(page.locator("#app-content")).toContainText(
         "Recorded calories averaged 1,940 kcal",
     );
@@ -3267,29 +4611,139 @@ test("S6 slice 7: Insights renders the fused surface, check-in stays windowed to
         "Lunch is your most consistently logged meal",
     );
 
-    // The known-bug guard (PR #184): the default 30-day view must
-    // window its check-in request to the last 7 days — the check-in
-    // route rejects ranges over 7 days and once 500'd this whole view.
-    const insightsParams = observedSearch("GET", "/api/app/insights");
+    // T14 spot-check in the real bundle render: the reference label's
+    // box never intersects a bar's box.
+    const overlap = await page.evaluate(() => {
+        const card = document.querySelector(
+            '.trends-card[data-card-key="bar:calories"]',
+        );
+        const label = card?.querySelector("[data-chart-label]");
+        if (!label) return "no label";
+        const lb = label.getBoundingClientRect();
+        for (const bar of card.querySelectorAll("[data-bar-date]")) {
+            const bb = bar.getBoundingClientRect();
+            if (
+                lb.left < bb.right &&
+                bb.left < lb.right &&
+                lb.top < bb.bottom &&
+                bb.top < lb.bottom
+            ) {
+                return `label overlaps bar ${bar.getAttribute("data-bar-date")}`;
+            }
+        }
+        return null;
+    });
+    expect(overlap).toBeNull();
+
+    // The known-bug guard (PR #184): the default 30-day view windows
+    // its Digest check-in request to the last 7 days.
+    const trendsParams = observedSearch("GET", "/api/app/trends");
     const checkinParams = observedSearch("GET", "/api/app/insights/checkin");
-    expect(daySpan(insightsParams)).toBe(29);
+    expect(daySpan(trendsParams)).toBe(29);
     expect(daySpan(checkinParams)).toBe(6);
-    expect(checkinParams.get("end")).toBe(insightsParams.get("end"));
+    expect(checkinParams.get("end")).toBe(trendsParams.get("end"));
 
     // Range switch re-renders at 7 days and both requests agree.
-    await page.locator('[data-action="insight-range"][data-days="7"]').click();
+    await page.locator('[data-action="trends-range"][data-days="7"]').click();
     await expect(page.locator("#app-content")).toContainText("Last 7 days");
-    expect(daySpan(observedSearch("GET", "/api/app/insights"))).toBe(6);
+    expect(daySpan(observedSearch("GET", "/api/app/trends"))).toBe(6);
     expect(daySpan(observedSearch("GET", "/api/app/insights/checkin"))).toBe(6);
+    await page.locator('[data-action="trends-range"][data-days="30"]').click();
+    await expect(page.locator("#app-content")).toContainText("Last 30 days");
 
-    // No ad slot on Insights — not with the flag off, and not with
+    // T11 drill: a bar opens its day sheet with ranked contributors,
+    // and the sheet's one destination is that day's log.
+    await page
+        .locator(
+            '.trends-card[data-card-key="bar:calories"] [data-action="trends-drill-day"][data-date="2026-11-05"]',
+        )
+        .click();
+    const dialog = page.locator("#app-dialog");
+    await expect(dialog).toContainText("Grilled chicken breast");
+    await expect(dialog).toContainText("2,140");
+    await dialog.getByRole("button", { name: "Open that day's log" }).click();
+    await expect(page.locator(".operate-view.today-view")).toHaveCount(1);
+
+    // T3/T4: edit mode + the two-step catalog build a custom
+    // dashboard — remove Protein, compact Calories, add a Fiber bar
+    // (the bar step never offers Weight: the T5 guardrail) and a
+    // Macro split donut, whose segment drills to top foods.
+    await gotoRoute(page, "/app/trends");
+    await page.locator('[data-action="trends-edit-toggle"]').click();
+    const proteinCard = page.locator(
+        '.trends-card[data-card-key="bar:protein_g"]',
+    );
+    await proteinCard.locator('[data-action="trends-remove"]').click();
+    await expect(proteinCard).toHaveCount(0);
+    await caloriesCard.locator('[data-action="trends-size"]').click();
+    await expect(caloriesCard).toHaveClass(/is-compact/);
+    await page.locator('[data-action="trends-edit-toggle"]').click();
+
+    await page.locator('[data-action="trends-add"]').click();
+    await expect(dialog).toContainText("what kind of chart?");
+    await dialog
+        .locator('[data-action="trends-catalog-shape"][data-shape="bar"]')
+        .click();
+    await expect(dialog).toContainText("showing what?");
+    await expect(dialog.locator('[data-data="weight"]')).toHaveCount(0);
+    await dialog
+        .locator('[data-action="trends-catalog-add"][data-data="fiber_g"]')
+        .click();
+    const fiberCard = page.locator('.trends-card[data-card-key="bar:fiber_g"]');
+    await expect(fiberCard).toBeVisible();
+    await expect(fiberCard).toContainText("From 4 of 7 days");
+
+    await page.locator('[data-action="trends-add"]').click();
+    await dialog
+        .locator('[data-action="trends-catalog-shape"][data-shape="breakdown"]')
+        .click();
+    await dialog
+        .locator('[data-action="trends-catalog-add"][data-data="macro_split"]')
+        .click();
+    const donutCard = page.locator(
+        '.trends-card[data-card-key="breakdown:macro_split"]',
+    );
+    await expect(donutCard).toBeVisible();
+    await donutCard
+        .locator(
+            '[data-action="trends-drill-segment"][data-metric="protein_g"]',
+        )
+        .click({ position: { x: 46, y: 10 } });
+    await expect(dialog).toContainText("Grilled Chicken Breast");
+    await dialog.locator('[data-action="close-dialog"]').click();
+
+    // T9: the layout is the account's, server-side — a full reboot
+    // renders the same custom dashboard.
+    expect(observedRequest("PUT", "/api/app/trends/layout")).toBe(true);
+    await page.goto(`${baseURL}/`);
+    await expect(page.getByRole("button", { name: "Add water" })).toBeVisible();
+    await gotoRoute(page, "/app/trends");
+    await expect(
+        page.locator('.trends-card[data-card-key="bar:protein_g"]'),
+    ).toHaveCount(0);
+    await expect(
+        page.locator('.trends-card[data-card-key="bar:fiber_g"]'),
+    ).toBeVisible();
+    await expect(
+        page.locator('.trends-card[data-card-key="breakdown:macro_split"]'),
+    ).toBeVisible();
+    await expect(
+        page.locator('.trends-card[data-card-key="bar:calories"]'),
+    ).toHaveClass(/is-compact/);
+
+    await page.screenshot({
+        path: "test-results/trends-mobile-custom-dashboard.png",
+        fullPage: true,
+    });
+
+    // No ad slot on Trends — not with the flag off, and not with
     // it on either (the app's only slot is on Today).
     await expect(page.locator('[data-testid="today-ad-slot"]')).toHaveCount(0);
     adsFlagOn = true;
     await page.goto(`${baseURL}/`);
     await expect(page.getByRole("button", { name: "Add water" })).toBeVisible();
-    await gotoRoute(page, "/app/insights");
-    await expect(page.locator(".insights-view")).toHaveCount(1);
+    await gotoRoute(page, "/app/trends");
+    await expect(page.locator(".trends-view")).toHaveCount(1);
     await expect(page.locator('[data-testid="today-ad-slot"]')).toHaveCount(0);
     const adCalls = await page.evaluate(
         () => (window as unknown as { __adCalls?: unknown[] }).__adCalls ?? [],
@@ -3298,7 +4752,7 @@ test("S6 slice 7: Insights renders the fused surface, check-in stays windowed to
     expect(lastCall.visible).toBe(false);
 });
 
-test("S6 slice 7 regression: water and weight deletes use inline confirmation with no native confirm", async ({
+test("Vitals regression (on Today since the Trends retirement): water and weight deletes use inline confirmation with no native confirm", async ({
     page,
 }) => {
     // Same defect family as slice 1's Abandon fix: both vitals Delete
@@ -3311,14 +4765,15 @@ test("S6 slice 7 regression: water and weight deletes use inline confirmation wi
         nativeDialogs.push(`${dialog.type()}: ${dialog.message()}`);
         void dialog.dismiss();
     });
+    vitalsOnToday = true;
     await bootPackagedApp(page);
-    await gotoRoute(page, "/app/insights");
-    await expect(page.locator("#water-history")).toBeVisible();
+    await gotoRoute(page, "/app");
 
     // Water: the first click only asks, in place inside the row.
-    const waterRow = page.locator("#water-history .food-row", {
+    const waterRow = page.locator(".today-view .food-row", {
         hasText: "500 ml",
     });
+    await expect(waterRow).toBeVisible();
     const waterDelete = waterRow.locator('[data-action="delete-water"]');
     await waterDelete.click();
     const confirmWater = page.locator('[data-action="confirm-delete-water"]');
@@ -3348,12 +4803,12 @@ test("S6 slice 7 regression: water and weight deletes use inline confirmation wi
         true,
     );
     await expect(
-        page.locator("#water-history .food-row", { hasText: "500 ml" }),
+        page.locator(".today-view .food-row", { hasText: "500 ml" }),
     ).toHaveCount(0);
     expect(nativeDialogs).toEqual([]);
 
     // Weight: the same inline pattern inside the weight history rows.
-    const weightRow = page.locator("#weight-history .food-row", {
+    const weightRow = page.locator(".today-view .food-row", {
         hasText: "182.4 lb",
     });
     const weightDelete = weightRow.locator('[data-action="delete-weight"]');
@@ -3374,7 +4829,7 @@ test("S6 slice 7 regression: water and weight deletes use inline confirmation wi
         true,
     );
     await expect(
-        page.locator("#weight-history .food-row", { hasText: "182.4 lb" }),
+        page.locator(".today-view .food-row", { hasText: "182.4 lb" }),
     ).toHaveCount(0);
     expect(nativeDialogs).toEqual([]);
 });
@@ -3484,12 +4939,12 @@ test("chat v2 placement: contextual entries only — no global entry, seeded ope
         "Opens with today's log and goals attached",
     );
 
-    // Meal Plan and Insights carry their own entries.
+    // Meal Plan and Trends carry their own entries.
     await gotoRoute(page, "/app/plan");
     await expect(page.getByTestId("chat-entry-meal_plan")).toContainText(
         "Adjust or explain this plan",
     );
-    await gotoRoute(page, "/app/insights");
+    await gotoRoute(page, "/app/trends");
     await expect(page.getByTestId("chat-entry-insights")).toContainText(
         "Explain my week",
     );
@@ -3524,5 +4979,106 @@ test("chat v2 placement: contextual entries only — no global entry, seeded ope
     await expect(pantryEntry).toHaveAttribute(
         "href",
         "/app/chat?surface=pantry",
+    );
+});
+
+test("today navigation: calendar dots and day jump, macro breakdown sheet, six-destination nav (brief items 1-6)", async ({
+    page,
+}) => {
+    calendarSeedOn = true;
+    // This spec also runs under the website config's desktop project,
+    // where the bottom nav is hidden by the responsive shell — pin
+    // the phone viewport before any chrome assertions (the grocery
+    // spec's standing remedy for the same trap).
+    await page.setViewportSize({ width: 390, height: 844 });
+    await bootPackagedApp(page);
+
+    // Item 1: the header's only day navigation is the calendar icon —
+    // no Previous / Today / Next buttons remain on Today.
+    const heading = page.locator(".today-view .page-heading");
+    await expect(
+        heading.locator('[data-action="open-calendar"]'),
+    ).toBeVisible();
+    await expect(
+        heading.getByRole("button", { name: "Previous", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+        heading.getByRole("button", { name: "Today", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+        heading.getByRole("button", { name: "Next", exact: true }),
+    ).toHaveCount(0);
+    await expect(heading.getByText("structured nutrition record")).toHaveCount(
+        0,
+    );
+
+    // Items 4+6: the bottom nav is six destinations — Recipes holds
+    // the old Cooks slot; Log and Cooks are gone from the bar.
+    const nav = page.locator(".mobile-bottom-nav");
+    await expect(nav.locator("a")).toHaveCount(6);
+    await expect(nav.locator('a[href="/app/recipes"]')).toBeVisible();
+    await expect(nav.locator('a[href="/app/log"]')).toHaveCount(0);
+    await expect(nav.locator('a[href="/app/cooks"]')).toHaveCount(0);
+
+    // Item 5: the macros render as the 2x2 tile grid.
+    await expect(page.locator(".macro-tile")).toHaveCount(4);
+
+    // Item 2: the calendar dots the seeded 15th and not the 16th,
+    // with exactly one summary request per displayed month — the
+    // round trip to next month and back costs one more fetch, not
+    // two (the return month is cached).
+    const monthFetches = () =>
+        observed.filter((entry) => entry.path === "/api/app/calendar/month")
+            .length;
+    await heading.locator('[data-action="open-calendar"]').click();
+    const dialog = page.locator("#app-dialog");
+    const dotted = dialog.locator('.cal-day[data-date$="-15"]');
+    await expect(dotted.locator(".cal-dot")).toHaveCount(1);
+    await expect(
+        dialog.locator('.cal-day[data-date$="-16"] .cal-dot'),
+    ).toHaveCount(0);
+    expect(monthFetches()).toBe(1);
+    await dialog.locator('[data-action="calendar-next-month"]').click();
+    await expect.poll(monthFetches).toBe(2);
+    await dialog.locator('[data-action="calendar-prev-month"]').click();
+    await expect(dialog.locator(".cal-grid")).toBeVisible();
+    expect(monthFetches()).toBe(2);
+    await page.screenshot({
+        path: "test-results/today-navigation-captures/packaged-calendar.png",
+    });
+
+    // Item 1: tapping the dotted day lands Today on that date, meals
+    // and all — the same canonical day view Trends drills into.
+    await dotted.click();
+    await expect(page.locator("#app-content")).toContainText(
+        "Calendar seed bowl",
+    );
+
+    // Item 5: a tile opens the breakdown sheet — meal subtotal, then
+    // each ingredient's own contribution, day total pinned at the foot.
+    await page.locator('.macro-tile[data-macro="protein"]').click();
+    await expect(dialog).toContainText("Calendar seed bowl");
+    await expect(dialog).toContainText("Grilled chicken");
+    await expect(dialog).toContainText("Jasmine rice");
+    await expect(dialog.locator(".macro-sheet-foot")).toContainText(
+        "Day total",
+    );
+    await expect(dialog.locator(".macro-sheet-foot")).toContainText("50 g");
+    await dialog.locator('[data-action="close-dialog"]').click();
+
+    // Item 6, door (a): the calendar sheet's Search history row lands
+    // on the renamed History view, search intact.
+    await page.locator('[data-action="open-calendar"]').click();
+    await dialog.locator('[data-action="calendar-history"]').click();
+    await expect(page).toHaveTitle(/^History — Munch$/);
+    await expect(page.locator("#meal-history-search")).toBeVisible();
+
+    // Item 6, door (b) + item 4's other half: the More list carries
+    // History and Cooks; Recipes left the list for the nav slot.
+    await gotoRoute(page, "/app/more");
+    await expect(page.locator('.more-card[href="/app/log"]')).toBeVisible();
+    await expect(page.locator('.more-card[href="/app/cooks"]')).toBeVisible();
+    await expect(page.locator('.more-card[href="/app/recipes"]')).toHaveCount(
+        0,
     );
 });

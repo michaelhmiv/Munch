@@ -650,7 +650,11 @@ dialog .auth-card {
     margin-top: 2px;
 }
 
-.shopping-mode .page-heading,
+/* Shopping mode (Grocery fix G2): the class is applied only while
+   the groceries route is on screen (see applyShoppingModeChrome in
+   app.js). The sidebar drops away, but the groceries page-heading
+   stays — it carries the Exit button and the caption that explains
+   the mode, so hiding it would strand the user in the mode. */
 .shopping-mode .app-sidebar {
     display: none;
 }
@@ -3097,6 +3101,16 @@ dialog .guided-grocery-row input[type="checkbox"] {
     padding: 5px 0;
 }
 
+/* Grocery fix G2: the caption under the heading states what the
+   mode does, in the surface's serif voice, while the mode is on. */
+.groceries-view .shopping-mode-caption {
+    margin-top: 4px;
+    font-style: italic;
+    font-size: 13.5px;
+    line-height: 1.45;
+    color: #5d5344;
+}
+
 /* =====================================================================
    S6 slice 9 — Settings fusion (Operate surface touched once: parity
    + Editorial Serif + mobile_qc). Settings renders inside slice 1's
@@ -4641,4 +4655,1569 @@ dialog .guided-grocery-row input[type="checkbox"] {
 
 .chat-starters-seeded {
     margin-top: 10px;
+}
+
+/* Photo-flow wave — P8 shared capture control. */
+.photo-capture {
+    display: grid;
+    gap: 8px;
+}
+
+.photo-capture-label {
+    font-weight: 600;
+}
+
+.photo-capture-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.photo-capture-button {
+    min-height: 44px;
+}
+
+.photo-capture-files {
+    margin: 0;
+}
+
+.photo-capture-files:empty {
+    display: none;
+}
+
+/* Photo-flow wave — P3: the draft review is single-column at phone
+   width; item editors collapse to compact rows by default. */
+.meal-draft-review .meal-composer-grid,
+.meal-draft-review .meal-composer-nutrients {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.meal-draft-item-head {
+    align-items: center;
+    gap: 8px;
+}
+
+.meal-draft-item-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+    min-height: 44px;
+    padding: 4px 0;
+    background: none;
+    border: 0;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.meal-draft-item-summary {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.meal-draft-item-summary strong {
+    overflow-wrap: anywhere;
+}
+
+.meal-draft-item-chevron,
+.meal-draft-item-badges {
+    flex: none;
+}
+
+.meal-draft-item-fields {
+    display: grid;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.meal-draft-item-fields[hidden] {
+    display: none;
+}
+
+/* Photo-flow wave — P4: the one save bar. */
+.meal-draft-savebar {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 12px;
+    padding: 10px 0;
+    background: var(--panel, #fffdf7);
+    border-top: 1px solid var(--line, #ded5c0);
+}
+
+.meal-draft-dirty {
+    color: #8a6d3b;
+    font-weight: 600;
+}
+
+.meal-draft-saved {
+    color: #2e5b34;
+    font-weight: 600;
+}
+
+/* =====================================================================
+   Trends — the customizable analytics dashboard (brief T1-T14; design
+   reference: trends-final-renderings.html). Editorial Serif house
+   grammar: paper #F6F1E7, panel #FFFDF7, ink #22301F, muted #6E7462,
+   line #DED5C0, deep green #2E5B34, green-soft #E6EDDC, tan #C9BFA3,
+   gold #8A6D3B. On-chart micro-labels follow the approved renderings
+   (~10px) — the 11px floor governs UI type, not chart annotation.
+   NO ADS on this surface (the app's only ad slot is on Today).
+   ===================================================================== */
+
+.trends-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    padding-left: 0;
+    padding-right: 0;
+}
+
+.trends-icon-btn[disabled] {
+    opacity: 0.45;
+}
+
+.trends-view .trends-pills {
+    display: flex;
+    gap: 6px;
+    margin: 2px 0 12px;
+}
+
+.trends-pill {
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #6e7462;
+    background: transparent;
+    border: 1.5px solid #ded5c0;
+    border-radius: 999px;
+    padding: 7px 16px;
+    min-height: 36px;
+    cursor: pointer;
+}
+
+.trends-pill.is-on {
+    background: #2e5b34;
+    border-color: #2e5b34;
+    color: #fffdf7;
+}
+
+.trends-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.trends-view .trends-card {
+    background: #fffdf7;
+    border: 1px solid #ded5c0;
+    border-radius: 14px;
+    padding: 14px 14px 12px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 2px rgba(34, 48, 31, 0.05);
+}
+
+.trends-pair .trends-card {
+    margin-bottom: 0;
+}
+
+.trends-pair {
+    margin-bottom: 12px;
+}
+
+.trends-card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.trends-card-head h3 {
+    font-size: 16.5px;
+    margin: 0;
+    color: #22301f;
+}
+
+.trends-sub {
+    font-size: 11.5px;
+    font-style: italic;
+    color: #6e7462;
+    margin: 1px 0 0;
+}
+
+.trends-headline {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.trends-headline b {
+    font-size: 21px;
+    font-weight: 600;
+    color: #22301f;
+}
+
+.trends-headline span {
+    font-size: 12px;
+    color: #6e7462;
+    margin-left: 2px;
+}
+
+.trends-headline small {
+    display: block;
+    font-size: 11px;
+    font-style: italic;
+    color: #6e7462;
+}
+
+.trends-card.is-compact .trends-card-head {
+    flex-wrap: wrap;
+}
+
+.trends-card.is-compact .trends-headline b {
+    font-size: 17px;
+}
+
+.trends-card.is-compact .trends-sub {
+    font-size: 11px;
+}
+
+.trends-x {
+    font: inherit;
+    font-size: 17px;
+    line-height: 1;
+    color: #6e7462;
+    background: #f6f1e7;
+    border: 1px solid #ded5c0;
+    border-radius: 50%;
+    width: 26px;
+    height: 26px;
+    flex: 0 0 auto;
+    cursor: pointer;
+}
+
+.trends-chart {
+    margin-top: 8px;
+}
+
+.trends-chart svg {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.trends-bar {
+    fill: #22301f;
+}
+
+.trends-bar.is-weekend {
+    fill: #8a6d3b;
+}
+
+.trends-tick {
+    fill: #c9bfa3;
+}
+
+.trends-band {
+    fill: #e6eddc;
+}
+
+.trends-refline {
+    stroke: #2e5b34;
+    stroke-width: 1.2;
+    stroke-dasharray: 4 3;
+}
+
+.trends-ref-label {
+    font-size: 10px;
+    font-weight: 700;
+    fill: #2e5b34;
+    pointer-events: none;
+}
+
+.trends-rolling {
+    fill: none;
+    stroke: #8a6d3b;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.trends-line {
+    fill: none;
+    stroke: #2e5b34;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.trends-dot {
+    fill: #22301f;
+}
+
+.trends-area {
+    fill: #e6eddc;
+}
+
+.trends-hit {
+    cursor: pointer;
+}
+
+.trends-daylabels {
+    display: flex;
+    margin-top: 2px;
+}
+
+.trends-daylabels span {
+    flex: 1;
+    text-align: center;
+    font-size: 9.5px;
+    color: #6e7462;
+}
+
+.trends-endlabels {
+    justify-content: space-between;
+}
+
+.trends-endlabels span {
+    flex: 0 0 auto;
+    font-size: 10px;
+}
+
+.trends-verdict {
+    font-size: 12.5px;
+    color: #22301f;
+    border-top: 1px solid #e9e2cf;
+    padding-top: 8px;
+    margin: 10px 0 0;
+    line-height: 1.45;
+}
+
+.trends-verdict strong {
+    color: #2e5b34;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.trends-coverage {
+    font-size: 11.5px;
+    font-style: italic;
+    color: #6e7462;
+    margin: 8px 0 0;
+}
+
+.trends-empty {
+    padding: 10px 2px 6px;
+}
+
+.trends-empty strong {
+    font-size: 14.5px;
+    color: #22301f;
+}
+
+.trends-empty p {
+    font-size: 12.5px;
+    color: #6e7462;
+    line-height: 1.5;
+    margin: 4px 0 0;
+}
+
+.trends-editbar {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.trends-move {
+    font: inherit;
+    font-size: 13px;
+    color: #2e5b34;
+    background: #e6eddc;
+    border: 1px solid #cfdcc0;
+    border-radius: 8px;
+    min-width: 44px;
+    min-height: 32px;
+    cursor: pointer;
+}
+
+.trends-sizechip {
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #2e5b34;
+    background: #e6eddc;
+    border: 1px solid #cfdcc0;
+    border-radius: 999px;
+    padding: 6px 12px;
+    min-height: 32px;
+    margin-left: auto;
+    cursor: pointer;
+}
+
+.trends-add {
+    font: inherit;
+    width: 100%;
+    font-size: 14px;
+    font-weight: 600;
+    color: #2e5b34;
+    background: #fffdf7;
+    border: 1.5px dashed #b9c4a4;
+    border-radius: 14px;
+    padding: 13px;
+    min-height: 48px;
+    cursor: pointer;
+}
+
+.trends-view .trends-digest {
+    background: #e6eddc;
+    border-color: #cfdcc0;
+}
+
+.trends-pin {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #2e5b34;
+    border: 1px solid #2e5b34;
+    border-radius: 999px;
+    padding: 3px 9px;
+    white-space: nowrap;
+}
+
+.trends-digest-lede {
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: #22301f;
+    margin: 8px 0 0;
+}
+
+.trends-more {
+    margin-top: 8px;
+    border-top: 1px solid #cfdcc0;
+    padding-top: 8px;
+}
+
+.trends-more summary {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #2e5b34;
+    cursor: pointer;
+    min-height: 32px;
+}
+
+.trends-more p {
+    font-size: 13px;
+    line-height: 1.55;
+    color: #22301f;
+    margin: 6px 0 0;
+}
+
+.trends-checkin {
+    margin-top: 10px;
+    border-top: 1px solid #cfdcc0;
+    padding-top: 8px;
+}
+
+.trends-checkin h4 {
+    font-size: 13px;
+    margin: 0 0 4px;
+    color: #22301f;
+}
+
+.trends-checkin p,
+.trends-checkin li {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #22301f;
+}
+
+.trends-checkin ul {
+    margin: 4px 0 0;
+    padding-left: 18px;
+}
+
+/* Donut + legend */
+.trends-donut-wrap {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    margin-top: 8px;
+}
+
+.trends-donut {
+    width: 92px;
+    height: 92px;
+    flex: 0 0 auto;
+}
+
+.trends-ring {
+    cursor: pointer;
+}
+
+.trends-donut-value {
+    font-size: 15px;
+    font-weight: 700;
+    fill: #22301f;
+}
+
+.trends-donut-unit {
+    font-size: 9px;
+    fill: #6e7462;
+}
+
+.trends-legend {
+    flex: 1;
+    min-width: 0;
+}
+
+.trends-legend-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12.5px;
+    color: #22301f;
+    padding: 2.5px 0;
+}
+
+.trends-legend-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 3px;
+    flex: 0 0 auto;
+}
+
+.trends-legend-row b {
+    margin-left: auto;
+    font-weight: 700;
+}
+
+.trends-legend-row small {
+    color: #6e7462;
+    font-size: 11.5px;
+    min-width: 44px;
+    text-align: right;
+}
+
+.trends-toggle {
+    display: flex;
+    gap: 5px;
+    margin-top: 8px;
+}
+
+.trends-toggle button {
+    font: inherit;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #6e7462;
+    background: transparent;
+    border: 1px solid #ded5c0;
+    border-radius: 999px;
+    padding: 5px 12px;
+    min-height: 30px;
+    cursor: pointer;
+}
+
+.trends-toggle button.is-on {
+    background: #2e5b34;
+    border-color: #2e5b34;
+    color: #fffdf7;
+}
+
+.trends-columns {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+    flex: 1;
+    min-height: 92px;
+}
+
+.trends-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.trends-column-stack {
+    width: 100%;
+    max-width: 34px;
+    height: 74px;
+    display: flex;
+    flex-direction: column-reverse;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.trends-column-stack i {
+    display: block;
+    width: 100%;
+}
+
+.trends-column span {
+    font-size: 9.5px;
+    color: #6e7462;
+    white-space: nowrap;
+}
+
+.trends-stacked {
+    display: flex;
+    height: 17px;
+    border-radius: 6px;
+    overflow: hidden;
+    margin: 10px 0 8px;
+}
+
+.trends-stacked i {
+    display: block;
+    height: 100%;
+}
+
+/* Consistency dots + heatmap */
+.trends-dots {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 10px;
+}
+
+.trends-cell {
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    background: #eae2ce;
+}
+
+.trends-cell.l1 {
+    background: #b9cba4;
+}
+
+.trends-cell.l2 {
+    background: #5f8563;
+}
+
+.trends-cell.l3 {
+    background: #2e5b34;
+}
+
+.trends-cell.is-off {
+    background: #eae2ce;
+}
+
+.trends-heat-wrap {
+    margin-top: 8px;
+}
+
+.trends-months {
+    display: flex;
+    margin-bottom: 4px;
+}
+
+.trends-months span {
+    font-size: 9.5px;
+    color: #6e7462;
+}
+
+.trends-heat {
+    display: grid;
+    grid-template-rows: repeat(7, 12px);
+    grid-auto-flow: column;
+    grid-auto-columns: 12px;
+    gap: 2.5px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+}
+
+.trends-heat .trends-cell {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+}
+
+.trends-cell.is-blank {
+    background: transparent;
+    cursor: default;
+}
+
+/* Eating window + meal rhythm */
+.trends-window {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.trends-window-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font: inherit;
+    background: transparent;
+    border: 0;
+    padding: 2px 0;
+    min-height: 24px;
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+}
+
+.trends-window-row.is-avg {
+    cursor: default;
+    border-bottom: 1px solid #e9e2cf;
+    padding-bottom: 7px;
+}
+
+.trends-window-date {
+    font-size: 11px;
+    color: #6e7462;
+    min-width: 52px;
+}
+
+.trends-window-row.is-avg .trends-window-date {
+    font-weight: 700;
+    color: #2e5b34;
+}
+
+.trends-window-track {
+    flex: 1;
+    height: 9px;
+    background: #f1ebda;
+    border-radius: 99px;
+    position: relative;
+}
+
+.trends-window-track i {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    background: #c9bfa3;
+    border-radius: 99px;
+}
+
+.trends-window-row.is-avg .trends-window-track i {
+    background: #2e5b34;
+}
+
+.trends-window-row small {
+    font-size: 10.5px;
+    color: #6e7462;
+    white-space: nowrap;
+}
+
+.trends-rhythm {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.trends-rhythm-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 12.5px;
+    color: #22301f;
+}
+
+.trends-rhythm-row > span:first-child {
+    min-width: 74px;
+}
+
+.trends-rhythm-track {
+    flex: 1;
+    height: 8px;
+    background: #f1ebda;
+    border-radius: 99px;
+    overflow: hidden;
+}
+
+.trends-rhythm-track i {
+    display: block;
+    height: 100%;
+    background: #2e5b34;
+    border-radius: 99px;
+}
+
+.trends-rhythm-row small {
+    font-size: 11px;
+    color: #6e7462;
+    white-space: nowrap;
+}
+
+/* Catalog + sheets */
+.trends-catalog {
+    display: flex;
+    flex-direction: column;
+}
+
+.trends-catalog-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font: inherit;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid #e9e2cf;
+    padding: 11px 2px;
+    min-height: 52px;
+    cursor: pointer;
+    width: 100%;
+}
+
+.trends-catalog-row:last-child {
+    border-bottom: 0;
+}
+
+.trends-catalog-row[disabled] {
+    opacity: 0.55;
+    cursor: default;
+}
+
+.trends-glyph {
+    width: 34px;
+    height: 26px;
+    flex: 0 0 auto;
+    color: #2e5b34;
+}
+
+.trends-glyph svg {
+    width: 100%;
+    height: 100%;
+}
+
+.trends-glyph rect,
+.trends-glyph circle {
+    fill: #2e5b34;
+}
+
+.trends-glyph polyline {
+    fill: none;
+    stroke: #2e5b34;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+}
+
+.trends-glyph .donut-base {
+    fill: none;
+    stroke: #c9bfa3;
+    stroke-width: 4.5;
+}
+
+.trends-glyph .donut-slice {
+    fill: #2e5b34;
+}
+
+.trends-catalog-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.trends-catalog-text strong {
+    display: block;
+    font-size: 14.5px;
+    color: #22301f;
+}
+
+.trends-catalog-text small {
+    display: block;
+    font-size: 11.5px;
+    font-style: italic;
+    color: #6e7462;
+    margin-top: 1px;
+}
+
+.trends-chev {
+    font-size: 17px;
+    color: #6e7462;
+}
+
+.trends-have {
+    font-size: 11px;
+    font-weight: 700;
+    color: #2e5b34;
+}
+
+.trends-sheet-total {
+    font-size: 13.5px;
+    color: #22301f;
+    line-height: 1.5;
+}
+
+.trends-sheet-meal {
+    border-top: 1px solid #e9e2cf;
+    padding: 8px 0 4px;
+}
+
+.trends-sheet-meal > small {
+    color: #6e7462;
+    font-size: 11.5px;
+}
+
+.trends-sheet-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    font-size: 13.5px;
+    color: #22301f;
+    padding: 2px 0;
+}
+
+.trends-sheet-item {
+    font-size: 12.5px;
+    color: #4c5546;
+    padding-left: 14px;
+}
+
+.trends-food-row {
+    font: inherit;
+    width: 100%;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid #e9e2cf;
+    padding: 10px 2px;
+    min-height: 48px;
+    cursor: pointer;
+    text-align: left;
+}
+
+.trends-food-row small {
+    display: block;
+    color: #6e7462;
+    font-size: 11.5px;
+}
+
+/* =====================================================================
+   Today navigation — calendar sheet + 2x2 macro tiles + breakdown
+   sheet (brief items 1–6; design reference: today-macros-2x2-popup.html).
+   Editorial Serif house grammar: paper #F6F1E7, panel #FFFDF7,
+   ink #22301F, muted #6E7462, line #DED5C0, deep green #2E5B34,
+   green-soft #E6EDDC, gold #8A6D3B. Day cells hold the 44px tap floor.
+   ===================================================================== */
+
+.macro-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.macro-tile {
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    width: 100%;
+    border: 1px solid #ded5c0;
+    border-radius: 12px;
+    background: #fff;
+    padding: 10px 12px 9px;
+    min-height: 96px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+}
+
+.macro-tile:active {
+    background: #e6eddc;
+}
+
+.macro-tile-label {
+    font-size: 11.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #6e7462;
+    display: flex;
+    justify-content: space-between;
+}
+
+.macro-tile-chev {
+    color: #2e5b34;
+    letter-spacing: 0;
+}
+
+.macro-tile-value {
+    font-size: 27px;
+    font-weight: 600;
+    margin-top: 3px;
+}
+
+.macro-tile-value small {
+    font-size: 13.5px;
+    font-weight: 400;
+    color: #6e7462;
+}
+
+.macro-tile-target {
+    font-size: 12px;
+    color: #6e7462;
+    margin-top: 2px;
+}
+
+.macro-tile-bar {
+    display: block;
+    height: 5px;
+    background: #ede6d2;
+    border-radius: 3px;
+    margin-top: auto;
+    padding-top: 0;
+    overflow: hidden;
+    position: relative;
+    top: 4px;
+}
+
+.macro-tile-bar i {
+    display: block;
+    height: 100%;
+    background: #2e5b34;
+    border-radius: 3px;
+}
+
+.macro-expand {
+    margin-top: 8px;
+    width: 100%;
+    border: 1px solid #ded5c0;
+    background: #fff;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font: inherit;
+    font-size: 13.5px;
+    color: #22301f;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    min-height: 44px;
+}
+
+.macro-expand-chev {
+    color: #2e5b34;
+    font-size: 15px;
+}
+
+.macro-micros {
+    margin-top: 8px;
+    border: 1px dashed #ded5c0;
+    border-radius: 10px;
+    padding: 9px 12px;
+    background: #fffef9;
+}
+
+.macro-micros-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 22px;
+}
+
+.macro-micro-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    padding: 3.5px 0;
+}
+
+.macro-micro-row span:first-child {
+    color: #6e7462;
+}
+
+/* The breakdown sheet rides the shared app dialog; its foot is
+   sticky so the day total stays pinned while groups scroll. */
+.macro-sheet-total {
+    font-size: 13.5px;
+    color: #6e7462;
+    margin-bottom: 4px;
+}
+
+.macro-sheet-total b {
+    color: #22301f;
+    font-size: 16px;
+}
+
+.macro-sheet-group {
+    padding: 10px 0 4px;
+}
+
+.macro-sheet-group + .macro-sheet-group {
+    border-top: 1px solid #efe8d6;
+}
+
+.macro-sheet-group-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+}
+
+.macro-sheet-group-head strong {
+    font-size: 15.5px;
+    font-weight: 600;
+}
+
+.macro-sheet-group-head small {
+    display: block;
+    font-size: 11.5px;
+    color: #6e7462;
+    font-weight: 400;
+    margin-top: 1px;
+}
+
+.macro-sheet-group-head b {
+    font-size: 15.5px;
+    white-space: nowrap;
+}
+
+.macro-sheet-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    padding: 5px 0 5px 14px;
+    font-size: 13.5px;
+}
+
+.macro-sheet-item-name {
+    color: #3a4636;
+}
+
+.macro-sheet-item-portion {
+    color: #6e7462;
+    font-size: 12px;
+    margin-left: 5px;
+}
+
+.macro-sheet-item-value {
+    white-space: nowrap;
+}
+
+.macro-sheet-foot {
+    position: sticky;
+    bottom: 0;
+    background: #fffdf7;
+    border-top: 1px solid #ded5c0;
+    padding: 11px 2px 2px;
+    margin-top: 10px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 15px;
+}
+
+.macro-sheet-foot b {
+    font-size: 16.5px;
+}
+
+/* Calendar sheet: month grid with data dots. */
+.cal-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+
+.cal-nav-label {
+    font-size: 15.5px;
+    font-weight: 600;
+}
+
+.cal-chevron {
+    font: inherit;
+    font-size: 20px;
+    line-height: 1;
+    color: #2e5b34;
+    background: #fff;
+    border: 1px solid #ded5c0;
+    border-radius: 50%;
+    width: 44px;
+    height: 44px;
+    cursor: pointer;
+}
+
+.cal-week {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    text-align: center;
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #6e7462;
+    padding: 4px 0 2px;
+}
+
+.cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+}
+
+.cal-day {
+    font: inherit;
+    color: #22301f;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    min-height: 48px;
+    padding: 5px 0 3px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 3px;
+}
+
+.cal-day-num {
+    font-size: 14.5px;
+    line-height: 1.1;
+}
+
+.cal-day.is-outside {
+    opacity: 0.38;
+}
+
+.cal-day.is-today {
+    border-color: #8a6d3b;
+}
+
+.cal-day.is-today .cal-day-num {
+    font-weight: 700;
+    color: #8a6d3b;
+}
+
+.cal-day.is-selected {
+    background: #2e5b34;
+    color: #fffdf7;
+}
+
+.cal-day.is-selected .cal-day-num {
+    color: #fffdf7;
+}
+
+.cal-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #2e5b34;
+}
+
+.cal-day.is-selected .cal-dot {
+    background: #fffdf7;
+}
+
+.cal-dot-space {
+    width: 6px;
+    height: 6px;
+}
+
+.cal-history-row {
+    font: inherit;
+    width: 100%;
+    margin-top: 12px;
+    background: transparent;
+    border: 0;
+    border-top: 1px solid #e9e2cf;
+    padding: 12px 2px 2px;
+    min-height: 48px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 15px;
+    color: #2e5b34;
+    text-align: left;
+}
+
+/* Today heading: the calendar + Trends icons pin to the date's row,
+   always visible — the scrolling action row below them (the injected
+   Add meal / Log by photo / Start draft trio) never pushes the day
+   navigation off-screen. */
+.today-heading-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.today-heading-row h2 {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.today-heading-icons {
+    display: flex;
+    gap: 8px;
+    flex: 0 0 auto;
+    padding-top: 2px;
+}
+
+/* =====================================================================
+   Next up — the proactive suggestion section on Today (guidance
+   rework D1–D7). Editorial Serif house grammar (paper #F6F1E7, panel
+   #FFFDF7, ink #22301F, muted #6E7462, line #DED5C0, deep green
+   #2E5B34, green-soft #E6EDDC, gold #8A6D3B). Density law: the card
+   is title + reason + one nutrition line + one landing line + one
+   action row, so the populated section never pushes the day's first
+   meal off the first screen at phone widths.
+   ===================================================================== */
+
+.next-up-panel {
+    padding-top: 6px;
+    padding-bottom: 6px;
+}
+
+.next-up-panel .panel-title {
+    margin-bottom: 0;
+}
+
+.next-up-panel .entry-row {
+    margin-top: 4px;
+    min-height: 46px;
+    padding: 5px 0;
+}
+
+.next-up-card {
+    margin: 0;
+}
+
+.next-up-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+}
+
+.next-up-head .next-up-title {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.next-up-head .next-up-kicker {
+    flex: 0 0 auto;
+    text-align: right;
+}
+
+.next-up-kicker {
+    margin: 0;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #8a6d3b;
+}
+
+.next-up-title {
+    margin: 1px 0 0;
+    font-size: 18px;
+    line-height: 1.2;
+    color: #22301f;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.next-up-reason {
+    margin: 1px 0 0;
+    font-size: 14px;
+    line-height: 1.35;
+    color: #22301f;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.next-up-nutrition {
+    margin: 2px 0 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: #2e5b34;
+}
+
+.next-up-landing {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.35;
+    color: #6e7462;
+}
+
+.next-up-needs {
+    margin: 1px 0 0;
+    font-size: 12px;
+    line-height: 1.35;
+    color: #6e7462;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.next-up-actions {
+    margin-top: 5px;
+    display: flex;
+    gap: 6px;
+}
+
+.next-up-actions .button {
+    min-height: 44px;
+    padding: 3px 8px;
+    flex: 1 1 0;
+}
+
+.next-up-actions .next-up-log-action {
+    flex-grow: 1.35;
+}
+
+.next-up-actions .next-up-groceries-action {
+    font-size: 11px;
+    line-height: 1.2;
+}
+
+.next-up-secondary {
+    margin: 4px 0 0;
+    padding-left: 18px;
+    font-size: 13px;
+    line-height: 1.35;
+    color: #6e7462;
+}
+
+.next-up-secondary li {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.next-up-quiet {
+    margin: 2px 0 0;
+    font-size: 14px;
+    line-height: 1.45;
+    color: #22301f;
+}
+
+.next-up-goal-prompt {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #ded5c0;
+}
+
+.next-up-goal-prompt p {
+    margin: 0 0 6px;
+    font-size: 13px;
+    color: #6e7462;
+}
+
+/* Recipe experience (R1–R3): unresolved ingredient flag, cook-mode
+   checklists, and the action toast. House palette + Editorial Serif
+   inherit from the app theme; rows meet the 44px tap floor. */
+.recipe-unresolved {
+    flex: none;
+    padding: 3px 8px;
+    border: 1px solid var(--gold, #8a6d3b);
+    border-radius: 999px;
+    color: var(--gold, #8a6d3b);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+
+.cook-mode-heading {
+    margin: 14px 0 6px;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted, #6e7462);
+}
+
+.cook-mode-list {
+    display: grid;
+    gap: 6px;
+}
+
+.cook-mode-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 48px;
+    padding: 8px 12px;
+    border: 1px solid var(--line, #ded5c0);
+    border-radius: 10px;
+    background: var(--paper-card, #fffdf8);
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1.35;
+}
+
+.cook-mode-row input[type="checkbox"] {
+    flex: none;
+    width: 24px;
+    height: 24px;
+    margin: 0;
+    accent-color: var(--green, #176b3a);
+}
+
+.cook-mode-row.is-checked {
+    color: var(--muted, #6e7462);
+}
+
+.cook-mode-row.is-checked span {
+    text-decoration: line-through;
+}
+
+.cook-mode-row.is-current {
+    border-color: var(--green, #176b3a);
+    border-left-width: 5px;
+    background: var(--green-tint, #eef4ea);
+}
+
+.cook-mode-step-number {
+    flex: none;
+    font-weight: 700;
+    color: var(--green-deep, #0b3d24);
+}
+
+.cook-mode-current-tag {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--green, #176b3a);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-decoration: none;
+    vertical-align: 1px;
+}
+
+.cook-mode-row.is-checked .cook-mode-current-tag {
+    text-decoration: none;
+}
+
+.cook-mode-finish {
+    margin-top: 16px;
+    padding: 14px;
+    border: 1px solid var(--green, #176b3a);
+    border-radius: 12px;
+    background: var(--green-tint, #eef4ea);
+}
+
+.cook-mode-finish p {
+    margin: 0 0 10px;
+}
+
+.toast-action {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.toast-action .button {
+    flex: none;
+    min-height: 44px;
 }
