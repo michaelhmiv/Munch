@@ -34,10 +34,12 @@
  *                                   unspecified, same order
  *      Per-line confidence is not a field: the names answer's
  *      per-item `confidences` array is recorded when present.
- *  (c) scaledown/extract — names-only contender, included only when
- *      RECEIPT_MODELS asks for it: its field typing (text +
- *      list<text>) can carry the raw labels and nothing else
- *      structured, so quantity/unit/is_food are n/a for it.
+ *  (c) scaledown/extract — labels-only contender. Gate per Michael's
+ *      rule: it joins because its typing carried the photo identify
+ *      items passably in the photo lane (70.9% recall, names-only,
+ *      0/60 failures — measured on PR #244's run 43017200257). Its
+ *      field typing (text + list<text>) can carry the raw labels and
+ *      nothing else structured, so quantity/unit/is_food are n/a.
  *
  * Scoring: greedy one-to-one line matching with scoring.ts
  * namesMatch — an expected line is found when any returned name or
@@ -47,7 +49,7 @@
  * unit correctness over matched lines whose expectation carries a
  * printed quantity; is_food accuracy over matched lines.
  *
- * Knobs (env): RECEIPT_MODELS (default "ember,clairic"),
+ * Knobs (env): RECEIPT_MODELS (default "ember,clairic,scaledown"),
  * RECEIPT_REPEATS (default 2), RECEIPT_OUT (default
  * ./receipt-report). Exit 0 when a report was produced; exit 2 when
  * the API key is missing.
@@ -83,7 +85,7 @@ const contenderTokens = (
 ).filter((value, index, all) => all.indexOf(value) === index);
 const contendersWanted = contenderTokens.length
     ? contenderTokens
-    : ["ember", "clairic"];
+    : ["ember", "clairic", "scaledown"];
 const runStartedAt = new Date().toISOString();
 
 if (!process.env.OPENROUTER_API_KEY?.trim()) {

@@ -233,24 +233,7 @@ const UNITS_INSTRUCTIONS =
 
 function fieldsFor(model: string): Record<string, unknown> {
     if (model === "cloudflare/clairic") {
-        return {
-            items: {
-                type: "list",
-                items: "text",
-                instructions: ITEMS_INSTRUCTIONS,
-            },
-            quantities: {
-                type: "list",
-                items: "number",
-                decimals: 2,
-                instructions: QUANTITIES_INSTRUCTIONS,
-            },
-            units: {
-                type: "list",
-                items: "text",
-                instructions: UNITS_INSTRUCTIONS,
-            },
-        };
+        return clairicFields(clairicShape);
     }
     if (model === "scaledown/extract") {
         return {
@@ -264,11 +247,66 @@ function fieldsFor(model: string): Record<string, unknown> {
     throw new Error(`No extraction field shape defined for model ${model}`);
 }
 
+/** Clairic request shapes. The first full run showed the plain
+ * parallel-lists shape collapsing multi-item photos to 1-2 merged
+ * entries (the items list read like a document span extractor), so
+ * the harness shape-probes three shapes on multi-item fixtures and
+ * runs the winner (see runClairicShapeProbe):
+ *  - parallel: three typed lists, file-only request (the original).
+ *  - state:    the same lists, plus a state text that references the
+ *              photo asset by key.
+ *  - combined: ONE list<text> field whose entries are formatted
+ *              "name | quantity | unit", parsed back into items —
+ *              less typed, but a single extraction target per item.
+ */
+type ClairicShape = "parallel" | "state" | "combined";
+let clairicShape: ClairicShape = "parallel";
+const CLAIRIC_STATE_TEXT =
+    "The meal photo is the image asset named photo. Read the foods and drinks visible in photo.";
+const COMBINED_INSTRUCTIONS =
+    "List every food and drink visibly present in the meal photo, one entry per distinct item, each entry formatted exactly as 'name | quantity | unit' — for example 'fried eggs | 2 | piece'. Use concise generic food names, including the cooking method in the name only when it is part of the food's identity. Use g for weighed solids, ml for drinks, and cup, tbsp, tsp, piece, slice, or bar for countable servings. Do not list anything that is not visible. If no food is visible, return an empty list.";
+
+function clairicFields(shape: ClairicShape): Record<string, unknown> {
+    if (shape === "combined") {
+        return {
+            items_detailed: {
+                type: "list",
+                items: "text",
+                instructions: COMBINED_INSTRUCTIONS,
+            },
+        };
+    }
+    return {
+        items: {
+            type: "list",
+            items: "text",
+            instructions: ITEMS_INSTRUCTIONS,
+        },
+        quantities: {
+            type: "list",
+            items: "number",
+            decimals: 2,
+            instructions: QUANTITIES_INSTRUCTIONS,
+        },
+        units: {
+            type: "list",
+            items: "text",
+            instructions: UNITS_INSTRUCTIONS,
+        },
+    };
+}
+
 async function callExtractions(
     model: string,
     bytes: Uint8Array,
+    options?: { fields?: Record<string, unknown>; stateText?: string },
 ): Promise<ExtractionOutcome> {
     const startedAt = performance.now();
+    const stateText =
+        options?.stateText ??
+        (model === "cloudflare/clairic" && clairicShape === "state"
+            ? CLAIRIC_STATE_TEXT
+            : undefined);
     const response = await fetch(EXTRACTIONS_URL, {
         method: "POST",
         headers: {
@@ -277,7 +315,8 @@ async function callExtractions(
         },
         body: JSON.stringify({
             model,
-            fields: fieldsFor(model),
+            ...(stateText ? { state: stateText } : {}),
+            fields: options?.fields ?? fieldsFor(model),
             assets: {
                 photo: {
                     type: "image",
@@ -356,6 +395,7 @@ interface AssembledItems {
 function assembleItems(
     model: string,
     answers: Record<string, any>,
+    shape: ClairicShape = clairicShape,
 ): AssembledItems {
     const names = stringList(answers.items).filter(
         (name) => name.trim().length > 0,
@@ -368,6 +408,51 @@ function assembleItems(
             ? (confidences[index] as number)
             : 0.5;
     if (model === "cloudflare/clairic") {
+        if (shape === "combined") {
+            const entries = stringList(answers.items_detailed).filter(
+                (entry) => entry.trim().length > 0,
+            );
+            const entryConfidences = Array.isArray(
+                answers.items_detailed?.confidences,
+            )
+                ? (answers.items_detailed.confidences as Array<unknown>)
+                : [];
+            let quantityDefaulted = 0;
+            let unitDefaulted = 0;
+            const items = entries.map((entry, index) => {
+                const parts = entry.split("|").map((part) => part.trim());
+                const name = parts[0] ?? entry;
+                const parsedQuantity = Number(parts[1]);
+                const quantity =
+                    Number.isFinite(parsedQuantity) && parsedQuantity > 0
+                        ? parsedQuantity
+                        : null;
+                if (quantity === null) quantityDefaulted += 1;
+                const unit = parts[2] ? parts[2] : null;
+                if (!unit) unitDefaulted += 1;
+                return {
+                    name,
+                    cooking_method: null,
+                    quantity: quantity ?? 1,
+                    unit: unit ?? "serving",
+                    portion_confidence:
+                        typeof entryConfidences[index] === "number"
+                            ? (entryConfidences[index] as number)
+                            : 0.5,
+                    assumptions: [],
+                } satisfies MealPhotoVisionItem;
+            });
+            return {
+                items,
+                alignment: {
+                    nameCount: items.length,
+                    quantityCount: items.length - quantityDefaulted,
+                    unitCount: items.length - unitDefaulted,
+                    quantityDefaulted,
+                    unitDefaulted,
+                },
+            };
+        }
         const quantities = numberList(answers.quantities);
         const units = stringList(answers.units);
         let quantityDefaulted = 0;
@@ -1267,12 +1352,131 @@ if (!bytesByFixture.has(PROBE_FIXTURE_ID)) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Clairic shape probe: three request shapes over multi-item fixtures;
+// the winner (highest mean recall, ties toward the more typed shape)
+// serves the Layer-1 and full-pipeline lanes.
+// ---------------------------------------------------------------------------
+
+interface ClairicShapeProbeRow {
+    shape: ClairicShape;
+    fixturesTested: number;
+    meanRecall: number;
+    meanItemsReturned: number;
+    failures: number;
+    perFixture: Array<{
+        fixtureId: string;
+        expected: number;
+        returned: number;
+        matched: number;
+        items: string[];
+    }>;
+}
+
+const clairicShapeProbe: ClairicShapeProbeRow[] = [];
+
+async function runClairicShapeProbe(
+    bytesByFixture: Map<string, Uint8Array>,
+): Promise<void> {
+    const multi = fixtures
+        .filter((fixture) => fixture.items.length >= 3)
+        .slice(0, 5);
+    const single = fixtures.find(
+        (fixture) => fixture.id === "single-01-banana",
+    );
+    const selected = [
+        ...multi,
+        ...(single && !multi.includes(single) ? [single] : []),
+    ];
+    const shapes: ClairicShape[] = ["parallel", "state", "combined"];
+    for (const shape of shapes) {
+        const perFixture: ClairicShapeProbeRow["perFixture"] = [];
+        let failures = 0;
+        for (const fixture of selected) {
+            try {
+                const outcome = await callExtractions(
+                    "cloudflare/clairic",
+                    bytesByFixture.get(fixture.id)!,
+                    {
+                        fields: clairicFields(shape),
+                        stateText:
+                            shape === "state" ? CLAIRIC_STATE_TEXT : undefined,
+                    },
+                );
+                const { items } = assembleItems(
+                    "cloudflare/clairic",
+                    outcome.answers,
+                    shape,
+                );
+                const score = scoreIdentify(fixture.items, items);
+                perFixture.push({
+                    fixtureId: fixture.id,
+                    expected: fixture.items.length,
+                    returned: items.length,
+                    matched: score.matched,
+                    items: items.map((item) => item.name),
+                });
+            } catch {
+                failures += 1;
+                perFixture.push({
+                    fixtureId: fixture.id,
+                    expected: fixture.items.length,
+                    returned: 0,
+                    matched: 0,
+                    items: [],
+                });
+            }
+        }
+        const meanRecall = perFixture.length
+            ? perFixture.reduce(
+                  (sum, row) =>
+                      sum + (row.expected ? row.matched / row.expected : 0),
+                  0,
+              ) / perFixture.length
+            : 0;
+        const meanItemsReturned = perFixture.length
+            ? perFixture.reduce((sum, row) => sum + row.returned, 0) /
+              perFixture.length
+            : 0;
+        clairicShapeProbe.push({
+            shape,
+            fixturesTested: selected.length,
+            meanRecall,
+            meanItemsReturned,
+            failures,
+            perFixture,
+        });
+        console.info(
+            `[extractions] clairic shape ${shape}: meanRecall=${meanRecall.toFixed(3)} meanItems=${meanItemsReturned.toFixed(1)} failures=${failures}`,
+        );
+    }
+    const preference: ClairicShape[] = ["parallel", "state", "combined"];
+    const winner = [...clairicShapeProbe].sort(
+        (a, b) =>
+            b.meanRecall - a.meanRecall ||
+            preference.indexOf(a.shape) - preference.indexOf(b.shape),
+    )[0];
+    if (winner) {
+        clairicShape = winner.shape;
+        console.info(
+            `[extractions] clairic shape selected: ${clairicShape} (meanRecall=${winner.meanRecall.toFixed(3)})`,
+        );
+    }
+}
+
 const probes: ProbeResult[] = [];
 const layer1Summaries: Layer1Summary[] = [];
 const layer1TasksByModel: Record<string, Layer1Task[]> = {};
 let fullSummary: FullSummary | null = null;
 let fullTasks: FullTask[] = [];
 let fullModel: string | null = null;
+
+if (
+    (phase === "all" || phase === "probe2" || phase === "layer1") &&
+    modelSlugs.includes("cloudflare/clairic")
+) {
+    await runClairicShapeProbe(bytesByFixture);
+}
 
 if (phase === "probe" || phase === "all" || phase === "layer1") {
     for (const model of modelSlugs) {
@@ -1379,6 +1583,8 @@ const reportJson = {
         }),
     ),
     probes,
+    clairic_shape: clairicShape,
+    clairic_shape_probe: clairicShapeProbe,
     layer1: layer1Summaries.map((summary) => ({
         ...summary,
         tasks: layer1TasksByModel[summary.model] ?? [],
@@ -1416,6 +1622,22 @@ const lines: string[] = [
             : []),
     ]),
     ``,
+    ...(clairicShapeProbe.length > 0
+        ? [
+              ``,
+              `## Clairic shape selection`,
+              ``,
+              `The first run's parallel-lists shape collapsed multi-item photos to 1-2 merged entries (median 1 item/task, recall 23.9%), so three request shapes were probed on ${clairicShapeProbe[0]!.fixturesTested} fixtures (five multi-item + one single-item) and the winner serves the lanes below:`,
+              ``,
+              `| Shape | Mean recall (probe fixtures) | Mean items returned | Failures |`,
+              `|---|---|---|---|`,
+              ...clairicShapeProbe.map(
+                  (row) =>
+                      `| ${row.shape}${row.shape === clairicShape ? " — SELECTED" : ""} | ${pct(row.meanRecall)} | ${row.meanItemsReturned.toFixed(1)} | ${row.failures} |`,
+              ),
+              ``,
+          ]
+        : []),
     `## Layer 1 — identify only`,
     ``,
     `| Model | Cost/task (reported) | Cost/task (computed) | Median | p95 | Recall | Precision | Portion in range | Extra items | Failures |`,
