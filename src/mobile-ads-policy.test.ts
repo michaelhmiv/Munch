@@ -98,3 +98,19 @@ describe("Today in-flow ad slot", () => {
         );
     });
 });
+
+describe("Android ad request privacy (Michael's Nov 11 ruling)", () => {
+    test("the native plugin requests non-personalized ads only", async () => {
+        // Non-personalized ads are Munch's public promise: AdMob
+        // serves contextual ads and never builds the request on the
+        // device's advertising/interest profile. The plugin source
+        // is the canonical copy (configure-mobile-android.ts syncs
+        // it into android/ at build time).
+        const source = await Bun.file(
+            new URL("../mobile/android/MunchAdsPlugin.java", import.meta.url),
+        ).text();
+        expect(source).toContain('putString("npa", "1")');
+        expect(source).toContain("addNetworkExtrasBundle(AdMobAdapter.class");
+        expect(source).not.toContain("loadAd(new AdRequest.Builder().build())");
+    });
+});
