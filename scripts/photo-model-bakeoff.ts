@@ -143,6 +143,18 @@ const REASONING_MINIMAL_MODELS = parseSlugList(
 const SCHEMA_MINIMUM_MODELS = parseSlugList(
     process.env.BAKEOFF_SCHEMA_MINIMUM,
 );
+/** Google-subset schema accommodation: Google's structured-output
+ * implementation accepts only a subset of JSON Schema; beyond
+ * exclusiveMinimum it also rejects `additionalProperties`. For slugs
+ * in BAKEOFF_SCHEMA_GOOGLE_SUBSET the harness strips
+ * additionalProperties (recursively) AND rewrites exclusiveMinimum
+ * in the outgoing schema. The strict-mode flag and every other
+ * constraint stay; the production response parser still validates
+ * the reply against the full zod schema, so a reply with extra
+ * properties would fail parsing exactly as it does in production. */
+const SCHEMA_GOOGLE_SUBSET_MODELS = parseSlugList(
+    process.env.BAKEOFF_SCHEMA_GOOGLE_SUBSET,
+);
 function accommodationText(model: string, shape: ReasoningShape): string {
     return `Bake-off-only request accommodation: this endpoint rejects the production reasoning:{enabled:false}, so the harness rewrote ONLY the reasoning field of the outgoing request (shape: ${
         shape === "minimal"
@@ -158,6 +170,12 @@ for (const slug of REASONING_MINIMAL_MODELS) {
 }
 for (const slug of SCHEMA_MINIMUM_MODELS) {
     const schemaNote = `Bake-off-only schema accommodation: this endpoint's structured-output implementation rejects the production schema's exclusiveMinimum keyword (HTTP 400 INVALID_ARGUMENT), so the harness rewrote ONLY that keyword in the outgoing schema (exclusiveMinimum: 0 -> minimum: 0). Prompt, image payload, and all other schema constraints identical; no production code changed.`;
+    REQUEST_ACCOMMODATIONS[slug] = REQUEST_ACCOMMODATIONS[slug]
+        ? `${REQUEST_ACCOMMODATIONS[slug]} ${schemaNote}`
+        : schemaNote;
+}
+for (const slug of SCHEMA_GOOGLE_SUBSET_MODELS) {
+    const schemaNote = `Bake-off-only schema accommodation: this endpoint's structured-output implementation accepts only a subset of JSON Schema (HTTP 400 INVALID_ARGUMENT on the production schema), so the harness rewrote the outgoing schema to that subset: additionalProperties stripped recursively and exclusiveMinimum: 0 -> minimum: 0. Prompt, image payload, strict flag, and all other constraints identical; no production code changed, and replies are still validated against the full production schema server-side.`;
     REQUEST_ACCOMMODATIONS[slug] = REQUEST_ACCOMMODATIONS[slug]
         ? `${REQUEST_ACCOMMODATIONS[slug]} ${schemaNote}`
         : schemaNote;
@@ -187,6 +205,20 @@ function replaceExclusiveMinimum(node: unknown): void {
     }
 }
 
+function stripAdditionalProperties(node: unknown): void {
+    if (Array.isArray(node)) {
+        for (const child of node) stripAdditionalProperties(child);
+        return;
+    }
+    if (node && typeof node === "object") {
+        const record = node as Record<string, unknown>;
+        delete record.additionalProperties;
+        for (const child of Object.values(record)) {
+            stripAdditionalProperties(child);
+        }
+    }
+}
+
 function rewriteRequestBody(body: string, model: string): string {
     try {
         const parsed = JSON.parse(body) as Record<string, unknown>;
@@ -196,7 +228,10 @@ function rewriteRequestBody(body: string, model: string): string {
         } else if (shape === "omit") {
             delete parsed.reasoning;
         }
-        if (SCHEMA_MINIMUM_MODELS.has(model)) {
+        if (
+            SCHEMA_MINIMUM_MODELS.has(model) ||
+            SCHEMA_GOOGLE_SUBSET_MODELS.has(model)
+        ) {
             const responseFormat = parsed.response_format as
                 | Record<string, unknown>
                 | undefined;
@@ -205,6 +240,9 @@ function rewriteRequestBody(body: string, model: string): string {
                 | undefined;
             if (jsonSchema?.schema) {
                 replaceExclusiveMinimum(jsonSchema.schema);
+                if (SCHEMA_GOOGLE_SUBSET_MODELS.has(model)) {
+                    stripAdditionalProperties(jsonSchema.schema);
+                }
             }
         }
         return JSON.stringify(parsed);
@@ -217,7 +255,11 @@ function rewriteRequestBody(body: string, model: string): string {
  * wrapped with the request-rewrite above for accommodated slugs. */
 function bakeoffFetcher(model: string, sink: CallObservation[]) {
     const inner = observingFetcher(sink);
-    if (!reasoningShapeFor(model) && !SCHEMA_MINIMUM_MODELS.has(model)) {
+    if (
+        !reasoningShapeFor(model) &&
+        !SCHEMA_MINIMUM_MODELS.has(model) &&
+        !SCHEMA_GOOGLE_SUBSET_MODELS.has(model)
+    ) {
         return inner;
     }
     return async (

@@ -409,7 +409,8 @@ jobs:
             BAKEOFF_OUT: sweep-report
             BAKEOFF_REASONING_OMIT: "google/gemini-3.1-flash-lite,google/gemini-3.5-flash-lite,google/gemini-3-flash-preview,google/gemini-3.8-flash"
             BAKEOFF_REASONING_MINIMAL: ""
-            BAKEOFF_SCHEMA_MINIMUM: "google/gemini-3.1-flash-lite,google/gemini-3.5-flash-lite,google/gemini-3-flash-preview,google/gemini-3.8-flash"
+            BAKEOFF_SCHEMA_MINIMUM: ""
+            BAKEOFF_SCHEMA_GOOGLE_SUBSET: "google/gemini-3.1-flash-lite,google/gemini-3.5-flash-lite,google/gemini-3-flash-preview,google/gemini-3.8-flash"
         steps:
             - name: Check out repository
               uses: actions/checkout@v4
