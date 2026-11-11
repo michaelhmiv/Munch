@@ -161,7 +161,8 @@ jobs:
         env:
             OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
             BAKEOFF_FIXTURES_DIR: fixtures/photo-eval-real
-            BAKEOFF_MODELS: "meta/muse-ember,openai/gpt-5.6-luna,qwen/qwen3.7-flash,amazon/nova-lite-v1,deepseek/deepseek-v4.1-flash,z-ai/glm-5.3-flash"
+            BAKEOFF_MODELS: "inclusionai/ling-3.0-flash-vl"
+            BAKEOFF_STRICT_PROMPT_MODELS: "inclusionai/ling-3.0-flash-vl"
             BAKEOFF_REPEATS: "2"
             BAKEOFF_OUT: bakeoff-report-real
             BAKEOFF_GLM_REASONING: omit
@@ -320,7 +321,7 @@ jobs:
             OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
             USDA_FDC_API_KEY: ${{ secrets.USDA_FDC_API_KEY }}
             OFF_USER_AGENT: "Munch Photo Eval (photo-eval@munch.business)"
-            FULLEVAL_CONFIGS: ${{ inputs.configs }}
+            FULLEVAL_CONFIGS: "hybrid:inclusionai/ling-3.0-flash-vl+jev114"
             FULLEVAL_OUT: fulleval-report
         steps:
             - name: Check out repository
