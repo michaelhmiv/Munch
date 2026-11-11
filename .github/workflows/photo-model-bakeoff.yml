@@ -19,6 +19,16 @@ name: Photo Model Bake-Off
 # runs Layer 1, label "run-bakeoff-layer2" runs the Layer 2 finalist
 # matrix (finalist slugs are committed into the matrix once Layer 1
 # results are in). Post-merge, workflow_dispatch is the normal route.
+#
+# GLM follow-up (Michael directive, 2026-11-10 ~22:05 ET): z-ai/glm-5.3-
+# flash failed all 80 first-run calls because its endpoint is
+# reasoning-mandatory and rejects the production reasoning:{enabled:
+# false}. The harness now carries a bake-off-only accommodation for
+# that slug (scripts/photo-model-bakeoff.ts, REQUEST_ACCOMMODATIONS).
+# While this follow-up is in flight, the label-gated Layer 1 run is
+# scoped to GLM only (BAKEOFF_MODELS below); GLM also joins the Layer 2
+# matrix, and the layer2 label is applied only if its Layer 1 recall
+# earns it. Dispatch runs keep the caller's model choice.
 
 on:
     pull_request:
@@ -37,6 +47,11 @@ on:
                 default: layer1
             model:
                 description: "Layer 2 only: the model slug to run the full pipeline with"
+                type: string
+                required: false
+                default: ""
+            models:
+                description: "Layer 1 only: comma-separated model slugs (empty = full slate)"
                 type: string
                 required: false
                 default: ""
@@ -61,6 +76,11 @@ jobs:
         env:
             OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
             BAKEOFF_REPEATS: ${{ inputs.repeats }}
+            # Label-gated PR runs are the GLM follow-up: GLM only.
+            # Dispatch runs take the caller's models input (empty = the
+            # script's full-slate default).
+            BAKEOFF_MODELS: ${{ github.event_name == 'pull_request' && 'z-ai/glm-5.3-flash' || inputs.models }}
+            BAKEOFF_GLM_REASONING: omit
         steps:
             - name: Check out repository
               uses: actions/checkout@v4
@@ -145,6 +165,10 @@ jobs:
         # openai/gpt-5.6-luna (top two challengers: tied at 50.8%
         # headline recall, qwen ahead on the precision tiebreak;
         # nova-lite and deepseek-v4.1-flash ranked below both).
+        # z-ai/glm-5.3-flash joins for its follow-up measurement (see
+        # header); note photo-eval-live.ts runs the PRODUCTION call
+        # shape, so a GLM leg measures whether the raw pipeline can
+        # drive it at all.
         if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-bakeoff-layer2')
         runs-on: ubuntu-latest
         timeout-minutes: 40
@@ -155,6 +179,7 @@ jobs:
                     - meta/muse-ember
                     - qwen/qwen3.7-flash
                     - openai/gpt-5.6-luna
+                    - z-ai/glm-5.3-flash
         env:
             OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
             USDA_FDC_API_KEY: ${{ secrets.USDA_FDC_API_KEY }}

@@ -28,7 +28,9 @@
  * Knobs (env): BAKEOFF_MODELS (comma-separated slugs; default the full
  * slate), BAKEOFF_FIXTURE_IDS (comma-separated subset), BAKEOFF_REPEATS
  * (default 2), BAKEOFF_CONCURRENCY (default 4), BAKEOFF_OUT (default
- * ./bakeoff-report). Exit 0 when a report was produced — an individual
+ * ./bakeoff-report), BAKEOFF_GLM_REASONING (GLM accommodation shape:
+ * omit | minimal; default omit — see REQUEST_ACCOMMODATIONS). Exit 0
+ * when a report was produced — an individual
  * model failing is data, not a harness failure. Exit 2 when
  * OPENROUTER_API_KEY is not configured.
  */
@@ -63,11 +65,71 @@ const PRICE_TABLE: Record<string, { input: number; output: number }> = {
 };
 const DEFAULT_MODELS = Object.keys(PRICE_TABLE);
 
-const models = (
+/** BAKE-OFF-ONLY per-model request accommodations. Production sends
+ * reasoning:{enabled:false} for every non-Muse model; the GLM endpoint
+ * is reasoning-mandatory and rejected that on all 80 calls of the first
+ * Layer 1 run with HTTP 400 ("Reasoning is mandatory for this endpoint
+ * and cannot be disabled."). To measure GLM at all, the harness rewrites
+ * ONLY the reasoning field of the outgoing request body for this slug —
+ * prompt, schema, and image payload stay identical, and no production
+ * code (src/) changes. GLM's measured cost/time therefore include any
+ * reasoning tokens it spends; that is its real operating profile, and
+ * the report carries this note wherever GLM appears. Shape knob:
+ * BAKEOFF_GLM_REASONING=omit (drop the field; the endpoint's own
+ * default applies) | minimal (reasoning:{effort:"minimal"}). */
+const GLM_MODEL = "z-ai/glm-5.3-flash";
+const GLM_REASONING_SHAPE =
+    (process.env.BAKEOFF_GLM_REASONING ?? "omit").trim().toLowerCase() ===
+    "minimal"
+        ? "minimal"
+        : "omit";
+const REQUEST_ACCOMMODATIONS: Record<string, string> = {
+    [GLM_MODEL]: `Bake-off-only request accommodation: the GLM endpoint is reasoning-mandatory and rejects the production reasoning:{enabled:false} with HTTP 400, so the harness rewrote ONLY the reasoning field of the outgoing request (shape: ${
+        GLM_REASONING_SHAPE === "minimal"
+            ? 'reasoning:{effort:"minimal"}'
+            : "reasoning field omitted; endpoint default applies"
+    }). Prompt, schema, and image payload identical; no production code changed. GLM cost/time include its reasoning tokens — its real operating profile.`,
+};
+
+function rewriteReasoningField(body: string): string {
+    try {
+        const parsed = JSON.parse(body) as Record<string, unknown>;
+        if (GLM_REASONING_SHAPE === "minimal") {
+            parsed.reasoning = { effort: "minimal" };
+        } else {
+            delete parsed.reasoning;
+        }
+        return JSON.stringify(parsed);
+    } catch {
+        return body;
+    }
+}
+
+/** The fetcher a model's tasks run through: the plain observing fetcher,
+ * wrapped with the request-rewrite above for accommodated slugs. */
+function bakeoffFetcher(model: string, sink: CallObservation[]) {
+    const inner = observingFetcher(sink);
+    if (!(model in REQUEST_ACCOMMODATIONS)) return inner;
+    return async (
+        input: RequestInfo | URL,
+        init?: RequestInit,
+    ): Promise<Response> => {
+        if (init && typeof init.body === "string") {
+            return inner(input, {
+                ...init,
+                body: rewriteReasoningField(init.body),
+            });
+        }
+        return inner(input, init);
+    };
+}
+
+const parsedModels = (
     process.env.BAKEOFF_MODELS?.split(",")
         .map((value) => value.trim())
-        .filter(Boolean) ?? DEFAULT_MODELS
+        .filter(Boolean) ?? []
 ).filter((slug, index, all) => all.indexOf(slug) === index);
+const models = parsedModels.length > 0 ? parsedModels : DEFAULT_MODELS;
 const repeats = Math.max(
     1,
     Math.min(5, Number(process.env.BAKEOFF_REPEATS ?? 2) || 2),
@@ -115,6 +177,7 @@ interface CallObservation {
     httpStatus: number | null;
     promptTokens: number | null;
     completionTokens: number | null;
+    reasoningTokens: number | null;
     reportedCostUsd: number | null;
     provider: string | null;
     responseModel: string | null;
@@ -137,6 +200,7 @@ function observingFetcher(sink: CallObservation[]) {
                 httpStatus: response.status,
                 promptTokens: null,
                 completionTokens: null,
+                reasoningTokens: null,
                 reportedCostUsd: null,
                 provider: null,
                 responseModel: null,
@@ -152,6 +216,11 @@ function observingFetcher(sink: CallObservation[]) {
                 observation.completionTokens =
                     typeof usage?.completion_tokens === "number"
                         ? usage.completion_tokens
+                        : null;
+                observation.reasoningTokens =
+                    typeof usage?.completion_tokens_details
+                        ?.reasoning_tokens === "number"
+                        ? usage.completion_tokens_details.reasoning_tokens
                         : null;
                 observation.reportedCostUsd =
                     typeof usage?.cost === "number" ? usage.cost : null;
@@ -173,6 +242,7 @@ function observingFetcher(sink: CallObservation[]) {
                 httpStatus: null,
                 promptTokens: null,
                 completionTokens: null,
+                reasoningTokens: null,
                 reportedCostUsd: null,
                 provider: null,
                 responseModel: null,
@@ -244,6 +314,7 @@ interface TaskResult {
     httpCalls: number;
     promptTokens: number;
     completionTokens: number;
+    reasoningTokens: number;
     computedCostUsd: number;
     reportedCostUsd: number | null;
     providers: string[];
@@ -276,6 +347,7 @@ async function runTask(
             httpCalls: 0,
             promptTokens: 0,
             completionTokens: 0,
+            reasoningTokens: 0,
             computedCostUsd: 0,
             reportedCostUsd: null,
             providers: [],
@@ -291,7 +363,7 @@ async function runTask(
         const result = await identifyMealPhoto(
             { mimeType: "image/jpeg", bytes },
             config,
-            { fetcher: observingFetcher(observations) },
+            { fetcher: bakeoffFetcher(model, observations) },
         );
         items = result.items;
     } catch (error) {
@@ -306,12 +378,14 @@ async function runTask(
     const latencyMs = Math.round(performance.now() - startedAt);
     let promptTokens = 0;
     let completionTokens = 0;
+    let reasoningTokens = 0;
     let computedCostUsd = 0;
     let reportedCostUsd: number | null = null;
     const providers = new Set<string>();
     for (const observation of observations) {
         promptTokens += observation.promptTokens ?? 0;
         completionTokens += observation.completionTokens ?? 0;
+        reasoningTokens += observation.reasoningTokens ?? 0;
         computedCostUsd +=
             ((observation.promptTokens ?? 0) / 1_000_000) * price.input +
             ((observation.completionTokens ?? 0) / 1_000_000) * price.output;
@@ -330,6 +404,7 @@ async function runTask(
         httpCalls: observations.length,
         promptTokens,
         completionTokens,
+        reasoningTokens,
         computedCostUsd,
         reportedCostUsd,
         providers: [...providers],
@@ -389,6 +464,8 @@ interface ModelReport {
     failures: Array<{ fixtureId: string; repeat: number; error: string }>;
     totalPromptTokens: number;
     totalCompletionTokens: number;
+    totalReasoningTokens: number;
+    requestAccommodation: string | null;
     totalComputedCostUsd: number;
     costPerTaskUsd: number;
     totalReportedCostUsd: number | null;
@@ -516,6 +593,11 @@ for (const model of models) {
             (sum, task) => sum + task.completionTokens,
             0,
         ),
+        totalReasoningTokens: tasks.reduce(
+            (sum, task) => sum + task.reasoningTokens,
+            0,
+        ),
+        requestAccommodation: REQUEST_ACCOMMODATIONS[model] ?? null,
         totalComputedCostUsd,
         costPerTaskUsd: tasks.length ? totalComputedCostUsd / tasks.length : 0,
         totalReportedCostUsd,
@@ -591,6 +673,7 @@ const reportJson = {
     repeats,
     concurrency,
     prices_per_million_tokens: PRICE_TABLE,
+    request_accommodations: REQUEST_ACCOMMODATIONS,
     caveat: "The fixture set is 100% synthetic illustrations. Scores rank models against each other on identical inputs; they are not real-photo accuracy.",
     total_computed_spend_usd: totalSpendUsd,
     ranked_models: ranked.map((report) => report.model),
@@ -609,7 +692,7 @@ const lines = [
     ``,
     `Run: ${runStartedAt} · Fixtures: ${fixtures.length} · Repeats: ${repeats} · Tasks per model: ${fixtures.length * repeats} · Total computed spend: $${totalSpendUsd.toFixed(4)}`,
     ``,
-    `Every model ran the production identify path (same prompt, schema, reasoning params); only the model slug varied. Cost = token usage × catalog prices (see report.json). Accuracy uses scoring.ts name matching; failed/timed-out tasks count as zero-recall in the headline recall (see recallCompletedTasksOnly in report.json for the completed-only figure).`,
+    `Every model ran the production identify path (same prompt, schema, reasoning params); only the model slug varied — with ONE disclosed exception: a model whose endpoint rejects the production request shape outright is measured through the bake-off-only request accommodation recorded in report.json (request_accommodations), which rewrites only the rejected field; its cost/time include whatever that shape makes it spend. Cost = token usage × catalog prices (see report.json). Accuracy uses scoring.ts name matching; failed/timed-out tasks count as zero-recall in the headline recall (see recallCompletedTasksOnly in report.json for the completed-only figure).`,
     ``,
     `> **Caveat:** the fixture set is 100% synthetic illustrations. These scores rank models against each other on identical inputs; they are **not** real-photo accuracy.`,
     ``,
@@ -624,6 +707,11 @@ const lines = [
     ``,
     ...modelReports.flatMap((report) => {
         const notes: string[] = [];
+        if (report.requestAccommodation) {
+            notes.push(
+                `- ${report.model}: ${report.requestAccommodation} Reasoning tokens spent across its tasks: ${report.totalReasoningTokens.toLocaleString()}.`,
+            );
+        }
         if (report.costDisagreementCalls > 0) {
             notes.push(
                 `- ${report.model}: API-reported cost disagreed with the catalog-price computation by >20% on ${report.costDisagreementCalls} task(s) — trust the reported figure for those.`,
