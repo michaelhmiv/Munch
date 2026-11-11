@@ -321,7 +321,7 @@ jobs:
             USDA_FDC_API_KEY: ${{ secrets.USDA_FDC_API_KEY }}
             OFF_USER_AGENT: "Munch Photo Eval (photo-eval@munch.business)"
             FULLEVAL_CONFIGS: ${{ inputs.configs || 'hybrid:meta/muse-ember+jev114' }}
-            FULLEVAL_DECIDER_MODEL: ${{ inputs.decider_model || 'perplexity/pplx-decider-v1.2' }}
+            FULLEVAL_DECIDER_MODEL: ${{ inputs.decider_model || 'inception/mercury-decide' }}
             FULLEVAL_OUT: fulleval-report
         steps:
             - name: Check out repository
@@ -362,7 +362,7 @@ jobs:
         timeout-minutes: 60
         env:
             OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-            JEVPROBE_MODEL: ${{ inputs.decider_model || 'perplexity/pplx-decider-v1.2' }}
+            JEVPROBE_MODEL: ${{ inputs.decider_model || 'inception/mercury-decide' }}
             JEVPROBE_OUT: jevprobe-report
         steps:
             - name: Check out repository
