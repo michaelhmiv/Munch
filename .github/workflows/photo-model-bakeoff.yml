@@ -1,0 +1,386 @@
+name: Photo Model Bake-Off
+
+# Vision model bake-off (Michael directive, 2026-11-10): Layer 1 runs
+# scripts/photo-model-bakeoff.ts — every slate model through the
+# PRODUCTION meal-photo identify path (only the slug varies) against
+# all 40 golden fixtures × repeats, scored for cost/task, time/task,
+# and accuracy. Layer 2 runs the finalists end-to-end through
+# scripts/photo-eval-live.ts (identify + grounding + §3 bars) via its
+# existing MUNCH_AI_MODEL override; dispatch this workflow once per
+# finalist with layer=layer2 and model=<slug>.
+#
+# The fixture set is 100% synthetic illustrations: results rank models
+# against each other on identical inputs and are NOT real-photo
+# accuracy; both layers' reports say so in their own text.
+#
+# Pre-merge execution: workflow_dispatch requires the workflow to
+# exist on the default branch, so on pull requests the live layers are
+# LABEL-GATED instead (no label, no spend): label "run-bakeoff-layer1"
+# runs Layer 1, label "run-bakeoff-layer2" runs the Layer 2 finalist
+# matrix (finalist slugs are committed into the matrix once Layer 1
+# results are in). Post-merge, workflow_dispatch is the normal route.
+#
+# GLM follow-up (Michael directive, 2026-11-10 ~22:05 ET): z-ai/glm-5.3-
+# flash failed all 80 first-run calls because its endpoint is
+# reasoning-mandatory and rejects the production reasoning:{enabled:
+# false}. The harness now carries a bake-off-only accommodation for
+# that slug (scripts/photo-model-bakeoff.ts, REQUEST_ACCOMMODATIONS).
+# While this follow-up is in flight, the label-gated Layer 1 run is
+# scoped to GLM only (BAKEOFF_MODELS below); GLM also joins the Layer 2
+# matrix, and the layer2 label is applied only if its Layer 1 recall
+# earns it. Dispatch runs keep the caller's model choice.
+#
+# Full-pipeline lane (Michael directive, 2026-11-10 ~22:51 ET, with
+# owner corrections ~22:53/~22:56 ET): label "run-fulleval" runs
+# scripts/photo-full-eval.ts — the TRUE production pipeline (identify
+# → USDA/OFF grounding → decider tie-break → estimate fallback →
+# filled draft) on the REAL-photo set, over a config matrix:
+# single-model configs (Ember, Luna, DeepSeek v4.1 pinned snapshot
+# -1017, DeepSeek Flash-4 vision-exp, Nova Lite, Nova 2 Lite),
+# Jev-1.14 (TypeSafe's decision model, sampled DIRECTLY — no router
+# substitution) in the decider seat behind Ember/Luna/DeepSeek
+# identify, a Jev-1.14 both-roles bonus config, and ONE clearly
+# labelled jev-router decider config (router output does not count
+# as the Jev result). GLM is excluded: the production call shape
+# cannot drive it.
+#
+# Jev front-door probe (Michael directive, 2026-11-11): label
+# "run-jevprobe" runs scripts/photo-jev-probe.ts — typesafe/jev-1.14
+# sampled DIRECTLY via the Decisions API with photos in state: a
+# three-question front-door gate (food Noul / route Choice / clarity
+# Noul) over the 30 real food photos plus the 12-photo non-food
+# negative set (fixtures/photo-eval-negative), receipt routing, and
+# a Jev verification pass over Ember identifications.
+
+on:
+    pull_request:
+        types: [opened, synchronize, reopened, labeled]
+        paths:
+            - "scripts/photo-model-bakeoff.ts"
+            - "scripts/photo-full-eval.ts"
+            - "scripts/photo-jev-probe.ts"
+            - ".github/workflows/photo-model-bakeoff.yml"
+            - "fixtures/photo-eval-real/**"
+            - "fixtures/photo-eval-negative/**"
+    workflow_dispatch:
+        inputs:
+            layer:
+                description: "layer1 = identify bake-off (all models); layer2 = full pipeline for ONE model; fulleval = full-pipeline config matrix on the real-photo set; jevprobe = Jev front-door probe"
+                type: choice
+                options:
+                    - layer1
+                    - layer2
+                    - fulleval
+                    - jevprobe
+                default: layer1
+            configs:
+                description: "fulleval only: comma-separated config specs (empty = full matrix)"
+                type: string
+                required: false
+                default: ""
+            model:
+                description: "Layer 2 only: the model slug to run the full pipeline with"
+                type: string
+                required: false
+                default: ""
+            models:
+                description: "Layer 1 only: comma-separated model slugs (empty = full slate)"
+                type: string
+                required: false
+                default: ""
+            repeats:
+                description: "Layer 1 only: identify repeats per fixture"
+                type: string
+                required: false
+                default: "2"
+
+permissions:
+    contents: read
+
+concurrency:
+    group: photo-model-bakeoff-${{ inputs.layer }}-${{ inputs.model }}
+    cancel-in-progress: false
+
+jobs:
+    layer1:
+        if: (github.event_name == 'workflow_dispatch' && inputs.layer == 'layer1') || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-bakeoff-layer1'))
+        runs-on: ubuntu-latest
+        timeout-minutes: 180
+        env:
+            OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+            BAKEOFF_REPEATS: ${{ inputs.repeats }}
+            # Label-gated PR runs are the GLM follow-up: GLM only.
+            # Dispatch runs take the caller's models input (empty = the
+            # script's full-slate default).
+            BAKEOFF_MODELS: ${{ github.event_name == 'pull_request' && 'z-ai/glm-5.3-flash' || inputs.models }}
+            BAKEOFF_GLM_REASONING: omit
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@v4
+            - name: Set up Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
+            - name: Run Layer 1 identify bake-off
+              run: bun scripts/photo-model-bakeoff.ts
+            - name: Publish report to the run summary
+              if: always()
+              run: |
+                  if [ -f bakeoff-report/report.md ]; then
+                    cat bakeoff-report/report.md >> "$GITHUB_STEP_SUMMARY"
+                  else
+                    echo "Bake-off produced no report (see job log)." >> "$GITHUB_STEP_SUMMARY"
+                  fi
+            - name: Upload bake-off report artifact
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: bakeoff-report
+                  path: bakeoff-report/
+                  if-no-files-found: warn
+                  retention-days: 30
+
+    layer1-real:
+        # REAL-PHOTO set run (Michael directive, 2026-11-10 ~22:08 ET):
+        # Layer 1 against fixtures/photo-eval-real — real photographs
+        # from openly licensed sources with conservative human-verified
+        # expectations. Label-gated like the other pre-merge runs:
+        # label "run-bakeoff-real". Slate = every model that can run
+        # today (the five from the first bake-off plus GLM, whose
+        # harness accommodation landed with its follow-up).
+        if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-bakeoff-real')
+        runs-on: ubuntu-latest
+        timeout-minutes: 120
+        env:
+            OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+            BAKEOFF_FIXTURES_DIR: fixtures/photo-eval-real
+            BAKEOFF_MODELS: "meta/muse-ember,openai/gpt-5.6-luna,qwen/qwen3.7-flash,amazon/nova-lite-v1,deepseek/deepseek-v4.1-flash,z-ai/glm-5.3-flash"
+            BAKEOFF_REPEATS: "2"
+            BAKEOFF_OUT: bakeoff-report-real
+            BAKEOFF_GLM_REASONING: omit
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@v4
+            - name: Set up Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
+            - name: Run Layer 1 identify bake-off on the real-photo set
+              run: bun scripts/photo-model-bakeoff.ts
+            - name: Publish report to the run summary
+              if: always()
+              run: |
+                  if [ -f bakeoff-report-real/report.md ]; then
+                    cat bakeoff-report-real/report.md >> "$GITHUB_STEP_SUMMARY"
+                  else
+                    echo "Real-set bake-off produced no report (see job log)." >> "$GITHUB_STEP_SUMMARY"
+                  fi
+            - name: Upload real-set bake-off report artifact
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: bakeoff-report-real
+                  path: bakeoff-report-real/
+                  if-no-files-found: warn
+                  retention-days: 30
+
+    layer2:
+        if: github.event_name == 'workflow_dispatch' && inputs.layer == 'layer2'
+        runs-on: ubuntu-latest
+        timeout-minutes: 40
+        env:
+            OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+            USDA_FDC_API_KEY: ${{ secrets.USDA_FDC_API_KEY }}
+            OFF_USER_AGENT: "Munch Photo Eval (photo-eval@munch.business)"
+            MUNCH_AI_MODEL: ${{ inputs.model }}
+            PHOTO_EVAL_OUT: photo-eval-report
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@v4
+            - name: Set up Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
+            - name: Compute artifact suffix from the model slug
+              id: suffix
+              run: echo "value=$(echo '${{ inputs.model }}' | tr '/.' '__')" >> "$GITHUB_OUTPUT"
+            - name: Run full photo pipeline for the finalist model
+              id: pipeline
+              # photo-eval-live exits 1 when the §3 bars are breached;
+              # for a finalist comparison that is evidence, not a
+              # harness failure — keep the job green and the report.
+              continue-on-error: true
+              run: |
+                  test -n "${{ inputs.model }}" || { echo "layer2 requires the model input"; exit 1; }
+                  bun scripts/photo-eval-live.ts
+            - name: Publish report to the run summary
+              if: always()
+              run: |
+                  echo "photo-eval-live outcome: ${{ steps.pipeline.outcome }} (bar breach exits 1 by design)" >> "$GITHUB_STEP_SUMMARY"
+                  if [ -f photo-eval-report/report.md ]; then
+                    cat photo-eval-report/report.md >> "$GITHUB_STEP_SUMMARY"
+                  else
+                    echo "Layer 2 produced no report (see job log)." >> "$GITHUB_STEP_SUMMARY"
+                  fi
+            - name: Upload layer 2 report artifact
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: photo-eval-layer2-${{ steps.suffix.outputs.value }}
+                  path: photo-eval-report/
+                  if-no-files-found: warn
+                  retention-days: 30
+
+    layer2-finalists:
+        # Pre-merge Layer 2 (label-gated; see header). Finalist slugs
+        # from the Layer 1 results, run 42948534624: meta/muse-ember
+        # (control — always a finalist), qwen/qwen3.7-flash and
+        # openai/gpt-5.6-luna (top two challengers: tied at 50.8%
+        # headline recall, qwen ahead on the precision tiebreak;
+        # nova-lite and deepseek-v4.1-flash ranked below both).
+        # z-ai/glm-5.3-flash joins for its follow-up measurement (see
+        # header); note photo-eval-live.ts runs the PRODUCTION call
+        # shape, so a GLM leg measures whether the raw pipeline can
+        # drive it at all.
+        if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-bakeoff-layer2')
+        runs-on: ubuntu-latest
+        timeout-minutes: 40
+        strategy:
+            fail-fast: false
+            matrix:
+                model:
+                    - meta/muse-ember
+                    - qwen/qwen3.7-flash
+                    - openai/gpt-5.6-luna
+                    - z-ai/glm-5.3-flash
+        env:
+            OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+            USDA_FDC_API_KEY: ${{ secrets.USDA_FDC_API_KEY }}
+            OFF_USER_AGENT: "Munch Photo Eval (photo-eval@munch.business)"
+            MUNCH_AI_MODEL: ${{ matrix.model }}
+            PHOTO_EVAL_OUT: photo-eval-report
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@v4
+            - name: Set up Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
+            - name: Compute artifact suffix from the model slug
+              id: suffix
+              run: echo "value=$(echo '${{ matrix.model }}' | tr '/.' '__')" >> "$GITHUB_OUTPUT"
+            - name: Run full photo pipeline for the finalist model
+              id: pipeline
+              # Same bar-breach semantics as the layer2 dispatch job:
+              # exit 1 on §3 bar breach is evidence, not a job failure.
+              continue-on-error: true
+              run: bun scripts/photo-eval-live.ts
+            - name: Publish report to the run summary
+              if: always()
+              run: |
+                  echo "Model: ${{ matrix.model }} · photo-eval-live outcome: ${{ steps.pipeline.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+                  if [ -f photo-eval-report/report.md ]; then
+                    cat photo-eval-report/report.md >> "$GITHUB_STEP_SUMMARY"
+                  else
+                    echo "Layer 2 produced no report for ${{ matrix.model }} (see job log)." >> "$GITHUB_STEP_SUMMARY"
+                  fi
+            - name: Upload layer 2 report artifact
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: photo-eval-layer2-${{ steps.suffix.outputs.value }}
+                  path: photo-eval-report/
+                  if-no-files-found: warn
+                  retention-days: 30
+
+    fulleval:
+        # Full-pipeline config matrix on the real-photo set (see the
+        # header comment). Label-gated pre-merge like the other lanes;
+        # workflow_dispatch with layer=fulleval is the post-merge
+        # route. One job runs every config sequentially (the script
+        # aggregates the combined report); in-config task concurrency
+        # is 4.
+        if: (github.event_name == 'workflow_dispatch' && inputs.layer == 'fulleval') || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-fulleval'))
+        runs-on: ubuntu-latest
+        timeout-minutes: 180
+        env:
+            OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+            USDA_FDC_API_KEY: ${{ secrets.USDA_FDC_API_KEY }}
+            OFF_USER_AGENT: "Munch Photo Eval (photo-eval@munch.business)"
+            FULLEVAL_CONFIGS: ${{ inputs.configs }}
+            FULLEVAL_OUT: fulleval-report
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@v4
+            - name: Set up Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
+            - name: Run full-pipeline eval on the real-photo set
+              run: bun scripts/photo-full-eval.ts
+            - name: Publish report to the run summary
+              if: always()
+              run: |
+                  if [ -f fulleval-report/report.md ]; then
+                    cat fulleval-report/report.md >> "$GITHUB_STEP_SUMMARY"
+                  else
+                    echo "Full-pipeline eval produced no report (see job log)." >> "$GITHUB_STEP_SUMMARY"
+                  fi
+            - name: Upload full-eval report artifact
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: fulleval-report
+                  path: fulleval-report/
+                  if-no-files-found: warn
+                  retention-days: 30
+
+    jevprobe:
+        # Jev-1.14 front-door probe (see the header comment).
+        # Label-gated pre-merge like the other lanes;
+        # workflow_dispatch with layer=jevprobe is the post-merge
+        # route. No USDA/OFF secrets: the probe needs only the
+        # OpenRouter key.
+        if: (github.event_name == 'workflow_dispatch' && inputs.layer == 'jevprobe') || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-jevprobe'))
+        runs-on: ubuntu-latest
+        timeout-minutes: 60
+        env:
+            OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+            JEVPROBE_OUT: jevprobe-report
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@v4
+            - name: Set up Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
+            - name: Run Jev front-door probe
+              run: bun scripts/photo-jev-probe.ts
+            - name: Publish report to the run summary
+              if: always()
+              run: |
+                  if [ -f jevprobe-report/report.md ]; then
+                    cat jevprobe-report/report.md >> "$GITHUB_STEP_SUMMARY"
+                  else
+                    echo "Jev probe produced no report (see job log)." >> "$GITHUB_STEP_SUMMARY"
+                  fi
+            - name: Upload Jev probe report artifact
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: jevprobe-report
+                  path: jevprobe-report/
+                  if-no-files-found: warn
+                  retention-days: 30

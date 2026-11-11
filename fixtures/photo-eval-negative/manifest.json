@@ -1,0 +1,258 @@
+{
+    "version": 1,
+    "generator": "Hand-assembled 2026-11-11 from Wikimedia Commons (CC0 / CC BY / CC BY-SA / public domain) as the NEGATIVE companion to fixtures/photo-eval-real for the Jev front-door probe. Each photo was individually downloaded, visually inspected, and labelled; see README.md for the labelling rules. Photos were normalized into the Jev image-input range (280-1568 px per side) at build time; the transform is recorded per fixture.",
+    "fixtures": [
+        {
+            "id": "neg-01-receipt",
+            "file": "photos/neg-01-receipt.jpg",
+            "source": "real",
+            "category": "receipt",
+            "source_url": "https://commons.wikimedia.org/wiki/File:ReceiptSwiss.jpg",
+            "image_url": "https://upload.wikimedia.org/wikipedia/commons/0/0b/ReceiptSwiss.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "license": "CC BY-SA 3.0",
+            "license_url": "http://creativecommons.org/licenses/by-sa/3.0/",
+            "artist": "Audrius Meskauskas (Audriusa)",
+            "original_title": "File:ReceiptSwiss.jpg",
+            "original_size_px": [2448, 3264],
+            "saved_size_px": [1176, 1568],
+            "transform": "Downloaded the 1024px-wide Commons derivative (or original when smaller); EXIF orientation baked in; converted to RGB; downscaled with Lanczos so both sides are within 280-1568 px (Jev image-input range); saved as baseline JPEG q88.",
+            "expected": {
+                "gate_food": false,
+                "borderline": false,
+                "expected_route": "receipt",
+                "rationale": "Itemized paper restaurant receipt (Berghotel Grosse Scheidegg: latte macchiato, schnitzel, spaetzli). No food or drink itself is shown; the correct front-door route is the receipt flow."
+            }
+        },
+        {
+            "id": "neg-02-screenshot",
+            "file": "photos/neg-02-screenshot.jpg",
+            "source": "real",
+            "category": "phone_screenshot",
+            "source_url": "https://commons.wikimedia.org/wiki/File:Android_10_screenshot.png",
+            "image_url": "https://upload.wikimedia.org/wikipedia/commons/0/0c/Android_10_screenshot.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "license": "Public domain",
+            "license_url": null,
+            "artist": "Static Wikia (Fandom) or Fandom upload wizard",
+            "original_title": "File:Android 10 screenshot.png",
+            "original_size_px": [1080, 2340],
+            "saved_size_px": [724, 1568],
+            "transform": "Downloaded the 1024px-wide Commons derivative (or original when smaller); EXIF orientation baked in; converted to RGB; downscaled with Lanczos so both sides are within 280-1568 px (Jev image-input range); saved as baseline JPEG q88.",
+            "expected": {
+                "gate_food": false,
+                "borderline": false,
+                "expected_route": "other",
+                "rationale": "Android home-screen screenshot. No food content of any kind."
+            }
+        },
+        {
+            "id": "neg-03-dog",
+            "file": "photos/neg-03-dog.jpg",
+            "source": "real",
+            "category": "dog",
+            "source_url": "https://commons.wikimedia.org/wiki/File:DSC09611a_Search_and_Rescue_Dog,_Austrian_Red_Cross_Perchtoldsdorf,_2024-10.jpg",
+            "image_url": "https://upload.wikimedia.org/wikipedia/commons/9/94/DSC09611a_Search_and_Rescue_Dog%2C_Austrian_Red_Cross_Perchtoldsdorf%2C_2024-10.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "license": "CC BY 4.0",
+            "license_url": "https://creativecommons.org/licenses/by/4.0",
+            "artist": "Aciarium",
+            "original_title": "File:DSC09611a Search and Rescue Dog, Austrian Red Cross Perchtoldsdorf, 2024-10.jpg",
+            "original_size_px": [3195, 4260],
+            "saved_size_px": [1176, 1568],
+            "transform": "Downloaded the 1024px-wide Commons derivative (or original when smaller); EXIF orientation baked in; converted to RGB; downscaled with Lanczos so both sides are within 280-1568 px (Jev image-input range); saved as baseline JPEG q88.",
+            "expected": {
+                "gate_food": false,
+                "borderline": false,
+                "expected_route": "other",
+                "rationale": "Portrait of a black Labrador search-and-rescue dog. No food content."
+            }
+        },
+        {
+            "id": "neg-04-menu",
+            "file": "photos/neg-04-menu.jpg",
+            "source": "real",
+            "category": "menu_page",
+            "source_url": "https://commons.wikimedia.org/wiki/File:Bens_De_Luxe_Delicatessen_%26_Restaurant_%E2%80%94_French-language_menu_(inside_pages).jpg",
+            "image_url": "https://upload.wikimedia.org/wikipedia/commons/9/94/Bens_De_Luxe_Delicatessen_%26_Restaurant_%E2%80%94_French-language_menu_%28inside_pages%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "license": "CC0",
+            "license_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+            "artist": "WikiFouf",
+            "original_title": "File:Bens De Luxe Delicatessen & Restaurant — French-language menu (inside pages).jpg",
+            "original_size_px": [3730, 2415],
+            "saved_size_px": [1280, 829],
+            "transform": "Downloaded the 1024px-wide Commons derivative (or original when smaller); EXIF orientation baked in; converted to RGB; downscaled with Lanczos so both sides are within 280-1568 px (Jev image-input range); saved as baseline JPEG q88.",
+            "expected": {
+                "gate_food": false,
+                "borderline": false,
+                "expected_route": "other",
+                "rationale": "Open restaurant menu (Ben's Delicatessen, Montreal). Food is described in text only; no food or drink is depicted. The five route options have no 'menu' value, so 'something else' is the only honest fit."
+            }
+        },
+        {
+            "id": "neg-05-restaurant-interior",
+            "file": "photos/neg-05-restaurant-interior.jpg",
+            "source": "real",
+            "category": "restaurant_interior",
+            "source_url": "https://commons.wikimedia.org/wiki/File:Empty_restaurant_interior_HC08164.jpg",
+            "image_url": "https://upload.wikimedia.org/wikipedia/commons/c/c9/Empty_restaurant_interior_HC08164.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "license": "CC0",
+            "license_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+            "artist": "Community Archives",
+            "original_title": "File:Empty restaurant interior HC08164.jpg",
+            "original_size_px": [1200, 889],
+            "saved_size_px": [1200, 889],
+            "transform": "Downloaded the 1024px-wide Commons derivative (or original when smaller); EXIF orientation baked in; converted to RGB; downscaled with Lanczos so both sides are within 280-1568 px (Jev image-input range); saved as baseline JPEG q88.",
+            "expected": {
+                "gate_food": false,
+                "borderline": false,
+                "expected_route": "other",
+                "rationale": "Empty restaurant dining room (black-and-white archival photo). Tables and chairs, no food, no people."
+            }
+        },
+        {
+            "id": "neg-06-car",
+            "file": "photos/neg-06-car.jpg",
+            "source": "real",
+            "category": "car",
+            "source_url": "https://commons.wikimedia.org/wiki/File:2018_Toyota_Camry_(ASV70R)_Ascent_sedan_(2018-08-27)_01.jpg",
+            "image_url": "https://upload.wikimedia.org/wikipedia/commons/a/ac/2018_Toyota_Camry_%28ASV70R%29_Ascent_sedan_%282018-08-27%29_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "license": "CC BY-SA 4.0",
+            "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+            "artist": "EurovisionNim",
+            "original_title": "File:2018 Toyota Camry (ASV70R) Ascent sedan (2018-08-27) 01.jpg",
+            "original_size_px": [4284, 1865],
+            "saved_size_px": [1280, 557],
+            "transform": "Downloaded the 1024px-wide Commons derivative (or original when smaller); EXIF orientation baked in; converted to RGB; downscaled with Lanczos so both sides are within 280-1568 px (Jev image-input range); saved as baseline JPEG q88.",
+            "expected": {
+                "gate_food": false,
+                "borderline": false,
+                "expected_route": "other",
+                "rationale": "A parked sedan on a street. No food content (a cafe terrace is visible far in the background, out of focus)."
+            }
+        },
+        {
+            "id": "neg-07-person-eating",
+            "file": "photos/neg-07-person-eating.jpg",
+            "source": "real",
+            "category": "person_eating",
+            "source_url": "https://commons.wikimedia.org/wiki/File:Gyros_by_ic3.jpg",
+            "image_url": "https://upload.wikimedia.org/wikipedia/commons/2/2b/Gyros_by_ic3.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "license": "Public domain",
+            "license_url": null,
+            "artist": "Ic3",
+            "original_title": "File:Gyros by ic3.jpg",
+            "original_size_px": [521, 746],
+            "saved_size_px": [521, 746],
+            "transform": "Downloaded the 1024px-wide Commons derivative (or original when smaller); EXIF orientation baked in; converted to RGB; downscaled with Lanczos so both sides are within 280-1568 px (Jev image-input range); saved as baseline JPEG q88.",
+            "expected": {
+                "gate_food": true,
+                "borderline": true,
+                "expected_route": "plated_meal",
+                "rationale": "BORDERLINE, called POSITIVE for the gate: the primary subject is a person, but he is mid-bite into a gyro wrap and the tray in front of him holds a plated meal and a can of Coca-Cola. Loggable food and drink are unmistakable, so a front-door gate should let this through. Excluded from the headline negative-set rates; reported individually."
+            }
+        },
+        {
+            "id": "neg-08-empty-plate",
+            "file": "photos/neg-08-empty-plate.jpg",
+            "source": "real",
+            "category": "empty_plate",
+            "source_url": "https://commons.wikimedia.org/wiki/File:Empty_plate_with_fork.jpg",
+            "image_url": "https://upload.wikimedia.org/wikipedia/commons/1/1c/Empty_plate_with_fork.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "license": "CC BY 4.0",
+            "license_url": "https://creativecommons.org/licenses/by/4.0",
+            "artist": "SWT666",
+            "original_title": "File:Empty plate with fork.jpg",
+            "original_size_px": [3456, 3456],
+            "saved_size_px": [1280, 1280],
+            "transform": "Downloaded the 1024px-wide Commons derivative (or original when smaller); EXIF orientation baked in; converted to RGB; downscaled with Lanczos so both sides are within 280-1568 px (Jev image-input range); saved as baseline JPEG q88.",
+            "expected": {
+                "gate_food": false,
+                "borderline": true,
+                "expected_route": "other",
+                "rationale": "BORDERLINE, called NEGATIVE: the plate holds only crumbs and a fork after a finished meal. A mug containing a dark drink is partly visible at the frame edge, but there is no loggable meal item; called not-food with the borderline flag."
+            }
+        },
+        {
+            "id": "neg-09-grocery-shelf",
+            "file": "photos/neg-09-grocery-shelf.jpg",
+            "source": "real",
+            "category": "grocery_shelf",
+            "source_url": "https://commons.wikimedia.org/wiki/File:Milk_on_a_shelf_01.jpg",
+            "image_url": "https://upload.wikimedia.org/wikipedia/commons/5/52/Milk_on_a_shelf_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "license": "CC BY-SA 4.0",
+            "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+            "artist": "Wiki Little Overlord\n\n(維基小霸王)",
+            "original_title": "File:Milk on a shelf 01.jpg",
+            "original_size_px": [5184, 3456],
+            "saved_size_px": [1280, 853],
+            "transform": "Downloaded the 1024px-wide Commons derivative (or original when smaller); EXIF orientation baked in; converted to RGB; downscaled with Lanczos so both sides are within 280-1568 px (Jev image-input range); saved as baseline JPEG q88.",
+            "expected": {
+                "gate_food": false,
+                "borderline": true,
+                "expected_route": "packaged_product",
+                "rationale": "BORDERLINE, called NEGATIVE for the gate: supermarket shelves stacked with packaged milk drinks. Packaged products are plainly visible, but the photo shows no meal someone would log. Route call is 'packaged product' because that is the visible content; 'something else' would also be defensible and is noted as ambiguity."
+            }
+        },
+        {
+            "id": "neg-10-nutrition-label",
+            "file": "photos/neg-10-nutrition-label.jpg",
+            "source": "real",
+            "category": "nutrition_label",
+            "source_url": "https://commons.wikimedia.org/wiki/File:SunnyD_Nutrition_Facts_01.jpg",
+            "image_url": "https://upload.wikimedia.org/wikipedia/commons/6/65/SunnyD_Nutrition_Facts_01.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "license": "CC BY-SA 3.0",
+            "license_url": "https://creativecommons.org/licenses/by-sa/3.0",
+            "artist": "WestportWiki",
+            "original_title": "File:SunnyD Nutrition Facts 01.jpg",
+            "original_size_px": [2448, 3264],
+            "saved_size_px": [1176, 1568],
+            "transform": "Downloaded the 1024px-wide Commons derivative (or original when smaller); EXIF orientation baked in; converted to RGB; downscaled with Lanczos so both sides are within 280-1568 px (Jev image-input range); saved as baseline JPEG q88.",
+            "expected": {
+                "gate_food": false,
+                "borderline": true,
+                "expected_route": "packaged_product",
+                "rationale": "BORDERLINE, called NEGATIVE for the gate: the frame is filled by the Nutrition Facts label of a SunnyD bottle. The drink bottle is physically present, but the photo's content is label text rather than a presented drink; this is the closest call in the set and a gate pass would also be defensible. Route call is 'packaged product' (it is a product label close-up)."
+            }
+        },
+        {
+            "id": "neg-11-handwritten-note",
+            "file": "photos/neg-11-handwritten-note.jpg",
+            "source": "real",
+            "category": "handwritten_note",
+            "source_url": "https://commons.wikimedia.org/wiki/File:EFTA00000467_-_Handwritten_note_on_lined_paper_rests_on_a_floral_fabric_conveying_care_and_support.jpg",
+            "image_url": "https://upload.wikimedia.org/wikipedia/commons/7/76/EFTA00000467_-_Handwritten_note_on_lined_paper_rests_on_a_floral_fabric_conveying_care_and_support.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "license": "Public domain",
+            "license_url": null,
+            "artist": "Federal Bureau of Investigation",
+            "original_title": "File:EFTA00000467 - Handwritten note on lined paper rests on a floral fabric conveying care and support.jpg",
+            "original_size_px": [768, 1152],
+            "saved_size_px": [768, 1152],
+            "transform": "Downloaded the 1024px-wide Commons derivative (or original when smaller); EXIF orientation baked in; converted to RGB; downscaled with Lanczos so both sides are within 280-1568 px (Jev image-input range); saved as baseline JPEG q88.",
+            "expected": {
+                "gate_food": false,
+                "borderline": false,
+                "expected_route": "other",
+                "rationale": "A handwritten note on lined paper. No food content."
+            }
+        },
+        {
+            "id": "neg-12-landscape",
+            "file": "photos/neg-12-landscape.jpg",
+            "source": "real",
+            "category": "landscape",
+            "source_url": "https://commons.wikimedia.org/wiki/File:Kokkozka_Valley,_Belbek_Valley,_Crimean_Mountains,_Crimea.jpg",
+            "image_url": "https://upload.wikimedia.org/wikipedia/commons/b/b4/Kokkozka_Valley%2C_Belbek_Valley%2C_Crimean_Mountains%2C_Crimea.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+            "license": "CC BY 4.0",
+            "license_url": "https://creativecommons.org/licenses/by/4.0",
+            "artist": "Vyacheslav Argenberg",
+            "original_title": "File:Kokkozka Valley, Belbek Valley, Crimean Mountains, Crimea.jpg",
+            "original_size_px": [6000, 4000],
+            "saved_size_px": [1280, 853],
+            "transform": "Downloaded the 1024px-wide Commons derivative (or original when smaller); EXIF orientation baked in; converted to RGB; downscaled with Lanczos so both sides are within 280-1568 px (Jev image-input range); saved as baseline JPEG q88.",
+            "expected": {
+                "gate_food": false,
+                "borderline": false,
+                "expected_route": "other",
+                "rationale": "Mountain valley landscape (Kokkozka Valley, Crimea). No food content."
+            }
+        }
+    ]
+}

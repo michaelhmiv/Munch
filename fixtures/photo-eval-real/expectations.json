@@ -1,0 +1,681 @@
+{
+    "version": 1,
+    "description": "REAL-photo expectations for the Munch photo-logging eval. Every photo is a real photograph of real food from an openly licensed source (see manifest.json for per-photo provenance and attribution). Expectations are conservative: an item is expected only when a careful human can clearly identify it in the photo; composite dishes carry the dish name plus clearly visible components. Portions are scored ONLY where the photo honestly supports a range (counts of distinct pieces, label-printed volumes/weights); every other item carries portion: null (unscored) rather than an invented range.",
+    "fixtures": [
+        {
+            "id": "single-01-banana",
+            "file": "photos/single-01-banana.jpg",
+            "source": "real",
+            "categories": ["single_item"],
+            "items": [
+                {
+                    "name": "banana",
+                    "portion": {
+                        "min_quantity": 3,
+                        "max_quantity": 5,
+                        "unit": "piece"
+                    },
+                    "expected_provider": "local catalog"
+                }
+            ]
+        },
+        {
+            "id": "single-02-apple",
+            "file": "photos/single-02-apple.jpg",
+            "source": "real",
+            "categories": ["single_item"],
+            "items": [
+                {
+                    "name": "apple",
+                    "portion": {
+                        "min_quantity": 0.8,
+                        "max_quantity": 1.2,
+                        "unit": "piece"
+                    },
+                    "expected_provider": "local catalog"
+                }
+            ]
+        },
+        {
+            "id": "single-03-avocado",
+            "file": "photos/single-03-avocado.jpg",
+            "source": "real",
+            "categories": ["single_item"],
+            "items": [
+                {
+                    "name": "avocado",
+                    "portion": {
+                        "min_quantity": 0.8,
+                        "max_quantity": 1.2,
+                        "unit": "piece"
+                    },
+                    "expected_provider": "USDA"
+                }
+            ]
+        },
+        {
+            "id": "single-04-tomato-soup",
+            "file": "photos/single-04-tomato-soup.jpg",
+            "source": "real",
+            "categories": ["single_item"],
+            "items": [
+                {
+                    "name": "tomato soup",
+                    "portion": null,
+                    "expected_provider": "USDA"
+                },
+                {
+                    "name": "bread",
+                    "portion": null,
+                    "expected_provider": "local catalog"
+                }
+            ]
+        },
+        {
+            "id": "single-05-granola-bar",
+            "file": "photos/single-05-granola-bar.jpg",
+            "source": "real",
+            "categories": ["single_item"],
+            "items": [
+                {
+                    "name": "granola bar",
+                    "portion": {
+                        "min_quantity": 0.8,
+                        "max_quantity": 1.2,
+                        "unit": "piece"
+                    },
+                    "expected_provider": "Open Food Facts"
+                }
+            ]
+        },
+        {
+            "id": "mixed-01-boiled-egg-and-toast",
+            "file": "photos/mixed-01-boiled-egg-and-toast.jpg",
+            "source": "real",
+            "categories": ["mixed_plate"],
+            "items": [
+                {
+                    "name": "boiled egg",
+                    "portion": {
+                        "min_quantity": 0.8,
+                        "max_quantity": 1.2,
+                        "unit": "piece"
+                    },
+                    "expected_provider": "local catalog"
+                },
+                {
+                    "name": "toast",
+                    "portion": {
+                        "min_quantity": 1.6,
+                        "max_quantity": 2.4,
+                        "unit": "slice"
+                    },
+                    "expected_provider": "local catalog"
+                }
+            ]
+        },
+        {
+            "id": "mixed-02-pancakes",
+            "file": "photos/mixed-02-pancakes.jpg",
+            "source": "real",
+            "categories": ["mixed_plate"],
+            "items": [
+                {
+                    "name": "pancakes",
+                    "portion": {
+                        "min_quantity": 2.4,
+                        "max_quantity": 3.6,
+                        "unit": "piece"
+                    },
+                    "expected_provider": "USDA"
+                },
+                {
+                    "name": "melon",
+                    "portion": null,
+                    "expected_provider": "local catalog"
+                },
+                {
+                    "name": "whipped cream",
+                    "portion": null,
+                    "expected_provider": "USDA"
+                },
+                {
+                    "name": "maple syrup",
+                    "portion": null,
+                    "expected_provider": "USDA"
+                }
+            ]
+        },
+        {
+            "id": "mixed-03-full-english-breakfast",
+            "file": "photos/mixed-03-full-english-breakfast.jpg",
+            "source": "real",
+            "categories": ["mixed_plate"],
+            "items": [
+                {
+                    "name": "fried eggs",
+                    "portion": {
+                        "min_quantity": 1.6,
+                        "max_quantity": 2.4,
+                        "unit": "piece"
+                    },
+                    "expected_provider": "local catalog"
+                },
+                {
+                    "name": "sausages",
+                    "portion": {
+                        "min_quantity": 1.6,
+                        "max_quantity": 2.4,
+                        "unit": "piece"
+                    },
+                    "expected_provider": "USDA"
+                },
+                {
+                    "name": "bacon",
+                    "portion": {
+                        "min_quantity": 2,
+                        "max_quantity": 4,
+                        "unit": "slice"
+                    },
+                    "expected_provider": "USDA"
+                },
+                {
+                    "name": "baked beans",
+                    "portion": null,
+                    "expected_provider": "USDA"
+                },
+                {
+                    "name": "toast",
+                    "portion": {
+                        "min_quantity": 1.6,
+                        "max_quantity": 2.4,
+                        "unit": "slice"
+                    },
+                    "expected_provider": "local catalog"
+                }
+            ]
+        },
+        {
+            "id": "mixed-04-chicken-rice-vegetables",
+            "file": "photos/mixed-04-chicken-rice-vegetables.jpg",
+            "source": "real",
+            "categories": ["mixed_plate"],
+            "items": [
+                {
+                    "name": "chicken",
+                    "portion": {
+                        "min_quantity": 0.8,
+                        "max_quantity": 1.2,
+                        "unit": "piece"
+                    },
+                    "expected_provider": "local catalog"
+                },
+                {
+                    "name": "rice",
+                    "portion": null,
+                    "expected_provider": "local catalog"
+                },
+                {
+                    "name": "peas",
+                    "portion": null,
+                    "expected_provider": "USDA"
+                },
+                {
+                    "name": "carrots",
+                    "portion": null,
+                    "expected_provider": "USDA"
+                }
+            ]
+        },
+        {
+            "id": "mixed-05-salmon-sweet-potato",
+            "file": "photos/mixed-05-salmon-sweet-potato.jpg",
+            "source": "real",
+            "categories": ["mixed_plate"],
+            "items": [
+                {
+                    "name": "salmon",
+                    "portion": {
+                        "min_quantity": 0.8,
+                        "max_quantity": 1.2,
+                        "unit": "piece"
+                    },
+                    "expected_provider": "USDA"
+                },
+                {
+                    "name": "sweet potato",
+                    "portion": {
+                        "min_quantity": 4.5,
+                        "max_quantity": 7.5,
+                        "unit": "piece"
+                    },
+                    "expected_provider": "USDA"
+                }
+            ]
+        },
+        {
+            "id": "mixed-06-chicken-cobb-salad",
+            "file": "photos/mixed-06-chicken-cobb-salad.jpg",
+            "source": "real",
+            "categories": ["mixed_plate"],
+            "items": [
+                {
+                    "name": "grilled chicken",
+                    "portion": null,
+                    "expected_provider": "local catalog"
+                },
+                {
+                    "name": "boiled egg",
+                    "portion": {
+                        "min_quantity": 1.6,
+                        "max_quantity": 2.4,
+                        "unit": "piece"
+                    },
+                    "expected_provider": "local catalog"
+                },
+                {
+                    "name": "cherry tomatoes",
+                    "portion": null,
+                    "expected_provider": "USDA"
+                },
+                {
+                    "name": "feta cheese",
+                    "portion": null,
+                    "expected_provider": "USDA"
+                },
+                {
+                    "name": "bacon",
+                    "portion": null,
+                    "expected_provider": "USDA"
+                },
+                {
+                    "name": "lettuce",
+                    "portion": null,
+                    "expected_provider": "local catalog"
+                }
+            ]
+        },
+        {
+            "id": "mixed-07-macaroni-and-mashed-potato",
+            "file": "photos/mixed-07-macaroni-and-mashed-potato.jpg",
+            "source": "real",
+            "categories": ["mixed_plate"],
+            "items": [
+                {
+                    "name": "macaroni and cheese",
+                    "portion": null,
+                    "expected_provider": "USDA"
+                },
+                {
+                    "name": "mashed potatoes",
+                    "portion": null,
+                    "expected_provider": "USDA"
+                }
+            ]
+        },
+        {
+            "id": "sauced-01-chili-over-noodles",
+            "file": "photos/sauced-01-chili-over-noodles.jpg",
+            "source": "real",
+            "categories": ["sauced_hidden"],
+            "items": [
+                {
+                    "name": "chili",
+                    "portion": null,
+                    "expected_provider": "model_estimate"
+                },
+                {
+                    "name": "noodles",
+                    "portion": null,
+                    "expected_provider": "local catalog"
+                }
+            ]
+        },
+        {
+            "id": "sauced-02-lasagna",
+            "file": "photos/sauced-02-lasagna.jpg",
+            "source": "real",
+            "categories": ["sauced_hidden"],
+            "items": [
+                {
+                    "name": "lasagna",
+                    "portion": {
+                        "min_quantity": 0.8,
+                        "max_quantity": 1.2,
+                        "unit": "piece"
+                    },
+                    "expected_provider": "model_estimate"
+                }
+            ]
+        },
+        {
+            "id": "sauced-03-spaghetti-and-meatballs",
+            "file": "photos/sauced-03-spaghetti-and-meatballs.jpg",
+            "source": "real",
+            "categories": ["sauced_hidden"],
+            "items": [
+                {
+                    "name": "spaghetti",
+                    "portion": null,
+                    "expected_provider": "local catalog"
+                },
+                {
+                    "name": "meatballs",
+                    "portion": {
+                        "min_quantity": 2.4,
+                        "max_quantity": 3.6,
+                        "unit": "piece"
+                    },
+                    "expected_provider": "USDA"
+                },
+                {
+                    "name": "water",
+                    "portion": null,
+                    "expected_provider": "local catalog"
+                }
+            ]
+        },
+        {
+            "id": "sauced-04-chicken-curry-and-rice",
+            "file": "photos/sauced-04-chicken-curry-and-rice.jpg",
+            "source": "real",
+            "categories": ["sauced_hidden"],
+            "items": [
+                {
+                    "name": "chicken curry",
+                    "portion": null,
+                    "expected_provider": "model_estimate"
+                },
+                {
+                    "name": "vegetable curry",
+                    "portion": null,
+                    "expected_provider": "model_estimate"
+                },
+                {
+                    "name": "rice",
+                    "portion": null,
+                    "expected_provider": "local catalog"
+                }
+            ]
+        },
+        {
+            "id": "restaurant-01-burger-and-fries",
+            "file": "photos/restaurant-01-burger-and-fries.jpg",
+            "source": "real",
+            "categories": ["restaurant"],
+            "items": [
+                {
+                    "name": "burger",
+                    "portion": {
+                        "min_quantity": 0.8,
+                        "max_quantity": 1.2,
+                        "unit": "piece"
+                    },
+                    "expected_provider": "USDA"
+                },
+                {
+                    "name": "french fries",
+                    "portion": null,
+                    "expected_provider": "USDA"
+                },
+                {
+                    "name": "grilled chicken",
+                    "portion": null,
+                    "expected_provider": "local catalog"
+                },
+                {
+                    "name": "water",
+                    "portion": null,
+                    "expected_provider": "local catalog"
+                }
+            ]
+        },
+        {
+            "id": "restaurant-02-pepperoni-pizza",
+            "file": "photos/restaurant-02-pepperoni-pizza.jpg",
+            "source": "real",
+            "categories": ["restaurant"],
+            "items": [
+                {
+                    "name": "pepperoni pizza",
+                    "portion": null,
+                    "expected_provider": "model_estimate"
+                }
+            ]
+        },
+        {
+            "id": "restaurant-03-ramen",
+            "file": "photos/restaurant-03-ramen.jpg",
+            "source": "real",
+            "categories": ["restaurant"],
+            "items": [
+                {
+                    "name": "ramen",
+                    "portion": null,
+                    "expected_provider": "model_estimate"
+                }
+            ]
+        },
+        {
+            "id": "restaurant-04-taco",
+            "file": "photos/restaurant-04-taco.jpg",
+            "source": "real",
+            "categories": ["restaurant"],
+            "items": [
+                {
+                    "name": "taco",
+                    "portion": {
+                        "min_quantity": 0.8,
+                        "max_quantity": 1.2,
+                        "unit": "piece"
+                    },
+                    "expected_provider": "model_estimate"
+                }
+            ]
+        },
+        {
+            "id": "restaurant-05-sushi-platter",
+            "file": "photos/restaurant-05-sushi-platter.jpg",
+            "source": "real",
+            "categories": ["restaurant"],
+            "items": [
+                {
+                    "name": "sushi",
+                    "portion": {
+                        "min_quantity": 4.8,
+                        "max_quantity": 7.2,
+                        "unit": "piece"
+                    },
+                    "expected_provider": "model_estimate"
+                },
+                {
+                    "name": "white wine",
+                    "portion": null,
+                    "expected_provider": "USDA"
+                },
+                {
+                    "name": "water",
+                    "portion": null,
+                    "expected_provider": "local catalog"
+                }
+            ]
+        },
+        {
+            "id": "restaurant-06-sandwich-and-waffle-fries",
+            "file": "photos/restaurant-06-sandwich-and-waffle-fries.jpg",
+            "source": "real",
+            "categories": ["restaurant"],
+            "items": [
+                {
+                    "name": "sandwich",
+                    "portion": null,
+                    "expected_provider": "USDA"
+                },
+                {
+                    "name": "waffle fries",
+                    "portion": null,
+                    "expected_provider": "USDA"
+                },
+                {
+                    "name": "cherry tomato",
+                    "portion": {
+                        "min_quantity": 0.8,
+                        "max_quantity": 1.2,
+                        "unit": "piece"
+                    },
+                    "expected_provider": "USDA"
+                }
+            ]
+        },
+        {
+            "id": "restaurant-07-steak-and-fries",
+            "file": "photos/restaurant-07-steak-and-fries.jpg",
+            "source": "real",
+            "categories": ["restaurant"],
+            "items": [
+                {
+                    "name": "steak",
+                    "portion": {
+                        "min_quantity": 0.8,
+                        "max_quantity": 1.2,
+                        "unit": "piece"
+                    },
+                    "expected_provider": "USDA"
+                },
+                {
+                    "name": "french fries",
+                    "portion": null,
+                    "expected_provider": "USDA"
+                },
+                {
+                    "name": "salad",
+                    "portion": null,
+                    "expected_provider": "local catalog"
+                }
+            ]
+        },
+        {
+            "id": "packaged-01-cola-can",
+            "file": "photos/packaged-01-cola-can.jpg",
+            "source": "real",
+            "categories": ["packaged_label"],
+            "items": [
+                {
+                    "name": "cola",
+                    "portion": {
+                        "min_quantity": 300,
+                        "max_quantity": 360,
+                        "unit": "ml"
+                    },
+                    "expected_provider": "Open Food Facts"
+                }
+            ]
+        },
+        {
+            "id": "packaged-02-orange-drink-bottle",
+            "file": "photos/packaged-02-orange-drink-bottle.jpg",
+            "source": "real",
+            "categories": ["packaged_label"],
+            "items": [
+                {
+                    "name": "orange juice",
+                    "portion": null,
+                    "expected_provider": "Open Food Facts"
+                }
+            ]
+        },
+        {
+            "id": "drinks-01-orange-juice",
+            "file": "photos/drinks-01-orange-juice.jpg",
+            "source": "real",
+            "categories": ["drinks"],
+            "items": [
+                {
+                    "name": "orange juice",
+                    "portion": null,
+                    "expected_provider": "USDA"
+                }
+            ]
+        },
+        {
+            "id": "drinks-02-coffee-and-cookies",
+            "file": "photos/drinks-02-coffee-and-cookies.jpg",
+            "source": "real",
+            "categories": ["drinks"],
+            "items": [
+                {
+                    "name": "black coffee",
+                    "portion": null,
+                    "expected_provider": "local catalog"
+                },
+                {
+                    "name": "cookies",
+                    "portion": {
+                        "min_quantity": 1.6,
+                        "max_quantity": 2.4,
+                        "unit": "piece"
+                    },
+                    "expected_provider": "USDA"
+                }
+            ]
+        },
+        {
+            "id": "poorly-lit-01-chicken-caesar-salad",
+            "file": "photos/poorly-lit-01-chicken-caesar-salad.jpg",
+            "source": "real",
+            "categories": ["poorly_lit"],
+            "items": [
+                {
+                    "name": "chicken caesar salad",
+                    "portion": null,
+                    "expected_provider": "model_estimate"
+                },
+                {
+                    "name": "red wine",
+                    "portion": null,
+                    "expected_provider": "USDA"
+                }
+            ]
+        },
+        {
+            "id": "poorly-lit-02-schnitzel-and-fries",
+            "file": "photos/poorly-lit-02-schnitzel-and-fries.jpg",
+            "source": "real",
+            "categories": ["poorly_lit"],
+            "items": [
+                {
+                    "name": "schnitzel",
+                    "portion": null,
+                    "expected_provider": "model_estimate"
+                },
+                {
+                    "name": "french fries",
+                    "portion": null,
+                    "expected_provider": "USDA"
+                },
+                {
+                    "name": "coleslaw",
+                    "portion": null,
+                    "expected_provider": "USDA"
+                }
+            ]
+        },
+        {
+            "id": "partial-01-chocolate-cake",
+            "file": "photos/partial-01-chocolate-cake.jpg",
+            "source": "real",
+            "categories": ["partially_eaten"],
+            "items": [
+                {
+                    "name": "chocolate cake",
+                    "portion": {
+                        "min_quantity": 0.6,
+                        "max_quantity": 1.1,
+                        "unit": "slice"
+                    },
+                    "expected_provider": "USDA"
+                }
+            ]
+        }
+    ]
+}
