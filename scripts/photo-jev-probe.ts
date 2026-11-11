@@ -252,13 +252,15 @@ async function jevDecisions(input: {
     };
 }
 
-/** Probability-of-yes extraction for a Noul answer. The Decisions API
- * answer shapes are recorded raw in results.json regardless; this
- * cascade covers the documented fields (probability /
- * probabilities{true,yes} / boolean value+confidence). Returns null
- * when nothing parseable is present. */
+/** Probability-of-yes extraction for a Noul answer. The live shape
+ * (observed in the probe's first run and kept raw in results.json)
+ * is {"type":"noul","noul":<probability>}; the remaining cascade
+ * covers the other documented fields (probability /
+ * probabilities{true,yes} / boolean value+confidence) defensively.
+ * Returns null when nothing parseable is present. */
 function noulProbability(answer: any): number | null {
     if (!answer || typeof answer !== "object") return null;
+    if (typeof answer.noul === "number") return answer.noul;
     if (typeof answer.probability === "number") return answer.probability;
     const probs = answer.probabilities;
     if (probs && typeof probs === "object") {
