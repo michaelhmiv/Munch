@@ -1037,20 +1037,52 @@ body.app-page {
     color: #176b3a;
 }
 
+/* Bottom bar, treatment "Refined Line" (approved Nov 11): panel
+   ground, hairline icons at a 1.5 stroke, and the active tab marked
+   by green + a bold label + a single gold dot under it — the pill
+   background and underline the bar shipped with are gone. */
 .mobile-bottom-nav {
-    background: #f6f1e7;
+    background: #fffdf7;
     border-top: 1px solid #d8cdb6;
 }
 
 .mobile-bottom-nav a {
     font-family: Georgia, "Times New Roman", Times, serif;
     color: #5d5344;
+    font-weight: 400;
+    position: relative;
+    gap: 3px;
+    padding: 9px 0 11px;
+}
+
+.mobile-bottom-nav a .tab-icon {
+    display: block;
+    line-height: 0;
+}
+
+.mobile-bottom-nav a .tab-icon svg {
+    display: block;
+    width: 23px;
+    height: 23px;
 }
 
 .mobile-bottom-nav a.is-active {
+    background: transparent;
     color: #176b3a;
-    text-decoration: underline;
-    text-underline-offset: 4px;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.mobile-bottom-nav a.is-active::after {
+    content: "";
+    position: absolute;
+    bottom: 5px;
+    left: 50%;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #8a6d3b;
+    transform: translateX(-50%);
 }
 
 /* ---------- Shared chrome: buttons ---------- */

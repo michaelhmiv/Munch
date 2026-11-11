@@ -81,42 +81,79 @@ export function takeModuleOffNotice() {
     }
 }
 
+// Bottom-bar treatment "Refined Line" (approved Nov 11): the bar's
+// icons are authored line SVGs at a 1.5 stroke — sun, calendar, book,
+// basket, jar, dots — replacing the unicode glyphs the bar shipped
+// with. The sidebar keeps its glyph icons; only the bottom bar was
+// re-treated. The shipped anchors in app.html and pantry.html carry
+// this same markup inline (renderNav reuses them), and
+// feature-nav.test.ts pins all three copies together.
+const lineIcon = (inner) =>
+    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+
+export const BOTTOM_NAV_ICONS = {
+    today: lineIcon(
+        '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+    ),
+    plan: lineIcon(
+        '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+    ),
+    recipes: lineIcon(
+        '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5v14z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/>',
+    ),
+    groceries: lineIcon(
+        '<path d="M5 8h14l-1.3 11a2 2 0 0 1-2 1.8H8.3a2 2 0 0 1-2-1.8L5 8z"/><path d="M8.5 10V6.5a3.5 3.5 0 0 1 7 0V10"/>',
+    ),
+    pantry: lineIcon(
+        '<path d="M6 3h12M7 3v3M17 3v3"/><path d="M6.5 6h11V20a1.5 1.5 0 0 1-1.5 1.5H8A1.5 1.5 0 0 1 6.5 20V6z"/><path d="M6.5 11h11"/>',
+    ),
+    more: lineIcon(
+        '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
+    ),
+};
+
 // The bottom nav: the six destinations of the navigation brief, in
 // order. `module: null` marks the spine (T2) — always rendered.
 export const BOTTOM_NAV_MODEL = [
-    { route: "today", href: "/app", icon: "◉", label: "Today", module: null },
+    {
+        route: "today",
+        href: "/app",
+        iconSvg: BOTTOM_NAV_ICONS.today,
+        label: "Today",
+        module: null,
+    },
     {
         route: "plan",
         href: "/app/plan",
-        icon: "□",
+        iconSvg: BOTTOM_NAV_ICONS.plan,
         label: "Plan",
         module: "plan",
     },
     {
         route: "recipes",
         href: "/app/recipes",
-        icon: "◇",
+        iconSvg: BOTTOM_NAV_ICONS.recipes,
         label: "Recipes",
         module: "recipes",
     },
     {
         route: "groceries",
         href: "/app/groceries",
-        icon: "✓",
+        iconSvg: BOTTOM_NAV_ICONS.groceries,
         label: "Groceries",
         module: "groceries",
     },
     {
         route: "pantry",
         href: "/app/pantry",
-        icon: "▦",
+        iconSvg: BOTTOM_NAV_ICONS.pantry,
         label: "Pantry",
         module: "pantry",
     },
     {
         route: "more",
         href: "/app/more",
-        icon: "•••",
+        iconSvg: BOTTOM_NAV_ICONS.more,
         label: "More",
         module: null,
     },
@@ -189,8 +226,18 @@ function createNavAnchor(entry, sidebar) {
     anchor.dataset.route = entry.route;
     anchor.href = entry.href;
     const icon = document.createElement("span");
-    if (sidebar) icon.className = "nav-icon";
-    icon.textContent = entry.icon;
+    if (sidebar) {
+        icon.className = "nav-icon";
+        icon.textContent = entry.icon;
+    } else if (entry.iconSvg) {
+        // Bottom bar: the authored line SVG, decorative next to the
+        // visible label, so it leaves the accessibility tree.
+        icon.className = "tab-icon";
+        icon.setAttribute("aria-hidden", "true");
+        icon.innerHTML = entry.iconSvg;
+    } else {
+        icon.textContent = entry.icon;
+    }
     const label = document.createElement("span");
     label.textContent = entry.label;
     anchor.append(icon, label);

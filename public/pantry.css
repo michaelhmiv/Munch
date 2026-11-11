@@ -770,9 +770,13 @@ button:disabled {
             max(7px, env(safe-area-inset-bottom))
             max(8px, env(safe-area-inset-left));
         border-top: 1px solid var(--line-strong);
-        background: var(--paper);
+        background: var(--paper-card);
     }
 
+    /* Bottom bar, treatment "Refined Line" (approved Nov 11),
+       mirrored from app-overrides.css: hairline icons at a 1.5
+       stroke, active tab in green with a bold label and a single
+       gold dot under it — no pill, no underline. */
     .mobile-bottom-nav a {
         display: grid;
         min-width: 0;
@@ -781,18 +785,40 @@ button:disabled {
         border-radius: 10px;
         color: var(--muted);
         font-size: 11px;
-        font-weight: 700;
+        font-weight: 400;
         white-space: nowrap;
         text-decoration: none;
+        position: relative;
+        gap: 3px;
+        padding: 9px 0 11px;
     }
 
-    .mobile-bottom-nav a span:first-child {
-        font-size: 1rem;
+    .mobile-bottom-nav a .tab-icon {
+        display: block;
+        line-height: 0;
+    }
+
+    .mobile-bottom-nav a .tab-icon svg {
+        display: block;
+        width: 23px;
+        height: 23px;
     }
 
     .mobile-bottom-nav a.is-active {
         color: var(--green);
-        text-decoration: underline;
-        text-underline-offset: 4px;
+        font-weight: 700;
+        text-decoration: none;
+    }
+
+    .mobile-bottom-nav a.is-active::after {
+        content: "";
+        position: absolute;
+        bottom: 5px;
+        left: 50%;
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: #8a6d3b;
+        transform: translateX(-50%);
     }
 }
