@@ -134,6 +134,15 @@ const REASONING_OMIT_MODELS = parseSlugList(
 const REASONING_MINIMAL_MODELS = parseSlugList(
     process.env.BAKEOFF_REASONING_MINIMAL,
 );
+/** Schema accommodation (same pattern, one level down): Google's
+ * structured-output subset rejects the production schema's
+ * `exclusiveMinimum` keyword with INVALID_ARGUMENT. For slugs in
+ * BAKEOFF_SCHEMA_MINIMUM the harness rewrites ONLY that keyword in
+ * the outgoing schema (exclusiveMinimum: 0 -> minimum: 0); prompt,
+ * image payload, and every other schema constraint stay identical. */
+const SCHEMA_MINIMUM_MODELS = parseSlugList(
+    process.env.BAKEOFF_SCHEMA_MINIMUM,
+);
 function accommodationText(model: string, shape: ReasoningShape): string {
     return `Bake-off-only request accommodation: this endpoint rejects the production reasoning:{enabled:false}, so the harness rewrote ONLY the reasoning field of the outgoing request (shape: ${
         shape === "minimal"
@@ -147,6 +156,12 @@ for (const slug of REASONING_OMIT_MODELS) {
 for (const slug of REASONING_MINIMAL_MODELS) {
     REQUEST_ACCOMMODATIONS[slug] ??= accommodationText(slug, "minimal");
 }
+for (const slug of SCHEMA_MINIMUM_MODELS) {
+    const schemaNote = `Bake-off-only schema accommodation: this endpoint's structured-output implementation rejects the production schema's exclusiveMinimum keyword (HTTP 400 INVALID_ARGUMENT), so the harness rewrote ONLY that keyword in the outgoing schema (exclusiveMinimum: 0 -> minimum: 0). Prompt, image payload, and all other schema constraints identical; no production code changed.`;
+    REQUEST_ACCOMMODATIONS[slug] = REQUEST_ACCOMMODATIONS[slug]
+        ? `${REQUEST_ACCOMMODATIONS[slug]} ${schemaNote}`
+        : schemaNote;
+}
 
 function reasoningShapeFor(model: string): ReasoningShape | null {
     if (model === GLM_MODEL) return GLM_REASONING_SHAPE;
@@ -155,13 +170,42 @@ function reasoningShapeFor(model: string): ReasoningShape | null {
     return null;
 }
 
-function rewriteReasoningField(body: string, shape: ReasoningShape): string {
+function replaceExclusiveMinimum(node: unknown): void {
+    if (Array.isArray(node)) {
+        for (const child of node) replaceExclusiveMinimum(child);
+        return;
+    }
+    if (node && typeof node === "object") {
+        const record = node as Record<string, unknown>;
+        if (typeof record.exclusiveMinimum === "number") {
+            record.minimum = record.exclusiveMinimum;
+            delete record.exclusiveMinimum;
+        }
+        for (const child of Object.values(record)) {
+            replaceExclusiveMinimum(child);
+        }
+    }
+}
+
+function rewriteRequestBody(body: string, model: string): string {
     try {
         const parsed = JSON.parse(body) as Record<string, unknown>;
+        const shape = reasoningShapeFor(model);
         if (shape === "minimal") {
             parsed.reasoning = { effort: "minimal" };
-        } else {
+        } else if (shape === "omit") {
             delete parsed.reasoning;
+        }
+        if (SCHEMA_MINIMUM_MODELS.has(model)) {
+            const responseFormat = parsed.response_format as
+                | Record<string, unknown>
+                | undefined;
+            const jsonSchema = responseFormat?.json_schema as
+                | Record<string, unknown>
+                | undefined;
+            if (jsonSchema?.schema) {
+                replaceExclusiveMinimum(jsonSchema.schema);
+            }
         }
         return JSON.stringify(parsed);
     } catch {
@@ -173,8 +217,9 @@ function rewriteReasoningField(body: string, shape: ReasoningShape): string {
  * wrapped with the request-rewrite above for accommodated slugs. */
 function bakeoffFetcher(model: string, sink: CallObservation[]) {
     const inner = observingFetcher(sink);
-    const shape = reasoningShapeFor(model);
-    if (!shape) return inner;
+    if (!reasoningShapeFor(model) && !SCHEMA_MINIMUM_MODELS.has(model)) {
+        return inner;
+    }
     return async (
         input: RequestInfo | URL,
         init?: RequestInit,
@@ -182,7 +227,7 @@ function bakeoffFetcher(model: string, sink: CallObservation[]) {
         if (init && typeof init.body === "string") {
             return inner(input, {
                 ...init,
-                body: rewriteReasoningField(init.body, shape),
+                body: rewriteRequestBody(init.body, model),
             });
         }
         return inner(input, init);
