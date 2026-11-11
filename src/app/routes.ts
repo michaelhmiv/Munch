@@ -57,11 +57,13 @@ import { addTextToPhotoDraft } from "../meal-photo/draft-add.js";
 import { parseDraftAddTextWithModel } from "../meal-photo/draft-add-parse.js";
 import { createMealPhotoDraft } from "../meal-photo/pipeline.js";
 import {
-    chooseMealPhotoCandidates,
     identifyMealPhoto,
     mealPhotoVisionConfig,
     MealPhotoNoFoodError,
 } from "../meal-photo/vision.js";
+import { decisionsConfig } from "../decisions/config.js";
+import { evaluateMealPhotoGate } from "../decisions/gate.js";
+import { chooseCandidatesForMealPhoto } from "../decisions/decider.js";
 import { RecipeImportError } from "../recipe-import/fetch.js";
 import { previewRecipeUrl } from "../recipe-import/service.js";
 import { getWebsiteRecipeImportSemanticResolver } from "../recipe-import/semantic-resolver.js";
@@ -1393,7 +1395,7 @@ export function createAppRouter(): Hono {
                     ...(visionConfig
                         ? {
                               chooseCandidates: (requests) =>
-                                  chooseMealPhotoCandidates(
+                                  chooseCandidatesForMealPhoto(
                                       requests,
                                       visionConfig,
                                   ),
@@ -1719,6 +1721,22 @@ export function createAppRouter(): Hono {
             console.info(
                 `[meal_photo] phase=receive status=success bytes=${bytes.byteLength} duration_ms=${Math.max(0, Date.now() - requestStartedAt)}`,
             );
+            // S1 front-door gate (model-integration brief): one
+            // Decisions-API call before the Ember identifier. Ships
+            // OFF behind MUNCH_JEV_ENABLED; fail-open on any doubt —
+            // the only action is a confident not-food verdict, thrown
+            // as MealPhotoNoFoodError so the catch below serializes it
+            // exactly like an identifier no-food result.
+            const decisionsCfg = decisionsConfig();
+            if (decisionsCfg?.gateEnabled) {
+                const gate = await evaluateMealPhotoGate(
+                    { mimeType: file.type, bytes },
+                    decisionsCfg,
+                );
+                if (gate.action === "no_food") {
+                    throw new MealPhotoNoFoodError();
+                }
+            }
             const vision = await identifyMealPhoto(
                 {
                     mimeType: file.type,
@@ -1739,7 +1757,7 @@ export function createAppRouter(): Hono {
                 groundingDeps: {
                     search: (query, limit) => foodSearch.search(query, limit),
                     chooseCandidates: (requests) =>
-                        chooseMealPhotoCandidates(requests, visionConfig),
+                        chooseCandidatesForMealPhoto(requests, visionConfig),
                     estimateNutrients: (requests) =>
                         estimateMealPhotoNutrients(requests, visionConfig),
                 },
