@@ -8,8 +8,8 @@ export function createAccountLifecycleRouter(): Hono {
 
     router.delete(
         "/api/app/account",
-        requireSameOrigin,
         requireWebSession,
+        requireSameOrigin,
         async (c) => {
             const body = (await c.req.json().catch(() => ({}))) as {
                 confirmation?: unknown;

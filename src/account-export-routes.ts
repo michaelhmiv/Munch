@@ -9,15 +9,15 @@ export function createAccountExportRouter(): Hono {
 
     router.post(
         "/api/app/export",
-        requireSameOrigin,
         requireWebSession,
+        requireSameOrigin,
         async (c) => c.json(await exportAccountData(c.get("munchUserId"))),
     );
 
     router.post(
         "/api/app/export/meals",
-        requireSameOrigin,
         requireWebSession,
+        requireSameOrigin,
         async (c) => {
             const result = await exportMeals(c.get("munchUserId"));
             return c.json({ count: result.count, url: result.url ?? null });
