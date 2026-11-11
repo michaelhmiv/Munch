@@ -229,6 +229,20 @@ function nonnegativeNumber(value: unknown): number | undefined {
     return parsed;
 }
 
+/**
+ * The client-reported photo prepare time (meal-photo submit flow),
+ * rendered as a `[meal_photo] phase=receive` log field. Telemetry
+ * only: the value arrives from the client, so it is accepted solely
+ * as a digits-only non-negative integer string and is never used
+ * for logic — anything else renders as no field at all.
+ */
+export function clientPrepareMsLogField(value: unknown): string {
+    if (typeof value !== "string" || !/^\d+$/.test(value)) return "";
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed)) return "";
+    return ` client_prepare_ms=${parsed}`;
+}
+
 function privateJson(c: Context, data: unknown) {
     return c.json(data, 200, {
         "Cache-Control": "no-store, private",
@@ -1719,7 +1733,7 @@ export function createAppRouter(): Hono {
         try {
             const bytes = new Uint8Array(await file.arrayBuffer());
             console.info(
-                `[meal_photo] phase=receive status=success bytes=${bytes.byteLength} duration_ms=${Math.max(0, Date.now() - requestStartedAt)}`,
+                `[meal_photo] phase=receive status=success bytes=${bytes.byteLength} duration_ms=${Math.max(0, Date.now() - requestStartedAt)}${clientPrepareMsLogField(form.client_prepare_ms)}`,
             );
             // S1 front-door gate (model-integration brief): one
             // Decisions-API call before the Ember identifier. Ships

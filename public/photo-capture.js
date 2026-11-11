@@ -139,6 +139,206 @@ export function installPhotoCapture() {
     });
 }
 
+/**
+ * How much of a file's head the dimension probe reads. PNG and WebP
+ * carry dimensions in the first 32 bytes; JPEG's SOF segment can sit
+ * behind APPn blocks (EXIF thumbnails included), so the window is
+ * generous — but bounded: a header not found inside it counts as
+ * "unknown" and the caller falls back to a full decode.
+ */
+export const IMAGE_HEADER_PROBE_BYTES = 65536;
+
+function saneDimensions(width, height) {
+    if (
+        !Number.isFinite(width) ||
+        !Number.isFinite(height) ||
+        width < 1 ||
+        height < 1 ||
+        width > 100000 ||
+        height > 100000
+    ) {
+        return null;
+    }
+    return { width, height };
+}
+
+/** Start-Of-Frame markers carry dimensions; C4 (DHT), C8 (JPG) and
+ * CC (DAC) sit in the same C0–CF range but do not. */
+function isJpegSofMarker(marker) {
+    return (
+        marker >= 0xc0 &&
+        marker <= 0xcf &&
+        marker !== 0xc4 &&
+        marker !== 0xc8 &&
+        marker !== 0xcc
+    );
+}
+
+function parseJpegDimensions(bytes) {
+    let offset = 2; // skip SOI (FF D8)
+    while (offset + 1 < bytes.length) {
+        if (bytes[offset] !== 0xff) return null;
+        // Markers may be preceded by any number of FF fill bytes.
+        let markerAt = offset + 1;
+        while (markerAt < bytes.length && bytes[markerAt] === 0xff) {
+            markerAt += 1;
+        }
+        if (markerAt >= bytes.length) return null;
+        const marker = bytes[markerAt];
+        offset = markerAt + 1;
+        // Standalone markers (SOI, EOI, TEM, RSTn) carry no length.
+        if (
+            marker === 0xd8 ||
+            marker === 0xd9 ||
+            marker === 0x01 ||
+            (marker >= 0xd0 && marker <= 0xd7)
+        ) {
+            continue;
+        }
+        // Start of scan: entropy data follows; dimensions never do.
+        if (marker === 0xda) return null;
+        if (offset + 1 >= bytes.length) return null;
+        const segmentLength = (bytes[offset] << 8) | bytes[offset + 1];
+        if (segmentLength < 2) return null;
+        if (isJpegSofMarker(marker)) {
+            // length(2) precision(1) height(2) width(2)
+            if (offset + 6 >= bytes.length) return null;
+            const height = (bytes[offset + 3] << 8) | bytes[offset + 4];
+            const width = (bytes[offset + 5] << 8) | bytes[offset + 6];
+            return saneDimensions(width, height);
+        }
+        offset += segmentLength;
+    }
+    return null;
+}
+
+function parsePngDimensions(bytes) {
+    // 8-byte signature, then IHDR: length(4) "IHDR" width(4) height(4).
+    if (bytes.length < 24) return null;
+    const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    for (let i = 0; i < signature.length; i += 1) {
+        if (bytes[i] !== signature[i]) return null;
+    }
+    if (
+        bytes[12] !== 0x49 || // I
+        bytes[13] !== 0x48 || // H
+        bytes[14] !== 0x44 || // D
+        bytes[15] !== 0x52 // R
+    ) {
+        return null;
+    }
+    const width =
+        (bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19];
+    const height =
+        (bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23];
+    return saneDimensions(width >>> 0, height >>> 0);
+}
+
+function parseWebpDimensions(bytes) {
+    // "RIFF" size(4) "WEBP", then the first chunk decides the layout.
+    if (bytes.length < 16) return null;
+    if (
+        bytes[0] !== 0x52 || // R
+        bytes[1] !== 0x49 || // I
+        bytes[2] !== 0x46 || // F
+        bytes[3] !== 0x46 || // F
+        bytes[8] !== 0x57 || // W
+        bytes[9] !== 0x45 || // E
+        bytes[10] !== 0x42 || // B
+        bytes[11] !== 0x50 // P
+    ) {
+        return null;
+    }
+    const chunk = String.fromCharCode(
+        bytes[12],
+        bytes[13],
+        bytes[14],
+        bytes[15],
+    );
+    if (chunk === "VP8X") {
+        if (bytes.length < 30) return null;
+        const width = (bytes[24] | (bytes[25] << 8) | (bytes[26] << 16)) + 1;
+        const height = (bytes[27] | (bytes[28] << 8) | (bytes[29] << 16)) + 1;
+        return saneDimensions(width, height);
+    }
+    if (chunk === "VP8L") {
+        if (bytes.length < 25 || bytes[20] !== 0x2f) return null;
+        const b1 = bytes[22];
+        const width = (bytes[21] | ((b1 & 0x3f) << 8)) + 1;
+        const height =
+            ((b1 >> 6) | (bytes[23] << 2) | ((bytes[24] & 0x0f) << 10)) + 1;
+        return saneDimensions(width, height);
+    }
+    if (chunk === "VP8 ") {
+        // Lossy bitstream: 3-byte frame tag, 9D 01 2A start code,
+        // then 14-bit width/height (top 2 bits are scale factors).
+        if (bytes.length < 30) return null;
+        if (bytes[23] !== 0x9d || bytes[24] !== 0x01 || bytes[25] !== 0x2a) {
+            return null;
+        }
+        const width = (bytes[26] | (bytes[27] << 8)) & 0x3fff;
+        const height = (bytes[28] | (bytes[29] << 8)) & 0x3fff;
+        return saneDimensions(width, height);
+    }
+    return null;
+}
+
+function parseGifDimensions(bytes) {
+    if (bytes.length < 10) return null;
+    if (
+        bytes[0] !== 0x47 || // G
+        bytes[1] !== 0x49 || // I
+        bytes[2] !== 0x46 || // F
+        bytes[3] !== 0x38 // 8
+    ) {
+        return null;
+    }
+    const width = bytes[6] | (bytes[7] << 8);
+    const height = bytes[8] | (bytes[9] << 8);
+    return saneDimensions(width, height);
+}
+
+/**
+ * Parse pixel dimensions out of raw header bytes — no decode. JPEG
+ * dimensions live in a Start-Of-Frame segment, PNG's in IHDR,
+ * WebP's in its VP8/VP8L/VP8X chunk, GIF's in the logical screen
+ * descriptor. Returns null for anything unrecognized or truncated.
+ */
+export function parseImageDimensions(bytes) {
+    if (!bytes || bytes.length < 2) return null;
+    if (bytes[0] === 0xff && bytes[1] === 0xd8) {
+        return parseJpegDimensions(bytes);
+    }
+    if (bytes[0] === 0x89 && bytes[1] === 0x50) {
+        return parsePngDimensions(bytes);
+    }
+    if (bytes[0] === 0x52 && bytes[1] === 0x49) {
+        return parseWebpDimensions(bytes);
+    }
+    if (bytes[0] === 0x47 && bytes[1] === 0x49) {
+        return parseGifDimensions(bytes);
+    }
+    return null;
+}
+
+/**
+ * An image file's pixel dimensions, read from its header bytes
+ * alone. Decoding a full-resolution phone frame just to learn its
+ * size is the expensive step this avoids (the downscale fast path
+ * feeds these dimensions back into the decoder as resize options).
+ * Returns null when the header is unreadable or unrecognized.
+ */
+export async function probeImageDimensions(file) {
+    if (!file || typeof file.slice !== "function") return null;
+    try {
+        const head = file.slice(0, IMAGE_HEADER_PROBE_BYTES);
+        const bytes = new Uint8Array(await head.arrayBuffer());
+        return parseImageDimensions(bytes);
+    } catch {
+        return null;
+    }
+}
+
 /** Fit (width, height) inside a long-edge cap, preserving aspect. */
 export function fitWithinEdge(width, height, maxEdge) {
     const longest = Math.max(width, height);
@@ -158,6 +358,16 @@ export function fitWithinEdge(width, height, maxEdge) {
  * long edge capped at PHOTO_DOWNSCALE_MAX_EDGE, re-encoded as JPEG.
  * Any failure — undecodable image, no canvas, a result that is not
  * actually smaller — returns the original file untouched.
+ *
+ * Fast path: the header probe learns the frame's dimensions WITHOUT
+ * decoding it, and the decoder is then handed those dimensions as
+ * resize options, so scaling happens DURING the decode. The previous
+ * shape decoded the full-resolution frame first and scaled after —
+ * on a phone that full-res decode inside the WebView was the whole
+ * wait (Nov 11 production: the server answered a meal-photo POST in
+ * 276 ms while the user felt ~10 s). If the probe or the resize
+ * decode is unavailable, the flow falls back to the full decode,
+ * and from there to the original file, exactly as before.
  */
 export async function downscaleImageFile(
     file,
@@ -171,9 +381,36 @@ export async function downscaleImageFile(
         return file;
     }
     try {
-        const bitmap = await createImageBitmap(file);
+        const probed = await probeImageDimensions(file);
+        const probedFit = probed
+            ? fitWithinEdge(probed.width, probed.height, maxEdge)
+            : null;
+        // Known dimensions, already inside the cap: no decode at all.
+        if (probedFit && !probedFit.scaled) return file;
+        let bitmap = null;
+        let decoderScaled = false;
+        if (probedFit?.scaled) {
+            try {
+                bitmap = await createImageBitmap(file, {
+                    resizeWidth: probedFit.width,
+                    resizeHeight: probedFit.height,
+                    resizeQuality: "high",
+                });
+                decoderScaled = true;
+            } catch {
+                // Resize decode unsupported or rejected — the plain
+                // full decode below is the standing fallback.
+                bitmap = null;
+            }
+        }
+        bitmap ??= await createImageBitmap(file);
         const fitted = fitWithinEdge(bitmap.width, bitmap.height, maxEdge);
-        if (!fitted.scaled) {
+        // A decoder-scaled bitmap sits exactly AT the cap, so its own
+        // fit reads "not scaled" — that is the success case, not the
+        // pass-through case. The canvas draw below uses `fitted`,
+        // computed from the bitmap's real size, so a decoder that
+        // ignored the resize options still lands on the right size.
+        if (!fitted.scaled && !decoderScaled) {
             bitmap.close?.();
             return file;
         }
