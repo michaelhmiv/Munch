@@ -104,6 +104,11 @@ export async function composeNextUpSuggestion(
         max_tokens: Math.min(config.maxTokens, 600),
         response_format: { type: "json_object" },
         plugins: [{ id: "response-healing" }],
+        // Privacy control (audit Nov 11): route only to provider
+        // endpoints that do not collect or train on request data —
+        // the same control every other Ember call site sends. This
+        // request carries goals, totals, and pantry context.
+        provider: { data_collection: "deny" },
         // Ember is reasoning-mandatory (website-ai-config): without
         // this param the model reasons at default effort and can spend
         // the whole 600-token cap before emitting any content, which

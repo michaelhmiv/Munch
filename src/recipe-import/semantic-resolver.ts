@@ -670,6 +670,10 @@ export class OpenRouterRecipeImportResolver implements RecipeImportSemanticResol
                             ? { plugins: [{ id: "response-healing" }] }
                             : {}),
                         ...openRouterReasoningParam(this.config.model),
+                        // Privacy control (audit Nov 11): route only to
+                        // provider endpoints that do not collect or train
+                        // on request data, like every other AI call site.
+                        provider: { data_collection: "deny" },
                         stream: false,
                         max_tokens: this.config.maxTokens,
                         ...(this.config.temperature === undefined

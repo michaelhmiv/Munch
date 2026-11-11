@@ -79,6 +79,9 @@ describe("guidance proposal model call", () => {
         expect(requestBody.model).toBe("meta/muse-ember");
         expect(requestBody.max_tokens).toBe(2_000);
         expect(requestBody.plugins).toEqual([{ id: "response-healing" }]);
+        expect(requestBody.provider).toEqual({
+            data_collection: "deny",
+        });
     });
 
     test("retries once on unparseable output, then succeeds", async () => {
