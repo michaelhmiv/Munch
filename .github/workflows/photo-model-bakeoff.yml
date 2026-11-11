@@ -29,23 +29,44 @@ name: Photo Model Bake-Off
 # scoped to GLM only (BAKEOFF_MODELS below); GLM also joins the Layer 2
 # matrix, and the layer2 label is applied only if its Layer 1 recall
 # earns it. Dispatch runs keep the caller's model choice.
+#
+# Full-pipeline lane (Michael directive, 2026-11-10 ~22:51 ET, with
+# owner corrections ~22:53/~22:56 ET): label "run-fulleval" runs
+# scripts/photo-full-eval.ts — the TRUE production pipeline (identify
+# → USDA/OFF grounding → decider tie-break → estimate fallback →
+# filled draft) on the REAL-photo set, over a config matrix:
+# single-model configs (Ember, Luna, DeepSeek v4.1 pinned snapshot
+# -1017, DeepSeek Flash-4 vision-exp, Nova Lite, Nova 2 Lite),
+# Jev-1.14 (TypeSafe's decision model, sampled DIRECTLY — no router
+# substitution) in the decider seat behind Ember/Luna/DeepSeek
+# identify, a Jev-1.14 both-roles bonus config, and ONE clearly
+# labelled jev-router decider config (router output does not count
+# as the Jev result). GLM is excluded: the production call shape
+# cannot drive it.
 
 on:
     pull_request:
         types: [opened, synchronize, reopened, labeled]
         paths:
             - "scripts/photo-model-bakeoff.ts"
+            - "scripts/photo-full-eval.ts"
             - ".github/workflows/photo-model-bakeoff.yml"
             - "fixtures/photo-eval-real/**"
     workflow_dispatch:
         inputs:
             layer:
-                description: "layer1 = identify bake-off (all models); layer2 = full pipeline for ONE model"
+                description: "layer1 = identify bake-off (all models); layer2 = full pipeline for ONE model; fulleval = full-pipeline config matrix on the real-photo set"
                 type: choice
                 options:
                     - layer1
                     - layer2
+                    - fulleval
                 default: layer1
+            configs:
+                description: "fulleval only: comma-separated config specs (empty = full matrix)"
+                type: string
+                required: false
+                default: ""
             model:
                 description: "Layer 2 only: the model slug to run the full pipeline with"
                 type: string
@@ -266,5 +287,49 @@ jobs:
               with:
                   name: photo-eval-layer2-${{ steps.suffix.outputs.value }}
                   path: photo-eval-report/
+                  if-no-files-found: warn
+                  retention-days: 30
+
+    fulleval:
+        # Full-pipeline config matrix on the real-photo set (see the
+        # header comment). Label-gated pre-merge like the other lanes;
+        # workflow_dispatch with layer=fulleval is the post-merge
+        # route. One job runs every config sequentially (the script
+        # aggregates the combined report); in-config task concurrency
+        # is 4.
+        if: (github.event_name == 'workflow_dispatch' && inputs.layer == 'fulleval') || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-fulleval'))
+        runs-on: ubuntu-latest
+        timeout-minutes: 180
+        env:
+            OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+            USDA_FDC_API_KEY: ${{ secrets.USDA_FDC_API_KEY }}
+            OFF_USER_AGENT: "Munch Photo Eval (photo-eval@munch.business)"
+            FULLEVAL_CONFIGS: ${{ inputs.configs }}
+            FULLEVAL_OUT: fulleval-report
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@v4
+            - name: Set up Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
+            - name: Run full-pipeline eval on the real-photo set
+              run: bun scripts/photo-full-eval.ts
+            - name: Publish report to the run summary
+              if: always()
+              run: |
+                  if [ -f fulleval-report/report.md ]; then
+                    cat fulleval-report/report.md >> "$GITHUB_STEP_SUMMARY"
+                  else
+                    echo "Full-pipeline eval produced no report (see job log)." >> "$GITHUB_STEP_SUMMARY"
+                  fi
+            - name: Upload full-eval report artifact
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: fulleval-report
+                  path: fulleval-report/
                   if-no-files-found: warn
                   retention-days: 30
