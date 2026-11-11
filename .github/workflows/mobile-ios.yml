@@ -584,6 +584,10 @@ jobs:
           CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
           CODE_SIGNING_KEYCHAIN="$MUNCH_KEYCHAIN_PATH"
           CODE_SIGNING_ALLOWED=YES
+          DEVELOPMENT_TEAM=R42LWFBXBH
+          CODE_SIGN_STYLE=Manual
+          CODE_SIGN_IDENTITY="Apple Distribution"
+          PROVISIONING_PROFILE_SPECIFIER="$MUNCH_PROFILE_NAME"
 
       - name: Export and upload to App Store Connect
         env:
