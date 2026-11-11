@@ -59,19 +59,24 @@ on:
             - "scripts/photo-model-bakeoff.ts"
             - "scripts/photo-full-eval.ts"
             - "scripts/photo-jev-probe.ts"
+            - "scripts/photo-extractions-eval.ts"
+            - "scripts/receipt-extractions-eval.ts"
             - ".github/workflows/photo-model-bakeoff.yml"
             - "fixtures/photo-eval-real/**"
             - "fixtures/photo-eval-negative/**"
+            - "fixtures/receipt-eval/**"
     workflow_dispatch:
         inputs:
             layer:
-                description: "layer1 = identify bake-off (all models); layer2 = full pipeline for ONE model; fulleval = full-pipeline config matrix on the real-photo set; jevprobe = Jev front-door probe"
+                description: "layer1 = identify bake-off (all models); layer2 = full pipeline for ONE model; fulleval = full-pipeline config matrix on the real-photo set; jevprobe = Jev front-door probe; extractions = extraction models on identify + full pipeline; receipts = extraction models vs production on receipts"
                 type: choice
                 options:
                     - layer1
                     - layer2
                     - fulleval
                     - jevprobe
+                    - extractions
+                    - receipts
                 default: layer1
             configs:
                 description: "fulleval only: comma-separated config specs (empty = full matrix)"
@@ -382,5 +387,92 @@ jobs:
               with:
                   name: jevprobe-report
                   path: jevprobe-report/
+                  if-no-files-found: warn
+                  retention-days: 30
+
+    extractions:
+        # Extraction-model lane (Michael directive, 2026-11-11):
+        # label "run-extractions" runs
+        # scripts/photo-extractions-eval.ts — OpenRouter extraction
+        # models (cloudflare/clairic, scaledown/extract) benchmarked
+        # on the real-photo identify step, plus the best extractor
+        # wired into the full pipeline behind the Jev-1.14 decider.
+        # Label-gated pre-merge like the other lanes;
+        # workflow_dispatch with layer=extractions is the post-merge
+        # route.
+        if: (github.event_name == 'workflow_dispatch' && inputs.layer == 'extractions') || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-extractions'))
+        runs-on: ubuntu-latest
+        timeout-minutes: 120
+        env:
+            OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+            USDA_FDC_API_KEY: ${{ secrets.USDA_FDC_API_KEY }}
+            OFF_USER_AGENT: "Munch Photo Eval (photo-eval@munch.business)"
+            EXTRACT_OUT: extractions-report
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@v4
+            - name: Set up Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
+            - name: Run extraction-model eval (probe + Layer 1 + full pipeline)
+              run: bun scripts/photo-extractions-eval.ts
+            - name: Publish report to the run summary
+              if: always()
+              run: |
+                  if [ -f extractions-report/report.md ]; then
+                    cat extractions-report/report.md >> "$GITHUB_STEP_SUMMARY"
+                  else
+                    echo "Extraction-model eval produced no report (see job log)." >> "$GITHUB_STEP_SUMMARY"
+                  fi
+            - name: Upload extraction-model report artifact
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: extractions-report
+                  path: extractions-report/
+                  if-no-files-found: warn
+                  retention-days: 30
+
+    receipts:
+        # Receipt extraction lane (Michael directive, 2026-11-11):
+        # label "run-receipts" runs
+        # scripts/receipt-extractions-eval.ts — cloudflare/clairic
+        # (Extractions API) against the production Ember receipt call
+        # shape on fixtures/receipt-eval. No USDA/OFF secrets: the
+        # lane needs only the OpenRouter key.
+        if: (github.event_name == 'workflow_dispatch' && inputs.layer == 'receipts') || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-receipts'))
+        runs-on: ubuntu-latest
+        timeout-minutes: 60
+        env:
+            OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+            RECEIPT_OUT: receipt-report
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@v4
+            - name: Set up Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
+            - name: Run receipt extraction eval
+              run: bun scripts/receipt-extractions-eval.ts
+            - name: Publish report to the run summary
+              if: always()
+              run: |
+                  if [ -f receipt-report/report.md ]; then
+                    cat receipt-report/report.md >> "$GITHUB_STEP_SUMMARY"
+                  else
+                    echo "Receipt extraction eval produced no report (see job log)." >> "$GITHUB_STEP_SUMMARY"
+                  fi
+            - name: Upload receipt report artifact
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: receipt-report
+                  path: receipt-report/
                   if-no-files-found: warn
                   retention-days: 30

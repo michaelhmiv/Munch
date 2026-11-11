@@ -1,0 +1,245 @@
+{
+    "fixtures": [
+        {
+            "author": "Donald Trung",
+            "file": "photos/receipt-01-aldi-winschoten.jpg",
+            "id": "receipt-01-aldi-winschoten",
+            "license": "CC BY-SA 4.0",
+            "license_note": "Own-work upload; the Commons file page carries the author's self-published license statement (the author's standard CC BY-SA 4.0 self-license template).",
+            "lines": [
+                {
+                    "is_food": true,
+                    "name": "milk chocolate",
+                    "quantity": null,
+                    "raw_label": "MELKCHOCOLADE",
+                    "unit": null
+                },
+                {
+                    "is_food": true,
+                    "name": "potato slices with bacon and onion",
+                    "quantity": null,
+                    "raw_label": "AARDAPPELSCHIJFJE SPEK-UI",
+                    "unit": null
+                },
+                {
+                    "is_food": true,
+                    "name": "potato slices with bacon and onion",
+                    "quantity": null,
+                    "raw_label": "AARDAPPELSCHIJFJE SPEK-UI",
+                    "unit": null
+                }
+            ],
+            "notes": "Crumpled receipt, fully legible. Non-item traps in frame: SUB TOTAAL, BEDRAG EURO, CONTANT (cash), BTW tax block, AANTAL ARTIKELEN 3. The same product is printed on two separate lines (two units bought as separate lines, not a 2x multiplier).",
+            "retrieved": "2026-11-11",
+            "sha256": "959eb6b3221619453d701f3cc79550782ff601be105b372b2e1c6766f109bd65",
+            "source_page": "https://commons.wikimedia.org/wiki/File:ALDI_receipt,_Winschoten_(2019)_01.jpg",
+            "store": "ALDI, Venne 132, Winschoten (NL), 23.02.2019"
+        },
+        {
+            "author": "Donald Trung",
+            "file": "photos/receipt-02-coop-bellingwolde.jpg",
+            "id": "receipt-02-coop-bellingwolde",
+            "license": "CC BY-SA 4.0",
+            "license_note": "Own-work upload; the Commons file page carries the author's self-published license statement (the author's standard CC BY-SA 4.0 self-license template).",
+            "lines": [
+                {
+                    "is_food": false,
+                    "name": "Bonzo dog food with heart and tripe",
+                    "quantity": null,
+                    "raw_label": "BONZO HART/PENS IN G",
+                    "unit": null
+                },
+                {
+                    "is_food": false,
+                    "name": "G'woon adult soft dog food",
+                    "quantity": null,
+                    "raw_label": "GWOON ADULT ZACHT BR",
+                    "unit": null
+                },
+                {
+                    "is_food": true,
+                    "name": "long-life milk",
+                    "quantity": 2,
+                    "raw_label": "LANDH HOUDBARE MELK",
+                    "unit": null
+                },
+                {
+                    "is_food": false,
+                    "name": "Oké chicken pâté dog food",
+                    "quantity": null,
+                    "raw_label": "OKE PATE KIP HOND",
+                    "unit": null
+                },
+                {
+                    "is_food": false,
+                    "name": "Oké beef pâté dog food",
+                    "quantity": null,
+                    "raw_label": "OKE PATE RUND HOND",
+                    "unit": null
+                },
+                {
+                    "is_food": true,
+                    "name": "Wijko satay sauce, ready-made",
+                    "quantity": null,
+                    "raw_label": "WYKO SATESAUS K&K",
+                    "unit": null
+                },
+                {
+                    "is_food": true,
+                    "name": "iceberg lettuce mix",
+                    "quantity": null,
+                    "raw_label": "IJSBERGSLAMELANGE",
+                    "unit": null
+                },
+                {
+                    "is_food": true,
+                    "name": "cucumber",
+                    "quantity": 2,
+                    "raw_label": "KOMKOMMER",
+                    "unit": null
+                },
+                {
+                    "is_food": true,
+                    "name": "mineola",
+                    "quantity": 1.204,
+                    "raw_label": "MINEOLA",
+                    "unit": "kg"
+                }
+            ],
+            "notes": "Photo is landscape and crops the receipt below the 'Aktie!' discount line; totals are out of frame, so ground truth covers exactly the lines visible in the photo (models see the same frame). Non-item traps in frame: Klant/Klantenkaart loyalty header, 'Aktie!' -0,72 discount line. Pet food lines are labelled is_food=false per the production prompt's human-pantry semantics. 'GWOON ADULT ZACHT BR' is Coop's own-brand adult soft dog food (surrounded by Bonzo and Oké dog pâté lines). MINEOLA is weighed: '1,204 kg X 3,38 €/kg' printed under the label.",
+            "retrieved": "2026-11-11",
+            "sha256": "49b85c71d2c795eed27a66a27117a80b7d0777e22d998a73ceddec2227f0167a",
+            "source_page": "https://commons.wikimedia.org/wiki/File:Coop_Bellingwolde_receipt,_Winschoten_(2019)_05.jpg",
+            "store": "Coop, Hoofdweg 29, Bellingwolde (NL), 2019"
+        },
+        {
+            "author": "Donald Trung",
+            "file": "photos/receipt-03-lidl-winschoten.jpg",
+            "id": "receipt-03-lidl-winschoten",
+            "license": "CC BY-SA 4.0",
+            "license_note": "Own-work upload; the Commons file page carries the author's self-published license statement (the author's standard CC BY-SA 4.0 self-license template).",
+            "lines": [
+                {
+                    "is_food": true,
+                    "name": "white bread roll",
+                    "quantity": 4,
+                    "raw_label": "schnittbroodje wit",
+                    "unit": null
+                },
+                {
+                    "is_food": true,
+                    "name": "soup meatballs",
+                    "quantity": null,
+                    "raw_label": "Soepballetjes",
+                    "unit": null
+                },
+                {
+                    "is_food": true,
+                    "name": "mandarins",
+                    "quantity": null,
+                    "raw_label": "Mandarijnen",
+                    "unit": null
+                },
+                {
+                    "is_food": true,
+                    "name": "sugar waffles",
+                    "quantity": null,
+                    "raw_label": "Suikerwafels",
+                    "unit": null
+                },
+                {
+                    "is_food": true,
+                    "name": "farmhouse liver sausage",
+                    "quantity": null,
+                    "raw_label": "Boerenleverworst",
+                    "unit": null
+                },
+                {
+                    "is_food": true,
+                    "name": "brown bread rolls, 10x50g",
+                    "quantity": null,
+                    "raw_label": "Bruine bollen, 10x50g",
+                    "unit": null
+                },
+                {
+                    "is_food": true,
+                    "name": "iced tea",
+                    "quantity": null,
+                    "raw_label": "IJsthee",
+                    "unit": null
+                },
+                {
+                    "is_food": true,
+                    "name": "cola, 6x0.5l",
+                    "quantity": null,
+                    "raw_label": "Cola 6x0,5l",
+                    "unit": null
+                },
+                {
+                    "is_food": true,
+                    "name": "chicken nibbles",
+                    "quantity": null,
+                    "raw_label": "Kipkluifjes",
+                    "unit": null
+                },
+                {
+                    "is_food": true,
+                    "name": "cherry tomatoes",
+                    "quantity": null,
+                    "raw_label": "Cherrytomaten",
+                    "unit": null
+                },
+                {
+                    "is_food": true,
+                    "name": "sandwich sausage, round",
+                    "quantity": null,
+                    "raw_label": "Boterhamworst rond",
+                    "unit": null
+                },
+                {
+                    "is_food": true,
+                    "name": "ham",
+                    "quantity": null,
+                    "raw_label": "Achterham \"BL\"",
+                    "unit": null
+                },
+                {
+                    "is_food": true,
+                    "name": "shoulder ham, round",
+                    "quantity": null,
+                    "raw_label": "Schouderham rond",
+                    "unit": null
+                },
+                {
+                    "is_food": true,
+                    "name": "vanilla yogurt, semi-skimmed",
+                    "quantity": 3,
+                    "raw_label": "Vanilleyoghurt hv",
+                    "unit": null
+                },
+                {
+                    "is_food": true,
+                    "name": "vanilla custard",
+                    "quantity": null,
+                    "raw_label": "Vanillevla",
+                    "unit": null
+                },
+                {
+                    "is_food": true,
+                    "name": "bananas",
+                    "quantity": null,
+                    "raw_label": "Bananen",
+                    "unit": null
+                }
+            ],
+            "notes": "Photo is landscape with the receipt running sideways (text rotated 90 degrees); models receive it exactly as photographed. The frame shows a mid-receipt segment: the top line is clipped at the frame edge (only 'schnittbroodje wit' and its '4 x 0,21' multiplier are legible) and the bottom line (Bananen) is partially cut but its label and price are legible. No totals or tax lines are in frame.",
+            "retrieved": "2026-11-11",
+            "sha256": "cfa6b1d51190c45503a69fe4756f982c53ce277fc4253d28114f44c6c07b61fd",
+            "source_page": "https://commons.wikimedia.org/wiki/File:Lidl_receipt,_Winschoten_(2019)_05.jpg",
+            "store": "Lidl, Winschoten (NL), 29.04.2019"
+        }
+    ],
+    "labelling_rule": "Label only what is legibly printed in the photo. Totals, subtotals, tax (BTW) blocks, payment/change lines, loyalty headers and discount lines are NOT items; a model returning them is scored spurious. quantity/unit are set only where the receipt prints a purchased quantity (an 'Nx' multiplier or a weighed amount); package-size descriptors inside a product name (10x50g, 6x0,5l) are part of the name, not a quantity. is_food follows the production receipt prompt's semantics: human food and drink are true; pet food and household goods are false.",
+    "source": "receipt-eval",
+    "version": 1
+}
