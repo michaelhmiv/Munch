@@ -11,6 +11,7 @@ const { Pool } = await import("pg");
 const { getMunchBetterAuth } = await import("../src/auth/auth.js");
 const { requireSameOrigin } = await import("../src/accounts/csrf.js");
 const { requireAppSession } = await import("../src/accounts/session.js");
+const { createHouseholdRouter } = await import("../src/households/routes.js");
 const { closePlatformDatabase } = await import("../src/platform/database.js");
 
 const email = `mobile-bearer-${crypto.randomUUID()}@example.test`;

@@ -28,8 +28,8 @@ export function createHouseholdLifecycleRouter(): Hono {
 
     router.post(
         "/account/household/transfer",
-        requireSameOrigin,
         requireWebSession,
+        requireSameOrigin,
         async (c) => {
             // Paid household ownership is also Stripe billing ownership. We do
             // not silently move a recurring subscription between customers.
@@ -44,8 +44,8 @@ export function createHouseholdLifecycleRouter(): Hono {
 
     router.post(
         "/account/household/leave",
-        requireSameOrigin,
         requireWebSession,
+        requireSameOrigin,
         async (c) => {
             try {
                 const body = (await c.req.json()) as { confirm?: unknown };
@@ -85,8 +85,8 @@ export function createHouseholdLifecycleRouter(): Hono {
 
     router.post(
         "/account/household/dissolve",
-        requireSameOrigin,
         requireWebSession,
+        requireSameOrigin,
         async (c) => {
             try {
                 const body = (await c.req.json()) as {

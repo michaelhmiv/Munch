@@ -49,8 +49,8 @@ export function createAccountRouter(): Hono {
 
     account.post(
         "/account/logout",
-        requireSameOrigin,
         requireWebSession,
+        requireSameOrigin,
         async (c) => {
             await clearWebSession(c);
             return c.json({ signedOut: true });

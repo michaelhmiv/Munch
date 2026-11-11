@@ -88,8 +88,8 @@ export function createHouseholdRouter(): Hono {
 
     router.post(
         "/account/household/create",
-        requireSameOrigin,
         requireWebSession,
+        requireSameOrigin,
         async (c) => {
             try {
                 const userId = c.get("munchUserId");
@@ -124,8 +124,8 @@ export function createHouseholdRouter(): Hono {
 
     router.post(
         "/account/household/invite",
-        requireSameOrigin,
         requireWebSession,
+        requireSameOrigin,
         async (c) => {
             try {
                 const userId = c.get("munchUserId");
@@ -199,8 +199,8 @@ export function createHouseholdRouter(): Hono {
 
     router.post(
         "/account/household/invite/revoke",
-        requireSameOrigin,
         requireWebSession,
+        requireSameOrigin,
         async (c) => {
             try {
                 const userId = c.get("munchUserId");
@@ -270,8 +270,8 @@ export function createHouseholdRouter(): Hono {
 
     router.post(
         "/household/accept",
-        requireSameOrigin,
         requireWebSession,
+        requireSameOrigin,
         async (c) => {
             try {
                 const body = await c.req.parseBody();
@@ -312,8 +312,8 @@ export function createHouseholdRouter(): Hono {
 
     router.post(
         "/account/household/member/role",
-        requireSameOrigin,
         requireWebSession,
+        requireSameOrigin,
         async (c) => {
             try {
                 const userId = c.get("munchUserId");
@@ -350,8 +350,8 @@ export function createHouseholdRouter(): Hono {
 
     router.post(
         "/account/household/member/remove",
-        requireSameOrigin,
         requireWebSession,
+        requireSameOrigin,
         async (c) => {
             try {
                 const userId = c.get("munchUserId");

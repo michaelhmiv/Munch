@@ -262,8 +262,8 @@ export function createBillingRouter(): Hono {
 
     billing.post(
         "/billing/checkout",
-        requireSameOrigin,
         requireWebSession,
+        requireSameOrigin,
         async (c) => {
             let returnTo: string | undefined;
             try {
@@ -319,8 +319,8 @@ export function createBillingRouter(): Hono {
 
     billing.post(
         "/billing/portal",
-        requireSameOrigin,
         requireWebSession,
+        requireSameOrigin,
         async (c) => {
             try {
                 const portal = await createCustomerPortalForUser(
