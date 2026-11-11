@@ -236,7 +236,8 @@ async function jevDecisions(input: {
                 : null,
         reportedCostUsd: typeof usage.cost === "number" ? usage.cost : null,
         servedModel: typeof payload?.model === "string" ? payload.model : null,
-        provider: typeof payload?.provider === "string" ? payload.provider : null,
+        provider:
+            typeof payload?.provider === "string" ? payload.provider : null,
         transportError: null,
         errorExcerpt:
             httpStatus !== null && httpStatus >= 300
@@ -427,7 +428,8 @@ function parseGateAnswers(call: JevCall): {
     const routeConfidence =
         typeof route.confidence === "number"
             ? route.confidence
-            : routeProbabilities && typeof routeProbabilities[route.choice] === "number"
+            : routeProbabilities &&
+                typeof routeProbabilities[route.choice] === "number"
               ? routeProbabilities[route.choice]
               : null;
     return {
@@ -505,10 +507,7 @@ const allFixtures: Array<{
 ];
 const bytesById = new Map<string, Uint8Array>();
 for (const fixture of allFixtures) {
-    bytesById.set(
-        fixture.id,
-        new Uint8Array(await readFile(fixture.path)),
-    );
+    bytesById.set(fixture.id, new Uint8Array(await readFile(fixture.path)));
 }
 
 const gateAttempts: GateAttempt[] = [];
@@ -639,186 +638,199 @@ const verifyPhotos: VerifyPhoto[] = [];
 if (gateStyle !== null) {
     const config = emberConfig();
     const results = await runPool(
-        posExpectations.fixtures.map((fixture) => async (): Promise<VerifyPhoto> => {
-            const bytes = bytesById.get(fixture.id)!;
-            const observations: EmberObservation[] = [];
-            const fetcher = async (
-                input: RequestInfo | URL,
-                init?: RequestInit,
-            ): Promise<Response> => {
-                const startedAt = performance.now();
-                const response = await fetch(input, init);
-                const observation: EmberObservation = {
-                    latencyMs: Math.round(performance.now() - startedAt),
-                    httpStatus: response.status,
-                    promptTokens: null,
-                    completionTokens: null,
-                    reportedCostUsd: null,
+        posExpectations.fixtures.map(
+            (fixture) => async (): Promise<VerifyPhoto> => {
+                const bytes = bytesById.get(fixture.id)!;
+                const observations: EmberObservation[] = [];
+                const fetcher = async (
+                    input: RequestInfo | URL,
+                    init?: RequestInit,
+                ): Promise<Response> => {
+                    const startedAt = performance.now();
+                    const response = await fetch(input, init);
+                    const observation: EmberObservation = {
+                        latencyMs: Math.round(performance.now() - startedAt),
+                        httpStatus: response.status,
+                        promptTokens: null,
+                        completionTokens: null,
+                        reportedCostUsd: null,
+                    };
+                    try {
+                        const payload = (await response.clone().json()) as any;
+                        observation.promptTokens =
+                            typeof payload?.usage?.prompt_tokens === "number"
+                                ? payload.usage.prompt_tokens
+                                : null;
+                        observation.completionTokens =
+                            typeof payload?.usage?.completion_tokens ===
+                            "number"
+                                ? payload.usage.completion_tokens
+                                : null;
+                        observation.reportedCostUsd =
+                            typeof payload?.usage?.cost === "number"
+                                ? payload.usage.cost
+                                : null;
+                    } catch {
+                        // Non-JSON body: usage stays null.
+                    }
+                    observations.push(observation);
+                    return response;
                 };
+                let visionItems: MealPhotoVisionItem[] = [];
+                let noFood = false;
+                let failure: string | null = null;
                 try {
-                    const payload = (await response.clone().json()) as any;
-                    observation.promptTokens =
-                        typeof payload?.usage?.prompt_tokens === "number"
-                            ? payload.usage.prompt_tokens
-                            : null;
-                    observation.completionTokens =
-                        typeof payload?.usage?.completion_tokens === "number"
-                            ? payload.usage.completion_tokens
-                            : null;
-                    observation.reportedCostUsd =
-                        typeof payload?.usage?.cost === "number"
-                            ? payload.usage.cost
-                            : null;
-                } catch {
-                    // Non-JSON body: usage stays null.
+                    const vision = await identifyMealPhoto(
+                        { mimeType: "image/jpeg", bytes },
+                        config,
+                        { fetcher },
+                    );
+                    visionItems = vision.items;
+                } catch (error) {
+                    if (error instanceof MealPhotoNoFoodError) {
+                        noFood = true;
+                        visionItems = [];
+                    } else {
+                        failure =
+                            error instanceof Error
+                                ? error.message
+                                : String(error);
+                    }
                 }
-                observations.push(observation);
-                return response;
-            };
-            let visionItems: MealPhotoVisionItem[] = [];
-            let noFood = false;
-            let failure: string | null = null;
-            try {
-                const vision = await identifyMealPhoto(
-                    { mimeType: "image/jpeg", bytes },
-                    config,
-                    { fetcher },
-                );
-                visionItems = vision.items;
-            } catch (error) {
-                if (error instanceof MealPhotoNoFoodError) {
-                    noFood = true;
-                    visionItems = [];
-                } else {
-                    failure =
-                        error instanceof Error ? error.message : String(error);
+                const names = visionItems.map((item) => item.name);
+                // Greedy one-to-one matching, fulleval scoreTask semantics
+                // at the identify level (vision names only).
+                const used = new Set<number>();
+                const matchedEmberIndices: number[] = [];
+                const missedExpected: string[] = [];
+                for (const expected of fixture.items) {
+                    const index = names.findIndex(
+                        (name, nameIndex) =>
+                            !used.has(nameIndex) &&
+                            namesMatch(expected.name, name),
+                    );
+                    if (index === -1) {
+                        missedExpected.push(expected.name);
+                    } else {
+                        used.add(index);
+                        matchedEmberIndices.push(index);
+                    }
                 }
-            }
-            const names = visionItems.map((item) => item.name);
-            // Greedy one-to-one matching, fulleval scoreTask semantics
-            // at the identify level (vision names only).
-            const used = new Set<number>();
-            const matchedEmberIndices: number[] = [];
-            const missedExpected: string[] = [];
-            for (const expected of fixture.items) {
-                const index = names.findIndex(
-                    (name, nameIndex) =>
-                        !used.has(nameIndex) && namesMatch(expected.name, name),
-                );
-                if (index === -1) {
-                    missedExpected.push(expected.name);
-                } else {
-                    used.add(index);
-                    matchedEmberIndices.push(index);
-                }
-            }
-            // Jev verification: batches of at most 8 questions per
-            // request (item Nouls first, the anything-missing Noul
-            // appended to the final batch when it fits, else its own
-            // request). The image is resent with every request.
-            const items: VerifyItem[] = names.map((name) => ({
-                name,
-                pPresent: null,
-                rawAnswer: null,
-            }));
-            let pMissing: number | null = null;
-            let missingRawAnswer: any = null;
-            const jevCalls: VerifyPhoto["jevCalls"] = [];
-            const questionBatches: Array<{
-                questions: Record<string, unknown>;
-                itemIndices: number[];
-                hasMissing: boolean;
-            }> = [];
-            const MAX_Q = 8;
-            if (names.length === 0) {
-                questionBatches.push({
-                    questions: {},
-                    itemIndices: [],
-                    hasMissing: true,
-                });
-            } else {
-                for (let start = 0; start < names.length; start += MAX_Q - 1) {
-                    const slice = names.slice(start, start + (MAX_Q - 1));
-                    const isLast = start + (MAX_Q - 1) >= names.length;
+                // Jev verification: batches of at most 8 questions per
+                // request (item Nouls first, the anything-missing Noul
+                // appended to the final batch when it fits, else its own
+                // request). The image is resent with every request.
+                const items: VerifyItem[] = names.map((name) => ({
+                    name,
+                    pPresent: null,
+                    rawAnswer: null,
+                }));
+                let pMissing: number | null = null;
+                let missingRawAnswer: any = null;
+                const jevCalls: VerifyPhoto["jevCalls"] = [];
+                const questionBatches: Array<{
+                    questions: Record<string, unknown>;
+                    itemIndices: number[];
+                    hasMissing: boolean;
+                }> = [];
+                const MAX_Q = 8;
+                if (names.length === 0) {
                     questionBatches.push({
                         questions: {},
-                        itemIndices: slice.map((_, i) => start + i),
-                        hasMissing: isLast,
+                        itemIndices: [],
+                        hasMissing: true,
                     });
-                }
-            }
-            for (const batch of questionBatches) {
-                const questions: Record<string, unknown> = {};
-                batch.itemIndices.forEach((itemIndex, position) => {
-                    const q: Record<string, unknown> = {
-                        type: "noul",
-                        instructions: `A meal-photo analysis identified an item named "${names[itemIndex]}" in this photo. Is an item matching "${names[itemIndex]}" actually visibly present in this photo?`,
-                    };
-                    if (gateStyle === "described") {
-                        q.criteria = {
-                            true: `An item matching "${names[itemIndex]}" is visibly present in the photo.`,
-                            false: `No item matching "${names[itemIndex]}" is visibly present in the photo.`,
-                        };
+                } else {
+                    for (
+                        let start = 0;
+                        start < names.length;
+                        start += MAX_Q - 1
+                    ) {
+                        const slice = names.slice(start, start + (MAX_Q - 1));
+                        const isLast = start + (MAX_Q - 1) >= names.length;
+                        questionBatches.push({
+                            questions: {},
+                            itemIndices: slice.map((_, i) => start + i),
+                            hasMissing: isLast,
+                        });
                     }
-                    questions[`item_${position}`] = q;
-                });
-                if (batch.hasMissing) {
-                    const q: Record<string, unknown> = {
-                        type: "noul",
-                        instructions:
-                            "The state lists the food and drink items already identified in this photo. Does the photo visibly show any food or drink item that is NOT in that list?",
-                    };
-                    if (gateStyle === "described") {
-                        q.criteria = {
-                            true: "The photo visibly shows at least one food or drink item that is not in the list.",
-                            false: "Every food or drink item visible in the photo is in the list.",
-                        };
-                    }
-                    questions["missing"] = q;
                 }
-                const listText =
-                    names.length > 0
-                        ? `Items already identified in this photo: ${names.join("; ")}.`
-                        : "No items were identified in this photo.";
-                const call = await jevDecisions({
-                    state: imageState(bytes, listText),
-                    questions,
-                });
-                const { answers, rawExcerpt: _rawExcerpt, ...callMeta } =
-                    call;
-                jevCalls.push(callMeta);
-                if (answers) {
+                for (const batch of questionBatches) {
+                    const questions: Record<string, unknown> = {};
                     batch.itemIndices.forEach((itemIndex, position) => {
-                        const answer = answers[`item_${position}`];
-                        items[itemIndex] = {
-                            name: names[itemIndex]!,
-                            pPresent: noulProbability(answer),
-                            rawAnswer: answer ?? null,
+                        const q: Record<string, unknown> = {
+                            type: "noul",
+                            instructions: `A meal-photo analysis identified an item named "${names[itemIndex]}" in this photo. Is an item matching "${names[itemIndex]}" actually visibly present in this photo?`,
                         };
+                        if (gateStyle === "described") {
+                            q.criteria = {
+                                true: `An item matching "${names[itemIndex]}" is visibly present in the photo.`,
+                                false: `No item matching "${names[itemIndex]}" is visibly present in the photo.`,
+                            };
+                        }
+                        questions[`item_${position}`] = q;
                     });
                     if (batch.hasMissing) {
-                        missingRawAnswer = answers["missing"] ?? null;
-                        pMissing = noulProbability(answers["missing"]);
+                        const q: Record<string, unknown> = {
+                            type: "noul",
+                            instructions:
+                                "The state lists the food and drink items already identified in this photo. Does the photo visibly show any food or drink item that is NOT in that list?",
+                        };
+                        if (gateStyle === "described") {
+                            q.criteria = {
+                                true: "The photo visibly shows at least one food or drink item that is not in the list.",
+                                false: "Every food or drink item visible in the photo is in the list.",
+                            };
+                        }
+                        questions["missing"] = q;
+                    }
+                    const listText =
+                        names.length > 0
+                            ? `Items already identified in this photo: ${names.join("; ")}.`
+                            : "No items were identified in this photo.";
+                    const call = await jevDecisions({
+                        state: imageState(bytes, listText),
+                        questions,
+                    });
+                    const {
+                        answers,
+                        rawExcerpt: _rawExcerpt,
+                        ...callMeta
+                    } = call;
+                    jevCalls.push(callMeta);
+                    if (answers) {
+                        batch.itemIndices.forEach((itemIndex, position) => {
+                            const answer = answers[`item_${position}`];
+                            items[itemIndex] = {
+                                name: names[itemIndex]!,
+                                pPresent: noulProbability(answer),
+                                rawAnswer: answer ?? null,
+                            };
+                        });
+                        if (batch.hasMissing) {
+                            missingRawAnswer = answers["missing"] ?? null;
+                            pMissing = noulProbability(answers["missing"]);
+                        }
                     }
                 }
-            }
-            return {
-                fixtureId: fixture.id,
-                ember: {
-                    items: names,
-                    observation: observations[0] ?? null,
-                    noFood,
-                    failure,
-                },
-                expectedCount: fixture.items.length,
-                matchedEmberIndices,
-                missedExpected,
-                items,
-                pMissing,
-                missingRawAnswer,
-                jevCalls,
-            };
-        }),
+                return {
+                    fixtureId: fixture.id,
+                    ember: {
+                        items: names,
+                        observation: observations[0] ?? null,
+                        noFood,
+                        failure,
+                    },
+                    expectedCount: fixture.items.length,
+                    matchedEmberIndices,
+                    missedExpected,
+                    items,
+                    pMissing,
+                    missingRawAnswer,
+                    jevCalls,
+                };
+            },
+        ),
         CONCURRENCY,
     );
     verifyPhotos.push(...results);
@@ -848,21 +860,21 @@ const gatePos = gateResults.filter((r) => r.set === "positive");
 const gateNeg = gateResults.filter((r) => r.set === "negative");
 const gateNegHeadline = gateNeg.filter((r) => {
     const fixture = negById.get(r.fixtureId);
-    return fixture && !fixture.expected.gate_food && !fixture.expected.borderline;
+    return (
+        fixture && !fixture.expected.gate_food && !fixture.expected.borderline
+    );
 });
 const gateNegBorderline = gateNeg.filter(
     (r) => negById.get(r.fixtureId)?.expected.borderline,
 );
 
 function falseRejects(results: GateResult[], threshold: number): number {
-    return results.filter(
-        (r) => r.pFood !== null && r.pFood < threshold,
-    ).length;
+    return results.filter((r) => r.pFood !== null && r.pFood < threshold)
+        .length;
 }
 function correctRejects(results: GateResult[], threshold: number): number {
-    return results.filter(
-        (r) => r.pFood !== null && r.pFood < threshold,
-    ).length;
+    return results.filter((r) => r.pFood !== null && r.pFood < threshold)
+        .length;
 }
 
 const routeConfusion = new Map<string, number>();
@@ -881,7 +893,10 @@ let routeScoredNeg = 0;
 for (const result of gateNeg) {
     if (result.routeChoice === null) continue;
     routeScoredNeg += 1;
-    if (result.routeChoice === negById.get(result.fixtureId)?.expected.expected_route) {
+    if (
+        result.routeChoice ===
+        negById.get(result.fixtureId)?.expected.expected_route
+    ) {
         routeCorrectNeg += 1;
     }
 }
@@ -961,10 +976,7 @@ const verifyJevCost = verifyPhotos.reduce(
 const verifyJevPerPhoto = verifyPhotos.map((p) => ({
     fixtureId: p.fixtureId,
     addedLatencyMs: p.jevCalls.reduce((s, c) => s + c.latencyMs, 0),
-    addedCostUsd: p.jevCalls.reduce(
-        (s, c) => s + (c.reportedCostUsd ?? 0),
-        0,
-    ),
+    addedCostUsd: p.jevCalls.reduce((s, c) => s + (c.reportedCostUsd ?? 0), 0),
     requests: p.jevCalls.length,
 }));
 const emberObservations = verifyPhotos
@@ -1084,7 +1096,9 @@ if (gateStyle !== null) {
     lines.push("");
     lines.push("### Per-photo gate detail");
     lines.push("");
-    lines.push("| Fixture | Set | p(food) | Route (conf) | p(clear) | Latency ms | Cost $ |");
+    lines.push(
+        "| Fixture | Set | p(food) | Route (conf) | p(clear) | Latency ms | Cost $ |",
+    );
     lines.push("| --- | --- | --- | --- | --- | --- | --- |");
     for (const result of gateResults) {
         lines.push(
@@ -1112,7 +1126,9 @@ if (gateStyle !== null) {
         "Jev per-item presence probabilities (drop = p(present) below threshold; items whose call failed keep p=null and are never dropped):",
     );
     lines.push("");
-    lines.push("| Drop threshold | Items kept | Matched kept | Precision after | Recall after |");
+    lines.push(
+        "| Drop threshold | Items kept | Matched kept | Precision after | Recall after |",
+    );
     lines.push("| --- | --- | --- | --- | --- |");
     for (const row of verifyRows) {
         lines.push(
