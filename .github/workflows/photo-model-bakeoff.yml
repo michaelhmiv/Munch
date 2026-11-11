@@ -137,3 +137,62 @@ jobs:
                   path: photo-eval-report/
                   if-no-files-found: warn
                   retention-days: 30
+
+    layer2-finalists:
+        # Pre-merge Layer 2 (label-gated; see header). Finalist slugs
+        # from the Layer 1 results, run 42948534624: meta/muse-ember
+        # (control — always a finalist), qwen/qwen3.7-flash and
+        # openai/gpt-5.6-luna (top two challengers: tied at 50.8%
+        # headline recall, qwen ahead on the precision tiebreak;
+        # nova-lite and deepseek-v4.1-flash ranked below both).
+        if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-bakeoff-layer2')
+        runs-on: ubuntu-latest
+        timeout-minutes: 40
+        strategy:
+            fail-fast: false
+            matrix:
+                model:
+                    - meta/muse-ember
+                    - qwen/qwen3.7-flash
+                    - openai/gpt-5.6-luna
+        env:
+            OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+            USDA_FDC_API_KEY: ${{ secrets.USDA_FDC_API_KEY }}
+            OFF_USER_AGENT: "Munch Photo Eval (photo-eval@munch.business)"
+            MUNCH_AI_MODEL: ${{ matrix.model }}
+            PHOTO_EVAL_OUT: photo-eval-report
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@v4
+            - name: Set up Bun
+              uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1
+            - name: Install dependencies
+              run: bun install --frozen-lockfile
+            - name: Compute artifact suffix from the model slug
+              id: suffix
+              run: echo "value=$(echo '${{ matrix.model }}' | tr '/.' '__')" >> "$GITHUB_OUTPUT"
+            - name: Run full photo pipeline for the finalist model
+              id: pipeline
+              # Same bar-breach semantics as the layer2 dispatch job:
+              # exit 1 on §3 bar breach is evidence, not a job failure.
+              continue-on-error: true
+              run: bun scripts/photo-eval-live.ts
+            - name: Publish report to the run summary
+              if: always()
+              run: |
+                  echo "Model: ${{ matrix.model }} · photo-eval-live outcome: ${{ steps.pipeline.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+                  if [ -f photo-eval-report/report.md ]; then
+                    cat photo-eval-report/report.md >> "$GITHUB_STEP_SUMMARY"
+                  else
+                    echo "Layer 2 produced no report for ${{ matrix.model }} (see job log)." >> "$GITHUB_STEP_SUMMARY"
+                  fi
+            - name: Upload layer 2 report artifact
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: photo-eval-layer2-${{ steps.suffix.outputs.value }}
+                  path: photo-eval-report/
+                  if-no-files-found: warn
+                  retention-days: 30
