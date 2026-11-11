@@ -175,7 +175,7 @@ for (const slug of SCHEMA_MINIMUM_MODELS) {
         : schemaNote;
 }
 for (const slug of SCHEMA_GOOGLE_SUBSET_MODELS) {
-    const schemaNote = `Bake-off-only schema accommodation: this endpoint's structured-output implementation accepts only a subset of JSON Schema (HTTP 400 INVALID_ARGUMENT on the production schema), so the harness rewrote the outgoing schema to that subset: additionalProperties stripped recursively and exclusiveMinimum: 0 -> minimum: 0. Prompt, image payload, strict flag, and all other constraints identical; no production code changed, and replies are still validated against the full production schema server-side.`;
+    const schemaNote = `Bake-off-only schema accommodation: this endpoint's structured-output implementation accepts only a subset of JSON Schema (HTTP 400 INVALID_ARGUMENT on the production schema), so the harness rewrote the outgoing schema to that subset: additionalProperties stripped recursively, exclusiveMinimum: 0 -> minimum: 0, and the nullable idiom anyOf: [<branch>, {type:"null"}] translated to <branch> with nullable: true. Prompt, image payload, strict flag, and all other constraints identical; no production code changed, and replies are still validated against the full production schema server-side.`;
     REQUEST_ACCOMMODATIONS[slug] = REQUEST_ACCOMMODATIONS[slug]
         ? `${REQUEST_ACCOMMODATIONS[slug]} ${schemaNote}`
         : schemaNote;
@@ -219,6 +219,48 @@ function stripAdditionalProperties(node: unknown): void {
     }
 }
 
+/** Translate the schema's nullable idiom to Google's dialect:
+ * anyOf: [<branch>, {type:"null"}] -> <branch> with nullable: true.
+ * Semantics-preserving (the same values are admitted); recurses so
+ * nested occurrences are all translated. Returns the (possibly
+ * replaced) node. */
+function translateAnyOfNullable(node: unknown): unknown {
+    if (Array.isArray(node)) {
+        return node.map((child) => translateAnyOfNullable(child));
+    }
+    if (node && typeof node === "object") {
+        const record = node as Record<string, unknown>;
+        for (const key of Object.keys(record)) {
+            record[key] = translateAnyOfNullable(record[key]);
+        }
+        const anyOf = record.anyOf;
+        if (Array.isArray(anyOf) && anyOf.length === 2) {
+            const nullBranch = anyOf.find(
+                (branch) =>
+                    branch &&
+                    typeof branch === "object" &&
+                    (branch as Record<string, unknown>).type === "null",
+            );
+            const valueBranch = anyOf.find((branch) => branch !== nullBranch);
+            if (
+                nullBranch &&
+                valueBranch &&
+                typeof valueBranch === "object" &&
+                !Array.isArray(valueBranch)
+            ) {
+                const { anyOf: _dropped, ...rest } = record;
+                return {
+                    ...(valueBranch as Record<string, unknown>),
+                    ...rest,
+                    nullable: true,
+                };
+            }
+        }
+        return record;
+    }
+    return node;
+}
+
 function rewriteRequestBody(body: string, model: string): string {
     try {
         const parsed = JSON.parse(body) as Record<string, unknown>;
@@ -242,6 +284,9 @@ function rewriteRequestBody(body: string, model: string): string {
                 replaceExclusiveMinimum(jsonSchema.schema);
                 if (SCHEMA_GOOGLE_SUBSET_MODELS.has(model)) {
                     stripAdditionalProperties(jsonSchema.schema);
+                    jsonSchema.schema = translateAnyOfNullable(
+                        jsonSchema.schema,
+                    );
                 }
             }
         }
