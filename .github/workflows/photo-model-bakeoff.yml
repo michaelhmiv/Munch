@@ -22,6 +22,7 @@ name: Photo Model Bake-Off
 
 on:
     pull_request:
+        types: [opened, synchronize, reopened, labeled]
         paths:
             - "scripts/photo-model-bakeoff.ts"
             - ".github/workflows/photo-model-bakeoff.yml"
