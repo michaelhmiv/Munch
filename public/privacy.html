@@ -38,11 +38,12 @@
                     <h1>Privacy Policy</h1>
                     <p class="section-copy">
                         Munch is a consumer nutrition, recipe, meal-planning,
-                        and Pantry inventory service designed to work through
-                        ChatGPT and compatible MCP clients.
+                        and Pantry inventory service on the web and in our apps,
+                        designed to also work through ChatGPT and compatible MCP
+                        clients.
                     </p>
                     <p class="tiny spacer-top">
-                        Last updated: November 9, 2026
+                        Last updated: November 11, 2026
                     </p>
                 </div>
             </section>
@@ -51,6 +52,7 @@
                     <a href="#summary">Summary</a><a href="#data">Data stored</a
                     ><a href="#households">Households</a
                     ><a href="#chatgpt">ChatGPT and OpenAI</a
+                    ><a href="#ai">AI features</a
                     ><a href="#providers">Service providers</a
                     ><a href="#security">Security</a
                     ><a href="#rights">Export and deletion</a
@@ -61,9 +63,18 @@
                     <section id="summary">
                         <h2>Summary</h2>
                         <div class="notice">
-                            Munch does not sell nutrition data, use it for
-                            advertising, or train a Munch AI model on your
-                            nutrition records. On Android, Munch uses Firebase
+                            We never sell your personal information — not your
+                            nutrition records, not your account data, not
+                            anything else. Munch does not use your data for
+                            advertising or to build advertising profiles, and no
+                            AI model is trained on your records. When Munch
+                            itself uses AI (for photo logging, suggestions, and
+                            chat), what it sends is anonymous: no name, email
+                            address, or account identifier is included, and
+                            every request is sent with provider data collection
+                            disabled. If ads are shown in the app, they are
+                            non-personalized — chosen for the screen, never for
+                            who you are. On Android, Munch uses Firebase
                             Crashlytics to send crash stack traces and
                             app/device diagnostics to Google for debugging.
                             Munch does not intentionally add account identifiers
@@ -236,6 +247,46 @@
                             needs.
                         </p>
                     </section>
+                    <section id="ai">
+                        <h2>AI features and the models we use</h2>
+                        <p>
+                            Some Munch features use AI models: identifying foods
+                            in a photo, reading a receipt, suggesting what to
+                            eat next, generating meal ideas, importing recipes,
+                            and the in-app chat agent. These are Munch's own
+                            features, separate from any AI client you connect
+                            through MCP.
+                        </p>
+                        <p>
+                            <strong>What we send is anonymous.</strong> AI
+                            requests contain only what the feature needs — a
+                            photo, food names, quantities, nutrition numbers,
+                            your goal targets, and the text of your request.
+                            They never contain your name, email address, account
+                            identifier, or anything else that ties the request
+                            to you. Meal and receipt photos are processed
+                            transiently and are not retained by Munch after
+                            processing.
+                        </p>
+                        <p>
+                            <strong>The models we use.</strong> Requests are
+                            routed through OpenRouter to Meta's Muse Ember
+                            model. Photo logging also uses small decision models
+                            (TypeSafe Jev, with Perplexity and Liquid AI as
+                            fallbacks) to check and choose between food matches.
+                            Every request Munch sends is marked so that
+                            providers may not collect the data or use it to
+                            train models. Providers process requests under their
+                            own terms, and that instruction is a routing
+                            control, not a guarantee of zero retention by every
+                            processor in the chain.
+                        </p>
+                        <p>
+                            Munch does not train its own AI model on your
+                            records, and your data is never sold or shared for
+                            advertising — including to the AI providers above.
+                        </p>
+                    </section>
                     <section id="providers">
                         <h2>Service providers and external data sources</h2>
                         <ul>
@@ -265,15 +316,14 @@
                                 used.
                             </li>
                             <li>
-                                <strong>OpenRouter</strong> receives Pantry or
-                                receipt images uploaded through the Munch
-                                website when AI-assisted extraction is enabled,
-                                and receives relevant structured Pantry and
-                                saved-recipe context when a user asks the
-                                website for AI-assisted Pantry meal ideas. Munch
-                                requests routing with provider data collection
-                                disabled. That routing preference is not a
-                                promise of zero retention, and the processors
+                                <strong>OpenRouter</strong> routes Munch's
+                                first-party AI features (see "AI features and
+                                the models we use" above): meal and receipt
+                                photos, structured Pantry context, meal
+                                suggestions, recipe imports, and chat. Requests
+                                are anonymous and are sent with provider data
+                                collection disabled. That routing control is not
+                                a promise of zero retention, and the processors
                                 selected through OpenRouter remain subject to
                                 their applicable privacy and retention
                                 practices.
@@ -286,9 +336,12 @@
                             <li>
                                 <strong>Google Mobile Ads and UMP</strong>
                                 are used only in the Android app when ads are
-                                enabled. Google may collect an IP address,
-                                advertising or app-instance identifiers, ad
-                                interactions, and diagnostics to deliver and
+                                enabled. Munch requests non-personalized ads
+                                only: Google is instructed to choose ads from
+                                the context of the screen, never from an
+                                advertising profile of you. Google may still
+                                collect an IP address, app-instance identifiers,
+                                ad interactions, and diagnostics to deliver and
                                 measure ads and help prevent fraud. Munch does
                                 not send meal names, ingredients, nutrition
                                 values, weight, goals, allergies, or other
