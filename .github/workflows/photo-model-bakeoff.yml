@@ -122,7 +122,7 @@ jobs:
         runs-on: ubuntu-latest
         timeout-minutes: 120
         env:
-            OPENROUTER_API_KEY: <redacted>
+            OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
             BAKEOFF_FIXTURES_DIR: fixtures/photo-eval-real
             BAKEOFF_MODELS: "meta/muse-ember,openai/gpt-5.6-luna,qwen/qwen3.7-flash,amazon/nova-lite-v1,deepseek/deepseek-v4.1-flash,z-ai/glm-5.3-flash"
             BAKEOFF_REPEATS: "2"
