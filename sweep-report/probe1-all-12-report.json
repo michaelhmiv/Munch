@@ -1,0 +1,1185 @@
+{
+  "run_at": "2026-11-11T12:19:39.014Z",
+  "layer": "1-identify",
+  "fixtures": 1,
+  "repeats": 1,
+  "concurrency": 4,
+  "prices_per_million_tokens": {
+    "meta/muse-ember": {
+      "input": 0.1,
+      "output": 0.5
+    },
+    "openai/gpt-5.6-luna": {
+      "input": 0.2,
+      "output": 1.2
+    },
+    "deepseek/deepseek-v4.1-flash": {
+      "input": 0.05,
+      "output": 0.57
+    },
+    "qwen/qwen3.7-flash": {
+      "input": 0.03,
+      "output": 0.13
+    },
+    "z-ai/glm-5.3-flash": {
+      "input": 0.04,
+      "output": 0.08
+    },
+    "google/gemini-2.5-flash-lite": {
+      "input": 0.1,
+      "output": 0.4
+    },
+    "amazon/nova-lite-v1": {
+      "input": 0.06,
+      "output": 0.24
+    },
+    "openai/gpt-5-nano": {
+      "input": 0.05,
+      "output": 0.4
+    },
+    "google/gemini-3.1-flash-lite": {
+      "input": 0.25,
+      "output": 1.5
+    },
+    "google/gemini-3.5-flash-lite": {
+      "input": 0.3,
+      "output": 2.5
+    },
+    "google/gemini-3-flash-preview": {
+      "input": 0.5,
+      "output": 3
+    },
+    "google/gemini-3.8-flash": {
+      "input": 0.825,
+      "output": 4.125
+    },
+    "qwen/qwen3.5-9b": {
+      "input": 0.17,
+      "output": 0.25
+    },
+    "qwen/qwen3-vl-8b-instruct": {
+      "input": 0.25,
+      "output": 0.75
+    },
+    "qwen/qwen3.8-flash": {
+      "input": 0.15,
+      "output": 0.47
+    },
+    "openai/gpt-4o": {
+      "input": 2.5,
+      "output": 10
+    },
+    "openai/gpt-4o-mini": {
+      "input": 0.15,
+      "output": 0.6
+    },
+    "openai/gpt-5-mini": {
+      "input": 0.25,
+      "output": 2
+    },
+    "anthropic/claude-haiku-4.5": {
+      "input": 1,
+      "output": 5
+    },
+    "anthropic/claude-haiku-5.5": {
+      "input": 0.1,
+      "output": 0.5
+    }
+  },
+  "request_accommodations": {
+    "z-ai/glm-5.3-flash": "Bake-off-only request accommodation: the GLM endpoint is reasoning-mandatory and rejects the production reasoning:{enabled:false} with HTTP 400, so the harness rewrote ONLY the reasoning field of the outgoing request (shape: reasoning field omitted; endpoint default applies). Prompt, schema, and image payload identical; no production code changed. GLM cost/time include its reasoning tokens — its real operating profile."
+  },
+  "fixtures_dir": "fixtures/photo-eval-real",
+  "caveat": "The fixture set is REAL photographs from openly licensed sources (per-photo provenance in the set's manifest.json). Expectations are conservative — only items a careful human can clearly see are expected, and portions are scored only where the photo honestly supports a range (portion: null = unscored) — so these scores are photographic accuracy evidence on this set, still a small sample (see the set README).",
+  "total_computed_spend_usd": 0.0132221,
+  "ranked_models": [
+    "qwen/qwen3.5-9b",
+    "openai/gpt-4o",
+    "openai/gpt-4o-mini",
+    "qwen/qwen3-vl-8b-instruct",
+    "anthropic/claude-haiku-4.5",
+    "anthropic/claude-haiku-5.5",
+    "qwen/qwen3.8-flash",
+    "google/gemini-3.1-flash-lite",
+    "google/gemini-3.5-flash-lite",
+    "google/gemini-3-flash-preview",
+    "google/gemini-3.8-flash",
+    "openai/gpt-5-mini"
+  ],
+  "models": [
+    {
+      "model": "google/gemini-3.1-flash-lite",
+      "pricePerMillion": {
+        "input": 0.25,
+        "output": 1.5
+      },
+      "tasksAttempted": 1,
+      "tasksCompleted": 0,
+      "tasksFailed": 1,
+      "failureRate": 1,
+      "failures": [
+        {
+          "fixtureId": "mixed-03-full-english-breakfast",
+          "repeat": 0,
+          "error": "Meal photo provider returned HTTP 400: {\"error\":{\"message\":\"Provider returned error\",\"code\":400,\"metadata\":{\"raw\":\"{\\n \\\"error\\\": {\\n \\\"code\\\": 400,\\n \\\"message\\\": \\\"Request contains an invalid argument.\\\",\\n \\\"status\\\": \\\"INVALID_ARGUMENT\\\"\\n }\\n}\\n\",\"provider_name\":\"Google AI Studio\",\"is_byok\":false,\"provider_error_code\":\"400\",\"previous_errors\":[{\"code\":400,\"message\":\"Provider returned error\",\"provider_name\":\"Google\",\"raw\":\"{\\n \\\"error\\\": {\\n \\\"code\\\": 400,\\n \\\"message\\\": \\\"Request contains an invalid argument.\\\",\\n \\\"status\\\": \\\"I"
+        }
+      ],
+      "totalPromptTokens": 0,
+      "totalCompletionTokens": 0,
+      "totalReasoningTokens": 0,
+      "requestAccommodation": null,
+      "totalComputedCostUsd": 0,
+      "costPerTaskUsd": 0,
+      "totalReportedCostUsd": null,
+      "callsWithReportedCost": 0,
+      "costDisagreementCalls": 0,
+      "latencyMs": {
+        "median": null,
+        "p95": null,
+        "mean": null
+      },
+      "accuracy": {
+        "expectedItems": 5,
+        "matchedItems": 0,
+        "returnedItems": 0,
+        "extraItems": 0,
+        "recall": 0,
+        "recallCompletedTasksOnly": 0,
+        "precision": null,
+        "portionChecked": 0,
+        "portionInRange": 0,
+        "portionInRangeRate": null
+      },
+      "providersSeen": {},
+      "perFixture": [
+        {
+          "fixtureId": "mixed-03-full-english-breakfast",
+          "source": "real",
+          "expectedItems": 5,
+          "meanRecall": null,
+          "runs": [
+            {
+              "fixtureId": "mixed-03-full-english-breakfast",
+              "repeat": 0,
+              "ok": false,
+              "failure": "Meal photo provider returned HTTP 400: {\"error\":{\"message\":\"Provider returned error\",\"code\":400,\"metadata\":{\"raw\":\"{\\n \\\"error\\\": {\\n \\\"code\\\": 400,\\n \\\"message\\\": \\\"Request contains an invalid argument.\\\",\\n \\\"status\\\": \\\"INVALID_ARGUMENT\\\"\\n }\\n}\\n\",\"provider_name\":\"Google AI Studio\",\"is_byok\":false,\"provider_error_code\":\"400\",\"previous_errors\":[{\"code\":400,\"message\":\"Provider returned error\",\"provider_name\":\"Google\",\"raw\":\"{\\n \\\"error\\\": {\\n \\\"code\\\": 400,\\n \\\"message\\\": \\\"Request contains an invalid argument.\\\",\\n \\\"status\\\": \\\"I",
+              "latencyMs": 5628,
+              "httpCalls": 1,
+              "promptTokens": 0,
+              "completionTokens": 0,
+              "reasoningTokens": 0,
+              "computedCostUsd": 0,
+              "reportedCostUsd": null,
+              "providers": [],
+              "items": [],
+              "score": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "google/gemini-3.5-flash-lite",
+      "pricePerMillion": {
+        "input": 0.3,
+        "output": 2.5
+      },
+      "tasksAttempted": 1,
+      "tasksCompleted": 0,
+      "tasksFailed": 1,
+      "failureRate": 1,
+      "failures": [
+        {
+          "fixtureId": "mixed-03-full-english-breakfast",
+          "repeat": 0,
+          "error": "Meal photo provider returned HTTP 400: {\"error\":{\"message\":\"Reasoning is mandatory for this endpoint and cannot be disabled.\",\"code\":400,\"metadata\":{\"provider_name\":null}}}"
+        }
+      ],
+      "totalPromptTokens": 0,
+      "totalCompletionTokens": 0,
+      "totalReasoningTokens": 0,
+      "requestAccommodation": null,
+      "totalComputedCostUsd": 0,
+      "costPerTaskUsd": 0,
+      "totalReportedCostUsd": null,
+      "callsWithReportedCost": 0,
+      "costDisagreementCalls": 0,
+      "latencyMs": {
+        "median": null,
+        "p95": null,
+        "mean": null
+      },
+      "accuracy": {
+        "expectedItems": 5,
+        "matchedItems": 0,
+        "returnedItems": 0,
+        "extraItems": 0,
+        "recall": 0,
+        "recallCompletedTasksOnly": 0,
+        "precision": null,
+        "portionChecked": 0,
+        "portionInRange": 0,
+        "portionInRangeRate": null
+      },
+      "providersSeen": {},
+      "perFixture": [
+        {
+          "fixtureId": "mixed-03-full-english-breakfast",
+          "source": "real",
+          "expectedItems": 5,
+          "meanRecall": null,
+          "runs": [
+            {
+              "fixtureId": "mixed-03-full-english-breakfast",
+              "repeat": 0,
+              "ok": false,
+              "failure": "Meal photo provider returned HTTP 400: {\"error\":{\"message\":\"Reasoning is mandatory for this endpoint and cannot be disabled.\",\"code\":400,\"metadata\":{\"provider_name\":null}}}",
+              "latencyMs": 77,
+              "httpCalls": 1,
+              "promptTokens": 0,
+              "completionTokens": 0,
+              "reasoningTokens": 0,
+              "computedCostUsd": 0,
+              "reportedCostUsd": null,
+              "providers": [],
+              "items": [],
+              "score": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "google/gemini-3-flash-preview",
+      "pricePerMillion": {
+        "input": 0.5,
+        "output": 3
+      },
+      "tasksAttempted": 1,
+      "tasksCompleted": 0,
+      "tasksFailed": 1,
+      "failureRate": 1,
+      "failures": [
+        {
+          "fixtureId": "mixed-03-full-english-breakfast",
+          "repeat": 0,
+          "error": "Meal photo provider returned HTTP 400: {\"error\":{\"message\":\"Provider returned error\",\"code\":400,\"metadata\":{\"raw\":\"{\\n \\\"error\\\": {\\n \\\"code\\\": 400,\\n \\\"message\\\": \\\"Request contains an invalid argument.\\\",\\n \\\"status\\\": \\\"INVALID_ARGUMENT\\\"\\n }\\n}\\n\",\"provider_name\":\"Google AI Studio\",\"is_byok\":false,\"provider_error_code\":\"400\",\"previous_errors\":[{\"code\":400,\"message\":\"Provider returned error\",\"provider_name\":\"Google\",\"raw\":\"{\\n \\\"error\\\": {\\n \\\"code\\\": 400,\\n \\\"message\\\": \\\"Request contains an invalid argument.\\\",\\n \\\"status\\\": \\\"I"
+        }
+      ],
+      "totalPromptTokens": 0,
+      "totalCompletionTokens": 0,
+      "totalReasoningTokens": 0,
+      "requestAccommodation": null,
+      "totalComputedCostUsd": 0,
+      "costPerTaskUsd": 0,
+      "totalReportedCostUsd": null,
+      "callsWithReportedCost": 0,
+      "costDisagreementCalls": 0,
+      "latencyMs": {
+        "median": null,
+        "p95": null,
+        "mean": null
+      },
+      "accuracy": {
+        "expectedItems": 5,
+        "matchedItems": 0,
+        "returnedItems": 0,
+        "extraItems": 0,
+        "recall": 0,
+        "recallCompletedTasksOnly": 0,
+        "precision": null,
+        "portionChecked": 0,
+        "portionInRange": 0,
+        "portionInRangeRate": null
+      },
+      "providersSeen": {},
+      "perFixture": [
+        {
+          "fixtureId": "mixed-03-full-english-breakfast",
+          "source": "real",
+          "expectedItems": 5,
+          "meanRecall": null,
+          "runs": [
+            {
+              "fixtureId": "mixed-03-full-english-breakfast",
+              "repeat": 0,
+              "ok": false,
+              "failure": "Meal photo provider returned HTTP 400: {\"error\":{\"message\":\"Provider returned error\",\"code\":400,\"metadata\":{\"raw\":\"{\\n \\\"error\\\": {\\n \\\"code\\\": 400,\\n \\\"message\\\": \\\"Request contains an invalid argument.\\\",\\n \\\"status\\\": \\\"INVALID_ARGUMENT\\\"\\n }\\n}\\n\",\"provider_name\":\"Google AI Studio\",\"is_byok\":false,\"provider_error_code\":\"400\",\"previous_errors\":[{\"code\":400,\"message\":\"Provider returned error\",\"provider_name\":\"Google\",\"raw\":\"{\\n \\\"error\\\": {\\n \\\"code\\\": 400,\\n \\\"message\\\": \\\"Request contains an invalid argument.\\\",\\n \\\"status\\\": \\\"I",
+              "latencyMs": 4178,
+              "httpCalls": 1,
+              "promptTokens": 0,
+              "completionTokens": 0,
+              "reasoningTokens": 0,
+              "computedCostUsd": 0,
+              "reportedCostUsd": null,
+              "providers": [],
+              "items": [],
+              "score": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "google/gemini-3.8-flash",
+      "pricePerMillion": {
+        "input": 0.825,
+        "output": 4.125
+      },
+      "tasksAttempted": 1,
+      "tasksCompleted": 0,
+      "tasksFailed": 1,
+      "failureRate": 1,
+      "failures": [
+        {
+          "fixtureId": "mixed-03-full-english-breakfast",
+          "repeat": 0,
+          "error": "Meal photo provider returned HTTP 400: {\"error\":{\"message\":\"Reasoning is mandatory for this endpoint and cannot be disabled.\",\"code\":400,\"metadata\":{\"provider_name\":null}}}"
+        }
+      ],
+      "totalPromptTokens": 0,
+      "totalCompletionTokens": 0,
+      "totalReasoningTokens": 0,
+      "requestAccommodation": null,
+      "totalComputedCostUsd": 0,
+      "costPerTaskUsd": 0,
+      "totalReportedCostUsd": null,
+      "callsWithReportedCost": 0,
+      "costDisagreementCalls": 0,
+      "latencyMs": {
+        "median": null,
+        "p95": null,
+        "mean": null
+      },
+      "accuracy": {
+        "expectedItems": 5,
+        "matchedItems": 0,
+        "returnedItems": 0,
+        "extraItems": 0,
+        "recall": 0,
+        "recallCompletedTasksOnly": 0,
+        "precision": null,
+        "portionChecked": 0,
+        "portionInRange": 0,
+        "portionInRangeRate": null
+      },
+      "providersSeen": {},
+      "perFixture": [
+        {
+          "fixtureId": "mixed-03-full-english-breakfast",
+          "source": "real",
+          "expectedItems": 5,
+          "meanRecall": null,
+          "runs": [
+            {
+              "fixtureId": "mixed-03-full-english-breakfast",
+              "repeat": 0,
+              "ok": false,
+              "failure": "Meal photo provider returned HTTP 400: {\"error\":{\"message\":\"Reasoning is mandatory for this endpoint and cannot be disabled.\",\"code\":400,\"metadata\":{\"provider_name\":null}}}",
+              "latencyMs": 61,
+              "httpCalls": 1,
+              "promptTokens": 0,
+              "completionTokens": 0,
+              "reasoningTokens": 0,
+              "computedCostUsd": 0,
+              "reportedCostUsd": null,
+              "providers": [],
+              "items": [],
+              "score": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "qwen/qwen3.5-9b",
+      "pricePerMillion": {
+        "input": 0.17,
+        "output": 0.25
+      },
+      "tasksAttempted": 1,
+      "tasksCompleted": 1,
+      "tasksFailed": 0,
+      "failureRate": 0,
+      "failures": [],
+      "totalPromptTokens": 1365,
+      "totalCompletionTokens": 323,
+      "totalReasoningTokens": 0,
+      "requestAccommodation": null,
+      "totalComputedCostUsd": 0.0003128,
+      "costPerTaskUsd": 0.0003128,
+      "totalReportedCostUsd": 0.0001496781,
+      "callsWithReportedCost": 1,
+      "costDisagreementCalls": 1,
+      "latencyMs": {
+        "median": 4305,
+        "p95": 4305,
+        "mean": 4305
+      },
+      "accuracy": {
+        "expectedItems": 5,
+        "matchedItems": 5,
+        "returnedItems": 5,
+        "extraItems": 0,
+        "recall": 1,
+        "recallCompletedTasksOnly": 1,
+        "precision": 1,
+        "portionChecked": 4,
+        "portionInRange": 4,
+        "portionInRangeRate": 1
+      },
+      "providersSeen": {
+        "Darkbloom": 1
+      },
+      "perFixture": [
+        {
+          "fixtureId": "mixed-03-full-english-breakfast",
+          "source": "real",
+          "expectedItems": 5,
+          "meanRecall": 1,
+          "runs": [
+            {
+              "fixtureId": "mixed-03-full-english-breakfast",
+              "repeat": 0,
+              "ok": true,
+              "failure": null,
+              "latencyMs": 4305,
+              "httpCalls": 1,
+              "promptTokens": 1365,
+              "completionTokens": 323,
+              "reasoningTokens": 0,
+              "computedCostUsd": 0.0003128,
+              "reportedCostUsd": 0.0001496781,
+              "providers": [
+                "Darkbloom"
+              ],
+              "items": [
+                {
+                  "name": "Baked Beans",
+                  "quantity": 150,
+                  "unit": "g"
+                },
+                {
+                  "name": "Sausages",
+                  "quantity": 2,
+                  "unit": "piece"
+                },
+                {
+                  "name": "Bacon",
+                  "quantity": 4,
+                  "unit": "slice"
+                },
+                {
+                  "name": "Fried Eggs",
+                  "quantity": 2,
+                  "unit": "piece"
+                },
+                {
+                  "name": "Toast",
+                  "quantity": 2,
+                  "unit": "slice"
+                }
+              ],
+              "score": {
+                "expected": 5,
+                "returned": 5,
+                "matched": 5,
+                "extras": 0,
+                "portionChecked": 4,
+                "portionInRange": 4
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "qwen/qwen3-vl-8b-instruct",
+      "pricePerMillion": {
+        "input": 0.25,
+        "output": 0.75
+      },
+      "tasksAttempted": 1,
+      "tasksCompleted": 1,
+      "tasksFailed": 0,
+      "failureRate": 0,
+      "failures": [],
+      "totalPromptTokens": 1126,
+      "totalCompletionTokens": 286,
+      "totalReasoningTokens": 0,
+      "requestAccommodation": null,
+      "totalComputedCostUsd": 0.000496,
+      "costPerTaskUsd": 0.000496,
+      "totalReportedCostUsd": 0.00049104,
+      "callsWithReportedCost": 1,
+      "costDisagreementCalls": 0,
+      "latencyMs": {
+        "median": 11696,
+        "p95": 11696,
+        "mean": 11696
+      },
+      "accuracy": {
+        "expectedItems": 5,
+        "matchedItems": 3,
+        "returnedItems": 5,
+        "extraItems": 2,
+        "recall": 0.6,
+        "recallCompletedTasksOnly": 0.6,
+        "precision": 0.6,
+        "portionChecked": 1,
+        "portionInRange": 1,
+        "portionInRangeRate": 1
+      },
+      "providersSeen": {
+        "Parasail": 1
+      },
+      "perFixture": [
+        {
+          "fixtureId": "mixed-03-full-english-breakfast",
+          "source": "real",
+          "expectedItems": 5,
+          "meanRecall": 0.6,
+          "runs": [
+            {
+              "fixtureId": "mixed-03-full-english-breakfast",
+              "repeat": 0,
+              "ok": true,
+              "failure": null,
+              "latencyMs": 11696,
+              "httpCalls": 1,
+              "promptTokens": 1126,
+              "completionTokens": 286,
+              "reasoningTokens": 0,
+              "computedCostUsd": 0.000496,
+              "reportedCostUsd": 0.00049104,
+              "providers": [
+                "Parasail"
+              ],
+              "items": [
+                {
+                  "name": "baked beans",
+                  "quantity": 150,
+                  "unit": "g"
+                },
+                {
+                  "name": "sausage",
+                  "quantity": 100,
+                  "unit": "g"
+                },
+                {
+                  "name": "bacon",
+                  "quantity": 80,
+                  "unit": "g"
+                },
+                {
+                  "name": "fried egg",
+                  "quantity": 2,
+                  "unit": "piece"
+                },
+                {
+                  "name": "toast",
+                  "quantity": 2,
+                  "unit": "slice"
+                }
+              ],
+              "score": {
+                "expected": 5,
+                "returned": 5,
+                "matched": 3,
+                "extras": 2,
+                "portionChecked": 1,
+                "portionInRange": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "qwen/qwen3.8-flash",
+      "pricePerMillion": {
+        "input": 0.15,
+        "output": 0.47
+      },
+      "tasksAttempted": 1,
+      "tasksCompleted": 1,
+      "tasksFailed": 0,
+      "failureRate": 0,
+      "failures": [],
+      "totalPromptTokens": 1398,
+      "totalCompletionTokens": 325,
+      "totalReasoningTokens": 0,
+      "requestAccommodation": null,
+      "totalComputedCostUsd": 0.00036244999999999995,
+      "costPerTaskUsd": 0.00036244999999999995,
+      "totalReportedCostUsd": 0.0003588255,
+      "callsWithReportedCost": 1,
+      "costDisagreementCalls": 0,
+      "latencyMs": {
+        "median": 12559,
+        "p95": 12559,
+        "mean": 12559
+      },
+      "accuracy": {
+        "expectedItems": 5,
+        "matchedItems": 3,
+        "returnedItems": 6,
+        "extraItems": 3,
+        "recall": 0.6,
+        "recallCompletedTasksOnly": 0.6,
+        "precision": 0.5,
+        "portionChecked": 2,
+        "portionInRange": 1,
+        "portionInRangeRate": 0.5
+      },
+      "providersSeen": {
+        "Alibaba": 1
+      },
+      "perFixture": [
+        {
+          "fixtureId": "mixed-03-full-english-breakfast",
+          "source": "real",
+          "expectedItems": 5,
+          "meanRecall": 0.6,
+          "runs": [
+            {
+              "fixtureId": "mixed-03-full-english-breakfast",
+              "repeat": 0,
+              "ok": true,
+              "failure": null,
+              "latencyMs": 12559,
+              "httpCalls": 1,
+              "promptTokens": 1398,
+              "completionTokens": 325,
+              "reasoningTokens": 0,
+              "computedCostUsd": 0.00036244999999999995,
+              "reportedCostUsd": 0.0003588255,
+              "providers": [
+                "Alibaba"
+              ],
+              "items": [
+                {
+                  "name": "Baked beans",
+                  "quantity": 200,
+                  "unit": "g"
+                },
+                {
+                  "name": "Sausage",
+                  "quantity": 2,
+                  "unit": "piece"
+                },
+                {
+                  "name": "Fried egg",
+                  "quantity": 2,
+                  "unit": "piece"
+                },
+                {
+                  "name": "Back bacon",
+                  "quantity": 3,
+                  "unit": "slice"
+                },
+                {
+                  "name": "Toast",
+                  "quantity": 1,
+                  "unit": "slice"
+                },
+                {
+                  "name": "French toast",
+                  "quantity": 1,
+                  "unit": "slice"
+                }
+              ],
+              "score": {
+                "expected": 5,
+                "returned": 6,
+                "matched": 3,
+                "extras": 3,
+                "portionChecked": 2,
+                "portionInRange": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "openai/gpt-4o",
+      "pricePerMillion": {
+        "input": 2.5,
+        "output": 10
+      },
+      "tasksAttempted": 1,
+      "tasksCompleted": 1,
+      "tasksFailed": 0,
+      "failureRate": 0,
+      "failures": [],
+      "totalPromptTokens": 1183,
+      "totalCompletionTokens": 166,
+      "totalReasoningTokens": 0,
+      "requestAccommodation": null,
+      "totalComputedCostUsd": 0.0046175,
+      "costPerTaskUsd": 0.0046175,
+      "totalReportedCostUsd": 0.004571325,
+      "callsWithReportedCost": 1,
+      "costDisagreementCalls": 0,
+      "latencyMs": {
+        "median": 2561,
+        "p95": 2561,
+        "mean": 2561
+      },
+      "accuracy": {
+        "expectedItems": 5,
+        "matchedItems": 5,
+        "returnedItems": 5,
+        "extraItems": 0,
+        "recall": 1,
+        "recallCompletedTasksOnly": 1,
+        "precision": 1,
+        "portionChecked": 3,
+        "portionInRange": 3,
+        "portionInRangeRate": 1
+      },
+      "providersSeen": {
+        "OpenAI": 1
+      },
+      "perFixture": [
+        {
+          "fixtureId": "mixed-03-full-english-breakfast",
+          "source": "real",
+          "expectedItems": 5,
+          "meanRecall": 1,
+          "runs": [
+            {
+              "fixtureId": "mixed-03-full-english-breakfast",
+              "repeat": 0,
+              "ok": true,
+              "failure": null,
+              "latencyMs": 2561,
+              "httpCalls": 1,
+              "promptTokens": 1183,
+              "completionTokens": 166,
+              "reasoningTokens": 0,
+              "computedCostUsd": 0.0046175,
+              "reportedCostUsd": 0.004571325,
+              "providers": [
+                "OpenAI"
+              ],
+              "items": [
+                {
+                  "name": "baked beans",
+                  "quantity": 150,
+                  "unit": "g"
+                },
+                {
+                  "name": "sausages",
+                  "quantity": 2,
+                  "unit": "piece"
+                },
+                {
+                  "name": "bacon",
+                  "quantity": 3,
+                  "unit": "piece"
+                },
+                {
+                  "name": "fried eggs",
+                  "quantity": 2,
+                  "unit": "piece"
+                },
+                {
+                  "name": "toast",
+                  "quantity": 2,
+                  "unit": "slice"
+                }
+              ],
+              "score": {
+                "expected": 5,
+                "returned": 5,
+                "matched": 5,
+                "extras": 0,
+                "portionChecked": 3,
+                "portionInRange": 3
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "openai/gpt-4o-mini",
+      "pricePerMillion": {
+        "input": 0.15,
+        "output": 0.6
+      },
+      "tasksAttempted": 1,
+      "tasksCompleted": 1,
+      "tasksFailed": 0,
+      "failureRate": 0,
+      "failures": [],
+      "totalPromptTokens": 25919,
+      "totalCompletionTokens": 175,
+      "totalReasoningTokens": 0,
+      "requestAccommodation": null,
+      "totalComputedCostUsd": 0.00399285,
+      "costPerTaskUsd": 0.00399285,
+      "totalReportedCostUsd": 0.0039529215,
+      "callsWithReportedCost": 1,
+      "costDisagreementCalls": 0,
+      "latencyMs": {
+        "median": 3686,
+        "p95": 3686,
+        "mean": 3686
+      },
+      "accuracy": {
+        "expectedItems": 5,
+        "matchedItems": 5,
+        "returnedItems": 5,
+        "extraItems": 0,
+        "recall": 1,
+        "recallCompletedTasksOnly": 1,
+        "precision": 1,
+        "portionChecked": 4,
+        "portionInRange": 4,
+        "portionInRangeRate": 1
+      },
+      "providersSeen": {
+        "OpenAI": 1
+      },
+      "perFixture": [
+        {
+          "fixtureId": "mixed-03-full-english-breakfast",
+          "source": "real",
+          "expectedItems": 5,
+          "meanRecall": 1,
+          "runs": [
+            {
+              "fixtureId": "mixed-03-full-english-breakfast",
+              "repeat": 0,
+              "ok": true,
+              "failure": null,
+              "latencyMs": 3686,
+              "httpCalls": 1,
+              "promptTokens": 25919,
+              "completionTokens": 175,
+              "reasoningTokens": 0,
+              "computedCostUsd": 0.00399285,
+              "reportedCostUsd": 0.0039529215,
+              "providers": [
+                "OpenAI"
+              ],
+              "items": [
+                {
+                  "name": "grilled sausages",
+                  "quantity": 2,
+                  "unit": "piece"
+                },
+                {
+                  "name": "fried bacon",
+                  "quantity": 3,
+                  "unit": "slice"
+                },
+                {
+                  "name": "fried eggs",
+                  "quantity": 2,
+                  "unit": "piece"
+                },
+                {
+                  "name": "toast",
+                  "quantity": 2,
+                  "unit": "slice"
+                },
+                {
+                  "name": "baked beans",
+                  "quantity": 150,
+                  "unit": "g"
+                }
+              ],
+              "score": {
+                "expected": 5,
+                "returned": 5,
+                "matched": 5,
+                "extras": 0,
+                "portionChecked": 4,
+                "portionInRange": 4
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "openai/gpt-5-mini",
+      "pricePerMillion": {
+        "input": 0.25,
+        "output": 2
+      },
+      "tasksAttempted": 1,
+      "tasksCompleted": 0,
+      "tasksFailed": 1,
+      "failureRate": 1,
+      "failures": [
+        {
+          "fixtureId": "mixed-03-full-english-breakfast",
+          "repeat": 0,
+          "error": "Meal photo provider returned HTTP 400: {\"error\":{\"message\":\"Reasoning is mandatory for this endpoint and cannot be disabled.\",\"code\":400,\"metadata\":{\"provider_name\":null}}}"
+        }
+      ],
+      "totalPromptTokens": 0,
+      "totalCompletionTokens": 0,
+      "totalReasoningTokens": 0,
+      "requestAccommodation": null,
+      "totalComputedCostUsd": 0,
+      "costPerTaskUsd": 0,
+      "totalReportedCostUsd": null,
+      "callsWithReportedCost": 0,
+      "costDisagreementCalls": 0,
+      "latencyMs": {
+        "median": null,
+        "p95": null,
+        "mean": null
+      },
+      "accuracy": {
+        "expectedItems": 5,
+        "matchedItems": 0,
+        "returnedItems": 0,
+        "extraItems": 0,
+        "recall": 0,
+        "recallCompletedTasksOnly": 0,
+        "precision": null,
+        "portionChecked": 0,
+        "portionInRange": 0,
+        "portionInRangeRate": null
+      },
+      "providersSeen": {},
+      "perFixture": [
+        {
+          "fixtureId": "mixed-03-full-english-breakfast",
+          "source": "real",
+          "expectedItems": 5,
+          "meanRecall": null,
+          "runs": [
+            {
+              "fixtureId": "mixed-03-full-english-breakfast",
+              "repeat": 0,
+              "ok": false,
+              "failure": "Meal photo provider returned HTTP 400: {\"error\":{\"message\":\"Reasoning is mandatory for this endpoint and cannot be disabled.\",\"code\":400,\"metadata\":{\"provider_name\":null}}}",
+              "latencyMs": 994,
+              "httpCalls": 1,
+              "promptTokens": 0,
+              "completionTokens": 0,
+              "reasoningTokens": 0,
+              "computedCostUsd": 0,
+              "reportedCostUsd": null,
+              "providers": [],
+              "items": [],
+              "score": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "anthropic/claude-haiku-4.5",
+      "pricePerMillion": {
+        "input": 1,
+        "output": 5
+      },
+      "tasksAttempted": 1,
+      "tasksCompleted": 1,
+      "tasksFailed": 0,
+      "failureRate": 0,
+      "failures": [],
+      "totalPromptTokens": 1792,
+      "totalCompletionTokens": 252,
+      "totalReasoningTokens": 0,
+      "requestAccommodation": null,
+      "totalComputedCostUsd": 0.003052,
+      "costPerTaskUsd": 0.003052,
+      "totalReportedCostUsd": 0.00302148,
+      "callsWithReportedCost": 1,
+      "costDisagreementCalls": 0,
+      "latencyMs": {
+        "median": 6223,
+        "p95": 6223,
+        "mean": 6223
+      },
+      "accuracy": {
+        "expectedItems": 5,
+        "matchedItems": 3,
+        "returnedItems": 5,
+        "extraItems": 2,
+        "recall": 0.6,
+        "recallCompletedTasksOnly": 0.6,
+        "precision": 0.6,
+        "portionChecked": 2,
+        "portionInRange": 2,
+        "portionInRangeRate": 1
+      },
+      "providersSeen": {
+        "Amazon Bedrock": 1
+      },
+      "perFixture": [
+        {
+          "fixtureId": "mixed-03-full-english-breakfast",
+          "source": "real",
+          "expectedItems": 5,
+          "meanRecall": 0.6,
+          "runs": [
+            {
+              "fixtureId": "mixed-03-full-english-breakfast",
+              "repeat": 0,
+              "ok": true,
+              "failure": null,
+              "latencyMs": 6223,
+              "httpCalls": 1,
+              "promptTokens": 1792,
+              "completionTokens": 252,
+              "reasoningTokens": 0,
+              "computedCostUsd": 0.003052,
+              "reportedCostUsd": 0.00302148,
+              "providers": [
+                "Amazon Bedrock"
+              ],
+              "items": [
+                {
+                  "name": "baked beans",
+                  "quantity": 200,
+                  "unit": "g"
+                },
+                {
+                  "name": "sausage",
+                  "quantity": 2,
+                  "unit": "piece"
+                },
+                {
+                  "name": "bacon",
+                  "quantity": 3,
+                  "unit": "slice"
+                },
+                {
+                  "name": "fried egg",
+                  "quantity": 2,
+                  "unit": "piece"
+                },
+                {
+                  "name": "toast",
+                  "quantity": 2,
+                  "unit": "slice"
+                }
+              ],
+              "score": {
+                "expected": 5,
+                "returned": 5,
+                "matched": 3,
+                "extras": 2,
+                "portionChecked": 2,
+                "portionInRange": 2
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "model": "anthropic/claude-haiku-5.5",
+      "pricePerMillion": {
+        "input": 0.1,
+        "output": 0.5
+      },
+      "tasksAttempted": 1,
+      "tasksCompleted": 1,
+      "tasksFailed": 0,
+      "failureRate": 0,
+      "failures": [],
+      "totalPromptTokens": 2015,
+      "totalCompletionTokens": 374,
+      "totalReasoningTokens": 0,
+      "requestAccommodation": null,
+      "totalComputedCostUsd": 0.00038849999999999996,
+      "costPerTaskUsd": 0.00038849999999999996,
+      "totalReportedCostUsd": 0.000384615,
+      "callsWithReportedCost": 1,
+      "costDisagreementCalls": 0,
+      "latencyMs": {
+        "median": 3521,
+        "p95": 3521,
+        "mean": 3521
+      },
+      "accuracy": {
+        "expectedItems": 5,
+        "matchedItems": 3,
+        "returnedItems": 5,
+        "extraItems": 2,
+        "recall": 0.6,
+        "recallCompletedTasksOnly": 0.6,
+        "precision": 0.6,
+        "portionChecked": 2,
+        "portionInRange": 2,
+        "portionInRangeRate": 1
+      },
+      "providersSeen": {
+        "Azure": 1
+      },
+      "perFixture": [
+        {
+          "fixtureId": "mixed-03-full-english-breakfast",
+          "source": "real",
+          "expectedItems": 5,
+          "meanRecall": 0.6,
+          "runs": [
+            {
+              "fixtureId": "mixed-03-full-english-breakfast",
+              "repeat": 0,
+              "ok": true,
+              "failure": null,
+              "latencyMs": 3521,
+              "httpCalls": 1,
+              "promptTokens": 2015,
+              "completionTokens": 374,
+              "reasoningTokens": 0,
+              "computedCostUsd": 0.00038849999999999996,
+              "reportedCostUsd": 0.000384615,
+              "providers": [
+                "Azure"
+              ],
+              "items": [
+                {
+                  "name": "baked beans in tomato sauce",
+                  "quantity": 150,
+                  "unit": "g"
+                },
+                {
+                  "name": "pork sausage",
+                  "quantity": 2,
+                  "unit": "piece"
+                },
+                {
+                  "name": "back bacon",
+                  "quantity": 2,
+                  "unit": "slice"
+                },
+                {
+                  "name": "fried egg",
+                  "quantity": 2,
+                  "unit": "piece"
+                },
+                {
+                  "name": "toast",
+                  "quantity": 2,
+                  "unit": "slice"
+                }
+              ],
+              "score": {
+                "expected": 5,
+                "returned": 5,
+                "matched": 3,
+                "extras": 2,
+                "portionChecked": 2,
+                "portionInRange": 2
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
