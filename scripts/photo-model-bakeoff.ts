@@ -17,16 +17,21 @@
  * extra (hallucinated) items, and portion-in-range rate — using the
  * same name matching as src/meal-photo/scoring.ts.
  *
- * CAVEAT, carried into every output: the fixture set is 100% synthetic
- * illustrations. These scores rank models against each other on
- * identical inputs; they are NOT real-photo accuracy.
+ * CAVEAT, carried into every output: the DEFAULT fixture set is 100%
+ * synthetic illustrations; scores on it rank models against each other
+ * on identical inputs and are NOT real-photo accuracy. The real-photo
+ * set (fixtures/photo-eval-real, BAKEOFF_FIXTURES_DIR) is real
+ * photographs from openly licensed sources with conservative,
+ * human-verified expectations; its report carries its own caveat.
  *
  * Layer 2 (finalists through the full grounding pipeline) reuses
  * scripts/photo-eval-live.ts via its existing MUNCH_AI_MODEL override;
  * see .github/workflows/photo-model-bakeoff.yml.
  *
  * Knobs (env): BAKEOFF_MODELS (comma-separated slugs; default the full
- * slate), BAKEOFF_FIXTURE_IDS (comma-separated subset), BAKEOFF_REPEATS
+ * slate), BAKEOFF_FIXTURES_DIR (repo-relative fixture set directory;
+ * default fixtures/photo-eval), BAKEOFF_FIXTURE_IDS (comma-separated
+ * subset), BAKEOFF_REPEATS
  * (default 2), BAKEOFF_CONCURRENCY (default 4), BAKEOFF_OUT (default
  * ./bakeoff-report), BAKEOFF_GLM_REASONING (GLM accommodation shape:
  * omit | minimal; default omit — see REQUEST_ACCOMMODATIONS). Exit 0
@@ -46,7 +51,9 @@ import {
 } from "../src/meal-photo/vision.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const FIXTURES = join(ROOT, "fixtures", "photo-eval");
+const FIXTURES_DIR_REL =
+    process.env.BAKEOFF_FIXTURES_DIR?.trim() || "fixtures/photo-eval";
+const FIXTURES = join(ROOT, FIXTURES_DIR_REL);
 const OUT = process.env.BAKEOFF_OUT ?? join(ROOT, "bakeoff-report");
 
 /** Catalog prices, USD per 1M tokens (input / output), as briefed
@@ -150,7 +157,14 @@ interface ExpectationFixture {
     source: string;
     items: Array<{
         name: string;
-        portion: { min_quantity: number; max_quantity: number; unit: string };
+        /** null = portion deliberately unscored (the real-photo set
+         * scores a portion only where the photo honestly supports a
+         * range — see fixtures/photo-eval-real/README.md). */
+        portion: {
+            min_quantity: number;
+            max_quantity: number;
+            unit: string;
+        } | null;
         expected_provider: string;
     }>;
 }
@@ -165,6 +179,10 @@ if (fixtures.length === 0) {
     console.error("[bakeoff] No fixtures selected; nothing to run.");
     process.exit(2);
 }
+const IS_REAL_SET = fixtures.some((fixture) => fixture.source === "real");
+const SET_CAVEAT = IS_REAL_SET
+    ? "The fixture set is REAL photographs from openly licensed sources (per-photo provenance in the set's manifest.json). Expectations are conservative — only items a careful human can clearly see are expected, and portions are scored only where the photo honestly supports a range (portion: null = unscored) — so these scores are photographic accuracy evidence on this set, still a small sample (see the set README)."
+    : "The fixture set is 100% synthetic illustrations. Scores rank models against each other on identical inputs; they are not real-photo accuracy.";
 if (!process.env.OPENROUTER_API_KEY?.trim()) {
     console.error(
         "[bakeoff] OPENROUTER_API_KEY is not configured; the bake-off cannot run.",
@@ -285,7 +303,7 @@ function scoreIdentify(
         used.add(index);
         matched += 1;
         const found = returned[index]!;
-        if (found.unit === item.portion.unit) {
+        if (item.portion && found.unit === item.portion.unit) {
             portionChecked += 1;
             if (
                 found.quantity >= item.portion.min_quantity &&
@@ -674,7 +692,8 @@ const reportJson = {
     concurrency,
     prices_per_million_tokens: PRICE_TABLE,
     request_accommodations: REQUEST_ACCOMMODATIONS,
-    caveat: "The fixture set is 100% synthetic illustrations. Scores rank models against each other on identical inputs; they are not real-photo accuracy.",
+    fixtures_dir: FIXTURES_DIR_REL,
+    caveat: SET_CAVEAT,
     total_computed_spend_usd: totalSpendUsd,
     ranked_models: ranked.map((report) => report.model),
     models: modelReports,
@@ -690,11 +709,11 @@ const ms = (value: number | null) =>
 const lines = [
     `# Vision model bake-off — Layer 1 (identify only)`,
     ``,
-    `Run: ${runStartedAt} · Fixtures: ${fixtures.length} · Repeats: ${repeats} · Tasks per model: ${fixtures.length * repeats} · Total computed spend: $${totalSpendUsd.toFixed(4)}`,
+    `Run: ${runStartedAt} · Fixture set: ${FIXTURES_DIR_REL} · Fixtures: ${fixtures.length} · Repeats: ${repeats} · Tasks per model: ${fixtures.length * repeats} · Total computed spend: $${totalSpendUsd.toFixed(4)}`,
     ``,
     `Every model ran the production identify path (same prompt, schema, reasoning params); only the model slug varied — with ONE disclosed exception: a model whose endpoint rejects the production request shape outright is measured through the bake-off-only request accommodation recorded in report.json (request_accommodations), which rewrites only the rejected field; its cost/time include whatever that shape makes it spend. Cost = token usage × catalog prices (see report.json). Accuracy uses scoring.ts name matching; failed/timed-out tasks count as zero-recall in the headline recall (see recallCompletedTasksOnly in report.json for the completed-only figure).`,
     ``,
-    `> **Caveat:** the fixture set is 100% synthetic illustrations. These scores rank models against each other on identical inputs; they are **not** real-photo accuracy.`,
+    `> **Caveat:** ${SET_CAVEAT}`,
     ``,
     `| Rank | Model | Cost/task | Median | p95 | Recall | Precision | Portion in range | Extra items | Failures |`,
     `|---|---|---|---|---|---|---|---|---|---|`,
