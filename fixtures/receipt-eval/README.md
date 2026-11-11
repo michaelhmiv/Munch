@@ -31,3 +31,14 @@ Two framing facts worth knowing before reading scores: the Coop photo
 crops the receipt below the discount line (totals out of frame), and
 the Lidl photo shows a mid-receipt segment with the receipt rotated
 90 degrees. Models receive the photos exactly as stored.
+
+## Eval inputs
+
+The harness sends the `photos-1568/` copies — the originals downscaled
+to a 1568px longest side (JPEG q85), byte-for-byte the form
+production's client produces before upload (PR #237's capture
+downscale). The first receipt run sent the 3.3–3.6 MB originals: the
+incumbent chat call accepted them, but the Extractions route returned
+HTTP 500 for every receipt task from both extraction providers, so the
+lane standardized on the production-faithful input size. The originals
+under `photos/` remain the provenance record (hashes above).

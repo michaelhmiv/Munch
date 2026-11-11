@@ -19,7 +19,10 @@
  *      function; 60s harness timeout in place of the 30s production
  *      default, the bake-off fairness rule). This is the production
  *      code path itself, not a re-implementation.
- *  (b) cloudflare/clairic via POST /api/alpha/extractions with
+ *  (b) inclusionai/ling-3.0-flash-vl — a vision-language CHAT model
+ *      (Michael addition, 2026-11-11), run through the SAME
+ *      production call shape with only the slug varied.
+ *  (c) cloudflare/clairic via POST /api/alpha/extractions with
  *      receipt-shaped fields mirroring the production preview schema.
  *      The API has no list-of-objects type, so the schema's per-line
  *      object is carried by PARALLEL typed lists zipped positionally:
@@ -34,7 +37,7 @@
  *                                   unspecified, same order
  *      Per-line confidence is not a field: the names answer's
  *      per-item `confidences` array is recorded when present.
- *  (c) scaledown/extract — labels-only contender. Gate per Michael's
+ *  (d) scaledown/extract — labels-only contender. Gate per Michael's
  *      rule: it joins because its typing carried the photo identify
  *      items passably in the photo lane (70.9% recall, names-only,
  *      0/60 failures — measured on PR #244's run 43017200257). Its
@@ -49,7 +52,7 @@
  * unit correctness over matched lines whose expectation carries a
  * printed quantity; is_food accuracy over matched lines.
  *
- * Knobs (env): RECEIPT_MODELS (default "ember,clairic,scaledown"),
+ * Knobs (env): RECEIPT_MODELS (default "ember,ling,clairic,scaledown"),
  * RECEIPT_REPEATS (default 2), RECEIPT_OUT (default
  * ./receipt-report). Exit 0 when a report was produced; exit 2 when
  * the API key is missing.
@@ -85,7 +88,7 @@ const contenderTokens = (
 ).filter((value, index, all) => all.indexOf(value) === index);
 const contendersWanted = contenderTokens.length
     ? contenderTokens
-    : ["ember", "clairic", "scaledown"];
+    : ["ember", "ling", "clairic", "scaledown"];
 const runStartedAt = new Date().toISOString();
 
 if (!process.env.OPENROUTER_API_KEY?.trim()) {
@@ -146,7 +149,16 @@ interface ChatObservation {
     completionTokens: number | null;
 }
 
-async function runEmberReceipt(bytes: Uint8Array): Promise<{
+const LING_SLUG = "inclusionai/ling-3.0-flash-vl";
+
+/** The production receipt call shape (previewInventoryImage itself)
+ * with a given chat model. price=null → computed cost is not assumed;
+ * the API-reported figure is the record. */
+async function runProductionReceipt(
+    bytes: Uint8Array,
+    model: string,
+    price: { input: number; output: number } | null,
+): Promise<{
     lines: FoundLine[];
     reportedCostUsd: number | null;
     computedCostUsd: number | null;
@@ -183,7 +195,7 @@ async function runEmberReceipt(bytes: Uint8Array): Promise<{
     };
     const config: InventoryVisionConfig = {
         apiKey: openRouterKey,
-        model: EMBER_SLUG,
+        model,
         baseUrl: "https://openrouter.ai/api/v1",
         timeoutMs: 60_000,
         maxTokens: 4_000,
@@ -194,16 +206,18 @@ async function runEmberReceipt(bytes: Uint8Array): Promise<{
         { fetcher },
     );
     let reportedCostUsd: number | null = null;
-    let computedCostUsd = 0;
+    let computedCostUsd: number | null = price ? 0 : null;
     for (const observation of observations) {
         if (observation.reportedCostUsd !== null) {
             reportedCostUsd =
                 (reportedCostUsd ?? 0) + observation.reportedCostUsd;
         }
-        computedCostUsd +=
-            ((observation.promptTokens ?? 0) / 1_000_000) * EMBER_PRICE.input +
-            ((observation.completionTokens ?? 0) / 1_000_000) *
-                EMBER_PRICE.output;
+        if (price && computedCostUsd !== null) {
+            computedCostUsd +=
+                ((observation.promptTokens ?? 0) / 1_000_000) * price.input +
+                ((observation.completionTokens ?? 0) / 1_000_000) *
+                    price.output;
+        }
     }
     return {
         lines: preview.lines.map((line) => ({
@@ -562,7 +576,12 @@ const CONTENDERS: Record<string, ContenderDef> = {
     ember: {
         token: "ember",
         label: `${EMBER_SLUG} — production call shape (incumbent)`,
-        run: runEmberReceipt,
+        run: (bytes) => runProductionReceipt(bytes, EMBER_SLUG, EMBER_PRICE),
+    },
+    ling: {
+        token: "ling",
+        label: `${LING_SLUG} — production call shape (chat model)`,
+        run: (bytes) => runProductionReceipt(bytes, LING_SLUG, null),
     },
     clairic: {
         token: "clairic",
@@ -578,10 +597,19 @@ const CONTENDERS: Record<string, ContenderDef> = {
 
 const bytesByFixture = new Map<string, Uint8Array>();
 for (const fixture of fixtures) {
-    bytesByFixture.set(
-        fixture.id,
-        new Uint8Array(await readFile(join(FIXTURES, fixture.file))),
+    // Eval inputs are the photos-1568 copies: production's client
+    // downscales captures to a 1568px longest side before upload
+    // (PR #237), and the 3.3-3.6 MB originals made the Extractions
+    // route return HTTP 500 for every receipt task in the first run
+    // (the incumbent chat call accepted them; both extraction
+    // providers failed uniformly). Originals stay archived under
+    // photos/ as the provenance record.
+    const downscaled = join(
+        FIXTURES,
+        "photos-1568",
+        fixture.file.split("/").pop()!,
     );
+    bytesByFixture.set(fixture.id, new Uint8Array(await readFile(downscaled)));
 }
 
 interface ContenderSummary {

@@ -64,6 +64,9 @@
  *
  * Knobs (env): EXTRACT_PHASE (probe|layer1|full|all, default all),
  * EXTRACT_MODELS (default "cloudflare/clairic,scaledown/extract"),
+ * EXTRACT_CHAT_MODELS (default "inclusionai/ling-3.0-flash-vl" —
+ * chat models benchmarked in Lane A through the production identify
+ * path, Michael addition 2026-11-11),
  * EXTRACT_FULL_MODEL (default: best Lane-A model by recall, then
  * precision), EXTRACT_REPEATS (default 2), EXTRACT_CONCURRENCY
  * (default 4), EXTRACT_FIXTURE_IDS, EXTRACT_OUT (default
@@ -84,7 +87,9 @@ import {
 } from "../src/meal-photo/grounding.js";
 import { scoreFixture, namesMatch } from "../src/meal-photo/scoring.js";
 import {
+    identifyMealPhoto,
     mealPhotoVisionConfig,
+    MealPhotoNoFoodError,
     type MealPhotoCandidateChoice,
     type MealPhotoCandidateChoiceRequest,
     type MealPhotoVisionConfig,
@@ -111,6 +116,18 @@ const models = (
 const modelSlugs = models.length
     ? models
     : ["cloudflare/clairic", "scaledown/extract"];
+/** Chat models run through the production identify path alongside
+ * the extraction models (Michael addition, 2026-11-11:
+ * inclusionai/ling-3.0-flash-vl — a vision-language CHAT model, so it
+ * runs exactly like Ember in the bake-off, NOT via Extractions). */
+const chatModels = (
+    process.env.EXTRACT_CHAT_MODELS?.split(",")
+        .map((value) => value.trim())
+        .filter(Boolean) ?? []
+).filter((value, index, all) => all.indexOf(value) === index);
+const chatModelSlugs = chatModels.length
+    ? chatModels
+    : ["inclusionai/ling-3.0-flash-vl"];
 const repeats = Math.max(
     1,
     Math.min(5, Number(process.env.EXTRACT_REPEATS ?? 2) || 2),
@@ -1488,6 +1505,90 @@ if (phase === "probe" || phase === "all" || phase === "layer1") {
     }
 }
 
+/** Chat-model Layer 1: the production identify path with only the
+ * slug varied — the bake-off's own method, so the row is directly
+ * comparable with Ember's reference row. Cost is the API-reported
+ * figure from the chat responses (no catalog price is assumed). */
+async function runChatLayer1(
+    model: string,
+    bytesByFixture: Map<string, Uint8Array>,
+): Promise<Layer1Task[]> {
+    const taskFns: Array<() => Promise<Layer1Task>> = [];
+    for (const fixture of fixtures) {
+        for (let repeat = 1; repeat <= repeats; repeat++) {
+            taskFns.push(async (): Promise<Layer1Task> => {
+                const observations: CallObservation[] = [];
+                const bytes = bytesByFixture.get(fixture.id)!;
+                try {
+                    let items: MealPhotoVisionItem[] = [];
+                    try {
+                        const vision = await identifyMealPhoto(
+                            { mimeType: "image/jpeg", bytes },
+                            configFor(model),
+                            {
+                                fetcher: observingFetcher(
+                                    "identify",
+                                    observations,
+                                ),
+                            },
+                        );
+                        items = vision.items;
+                    } catch (error) {
+                        if (!(error instanceof MealPhotoNoFoodError)) {
+                            throw error;
+                        }
+                        items = [];
+                    }
+                    const reportedCosts = observations
+                        .map((observation) => observation.reportedCostUsd)
+                        .filter((value): value is number => value !== null);
+                    return {
+                        fixtureId: fixture.id,
+                        repeat,
+                        ok: true,
+                        failure: null,
+                        latencyMs: observations.reduce(
+                            (sum, observation) => sum + observation.latencyMs,
+                            0,
+                        ),
+                        reportedCostUsd: reportedCosts.length
+                            ? reportedCosts.reduce(
+                                  (sum, value) => sum + value,
+                                  0,
+                              )
+                            : null,
+                        computedCostUsd: null,
+                        items: items.map((item) => ({
+                            name: item.name,
+                            quantity: item.quantity,
+                            unit: item.unit,
+                        })),
+                        alignment: null,
+                        score: scoreIdentify(fixture.items, items),
+                    };
+                } catch (error) {
+                    return {
+                        fixtureId: fixture.id,
+                        repeat,
+                        ok: false,
+                        failure:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                        latencyMs: null,
+                        reportedCostUsd: null,
+                        computedCostUsd: null,
+                        items: [],
+                        alignment: null,
+                        score: null,
+                    };
+                }
+            });
+        }
+    }
+    return runPool(taskFns, concurrency);
+}
+
 if (phase === "layer1" || phase === "all") {
     for (const model of modelSlugs) {
         const { tasks } = await runLayer1(model, bytesByFixture);
@@ -1498,6 +1599,15 @@ if (phase === "layer1" || phase === "all") {
             `[extractions] layer1 ${model} DONE recall=${summary.recall.toFixed(3)} precision=${summary.precision?.toFixed(3) ?? "n/a"} reported/task=$${summary.reportedCostPerTaskUsd?.toFixed(5) ?? "n/a"} failures=${summary.tasksFailed}/${summary.tasksAttempted}`,
         );
     }
+    for (const model of chatModelSlugs) {
+        const tasks = await runChatLayer1(model, bytesByFixture);
+        layer1TasksByModel[model] = tasks;
+        const summary = summarizeLayer1(model, tasks);
+        layer1Summaries.push(summary);
+        console.info(
+            `[extractions] layer1 (chat) ${model} DONE recall=${summary.recall.toFixed(3)} precision=${summary.precision?.toFixed(3) ?? "n/a"} reported/task=$${summary.reportedCostPerTaskUsd?.toFixed(5) ?? "n/a"} failures=${summary.tasksFailed}/${summary.tasksAttempted}`,
+        );
+    }
 }
 
 if (needsFull) {
@@ -1505,8 +1615,14 @@ if (needsFull) {
     if (requested) {
         fullModel = requested;
     } else if (layer1Summaries.length > 0) {
+        // Extraction models only: the full-pipeline lane wires an
+        // Extractions identifier; chat-lane models are not eligible.
         const ranked = [...layer1Summaries]
-            .filter((summary) => summary.tasksCompleted > 0)
+            .filter(
+                (summary) =>
+                    summary.tasksCompleted > 0 &&
+                    modelSlugs.includes(summary.model),
+            )
             .sort(
                 (a, b) =>
                     b.recall - a.recall ||
@@ -1583,6 +1699,7 @@ const reportJson = {
         }),
     ),
     probes,
+    chat_models: chatModelSlugs,
     clairic_shape: clairicShape,
     clairic_shape_probe: clairicShapeProbe,
     layer1: layer1Summaries.map((summary) => ({
@@ -1661,6 +1778,11 @@ const lines: string[] = [
         if (summary.model === "scaledown/extract") {
             notes.push(
                 `- ${summary.model}: names-only by typing (text + list<text> are its only field types) — quantity/unit placeholders (1 / "serving") are never portion-scored; computed cost uses the $0.045/1M midpoint of its $0.04-0.05/1M input range.`,
+            );
+        }
+        if (chatModelSlugs.includes(summary.model)) {
+            notes.push(
+                `- ${summary.model}: vision-language CHAT model — ran the production identify path (same prompt, schema, reasoning params; only the slug varied), NOT the Extractions API. Portions are scored. Cost is the API-reported figure from the chat responses.`,
             );
         }
         if (summary.failures.length > 0) {
