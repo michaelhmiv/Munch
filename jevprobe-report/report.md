@@ -4,9 +4,9 @@ Model under test: `typesafe/jev-1.14` via POST https://openrouter.ai/api/alpha/d
 
 ## Format discovery
 
-| Style | HTTP | Parsed | Detail |
-| --- | --- | --- | --- |
-| plain | 200 | yes | answers parsed |
+| Style | HTTP | Parsed | Detail         |
+| ----- | ---- | ------ | -------------- |
+| plain | 200  | yes    | answers parsed |
 
 Winning style: **plain** (used for every call below).
 
@@ -19,11 +19,11 @@ Calls: 42 (30 positive, 12 negative); parsed 42/42. All photos verified inside t
 Reject = p(food) strictly below the threshold. Positive false-rejects are the dangerous direction (a real meal turned away); the conservative operating point Jeff specified is 0.10.
 
 | Threshold | Positives falsely rejected (of 30 scored) | Headline negatives correctly rejected (of 8) |
-| --- | --- | --- |
-| 0.50 | 0 (0.0%) | 7 (87.5%) |
-| 0.30 | 0 (0.0%) | 6 (75.0%) |
-| 0.10 | 0 (0.0%) | 6 (75.0%) |
-| 0.05 | 0 (0.0%) | 6 (75.0%) |
+| --------- | ----------------------------------------- | -------------------------------------------- |
+| 0.50      | 0 (0.0%)                                  | 7 (87.5%)                                    |
+| 0.30      | 0 (0.0%)                                  | 6 (75.0%)                                    |
+| 0.10      | 0 (0.0%)                                  | 6 (75.0%)                                    |
+| 0.05      | 0 (0.0%)                                  | 6 (75.0%)                                    |
 
 ### Route choice accuracy
 
@@ -49,50 +49,50 @@ Positives: median p(clear) 0.960, min 0.910. Poorly-lit fixtures: poorly-lit-01-
 
 ### Per-photo gate detail
 
-| Fixture | Set | p(food) | Route (conf) | p(clear) | Latency ms | Cost $ |
-| --- | --- | --- | --- | --- | --- | --- |
-| single-01-banana | positive | 0.890 | plated_meal (0.91) | 0.990 | 93 | 0.00009 |
-| single-02-apple | positive | 0.810 | plated_meal (0.96) | 0.990 | 97 | 0.00009 |
-| single-03-avocado | positive | 0.930 | plated_meal (0.80) | 0.980 | 103 | 0.00009 |
-| single-04-tomato-soup | positive | 0.970 | plated_meal (1.00) | 0.970 | 221 | 0.00010 |
-| single-05-granola-bar | positive | 0.930 | plated_meal (0.99) | 0.910 | 347 | 0.00009 |
-| mixed-01-boiled-egg-and-toast | positive | 0.980 | plated_meal (1.00) | 0.950 | 109 | 0.00010 |
-| mixed-02-pancakes | positive | 0.980 | plated_meal (1.00) | 0.970 | 98 | 0.00009 |
-| mixed-03-full-english-breakfast | positive | 0.990 | plated_meal (1.00) | 0.980 | 154 | 0.00012 |
-| mixed-04-chicken-rice-vegetables | positive | 0.990 | plated_meal (1.00) | 0.970 | 989 | 0.00016 |
-| mixed-05-salmon-sweet-potato | positive | 0.990 | plated_meal (1.00) | 0.970 | 152 | 0.00016 |
-| mixed-06-chicken-cobb-salad | positive | 0.990 | plated_meal (1.00) | 0.950 | 259 | 0.00009 |
-| mixed-07-macaroni-and-mashed-potato | positive | 0.980 | plated_meal (1.00) | 0.950 | 98 | 0.00009 |
-| sauced-01-chili-over-noodles | positive | 0.980 | plated_meal (1.00) | 0.940 | 106 | 0.00010 |
-| sauced-02-lasagna | positive | 0.990 | plated_meal (1.00) | 0.970 | 232 | 0.00013 |
-| sauced-03-spaghetti-and-meatballs | positive | 0.990 | plated_meal (1.00) | 0.960 | 190 | 0.00010 |
-| sauced-04-chicken-curry-and-rice | positive | 0.990 | plated_meal (1.00) | 0.960 | 116 | 0.00010 |
-| restaurant-01-burger-and-fries | positive | 0.990 | plated_meal (1.00) | 0.960 | 88 | 0.00010 |
-| restaurant-02-pepperoni-pizza | positive | 0.990 | plated_meal (0.94) | 0.980 | 166 | 0.00016 |
-| restaurant-03-ramen | positive | 0.980 | plated_meal (1.00) | 0.940 | 115 | 0.00016 |
-| restaurant-04-taco | positive | 0.980 | plated_meal (1.00) | 0.910 | 91 | 0.00009 |
-| restaurant-05-sushi-platter | positive | 0.980 | plated_meal (0.99) | 0.960 | 172 | 0.00016 |
-| restaurant-06-sandwich-and-waffle-fries | positive | 0.980 | plated_meal (1.00) | 0.950 | 184 | 0.00009 |
-| restaurant-07-steak-and-fries | positive | 0.990 | plated_meal (1.00) | 0.960 | 114 | 0.00009 |
-| packaged-01-cola-can | positive | 0.800 | packaged_product (0.90) | 0.980 | 159 | 0.00016 |
-| packaged-02-orange-drink-bottle | positive | 0.740 | packaged_product (0.99) | 0.980 | 124 | 0.00013 |
-| drinks-01-orange-juice | positive | 0.730 | drink (1.00) | 0.960 | 105 | 0.00016 |
-| drinks-02-coffee-and-cookies | positive | 0.900 | plated_meal (0.68) | 0.970 | 112 | 0.00016 |
-| poorly-lit-01-chicken-caesar-salad | positive | 0.980 | plated_meal (1.00) | 0.930 | 122 | 0.00009 |
-| poorly-lit-02-schnitzel-and-fries | positive | 0.980 | plated_meal (1.00) | 0.920 | 98 | 0.00009 |
-| partial-01-chocolate-cake | positive | 0.850 | plated_meal (1.00) | 0.970 | 224 | 0.00010 |
-| neg-01-receipt | negative | 0.650 | receipt (1.00) | 0.870 | 236 | 0.00022 |
-| neg-02-screenshot | negative | 0.010 | other (1.00) | 0.040 | 204 | 0.00015 |
-| neg-03-dog | negative | 0.010 | other (1.00) | 0.090 | 220 | 0.00022 |
-| neg-04-menu | negative | 0.360 | other (0.96) | 0.890 | 183 | 0.00014 |
-| neg-05-restaurant-interior | negative | 0.030 | other (1.00) | 0.060 | 118 | 0.00014 |
-| neg-06-car | negative | 0.010 | other (1.00) | 0.100 | 130 | 0.00010 |
-| neg-07-person-eating | negative | 0.980 | plated_meal (0.75) | 0.800 | 176 | 0.00007 |
-| neg-08-empty-plate | negative | 0.300 | other (0.59) | 0.570 | 204 | 0.00020 |
-| neg-09-grocery-shelf | negative | 0.680 | packaged_product (0.70) | 0.950 | 142 | 0.00014 |
-| neg-10-nutrition-label | negative | 0.620 | packaged_product (1.00) | 0.960 | 163 | 0.00022 |
-| neg-11-handwritten-note | negative | 0.010 | other (1.00) | 0.030 | 134 | 0.00012 |
-| neg-12-landscape | negative | 0.020 | other (1.00) | 0.130 | 143 | 0.00014 |
+| Fixture                                 | Set      | p(food) | Route (conf)            | p(clear) | Latency ms | Cost $  |
+| --------------------------------------- | -------- | ------- | ----------------------- | -------- | ---------- | ------- |
+| single-01-banana                        | positive | 0.890   | plated_meal (0.91)      | 0.990    | 93         | 0.00009 |
+| single-02-apple                         | positive | 0.810   | plated_meal (0.96)      | 0.990    | 97         | 0.00009 |
+| single-03-avocado                       | positive | 0.930   | plated_meal (0.80)      | 0.980    | 103        | 0.00009 |
+| single-04-tomato-soup                   | positive | 0.970   | plated_meal (1.00)      | 0.970    | 221        | 0.00010 |
+| single-05-granola-bar                   | positive | 0.930   | plated_meal (0.99)      | 0.910    | 347        | 0.00009 |
+| mixed-01-boiled-egg-and-toast           | positive | 0.980   | plated_meal (1.00)      | 0.950    | 109        | 0.00010 |
+| mixed-02-pancakes                       | positive | 0.980   | plated_meal (1.00)      | 0.970    | 98         | 0.00009 |
+| mixed-03-full-english-breakfast         | positive | 0.990   | plated_meal (1.00)      | 0.980    | 154        | 0.00012 |
+| mixed-04-chicken-rice-vegetables        | positive | 0.990   | plated_meal (1.00)      | 0.970    | 989        | 0.00016 |
+| mixed-05-salmon-sweet-potato            | positive | 0.990   | plated_meal (1.00)      | 0.970    | 152        | 0.00016 |
+| mixed-06-chicken-cobb-salad             | positive | 0.990   | plated_meal (1.00)      | 0.950    | 259        | 0.00009 |
+| mixed-07-macaroni-and-mashed-potato     | positive | 0.980   | plated_meal (1.00)      | 0.950    | 98         | 0.00009 |
+| sauced-01-chili-over-noodles            | positive | 0.980   | plated_meal (1.00)      | 0.940    | 106        | 0.00010 |
+| sauced-02-lasagna                       | positive | 0.990   | plated_meal (1.00)      | 0.970    | 232        | 0.00013 |
+| sauced-03-spaghetti-and-meatballs       | positive | 0.990   | plated_meal (1.00)      | 0.960    | 190        | 0.00010 |
+| sauced-04-chicken-curry-and-rice        | positive | 0.990   | plated_meal (1.00)      | 0.960    | 116        | 0.00010 |
+| restaurant-01-burger-and-fries          | positive | 0.990   | plated_meal (1.00)      | 0.960    | 88         | 0.00010 |
+| restaurant-02-pepperoni-pizza           | positive | 0.990   | plated_meal (0.94)      | 0.980    | 166        | 0.00016 |
+| restaurant-03-ramen                     | positive | 0.980   | plated_meal (1.00)      | 0.940    | 115        | 0.00016 |
+| restaurant-04-taco                      | positive | 0.980   | plated_meal (1.00)      | 0.910    | 91         | 0.00009 |
+| restaurant-05-sushi-platter             | positive | 0.980   | plated_meal (0.99)      | 0.960    | 172        | 0.00016 |
+| restaurant-06-sandwich-and-waffle-fries | positive | 0.980   | plated_meal (1.00)      | 0.950    | 184        | 0.00009 |
+| restaurant-07-steak-and-fries           | positive | 0.990   | plated_meal (1.00)      | 0.960    | 114        | 0.00009 |
+| packaged-01-cola-can                    | positive | 0.800   | packaged_product (0.90) | 0.980    | 159        | 0.00016 |
+| packaged-02-orange-drink-bottle         | positive | 0.740   | packaged_product (0.99) | 0.980    | 124        | 0.00013 |
+| drinks-01-orange-juice                  | positive | 0.730   | drink (1.00)            | 0.960    | 105        | 0.00016 |
+| drinks-02-coffee-and-cookies            | positive | 0.900   | plated_meal (0.68)      | 0.970    | 112        | 0.00016 |
+| poorly-lit-01-chicken-caesar-salad      | positive | 0.980   | plated_meal (1.00)      | 0.930    | 122        | 0.00009 |
+| poorly-lit-02-schnitzel-and-fries       | positive | 0.980   | plated_meal (1.00)      | 0.920    | 98         | 0.00009 |
+| partial-01-chocolate-cake               | positive | 0.850   | plated_meal (1.00)      | 0.970    | 224        | 0.00010 |
+| neg-01-receipt                          | negative | 0.650   | receipt (1.00)          | 0.870    | 236        | 0.00022 |
+| neg-02-screenshot                       | negative | 0.010   | other (1.00)            | 0.040    | 204        | 0.00015 |
+| neg-03-dog                              | negative | 0.010   | other (1.00)            | 0.090    | 220        | 0.00022 |
+| neg-04-menu                             | negative | 0.360   | other (0.96)            | 0.890    | 183        | 0.00014 |
+| neg-05-restaurant-interior              | negative | 0.030   | other (1.00)            | 0.060    | 118        | 0.00014 |
+| neg-06-car                              | negative | 0.010   | other (1.00)            | 0.100    | 130        | 0.00010 |
+| neg-07-person-eating                    | negative | 0.980   | plated_meal (0.75)      | 0.800    | 176        | 0.00007 |
+| neg-08-empty-plate                      | negative | 0.300   | other (0.59)            | 0.570    | 204        | 0.00020 |
+| neg-09-grocery-shelf                    | negative | 0.680   | packaged_product (0.70) | 0.950    | 142        | 0.00014 |
+| neg-10-nutrition-label                  | negative | 0.620   | packaged_product (1.00) | 0.960    | 163        | 0.00022 |
+| neg-11-handwritten-note                 | negative | 0.010   | other (1.00)            | 0.030    | 134        | 0.00012 |
+| neg-12-landscape                        | negative | 0.020   | other (1.00)            | 0.130    | 143        | 0.00014 |
 
 ## 2. Receipt routing reality check
 
@@ -105,10 +105,10 @@ Ember (meta/muse-ember) identified the 30 positive photos once each (production 
 Jev per-item presence probabilities (drop = p(present) below threshold; items whose call failed keep p=null and are never dropped):
 
 | Drop threshold | Items kept | Matched kept | Precision after | Recall after |
-| --- | --- | --- | --- | --- |
-| 0.3 | 96 | 53 | 0.552 | 0.791 |
-| 0.5 | 96 | 53 | 0.552 | 0.791 |
-| 0.7 | 95 | 53 | 0.558 | 0.791 |
+| -------------- | ---------- | ------------ | --------------- | ------------ |
+| 0.3            | 96         | 53           | 0.552           | 0.791        |
+| 0.5            | 96         | 53           | 0.552           | 0.791        |
+| 0.7            | 95         | 53           | 0.558           | 0.791        |
 
 Anything-missing Noul (flag at p ≥ 0.5): Ember actually missed ≥1 expected item in 13 photos; Jev flagged 0/13 of those (hit rate 0.0%). False flags on the 17 photos where Ember missed nothing: 1 (5.9%).
 
