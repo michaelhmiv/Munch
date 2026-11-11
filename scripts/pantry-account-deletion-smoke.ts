@@ -9,7 +9,7 @@ const {
     createHousehold,
     createHouseholdInvitation,
 } = await import("../src/households/repository.js");
-const { getPantry, reconcilePantry, setPantryPreference } =
+const { getPantry, reconcilePantry } =
     await import("../src/inventory/repository.js");
 const { closePlatformDatabase, withUserDatabase } =
     await import("../src/platform/database.js");
@@ -36,8 +36,6 @@ await acceptHouseholdInvitation({
     token: invitation.rawToken,
     displayName: "Member",
 });
-await setPantryPreference({ userId: owner.userId, enabled: true });
-await setPantryPreference({ userId: member.userId, enabled: true });
 
 const scope = {
     type: "household" as const,

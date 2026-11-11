@@ -36,7 +36,6 @@ async function applyFeatureFlags() {
 }
 
 const $ = (selector) => document.querySelector(selector);
-const enabledToggle = $("#pantry-enabled");
 const workspace = $("#workspace");
 const statusEl = $("#status");
 const inventoryEl = $("#inventory");
@@ -71,10 +70,17 @@ function currentScope() {
     return scopeEl.value || "personal";
 }
 
+// Pantry enablement is the Settings feature-module flag and nothing
+// else (Nov 11): the page's old "Use Pantry" switch is gone, and
+// applyFeatureFlags above has already redirected to Today if the
+// module is off. `settings.enabled` reports that same module flag;
+// the workspace simply renders when it is on.
+let pantryEnabled = false;
+
 async function loadSettings() {
     try {
         const settings = await api("/api/app/pantry/settings");
-        enabledToggle.checked = settings.enabled === true;
+        pantryEnabled = settings.enabled === true;
         if (
             settings.household_available &&
             !scopeEl.querySelector('option[value="household"]')
@@ -84,37 +90,12 @@ async function loadSettings() {
             option.textContent = "Household Pantry";
             scopeEl.append(option);
         }
-        workspace.classList.toggle("hidden", !settings.enabled);
-        if (settings.enabled) await loadPantry();
+        workspace.classList.toggle("hidden", !pantryEnabled);
+        if (pantryEnabled) await loadPantry();
     } catch (error) {
         status(error.message, true);
     }
 }
-
-async function setEnabled(enabled) {
-    try {
-        status(enabled ? "Enabling Pantry…" : "Disabling Pantry…");
-        const result = await api("/api/app/pantry/settings", {
-            method: "PATCH",
-            body: JSON.stringify({ enabled }),
-        });
-        enabledToggle.checked = result.enabled;
-        workspace.classList.toggle("hidden", !result.enabled);
-        status(
-            result.enabled
-                ? "Pantry enabled. Your AI assistant will expose Pantry tools on the next refresh."
-                : "Pantry disabled. Existing inventory is preserved.",
-        );
-        if (result.enabled) await loadPantry();
-    } catch (error) {
-        enabledToggle.checked = !enabled;
-        status(error.message, true);
-    }
-}
-
-enabledToggle.addEventListener("change", () =>
-    setEnabled(enabledToggle.checked),
-);
 
 function quantityLabel(item) {
     if (item.quantity == null)
@@ -303,7 +284,7 @@ function renderInventory(items) {
 }
 
 async function loadPantry() {
-    if (!enabledToggle.checked) return;
+    if (!pantryEnabled) return;
     try {
         status("Loading Pantry…");
         const query = new URLSearchParams({ scope: currentScope() });

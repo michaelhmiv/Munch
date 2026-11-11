@@ -13,7 +13,6 @@ const [html, js, css, routes, index, appHtml, appStyles, privacy] =
     ]);
 
 const requiredHtml = [
-    'id="pantry-enabled"',
     'id="manual-add"',
     'id="pantry-photo"',
     'id="receipt-photo"',
@@ -30,6 +29,20 @@ for (const marker of requiredHtml) {
     if (!html.includes(marker)) {
         throw new Error(`Pantry UI omitted required markup: ${marker}`);
     }
+}
+
+// Pantry enablement is the Settings feature-module flag only (Nov 11):
+// the page's legacy "Use Pantry" switch, its PATCH endpoint, and its
+// client wiring must stay gone.
+if (
+    html.includes("pantry-enabled") ||
+    html.includes("Use Pantry") ||
+    js.includes("pantry-enabled") ||
+    routes.includes('app.patch("/api/app/pantry/settings"')
+) {
+    throw new Error(
+        "The retired per-page Pantry switch resurfaced; the feature-module flag is the only Pantry gate",
+    );
 }
 
 for (const endpoint of [

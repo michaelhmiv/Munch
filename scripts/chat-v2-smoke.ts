@@ -40,7 +40,8 @@ if (!process.env.DATABASE_URL) {
 const { upsertSubscription } = await import("../src/billing/repository.js");
 const { upsertStoreSubscription } =
     await import("../src/billing/store-repository.js");
-const { upsertProfile } = await import("../src/nutrition-platform/profiles.js");
+const { saveFeatureModules } =
+    await import("../src/feature-modules-repository.js");
 const { resolveChatEntitlement } = await import("../src/chat/entitlement.js");
 const { openChatToolHost } = await import("../src/chat/mcp-host.js");
 const { sendChatMessage, getChatState, startChatConversation } =
@@ -87,7 +88,12 @@ await upsertStoreSubscription({
     acknowledged: true,
     verifiedAt: new Date(),
 });
-await upsertProfile(pantryUser, { pantry_enabled: true });
+// Pantry needs no enable step for pantryUser: the feature-module
+// flag defaults on (Nov 11) and is the only Pantry gate. The
+// non-Pantry scenario below turns the module OFF for stripeUser —
+// which is also the configuration its later send scenarios ran in
+// historically (the legacy flag defaulted off for that user).
+await saveFeatureModules(stripeUser, { pantry: false });
 
 // --- Gate behaviour per rail -------------------------------------------
 const freeGate = await resolveChatEntitlement(freeUser);
@@ -141,7 +147,7 @@ assert(
 );
 
 // --- THE PARITY CHECK ------------------------------------------------------
-// Maximal configuration: Premium + Pantry publishes all 115 tools.
+// Maximal configuration: Premium + Pantry module on publishes all 115 tools.
 {
     const host = await openChatToolHost({ userId: pantryUser });
     try {
@@ -211,7 +217,7 @@ assert(
         );
         assert(
             !tools.some((tool) => tool.name === "get_pantry"),
-            "get_pantry must be absent when Pantry is not enabled",
+            "get_pantry must be absent when the Pantry module is off",
         );
     } finally {
         await host.close();

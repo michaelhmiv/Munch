@@ -45,7 +45,6 @@ export interface Profile {
     widgets_enabled: boolean;
     alcohol_tracking_enabled: boolean;
     preferred_drink_unit: DrinkUnit | null;
-    pantry_enabled: boolean;
     created_at: string;
     updated_at: string;
 }
@@ -56,7 +55,6 @@ export interface ProfilePatch {
     widgets_enabled?: boolean;
     alcohol_tracking_enabled?: boolean;
     preferred_drink_unit?: DrinkUnit | null;
-    pantry_enabled?: boolean;
 }
 
 export interface NutritionGoals {

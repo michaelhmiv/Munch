@@ -74,13 +74,10 @@ test("just logging strips the app to its spine; pantry data survives the round t
 
     try {
         // Start from the shipped default and seed the pantry item the
-        // round trip must preserve (T4 fixture).
+        // round trip must preserve (T4 fixture). The Pantry module
+        // flag set above is the only enablement now (Nov 11): with it
+        // on, seeding works with no legacy per-page switch.
         await setFeatures(page, ALL_ON);
-        const pantryOn = await page.request.patch("/api/app/pantry/settings", {
-            headers: { origin: new URL(page.url()).origin },
-            data: { enabled: true },
-        });
-        expect(pantryOn.status(), "enable pantry workspace").toBe(200);
         const seeded = await page.request.post("/api/app/pantry/reconcile", {
             headers: { origin: new URL(page.url()).origin },
             data: {

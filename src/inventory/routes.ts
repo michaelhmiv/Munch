@@ -11,12 +11,12 @@ import {
     enrichPantryItemsBestEffort,
     pantryPlanningEnabled,
 } from "./planning-profile.js";
+import { featureModuleEnabled } from "../feature-modules.js";
+import { getFeatureModules } from "../feature-modules-repository.js";
 import {
     getPantry,
-    getPantryPreference,
     reconcilePantry,
     reconcilePurchase,
-    setPantryPreference,
     type InventoryLocation,
     type InventoryScope,
     type PantryOperation,
@@ -48,6 +48,11 @@ async function pantryContext(c: Context) {
     const userId = c.get("munchUserId") as string;
     const capabilities = await resolveRequestMunchCapabilities(c, userId);
     return { userId, capabilities };
+}
+
+/** The one Pantry gate: the Settings feature-module flag (Nov 11). */
+async function pantryModuleOn(userId: string): Promise<boolean> {
+    return featureModuleEnabled(await getFeatureModules(userId), "pantry");
 }
 
 function scopeFromValue(
@@ -274,24 +279,19 @@ export function createInventoryRouter(): Hono {
     app.use("/api/app/pantry/*", requireWebSession);
     app.use("/api/app/purchases/*", requireWebSession);
 
+    // Pantry enablement is the Settings feature-module flag (Nov 11):
+    // the legacy per-page "Use Pantry" switch and its PATCH endpoint
+    // are gone, and `enabled` here simply reports the module flag so
+    // the Pantry page can render its workspace. The response shape is
+    // unchanged.
     app.get("/api/app/pantry/settings", async (c) => {
         const context = await pantryContext(c);
         return privateJson(c, {
-            enabled: await getPantryPreference(context.userId),
+            enabled: featureModuleEnabled(
+                await getFeatureModules(context.userId),
+                "pantry",
+            ),
             household_available: Boolean(context.capabilities.householdRead),
-        });
-    });
-
-    app.patch("/api/app/pantry/settings", requireSameOrigin, async (c) => {
-        const context = await pantryContext(c);
-        const body = objectValue(await c.req.json(), "Pantry settings");
-        if (typeof body.enabled !== "boolean")
-            throw new Error("Pantry enabled must be boolean");
-        return privateJson(c, {
-            enabled: await setPantryPreference({
-                userId: context.userId,
-                enabled: body.enabled,
-            }),
         });
     });
 
@@ -405,7 +405,7 @@ export function createInventoryRouter(): Hono {
         const context = await pantryContext(c);
         // AI features are free for every account (Amendment D):
         // no entitlement check and no meter at this call site.
-        if (!(await getPantryPreference(context.userId)))
+        if (!(await pantryModuleOn(context.userId)))
             return privateJson(c, { error: "pantry_not_enabled" }, 409);
         if (!pantryPlanningEnabled())
             return privateJson(c, { error: "pantry_planning_disabled" }, 503);
@@ -469,7 +469,7 @@ export function createInventoryRouter(): Hono {
         const context = await pantryContext(c);
         // AI features are free for every account (Amendment D):
         // no entitlement check and no meter at this call site.
-        if (!(await getPantryPreference(context.userId)))
+        if (!(await pantryModuleOn(context.userId)))
             return privateJson(c, { error: "pantry_not_enabled" }, 409);
         const form = await c.req.parseBody();
         const uploaded = form.file;

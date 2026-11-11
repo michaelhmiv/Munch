@@ -6,8 +6,7 @@ const { generatePantryMealIdeas } =
     await import("../src/inventory/meal-ideas.js");
 const { classifyPantryFood } =
     await import("../src/inventory/planning-profile.js");
-const { reconcilePantry, setPantryPreference } =
-    await import("../src/inventory/repository.js");
+const { reconcilePantry } = await import("../src/inventory/repository.js");
 const { closePlatformDatabase, withUserDatabase } =
     await import("../src/platform/database.js");
 
@@ -33,7 +32,6 @@ if (process.env.MUNCH_PANTRY_PLANNING_ENABLED !== "true") {
 }
 
 const user = await createSmokeIdentity("pantry-planning-live");
-await setPantryPreference({ userId: user.userId, enabled: true });
 
 const pantryNames = [
     "Chicken breast",

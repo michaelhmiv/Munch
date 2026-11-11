@@ -7,8 +7,10 @@ const {
     createHousehold,
     createHouseholdInvitation,
 } = await import("../src/households/repository.js");
-const { getPantry, reconcilePantry, reconcilePurchase, setPantryPreference } =
+const { getPantry, reconcilePantry, reconcilePurchase } =
     await import("../src/inventory/repository.js");
+const { saveFeatureModules } =
+    await import("../src/feature-modules-repository.js");
 const { addGroceryItems, getGroceryList, markGroceryItemPurchased } =
     await import("../src/planning/repository.js");
 const { closePlatformDatabase, withUserDatabase } =
@@ -44,11 +46,6 @@ for (const [person, role, displayName] of [
         displayName,
     });
 }
-
-await setPantryPreference({ userId: owner.userId, enabled: true });
-await setPantryPreference({ userId: member.userId, enabled: true });
-await setPantryPreference({ userId: viewer.userId, enabled: true });
-await setPantryPreference({ userId: outsider.userId, enabled: true });
 
 const personalScope = { type: "personal" as const };
 const householdScope = {
@@ -409,6 +406,121 @@ if (!outsiderWriteDenied) {
     throw new Error("Outsider was allowed to create another household Pantry");
 }
 
+// Module gate (Nov 11): the Settings feature-module flag is the ONLY
+// Pantry gate — the legacy pantry_enabled column is never set for the
+// outsider (it defaults false), so this section also proves the
+// target cohort, module ON + legacy flag false, gets a working
+// Pantry, and that module OFF closes every write path.
+await saveFeatureModules(outsider.userId, { pantry: false });
+const gatedPantry = await getPantry({
+    userId: outsider.userId,
+    scope: personalScope,
+});
+if (gatedPantry.enabled || gatedPantry.items.length !== 0) {
+    throw new Error("Pantry read was not gated by the module flag");
+}
+let gatedReconcileMessage = "";
+try {
+    await reconcilePantry({
+        userId: outsider.userId,
+        scope: personalScope,
+        sourceType: "manual",
+        idempotencyKey: "pantry-smoke-module-off",
+        operations: [{ action: "acquire", name: "Module-off food" }],
+    });
+} catch (error) {
+    gatedReconcileMessage = error instanceof Error ? error.message : "";
+}
+if (gatedReconcileMessage !== "Pantry is turned off in Settings") {
+    throw new Error(
+        `Pantry reconcile was not gated by the module flag (got: ${gatedReconcileMessage})`,
+    );
+}
+let gatedPurchaseMessage = "";
+try {
+    await reconcilePurchase({
+        userId: outsider.userId,
+        scope: personalScope,
+        idempotencyKey: "pantry-smoke-module-off-purchase",
+        lines: [{ name: "Module-off purchase" }],
+    });
+} catch (error) {
+    gatedPurchaseMessage = error instanceof Error ? error.message : "";
+}
+if (gatedPurchaseMessage !== "Pantry is turned off in Settings") {
+    throw new Error(
+        `Purchase reconcile was not gated by the module flag (got: ${gatedPurchaseMessage})`,
+    );
+}
+// A Grocery checkoff while the module is off must not auto-acquire
+// into Pantry: the trigger reads the same module flag (migration 0042).
+const gatedGroceries = await addGroceryItems({
+    userId: outsider.userId,
+    scope: personalScope,
+    items: [
+        {
+            name: "Module Gate Rice",
+            quantity: 1,
+            unit: "bag",
+            idempotencyKey: "pantry-smoke-module-gate-rice",
+        },
+    ],
+});
+const gatedGroceryItem = gatedGroceries.items[0];
+if (!gatedGroceryItem) throw new Error("Module-gate grocery setup failed");
+await markGroceryItemPurchased({
+    userId: outsider.userId,
+    scope: personalScope,
+    groceryItemId: String(gatedGroceryItem.id),
+    purchased: true,
+    expectedVersion: Number(gatedGroceryItem.version),
+});
+await saveFeatureModules(outsider.userId, { pantry: true });
+const restoredPantry = await getPantry({
+    userId: outsider.userId,
+    scope: personalScope,
+});
+if (!restoredPantry.enabled) {
+    throw new Error("Pantry did not re-enable with the module flag");
+}
+if (
+    restoredPantry.items.some(
+        (item) => item.normalized_name === "module gate rice",
+    )
+) {
+    throw new Error(
+        "Grocery checkoff acquired into Pantry while the module was off",
+    );
+}
+// With the module back on — and the legacy flag never set — writes work.
+await reconcilePantry({
+    userId: outsider.userId,
+    scope: personalScope,
+    sourceType: "manual",
+    idempotencyKey: "pantry-smoke-module-on",
+    operations: [
+        {
+            action: "acquire",
+            name: "Module Gate Oats",
+            quantity: 1,
+            unit: "bag",
+        },
+    ],
+});
+const moduleOnPantry = await getPantry({
+    userId: outsider.userId,
+    scope: personalScope,
+});
+if (
+    !moduleOnPantry.items.some(
+        (item) => item.normalized_name === "module gate oats",
+    )
+) {
+    throw new Error(
+        "Pantry write failed with the module on and the legacy flag unset",
+    );
+}
+
 // Privacy invariant: reconciliation stores structured lines, never image bytes.
 await withUserDatabase(owner.userId, async (tx) => {
     const forbiddenColumns = await tx<Array<{ column_name: string }>>`
@@ -426,5 +538,5 @@ await withUserDatabase(owner.userId, async (tx) => {
 
 await closePlatformDatabase();
 console.log(
-    "Munch Pantry inventory, Grocery acquisition, receipt reconciliation, idempotency, and RLS smoke test passed.",
+    "Munch Pantry inventory, Grocery acquisition, receipt reconciliation, idempotency, RLS, and feature-module gate smoke test passed.",
 );

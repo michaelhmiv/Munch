@@ -11,8 +11,7 @@ const { getPantryPlanningContext, rankSavedRecipesForPantry } =
     await import("../src/inventory/meal-planning.js");
 const { getStoredPlanningProfiles } =
     await import("../src/inventory/planning-profile.js");
-const { reconcilePantry, setPantryPreference } =
-    await import("../src/inventory/repository.js");
+const { reconcilePantry } = await import("../src/inventory/repository.js");
 const { saveRecipe } = await import("../src/planning/repository.js");
 const { closePlatformDatabase, withUserDatabase } =
     await import("../src/platform/database.js");
@@ -29,9 +28,6 @@ if (process.env.MUNCH_PANTRY_PLANNING_ENABLED !== "true") {
 const owner = await createSmokeIdentity("pantry-planning-owner");
 const viewer = await createSmokeIdentity("pantry-planning-viewer");
 const outsider = await createSmokeIdentity("pantry-planning-outsider");
-await setPantryPreference({ userId: owner.userId, enabled: true });
-await setPantryPreference({ userId: viewer.userId, enabled: true });
-await setPantryPreference({ userId: outsider.userId, enabled: true });
 
 const household = await createHousehold({
     userId: owner.userId,
