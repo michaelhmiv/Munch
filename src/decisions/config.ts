@@ -18,10 +18,15 @@ export const DECISIONS_API_URL = "https://openrouter.ai/api/alpha/decisions";
 
 export const DEFAULT_DECIDER_MODEL = "typesafe/jev-1.14";
 
-/** Designated by the Nov 11 fallback bake-off (PR #247;
- * ~/workspace/munch-evidence/fallback-bakeoff/report.md). */
-export const DEFAULT_DECIDER_FALLBACK_MODELS =
-    "perplexity/pplx-decider-v1.2,liquid/d1-ultra";
+/** Fallback #1 designated by the Nov 11 fallback bake-off (PR #247;
+ * ~/workspace/munch-evidence/fallback-bakeoff/report.md).
+ * liquid/d1-ultra was fallback #2 in that designation and was
+ * REMOVED on Nov 11 by Michael's ruling: Liquid's terms permit
+ * retention and training use of request data, which Munch's privacy
+ * policy forbids. Do not re-add it without a fresh ruling and
+ * evidence its endpoint terms have changed. Its calibrated gate
+ * threshold below is retained as measurement data only. */
+export const DEFAULT_DECIDER_FALLBACK_MODELS = "perplexity/pplx-decider-v1.2";
 
 export interface DecisionsConfig {
     apiKey: string;
