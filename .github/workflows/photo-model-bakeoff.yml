@@ -402,15 +402,15 @@ jobs:
         env:
             OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
             BAKEOFF_FIXTURES_DIR: fixtures/photo-eval-real
-            BAKEOFF_MODELS: "google/gemini-3.1-flash-lite,google/gemini-3.5-flash-lite,google/gemini-3-flash-preview,google/gemini-3.8-flash"
-            BAKEOFF_REPEATS: "1"
-            BAKEOFF_FIXTURE_IDS: "mixed-03-full-english-breakfast"
+            BAKEOFF_MODELS: "qwen/qwen3.5-9b,qwen/qwen3-vl-8b-instruct,qwen/qwen3.8-flash,openai/gpt-4o,openai/gpt-4o-mini,openai/gpt-5-mini,anthropic/claude-haiku-4.5,anthropic/claude-haiku-5.5"
+            BAKEOFF_REPEATS: "2"
+            BAKEOFF_FIXTURE_IDS: ""
             BAKEOFF_CONCURRENCY: "4"
             BAKEOFF_OUT: sweep-report
-            BAKEOFF_REASONING_OMIT: "google/gemini-3.1-flash-lite,google/gemini-3.5-flash-lite,google/gemini-3-flash-preview,google/gemini-3.8-flash"
+            BAKEOFF_REASONING_OMIT: "openai/gpt-5-mini"
             BAKEOFF_REASONING_MINIMAL: ""
             BAKEOFF_SCHEMA_MINIMUM: ""
-            BAKEOFF_SCHEMA_GOOGLE_SUBSET: "google/gemini-3.1-flash-lite,google/gemini-3.5-flash-lite,google/gemini-3-flash-preview,google/gemini-3.8-flash"
+            BAKEOFF_SCHEMA_GOOGLE_SUBSET: ""
         steps:
             - name: Check out repository
               uses: actions/checkout@v4
