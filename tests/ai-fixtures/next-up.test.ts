@@ -88,4 +88,63 @@ describe("ai-fixture: next-up composition (recorded response)", () => {
         expect(composition?.candidate_id).toBe(context.candidates[0]!.id);
         expect(composition?.reason).toContain("chicken breast");
     });
+
+    test("request carries the reasoning-effort param Ember requires", async () => {
+        // Regression (Nov 11 production): compose omitted
+        // openRouterReasoningParam, so the reasoning-mandatory model
+        // could spend the whole token cap reasoning and return empty
+        // content — every production compose errored calls_used=2.
+        const fixture = await loadFixture("next-up-compose.response.json");
+        const env: Record<string, string> = {};
+        env.OPENROUTER_API_KEY = "fixture";
+        const config = websiteGuidanceAiConfig(env);
+        let requestBody: Record<string, any> | null = null;
+        const capturingFetcher = async (
+            _input: RequestInfo | URL,
+            init?: RequestInit,
+        ) => {
+            requestBody = JSON.parse(String(init?.body ?? "{}"));
+            return new Response(JSON.stringify(fixture), {
+                status: 200,
+                headers: { "content-type": "application/json" },
+            });
+        };
+        const composition = await composeNextUpSuggestion(
+            { config: config!, context },
+            { fetcher: capturingFetcher },
+        );
+        expect(composition?.source).toBe("model");
+        expect(requestBody?.reasoning).toEqual({ effort: "minimal" });
+    });
+
+    test("reasoning-only response (empty content) resolves null", async () => {
+        const env: Record<string, string> = {};
+        env.OPENROUTER_API_KEY = "fixture";
+        const config = websiteGuidanceAiConfig(env);
+        const emptyFetcher = async () =>
+            new Response(
+                JSON.stringify({
+                    model: "meta/muse-ember",
+                    choices: [
+                        {
+                            finish_reason: "length",
+                            message: { role: "assistant", content: "" },
+                        },
+                    ],
+                    usage: {
+                        completion_tokens: 600,
+                        completion_tokens_details: { reasoning_tokens: 598 },
+                    },
+                }),
+                {
+                    status: 200,
+                    headers: { "content-type": "application/json" },
+                },
+            );
+        const composition = await composeNextUpSuggestion(
+            { config: config!, context },
+            { fetcher: emptyFetcher },
+        );
+        expect(composition).toBeNull();
+    });
 });

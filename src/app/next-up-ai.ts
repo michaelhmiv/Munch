@@ -6,6 +6,7 @@ import {
     type NextUpContext,
 } from "../guidance/next-up.js";
 import type { WebsiteGuidanceAiConfig } from "../website-ai-config.js";
+import { openRouterReasoningParam } from "../website-ai-config.js";
 
 /**
  * Next up composition call (guidance rework D4). ONE Ember call per
@@ -36,9 +37,10 @@ function logNextUpPhase(
     model: string,
     startedAt: number,
     callsUsed: number,
+    detail?: string,
 ): void {
     console.info(
-        `[next_up_ai] phase=compose status=${status} model=${safeLogValue(model)} duration_ms=${Math.max(0, Math.round(Date.now() - startedAt))} calls_used=${callsUsed}`,
+        `[next_up_ai] phase=compose status=${status} model=${safeLogValue(model)} duration_ms=${Math.max(0, Math.round(Date.now() - startedAt))} calls_used=${callsUsed}${detail ? ` detail=${safeLogValue(detail)}` : ""}`,
     );
 }
 
@@ -102,6 +104,12 @@ export async function composeNextUpSuggestion(
         max_tokens: Math.min(config.maxTokens, 600),
         response_format: { type: "json_object" },
         plugins: [{ id: "response-healing" }],
+        // Ember is reasoning-mandatory (website-ai-config): without
+        // this param the model reasons at default effort and can spend
+        // the whole 600-token cap before emitting any content, which
+        // surfaced in production as calls_used=2 compose errors with
+        // empty responses. Every other Ember call site sends it.
+        ...openRouterReasoningParam(config.model),
         messages: [
             {
                 role: "system",
@@ -115,6 +123,7 @@ export async function composeNextUpSuggestion(
         ],
     });
     let callsUsed = 0;
+    let lastDetail = "unknown";
     for (let attempt = 0; attempt < 2; attempt++) {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
@@ -133,13 +142,25 @@ export async function composeNextUpSuggestion(
                 signal: controller.signal,
             });
         } catch {
-            logNextUpPhase("error", config.model, startedAt, callsUsed);
+            logNextUpPhase(
+                "error",
+                config.model,
+                startedAt,
+                callsUsed,
+                "transport",
+            );
             return null;
         } finally {
             clearTimeout(timeout);
         }
         if (!response.ok) {
-            logNextUpPhase("error", config.model, startedAt, callsUsed);
+            logNextUpPhase(
+                "error",
+                config.model,
+                startedAt,
+                callsUsed,
+                `http_${response.status}`,
+            );
             return null;
         }
         const payload: unknown = await response.json().catch(() => null);
@@ -148,11 +169,24 @@ export async function composeNextUpSuggestion(
                 ? (payload as any).choices?.[0]?.message?.content
                 : null;
         const content = responseText(choice);
-        if (!content) continue;
+        if (!content) {
+            const finishReason =
+                payload && typeof payload === "object"
+                    ? (payload as any).choices?.[0]?.finish_reason
+                    : undefined;
+            const reasoningTokens =
+                payload && typeof payload === "object"
+                    ? (payload as any).usage?.completion_tokens_details
+                          ?.reasoning_tokens
+                    : undefined;
+            lastDetail = `empty_content finish=${typeof finishReason === "string" ? finishReason : "unknown"} reasoning_tokens=${typeof reasoningTokens === "number" ? reasoningTokens : "unknown"}`;
+            continue;
+        }
         let parsed: unknown;
         try {
             parsed = JSON.parse(content);
         } catch {
+            lastDetail = "parse_error";
             continue;
         }
         const composition = validateComposition(parsed, context);
@@ -160,7 +194,8 @@ export async function composeNextUpSuggestion(
             logNextUpPhase("success", config.model, startedAt, callsUsed);
             return composition;
         }
+        lastDetail = "validation_rejected";
     }
-    logNextUpPhase("error", config.model, startedAt, callsUsed);
+    logNextUpPhase("error", config.model, startedAt, callsUsed, lastDetail);
     return null;
 }
