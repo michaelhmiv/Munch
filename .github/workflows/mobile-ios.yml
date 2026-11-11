@@ -104,7 +104,7 @@ jobs:
   validate:
     name: Validate (Simulator build)
     if: github.event_name != 'workflow_dispatch' || inputs.build_mode == 'simulator' || inputs.build_mode == 'app-store-ipa'
-    runs-on: macos-26
+    runs-on: macos-15
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -150,7 +150,7 @@ jobs:
   smoke:
     name: Smoke (Simulator boot + core flows)
     if: github.event_name != 'workflow_dispatch' || inputs.build_mode == 'simulator' || inputs.build_mode == 'app-store-ipa'
-    runs-on: macos-26
+    runs-on: macos-15
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -340,7 +340,7 @@ jobs:
     name: Build and upload to App Store Connect
     needs: validate
     if: github.event_name == 'workflow_dispatch' && inputs.build_mode == 'app-store-ipa'
-    runs-on: macos-26
+    runs-on: macos-15
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
