@@ -69,6 +69,20 @@ const PRICE_TABLE: Record<string, { input: number; output: number }> = {
     "google/gemini-2.5-flash-lite": { input: 0.1, output: 0.4 },
     "amazon/nova-lite-v1": { input: 0.06, output: 0.24 },
     "openai/gpt-5-nano": { input: 0.05, output: 0.4 },
+    // ChatGPT-recommended sweep slate (Michael directive, 2026-11-11):
+    // catalog prices read from OpenRouter's /models API on 2026-11-11.
+    "google/gemini-3.1-flash-lite": { input: 0.25, output: 1.5 },
+    "google/gemini-3.5-flash-lite": { input: 0.3, output: 2.5 },
+    "google/gemini-3-flash-preview": { input: 0.5, output: 3.0 },
+    "google/gemini-3.8-flash": { input: 0.825, output: 4.125 },
+    "qwen/qwen3.5-9b": { input: 0.17, output: 0.25 },
+    "qwen/qwen3-vl-8b-instruct": { input: 0.25, output: 0.75 },
+    "qwen/qwen3.8-flash": { input: 0.15, output: 0.47 },
+    "openai/gpt-4o": { input: 2.5, output: 10.0 },
+    "openai/gpt-4o-mini": { input: 0.15, output: 0.6 },
+    "openai/gpt-5-mini": { input: 0.25, output: 2.0 },
+    "anthropic/claude-haiku-4.5": { input: 1.0, output: 5.0 },
+    "anthropic/claude-haiku-5.5": { input: 0.1, output: 0.5 },
 };
 const DEFAULT_MODELS = Object.keys(PRICE_TABLE);
 
@@ -98,10 +112,53 @@ const REQUEST_ACCOMMODATIONS: Record<string, string> = {
     }). Prompt, schema, and image payload identical; no production code changed. GLM cost/time include its reasoning tokens — its real operating profile.`,
 };
 
-function rewriteReasoningField(body: string): string {
+/** ChatGPT-sweep generalization of the GLM accommodation (Michael
+ * directive, 2026-11-11): any slug listed in BAKEOFF_REASONING_OMIT
+ * gets the same reasoning-field rewrite with the field omitted; any
+ * slug in BAKEOFF_REASONING_MINIMAL gets reasoning:{effort:"minimal"}.
+ * Used ONLY when a model's endpoint rejects the production
+ * reasoning:{enabled:false} outright; every use is disclosed in the
+ * report exactly like the GLM entry above. */
+type ReasoningShape = "omit" | "minimal";
+function parseSlugList(value: string | undefined): Set<string> {
+    return new Set(
+        (value ?? "")
+            .split(",")
+            .map((slug) => slug.trim())
+            .filter(Boolean),
+    );
+}
+const REASONING_OMIT_MODELS = parseSlugList(
+    process.env.BAKEOFF_REASONING_OMIT,
+);
+const REASONING_MINIMAL_MODELS = parseSlugList(
+    process.env.BAKEOFF_REASONING_MINIMAL,
+);
+function accommodationText(model: string, shape: ReasoningShape): string {
+    return `Bake-off-only request accommodation: this endpoint rejects the production reasoning:{enabled:false}, so the harness rewrote ONLY the reasoning field of the outgoing request (shape: ${
+        shape === "minimal"
+            ? 'reasoning:{effort:"minimal"}'
+            : "reasoning field omitted; endpoint default applies"
+    }). Prompt, schema, and image payload identical; no production code changed. The model's cost/time include any reasoning tokens it spends — its real operating profile.`;
+}
+for (const slug of REASONING_OMIT_MODELS) {
+    REQUEST_ACCOMMODATIONS[slug] ??= accommodationText(slug, "omit");
+}
+for (const slug of REASONING_MINIMAL_MODELS) {
+    REQUEST_ACCOMMODATIONS[slug] ??= accommodationText(slug, "minimal");
+}
+
+function reasoningShapeFor(model: string): ReasoningShape | null {
+    if (model === GLM_MODEL) return GLM_REASONING_SHAPE;
+    if (REASONING_MINIMAL_MODELS.has(model)) return "minimal";
+    if (REASONING_OMIT_MODELS.has(model)) return "omit";
+    return null;
+}
+
+function rewriteReasoningField(body: string, shape: ReasoningShape): string {
     try {
         const parsed = JSON.parse(body) as Record<string, unknown>;
-        if (GLM_REASONING_SHAPE === "minimal") {
+        if (shape === "minimal") {
             parsed.reasoning = { effort: "minimal" };
         } else {
             delete parsed.reasoning;
@@ -116,7 +173,8 @@ function rewriteReasoningField(body: string): string {
  * wrapped with the request-rewrite above for accommodated slugs. */
 function bakeoffFetcher(model: string, sink: CallObservation[]) {
     const inner = observingFetcher(sink);
-    if (!(model in REQUEST_ACCOMMODATIONS)) return inner;
+    const shape = reasoningShapeFor(model);
+    if (!shape) return inner;
     return async (
         input: RequestInfo | URL,
         init?: RequestInit,
@@ -124,7 +182,7 @@ function bakeoffFetcher(model: string, sink: CallObservation[]) {
         if (init && typeof init.body === "string") {
             return inner(input, {
                 ...init,
-                body: rewriteReasoningField(init.body),
+                body: rewriteReasoningField(init.body, shape),
             });
         }
         return inner(input, init);
