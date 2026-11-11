@@ -4,6 +4,7 @@ import {
     type PlanItemInput,
 } from "../guidance/contracts.js";
 import type { WebsiteGuidanceAiConfig } from "../website-ai-config.js";
+import { openRouterReasoningParam } from "../website-ai-config.js";
 
 /**
  * Guidance proposal model call (S2). Split out of `guidance-routes.ts`
@@ -170,6 +171,10 @@ export async function generateGuidanceProposals(
         max_tokens: config.maxTokens,
         response_format: { type: "json_object" },
         plugins: [{ id: "response-healing" }],
+        // Same reasoning-mandatory alignment as next-up-ai: Ember
+        // without this param can spend its token budget reasoning
+        // and return empty content.
+        ...openRouterReasoningParam(config.model),
         messages: [
             {
                 role: "system",
