@@ -12,8 +12,19 @@ name: Photo Model Bake-Off
 # The fixture set is 100% synthetic illustrations: results rank models
 # against each other on identical inputs and are NOT real-photo
 # accuracy; both layers' reports say so in their own text.
+#
+# Pre-merge execution: workflow_dispatch requires the workflow to
+# exist on the default branch, so on pull requests the live layers are
+# LABEL-GATED instead (no label, no spend): label "run-bakeoff-layer1"
+# runs Layer 1, label "run-bakeoff-layer2" runs the Layer 2 finalist
+# matrix (finalist slugs are committed into the matrix once Layer 1
+# results are in). Post-merge, workflow_dispatch is the normal route.
 
 on:
+    pull_request:
+        paths:
+            - "scripts/photo-model-bakeoff.ts"
+            - ".github/workflows/photo-model-bakeoff.yml"
     workflow_dispatch:
         inputs:
             layer:
@@ -43,7 +54,7 @@ concurrency:
 
 jobs:
     layer1:
-        if: inputs.layer == 'layer1'
+        if: (github.event_name == 'workflow_dispatch' && inputs.layer == 'layer1') || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-bakeoff-layer1'))
         runs-on: ubuntu-latest
         timeout-minutes: 180
         env:
@@ -78,7 +89,7 @@ jobs:
                   retention-days: 30
 
     layer2:
-        if: inputs.layer == 'layer2'
+        if: github.event_name == 'workflow_dispatch' && inputs.layer == 'layer2'
         runs-on: ubuntu-latest
         timeout-minutes: 40
         env:
