@@ -39,7 +39,10 @@
  * as committed — no runtime transform is applied to any photo).
  *
  * Knobs (env): JEVPROBE_OUT (default ./jevprobe-report),
- * JEVPROBE_CONCURRENCY (default 4). Exit 0 when a report was
+ * JEVPROBE_CONCURRENCY (default 4), JEVPROBE_MODEL (decision-model
+ * slug for the gate/verify calls; default typesafe/jev-1.14 — set it
+ * to run the identical probe against a fallback decision model).
+ * Exit 0 when a report was
  * produced — a failed call is data, not a harness failure. Exit 2
  * when OPENROUTER_API_KEY is not configured.
  */
@@ -62,7 +65,7 @@ const CONCURRENCY = Math.max(
     1,
     Math.min(8, Number(process.env.JEVPROBE_CONCURRENCY ?? 4) || 4),
 );
-const JEV_SLUG = "typesafe/jev-1.14";
+const JEV_SLUG = process.env.JEVPROBE_MODEL?.trim() || "typesafe/jev-1.14";
 const EMBER_SLUG = "meta/muse-ember";
 const DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions";
 const EMBER_PRICE = { input: 0.1, output: 0.5 }; // USD per 1M tokens

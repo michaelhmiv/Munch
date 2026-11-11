@@ -116,9 +116,21 @@ const PRICE_TABLE: Record<string, { input: number; output: number }> = {
     "qwen/qwen3.7-flash": { input: 0.03, output: 0.13 },
     "z-ai/glm-5.3-flash": { input: 0.04, output: 0.08 },
     "typesafe/jev-1.14": { input: 0.042, output: 0 },
+    // Fallback-bake-off candidates, endpoints-API records verified
+    // 2026-11-11: pplx-decider-v1.2 first-party endpoint $0.02/1M in,
+    // d1-ultra $0.042/1M in (same as jev-1.14); output free on both.
+    // inception/mercury-decide lists NO endpoints (no price record) —
+    // deliberately absent; its tasks carry API-reported cost only.
+    "perplexity/pplx-decider-v1.2": { input: 0.02, output: 0 },
+    "liquid/d1-ultra": { input: 0.042, output: 0 },
 };
 
-const JEV_SLUG = "typesafe/jev-1.14";
+/** The decision model in the "jev114" config seat. Defaults to
+ * typesafe/jev-1.14 (byte-identical behavior); FULLEVAL_DECIDER_MODEL
+ * swaps another Decisions-API model into the same seat (config specs
+ * still say "jev114") for the fallback designation bake-off. */
+const JEV_SLUG =
+    process.env.FULLEVAL_DECIDER_MODEL?.trim() || "typesafe/jev-1.14";
 const JEV_ROUTER_SLUG = "typesafe/jev-router";
 
 const DEFAULT_CONFIGS = [
