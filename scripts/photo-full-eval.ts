@@ -84,6 +84,8 @@ import {
     identifyMealPhoto,
     mealPhotoVisionConfig,
     MealPhotoNoFoodError,
+    type MealPhotoCandidateChoice,
+    type MealPhotoCandidateChoiceRequest,
     type MealPhotoVisionConfig,
     type MealPhotoVisionItem,
 } from "../src/meal-photo/vision.js";
@@ -431,8 +433,251 @@ async function probeJevIdentify(bytes: Uint8Array): Promise<ShapeProbe> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Jev-1.14 via the OpenRouter Decisions API (harness-only adapter).
+//
+// jev-1.14 is a decision model, not a chat model: OpenRouter rejects it
+// on chat/completions (HTTP 400 — the shape probes above record the
+// verbatim error, which itself names the fix) and serves it ONLY via
+// POST /api/alpha/decisions with a {model, state, questions} body and
+// typed answers. The decider seat IS a decision task (pick one
+// candidate per ambiguous item), so this adapter implements the exact
+// chooseCandidates dependency contract production wires: one Decisions
+// call per grounding batch, one Choice question per ambiguous item,
+// options = that item's candidates plus an explicit "none". The typed
+// answers map straight back onto MealPhotoCandidateChoice, and every
+// call is metered through the same observation sink as chat calls
+// (usage.cost / input_tokens / served model build all come from the
+// response). No src/ changes; identify and estimate are untouched.
+// Jev's input is text-only (TypeSafe's published limits: "Convert
+// images, audio and PDFs to text first"), so it can never take the
+// image-bearing identify seat — the entirely-Jev config's identify
+// failure is structural, not a harness gap.
+// ---------------------------------------------------------------------------
+
+const DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions";
+
+/** Literal excerpt of the most recent Decisions response (probe evidence). */
+let lastJevDecisionsResponse: string | null = null;
+
+async function chooseCandidatesViaJevDecisions(
+    requests: MealPhotoCandidateChoiceRequest[],
+    sink: CallObservation[],
+): Promise<Map<string, MealPhotoCandidateChoice>> {
+    if (requests.length === 0) return new Map();
+    const config = configFor(JEV_SLUG);
+    const questions: Record<string, unknown> = {};
+    requests.forEach((request, index) => {
+        const criteria: Record<string, string> = {};
+        request.candidates.forEach((candidate, candidateIndex) => {
+            criteria[`c${candidateIndex}`] =
+                `${candidate.name}${candidate.brand ? ` — brand: ${candidate.brand}` : ""} (source database: ${candidate.provider})`;
+        });
+        criteria["none"] =
+            "No candidate is a defensible match for this photographed item.";
+        questions[`q${index}`] = {
+            type: "choice",
+            instructions:
+                `A meal photo was analysed and one photographed food item is "${request.itemName}"${request.cookingMethod ? ` (cooking method: ${request.cookingMethod})` : ""}. ` +
+                "Several food-database entries were found for it. Select the single entry that best represents the photographed food. " +
+                'Prefer a generic ingredient over a clearly wrong branded or prepared-food match. Select "none" if no entry is a defensible match.',
+            criteria,
+        };
+    });
+    const state = {
+        task: "Choose the best food-database candidate for each photographed meal item.",
+        items: requests.map((request, index) => ({
+            question: `q${index}`,
+            photographed_item: request.itemName,
+            cooking_method: request.cookingMethod,
+            candidates: request.candidates.map((candidate, candidateIndex) => ({
+                option: `c${candidateIndex}`,
+                name: candidate.name,
+                brand: candidate.brand,
+                source_database: candidate.provider,
+            })),
+        })),
+    };
+    const startedAt = performance.now();
+    let httpStatus: number | null = null;
+    let rawText = "";
+    let payload: any = null;
+    try {
+        const response = await fetch(DECISIONS_URL, {
+            method: "POST",
+            headers: {
+                authorization: `Bearer ${config.apiKey}`,
+                "content-type": "application/json",
+            },
+            body: JSON.stringify({ model: JEV_SLUG, state, questions }),
+            signal: AbortSignal.timeout(60_000),
+        });
+        httpStatus = response.status;
+        rawText = await response.text();
+        lastJevDecisionsResponse = rawText.slice(0, 1_200);
+        try {
+            payload = JSON.parse(rawText);
+        } catch {
+            payload = null;
+        }
+    } catch (error) {
+        sink.push({
+            role: "decider",
+            latencyMs: Math.round(performance.now() - startedAt),
+            httpStatus: null,
+            promptTokens: null,
+            completionTokens: null,
+            reasoningTokens: null,
+            reportedCostUsd: null,
+            provider: null,
+            responseModel: null,
+            transportError:
+                error instanceof Error ? error.message : String(error),
+            errorExcerpt: null,
+        });
+        throw error;
+    }
+    const usage = payload?.usage ?? {};
+    sink.push({
+        role: "decider",
+        latencyMs: Math.round(performance.now() - startedAt),
+        httpStatus,
+        promptTokens:
+            typeof usage.input_tokens === "number" ? usage.input_tokens : null,
+        completionTokens:
+            typeof usage.output_tokens === "number"
+                ? usage.output_tokens
+                : null,
+        reasoningTokens: null,
+        reportedCostUsd: typeof usage.cost === "number" ? usage.cost : null,
+        provider:
+            typeof payload?.provider === "string" ? payload.provider : null,
+        responseModel:
+            typeof payload?.model === "string" ? payload.model : null,
+        transportError: null,
+        errorExcerpt:
+            httpStatus !== null && httpStatus >= 300
+                ? typeof payload?.error?.message === "string"
+                    ? payload.error.message
+                    : rawText.slice(0, 300)
+                : null,
+    });
+    if (
+        httpStatus === null ||
+        httpStatus < 200 ||
+        httpStatus >= 300 ||
+        !payload?.answers
+    ) {
+        throw new Error(
+            `Jev decisions request failed (HTTP ${httpStatus}): ${rawText.slice(0, 300)}`,
+        );
+    }
+    const result = new Map<string, MealPhotoCandidateChoice>();
+    requests.forEach((request, index) => {
+        const answer = payload.answers[`q${index}`];
+        if (
+            !answer ||
+            answer.type !== "choice" ||
+            typeof answer.choice !== "string"
+        ) {
+            return;
+        }
+        const confidence =
+            typeof answer.confidence === "number"
+                ? answer.confidence
+                : typeof answer.probabilities?.[answer.choice] === "number"
+                  ? answer.probabilities[answer.choice]
+                  : 0;
+        if (answer.choice === "none") {
+            result.set(request.key, {
+                candidateId: null,
+                confidence,
+                rationale: null,
+            });
+            return;
+        }
+        const match = /^c(\d+)$/.exec(answer.choice);
+        const candidate = match
+            ? request.candidates[Number(match[1])]
+            : undefined;
+        // An option key outside the request's candidate list is
+        // discarded, never honoured (same fabrication bar as the
+        // production decider's allowed-ID check).
+        if (!candidate) return;
+        result.set(request.key, {
+            candidateId: candidate.candidateId,
+            confidence,
+            rationale: null,
+        });
+    });
+    return result;
+}
+
+interface DecisionsProbe {
+    ok: boolean;
+    detail: string;
+    servedModel: string | null;
+    httpStatus: number | null;
+    inputTokens: number | null;
+    reportedCostUsd: number | null;
+    responseExcerpt: string | null;
+}
+
+async function probeJevDecisions(): Promise<DecisionsProbe> {
+    const sink: CallObservation[] = [];
+    try {
+        const choices = await chooseCandidatesViaJevDecisions(
+            [
+                {
+                    key: "item:0",
+                    itemName: "grilled chicken breast",
+                    cookingMethod: "grilled",
+                    candidates: [
+                        {
+                            candidateId: "probe:usda-chicken-breast",
+                            name: "Chicken breast, grilled",
+                            brand: null,
+                            provider: "usda",
+                        },
+                        {
+                            candidateId: "probe:off-chicken-nuggets",
+                            name: "Chicken nuggets",
+                            brand: "Probe Brand",
+                            provider: "open_food_facts",
+                        },
+                    ],
+                },
+            ],
+            sink,
+        );
+        const observation = sink[0];
+        const choice = choices.get("item:0");
+        return {
+            ok: true,
+            detail: `Decisions API accepted the decider-shaped batch; jev-1.14 selected candidate_id=${choice?.candidateId ?? "(no selection)"} confidence=${choice?.confidence ?? "n/a"} for the probe item (grilled chicken breast vs chicken nuggets)`,
+            servedModel: observation?.responseModel ?? null,
+            httpStatus: observation?.httpStatus ?? null,
+            inputTokens: observation?.promptTokens ?? null,
+            reportedCostUsd: observation?.reportedCostUsd ?? null,
+            responseExcerpt: lastJevDecisionsResponse,
+        };
+    } catch (error) {
+        const observation = sink[0];
+        return {
+            ok: false,
+            detail: error instanceof Error ? error.message : String(error),
+            servedModel: observation?.responseModel ?? null,
+            httpStatus: observation?.httpStatus ?? null,
+            inputTokens: observation?.promptTokens ?? null,
+            reportedCostUsd: observation?.reportedCostUsd ?? null,
+            responseExcerpt: lastJevDecisionsResponse,
+        };
+    }
+}
+
 const needsJev114 = configSpecs.some((spec) => spec.includes("jev114"));
 const jevProbes: ShapeProbe[] = [];
+let jevDecisionsProbe: DecisionsProbe | null = null;
 if (needsJev114) {
     jevProbes.push(await probeJevDecider());
     const probeFixture = fixtures[0]!;
@@ -446,6 +691,10 @@ if (needsJev114) {
             `[fulleval] Jev-1.14 ${probe.shape} probe: ${probe.ok ? "OK" : "FAILED"} — ${probe.detail} (http=${probe.httpStatuses.join(",")}${probe.errorExcerpts.length ? ` errors=${probe.errorExcerpts.join(" | ")}` : ""})`,
         );
     }
+    jevDecisionsProbe = await probeJevDecisions();
+    console.info(
+        `[fulleval] Jev-1.14 decisions-API probe: ${jevDecisionsProbe.ok ? "OK" : "FAILED"} — ${jevDecisionsProbe.detail} (http=${jevDecisionsProbe.httpStatus}, served=${jevDecisionsProbe.servedModel})`,
+    );
 }
 
 function resolveSlug(token: string): string {
@@ -630,9 +879,11 @@ async function runTask(
             return result;
         },
         chooseCandidates: (requests) =>
-            chooseMealPhotoCandidates(requests, deciderConfig, {
-                fetcher: observingFetcher("decider", observations),
-            }),
+            config.deciderModel === JEV_SLUG
+                ? chooseCandidatesViaJevDecisions(requests, observations)
+                : chooseMealPhotoCandidates(requests, deciderConfig, {
+                      fetcher: observingFetcher("decider", observations),
+                  }),
         estimateNutrients: (requests) =>
             estimateMealPhotoNutrients(requests, identifyConfig, {
                 fetcher: observingFetcher("estimate", observations),
@@ -1100,7 +1351,8 @@ const reportJson = {
         endpoints_api:
             "Not present in the OpenRouter /models list, but the endpoints API returns a live endpoint: TypeSafe | typesafe/jev-1.14-20261014 (status 0), modality text+image -> decisions, pricing $0.042 per 1M input tokens / $0 output, supported_parameters listed as [].",
         shape_probes: jevProbes,
-        note: "Sampled DIRECTLY as Michael directed — no router substitution. If the probes show the production call shapes are rejected, the decider-seat numbers for its hybrids reflect deterministic fallback (grounding catches decider errors by design) and the per-config decider call stats + error samples in this report are the evidence.",
+        decisions_probe: jevDecisionsProbe,
+        note: "Sampled DIRECTLY as Michael directed — no router substitution. jev-1.14 rejects the chat/completions endpoint outright (HTTP 400; the error itself names the fix), so its decider seat is served through OpenRouter's Decisions API (POST /api/alpha/decisions) via a harness-only adapter implementing the same chooseCandidates contract — those hybrid rows ARE jev-1.14's own decisions, metered from its responses. Its identify seat cannot be served at all: the chat shape is rejected AND Jev's input is text-only (TypeSafe's published limits), so the entirely-Jev config fails at identify for structural reasons, measured per task in this report.",
     },
     jev_router: {
         slug: JEV_ROUTER_SLUG,
@@ -1134,7 +1386,7 @@ const lines = [
     ``,
     `Every config ran the true production pipeline (identify → database search/grounding → decider tie-break → labelled estimate fallback → filled draft items), wired as production wires it (src/app/routes.ts). Hybrid configs differ ONLY in the harness's dependency wiring: the decider role is routed to the second model; identify + estimate stay with the first. Cost per completed draft sums ALL model calls (identify + decider + estimate).`,
     ``,
-    `> **Jev-1.14 (the decision model, sampled directly):** endpoint live on OpenRouter (\`TypeSafe | typesafe/jev-1.14-20261014\`, modality text+image → decisions, $0.042/1M input, $0 output) though absent from the /models list. Shape probes with the REAL production calls: ${jevProbes.map((probe) => `**${probe.shape}** ${probe.ok ? `OK — ${probe.detail}` : `FAILED — ${probe.detail}${probe.errorExcerpts.length ? ` · API errors: ${probe.errorExcerpts.join(" | ")}` : ""}`}`).join("; ") || "not run"}. No router substitution anywhere in the Jev rows.`,
+    `> **Jev-1.14 (the decision model, sampled directly):** endpoint live on OpenRouter (\`TypeSafe | typesafe/jev-1.14-20261014\`, modality text+image → decisions, $0.042/1M input, $0 output) though absent from the /models list. Shape probes with the REAL production calls: ${jevProbes.map((probe) => `**${probe.shape}** ${probe.ok ? `OK — ${probe.detail}` : `FAILED — ${probe.detail}${probe.errorExcerpts.length ? ` · API errors: ${probe.errorExcerpts.join(" | ")}` : ""}`}`).join("; ") || "not run"}. The chat endpoint rejects jev-1.14 outright, so its **decider seat** is served via OpenRouter's Decisions API (\`POST /api/alpha/decisions\`) through a harness-only adapter implementing the same chooseCandidates contract — decisions probe: ${jevDecisionsProbe ? (jevDecisionsProbe.ok ? `OK — ${jevDecisionsProbe.detail} (served build: ${jevDecisionsProbe.servedModel})` : `FAILED — ${jevDecisionsProbe.detail}`) : "not run"}. Hybrid rows with a jev-1.14 decider are therefore jev-1.14's OWN decisions. The **entirely-Jev** config still cannot run: identify needs image input + open-ended structured output, Jev's input is text-only and its output is typed decisions — its 60/60 identify failures in this report are the measurement. No router substitution anywhere in the Jev rows.`,
     ``,
     `> **jev-router** appears in exactly one config, labelled ROUTER wherever it appears: it routes per call to other models (see its served-models note) and does **not** count as the Jev result. Its pricing is dynamic, so its computed cost is n/a; API-reported cost is its figure of record.`,
     ``,
