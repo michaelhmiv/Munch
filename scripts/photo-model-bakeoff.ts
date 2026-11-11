@@ -98,6 +98,62 @@ const REQUEST_ACCOMMODATIONS: Record<string, string> = {
     }). Prompt, schema, and image payload identical; no production code changed. GLM cost/time include its reasoning tokens — its real operating profile.`,
 };
 
+/** BAKE-OFF-ONLY strict-prompt variant (Michael's over-naming question,
+ * 2026-11-11): for slugs listed in BAKEOFF_STRICT_PROMPT_MODELS, the
+ * harness appends ONE visible-evidence instruction to the user message
+ * text of the outgoing identify request. Everything else — schema,
+ * image payload, reasoning params — stays the production shape, and no
+ * production code (src/) changes. The report discloses the variant and
+ * quotes the appended instruction verbatim wherever the model appears. */
+const STRICT_PROMPT_INSTRUCTION =
+    "STRICT VISIBILITY RULE: List an item only when you can point to exactly where it is visible in this photo. When you are unsure whether something is present, leave it out. Do not list items that are merely typical, expected, or implied by the dish — only what is actually visible.";
+const STRICT_PROMPT_MODELS = new Set(
+    (process.env.BAKEOFF_STRICT_PROMPT_MODELS ?? "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+);
+const PROMPT_ACCOMMODATIONS: Record<string, string> = Object.fromEntries(
+    [...STRICT_PROMPT_MODELS].map((model) => [
+        model,
+        `Bake-off-only prompt variant: the harness appended one instruction to the production identify prompt for this run — verbatim: "${STRICT_PROMPT_INSTRUCTION}" Schema, image payload, and reasoning params identical; no production code changed.`,
+    ]),
+);
+
+function appendStrictPrompt(body: string): string {
+    try {
+        const parsed = JSON.parse(body) as Record<string, unknown>;
+        const messages = parsed.messages as
+            | Array<Record<string, unknown>>
+            | undefined;
+        if (!Array.isArray(messages)) return body;
+        const userMessage = [...messages]
+            .reverse()
+            .find((message) => message.role === "user");
+        if (!userMessage) return body;
+        const content = userMessage.content;
+        if (typeof content === "string") {
+            userMessage.content = `${content}\n\n${STRICT_PROMPT_INSTRUCTION}`;
+            return JSON.stringify(parsed);
+        }
+        if (Array.isArray(content)) {
+            const textPart = content.find(
+                (part) =>
+                    part &&
+                    typeof part === "object" &&
+                    (part as Record<string, unknown>).type === "text",
+            ) as Record<string, unknown> | undefined;
+            if (textPart && typeof textPart.text === "string") {
+                textPart.text = `${textPart.text}\n\n${STRICT_PROMPT_INSTRUCTION}`;
+                return JSON.stringify(parsed);
+            }
+        }
+        return body;
+    } catch {
+        return body;
+    }
+}
+
 function rewriteReasoningField(body: string): string {
     try {
         const parsed = JSON.parse(body) as Record<string, unknown>;
@@ -116,16 +172,18 @@ function rewriteReasoningField(body: string): string {
  * wrapped with the request-rewrite above for accommodated slugs. */
 function bakeoffFetcher(model: string, sink: CallObservation[]) {
     const inner = observingFetcher(sink);
-    if (!(model in REQUEST_ACCOMMODATIONS)) return inner;
+    const rewriteReasoning = model in REQUEST_ACCOMMODATIONS;
+    const strictPrompt = STRICT_PROMPT_MODELS.has(model);
+    if (!rewriteReasoning && !strictPrompt) return inner;
     return async (
         input: RequestInfo | URL,
         init?: RequestInit,
     ): Promise<Response> => {
         if (init && typeof init.body === "string") {
-            return inner(input, {
-                ...init,
-                body: rewriteReasoningField(init.body),
-            });
+            let body = init.body;
+            if (rewriteReasoning) body = rewriteReasoningField(body);
+            if (strictPrompt) body = appendStrictPrompt(body);
+            return inner(input, { ...init, body });
         }
         return inner(input, init);
     };
@@ -616,6 +674,7 @@ for (const model of models) {
             0,
         ),
         requestAccommodation: REQUEST_ACCOMMODATIONS[model] ?? null,
+        promptAccommodation: PROMPT_ACCOMMODATIONS[model] ?? null,
         totalComputedCostUsd,
         costPerTaskUsd: tasks.length ? totalComputedCostUsd / tasks.length : 0,
         totalReportedCostUsd,
@@ -692,6 +751,7 @@ const reportJson = {
     concurrency,
     prices_per_million_tokens: PRICE_TABLE,
     request_accommodations: REQUEST_ACCOMMODATIONS,
+    prompt_accommodations: PROMPT_ACCOMMODATIONS,
     fixtures_dir: FIXTURES_DIR_REL,
     caveat: SET_CAVEAT,
     total_computed_spend_usd: totalSpendUsd,
