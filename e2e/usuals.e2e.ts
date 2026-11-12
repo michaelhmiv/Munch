@@ -67,11 +67,26 @@ function isWeekend(date: string): boolean {
     return day === 0 || day === 6;
 }
 
-/** The `count` most recent dates before `today` sharing today's day class. */
-function sameClassDates(today: string, count: number): string[] {
+/**
+ * `count` dates sharing today's day class, walking back from
+ * `startBack` days ago. The band starts 28 days back on purpose: the
+ * suite's other journeys own the recent dates (today-navigation
+ * asserts exact day totals three days back; trends seeds 20–22 days
+ * back), and this account is shared across files — seeds must not
+ * land on a day another journey totals up.
+ */
+function sameClassDates(
+    today: string,
+    count: number,
+    startBack: number,
+): string[] {
     const weekend = isWeekend(today);
     const dates: string[] = [];
-    for (let back = 1; dates.length < count && back < 21; back += 1) {
+    for (
+        let back = startBack;
+        dates.length < count && back < startBack + 21;
+        back += 1
+    ) {
         const candidate = shiftDay(today, -back);
         if (isWeekend(candidate) === weekend) dates.push(candidate);
     }
@@ -91,7 +106,7 @@ test("usuals surface the habitual breakfast at its median portion, one-offs stay
     // The habitual breakfast: the same food on three earlier days of
     // today's day class, always 2 × "1 container" at 150 kcal each, so
     // the usual must read 2 × 1 container / 300 kcal.
-    for (const [index, date] of sameClassDates(today, 3).entries()) {
+    for (const [index, date] of sameClassDates(today, 3, 28).entries()) {
         await seedMeal(
             page,
             date,
