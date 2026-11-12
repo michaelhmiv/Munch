@@ -270,11 +270,11 @@ async function insightsSeed(
     return {
         surface: "insights",
         summary,
-        opener: "Here's your last seven days. Ask me to explain the pattern, find where protein dipped, or suggest one change for next week.",
+        opener: "This starts with your last seven days — ask about a month or a year and I'll pull that instead. I can explain the pattern or find where protein dipped, measured against your own targets.",
         starters: [
             "Explain my week",
             "Where did my protein dip?",
-            "What one change helps most next week?",
+            "How about last month?",
         ],
         data: {
             start_date: startDate,

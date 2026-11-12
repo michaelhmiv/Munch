@@ -150,11 +150,11 @@ const CHAT_SEED_FIXTURES: Record<
     insights: {
         surface: "insights",
         summary: "Last 7 days: 0 kcal logged across 0 meals.",
-        opener: "Here's your last seven days. Ask me to explain the pattern, find where protein dipped, or suggest one change for next week.",
+        opener: "This starts with your last seven days — ask about a month or a year and I'll pull that instead. I can explain the pattern or find where protein dipped, measured against your own targets.",
         starters: [
             "Explain my week",
             "Where did my protein dip?",
-            "What one change helps most next week?",
+            "How about last month?",
         ],
     },
 };
@@ -4601,8 +4601,9 @@ test("Trends: dashboard renders, check-in stays windowed, catalog builds a persi
     await expect(
         page.locator('.trends-card[data-card-key="digest"]'),
     ).toContainText("86% coverage");
-    await expect(page.getByTestId("chat-entry-insights")).toContainText(
-        "Explain my week",
+    await expect(page.getByTestId("brain-entry-insights")).toHaveAttribute(
+        "aria-label",
+        /Ask the assistant about your trends/,
     );
     await expect(page.locator("#app-content")).toContainText(
         "Recorded calories averaged 1,940 kcal",
@@ -4945,8 +4946,9 @@ test("chat v2 placement: contextual entries only — no global entry, seeded ope
         "Adjust or explain this plan",
     );
     await gotoRoute(page, "/app/trends");
-    await expect(page.getByTestId("chat-entry-insights")).toContainText(
-        "Explain my week",
+    await expect(page.getByTestId("brain-entry-insights")).toHaveAttribute(
+        "aria-label",
+        /Ask the assistant about your trends/,
     );
 
     // Entering from Today opens the seeded conversation: context

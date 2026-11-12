@@ -19,6 +19,7 @@ import {
     computeTrends,
     computeWeightTrend,
     computeWeeklyDigest,
+    computeWeekInWords,
 } from "../insights.js";
 import { getNutritionProvenanceAnalysis } from "../nutrition-provenance.js";
 import { withUserDatabase } from "../platform/database.js";
@@ -38,6 +39,9 @@ import { getPublicProductPolicy } from "../product-config.js";
 import { listSavedFoods } from "../saved-foods/repository.js";
 import { groupMealVariations } from "../search.js";
 import {
+    getEarliestMealDate,
+    getEarliestWaterDate,
+    getEarliestWeightDate,
     getMealsByDate,
     getMealsInRange,
     getLatestWeight,
@@ -807,22 +811,62 @@ function trendsMealInput(
     };
 }
 
+async function earliestActivityDate(
+    userId: string,
+    timezone: string,
+): Promise<string | null> {
+    const dates = await Promise.all([
+        getEarliestMealDate(userId, timezone),
+        getEarliestWaterDate(userId, timezone),
+        getEarliestWeightDate(userId, timezone),
+    ]);
+    const present = dates.filter((date): date is string => date != null).sort();
+    return present[0] ?? null;
+}
+
 export async function getTrendsWorkspace(
     userId: string,
     startValue: string,
     endValue: string,
+    options: { range?: string | null } = {},
 ) {
-    const startDate = validateLocalDate(startValue);
+    const range = options.range ?? null;
+    if (range != null && range !== "ytd" && range !== "all") {
+        throw new Error("Unknown trends range");
+    }
     const endDate = validateLocalDate(endValue);
-    const rangeDays = inclusiveDateSpanDays(startDate, endDate);
-    if (rangeDays > 366) throw new Error("Date range is too large");
-    const previousStart = shiftLocalDate(startDate, -rangeDays);
-    const previousEnd = shiftLocalDate(startDate, -1);
     const [profile, goals] = await Promise.all([
         getProfile(userId),
         getNutritionGoals(userId),
     ]);
     const timezone = profile?.timezone ?? "UTC";
+    // Calendar-shaped ranges resolve their start from the calendar or
+    // from the account's own history instead of a caller-supplied date:
+    // YTD starts January 1 of the end date's year; All time starts at
+    // the earliest meal, water, or weight entry on the account.
+    let startDate: string;
+    let rangeLabel: string | undefined;
+    if (range === "ytd") {
+        startDate = `${endDate.slice(0, 4)}-01-01`;
+        rangeLabel = "Year to date";
+    } else if (range === "all") {
+        startDate = (await earliestActivityDate(userId, timezone)) ?? endDate;
+        rangeLabel = "All time";
+    } else {
+        startDate = validateLocalDate(startValue);
+    }
+    const rangeDays = inclusiveDateSpanDays(startDate, endDate);
+    // Day-count ranges stay capped at a year; All time is bounded by
+    // the account's own history, so it is exempt from the cap.
+    if (range !== "all" && rangeDays > 366) {
+        throw new Error("Date range is too large");
+    }
+    // All time has no prior window: the previous span collapses onto
+    // the start date, so previous-period aggregates resolve empty
+    // instead of doubling the whole history.
+    const previousStart =
+        range === "all" ? startDate : shiftLocalDate(startDate, -rangeDays);
+    const previousEnd = shiftLocalDate(startDate, -1);
     const alcoholEnabled = profile?.alcohol_tracking_enabled ?? false;
     const [meals, water, weightEntries, weightUnit, layout] = await Promise.all(
         [
@@ -876,6 +920,7 @@ export async function getTrendsWorkspace(
         weightUnit: weightUnit ?? "kg",
         goals,
         rangeDays,
+        rangeLabel,
         timezone,
         alcoholTrackingEnabled: alcoholEnabled,
     };
@@ -883,6 +928,7 @@ export async function getTrendsWorkspace(
         startDate,
         endDate,
         rangeDays,
+        range: range ?? "custom",
         timezone,
         weightUnit: weightUnit ?? "kg",
         alcoholTrackingEnabled: alcoholEnabled,
@@ -890,7 +936,7 @@ export async function getTrendsWorkspace(
         catalog: TRENDS_CATALOG,
         cards: layout.cards.map((ref) => buildTrendsCard(ref, ctx)),
         digest: {
-            weekly: computeWeeklyDigest(buckets.slice(-7), goals),
+            weekly: computeWeekInWords(buckets.slice(-7), goals, timezone),
             trends: computeTrends(buckets, goals),
             patterns: computeMealPatterns(buckets, timezone),
         },

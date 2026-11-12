@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { DailyBucket } from "./insights.js";
 import type { Meal, NutritionGoals, WeightEntry } from "./storage.js";
 import {
+    bucketizeBarSeries,
     buildTrendsCard,
     buildTrendsDays,
     coveredAverage,
@@ -683,5 +684,152 @@ describe("drill-down ranking (T11)", () => {
             value: 38,
             lastDate: "2026-11-08",
         });
+    });
+});
+
+// ------------------------------------------------------- long-range bucketing
+
+function dayPoint(date: string, value: number | null, hasLog = value != null) {
+    return { date, value, hasLog };
+}
+
+describe("bucketizeBarSeries", () => {
+    test("weeks group Monday–Sunday and average the logged days", () => {
+        // Mon 2026-11-02 .. Sun 2026-11-15 (two full weeks).
+        const series = [];
+        for (let i = 0; i < 14; i++) {
+            const date = `2026-11-${String(2 + i).padStart(2, "0")}`;
+            series.push(dayPoint(date, 1000 + i * 100));
+        }
+        const weeks = bucketizeBarSeries(series, "week", false);
+        expect(weeks.length).toBe(2);
+        expect(weeks[0]!.date).toBe("2026-11-02");
+        expect(weeks[0]!.endDate).toBe("2026-11-08");
+        expect(weeks[0]!.bucket).toBe("week");
+        // Mean of 1000..1600.
+        expect(weeks[0]!.value).toBe(1300);
+        expect(weeks[0]!.days!.length).toBe(7);
+        expect(weeks[1]!.date).toBe("2026-11-09");
+        expect(weeks[1]!.value).toBe(2000);
+    });
+
+    test("unlogged days do not drag a non-partial average down", () => {
+        const series = [
+            dayPoint("2026-11-02", 2000),
+            dayPoint("2026-11-03", null, false),
+            dayPoint("2026-11-04", 1000),
+        ];
+        const weeks = bucketizeBarSeries(series, "week", false);
+        expect(weeks[0]!.value).toBe(1500);
+        expect(weeks[0]!.hasLog).toBe(true);
+    });
+
+    test("partial nutrients average only the days that carry data", () => {
+        const series = [
+            dayPoint("2026-11-02", null, true),
+            dayPoint("2026-11-03", 10, true),
+            dayPoint("2026-11-04", 20, true),
+        ];
+        const weeks = bucketizeBarSeries(series, "week", true);
+        expect(weeks[0]!.value).toBe(15);
+    });
+
+    test("months group by calendar month and keep their days for drill-down", () => {
+        const series = [
+            dayPoint("2026-10-30", 1000),
+            dayPoint("2026-10-31", 3000),
+            dayPoint("2026-11-01", 2000),
+        ];
+        const months = bucketizeBarSeries(series, "month", false);
+        expect(months.length).toBe(2);
+        expect(months[0]!.bucket).toBe("month");
+        expect(months[0]!.value).toBe(2000);
+        expect(months[0]!.endDate).toBe("2026-10-31");
+        expect(months[0]!.days!.map((d) => d.date)).toEqual([
+            "2026-10-30",
+            "2026-10-31",
+        ]);
+        expect(months[1]!.date).toBe("2026-11-01");
+    });
+
+    test("a mid-week range start keeps the first day as the bucket date", () => {
+        const series = [
+            dayPoint("2026-11-04", 1200), // Wednesday
+            dayPoint("2026-11-05", 1800),
+        ];
+        const weeks = bucketizeBarSeries(series, "week", false);
+        expect(weeks.length).toBe(1);
+        expect(weeks[0]!.date).toBe("2026-11-04");
+        expect(weeks[0]!.value).toBe(1500);
+    });
+});
+
+describe("bar cards on long ranges", () => {
+    function longBuckets(count: number) {
+        const out: DailyBucket[] = [];
+        let cursor = "2026-08-10"; // a Monday
+        for (let i = 0; i < count; i++) {
+            const b = bucket(cursor, { calories: 1800 + (i % 5) * 100 }, [
+                meal({
+                    logged_at: `${cursor}T12:00:00Z`,
+                    meal_type: "lunch",
+                    calories: 900,
+                }),
+            ]);
+            out.push(b);
+            const next = new Date(`${cursor}T12:00:00Z`);
+            next.setUTCDate(next.getUTCDate() + 1);
+            cursor = next.toISOString().slice(0, 10);
+        }
+        return out;
+    }
+
+    test("a 90-day calories card ships weekly buckets and no rolling line", () => {
+        const payload = card(
+            { shape: "bar", data: "calories", size: "full" },
+            longBuckets(90),
+        );
+        const chart = payload.chart as {
+            bucket: string | null;
+            rolling: unknown;
+            days: Array<{ bucket?: string; days?: unknown[] }>;
+        };
+        expect(chart.bucket).toBe("week");
+        expect(chart.rolling).toBeNull();
+        expect(chart.days.length).toBeLessThan(20);
+        expect(chart.days[0]!.bucket).toBe("week");
+        expect(chart.days[0]!.days!.length).toBeGreaterThan(0);
+        expect(payload.subtitle).toBe("last 3 months");
+    });
+
+    test("a 200-day card ships monthly buckets and the range label wins", () => {
+        const payload = card(
+            { shape: "bar", data: "calories", size: "full" },
+            longBuckets(200),
+            { rangeLabel: "Year to date" },
+        );
+        const chart = payload.chart as {
+            bucket: string | null;
+            days: Array<{ bucket?: string }>;
+        };
+        expect(chart.bucket).toBe("month");
+        expect(chart.days.length).toBeLessThanOrEqual(8);
+        expect(chart.days[0]!.bucket).toBe("month");
+        expect(payload.subtitle).toBe("Year to date");
+    });
+
+    test("a 30-day card stays per-day with its rolling line", () => {
+        const payload = card(
+            { shape: "bar", data: "calories", size: "full" },
+            longBuckets(30),
+        );
+        const chart = payload.chart as {
+            bucket: string | null;
+            rolling: unknown;
+            days: unknown[];
+        };
+        expect(chart.bucket).toBeNull();
+        expect(chart.days.length).toBe(30);
+        expect(chart.rolling).not.toBeNull();
     });
 });

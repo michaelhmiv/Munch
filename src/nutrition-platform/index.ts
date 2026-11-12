@@ -3,6 +3,7 @@ export {
     deleteMeal,
     existingIdempotencyKeys,
     getAllMeals,
+    getEarliestMealDate,
     getMealsByDate,
     getMealsInRange,
     insertMeal,
@@ -25,6 +26,7 @@ export {
 export { getNutritionGoals, upsertNutritionGoals } from "./goals.js";
 export {
     deleteWater,
+    getEarliestWaterDate,
     getWaterByDate,
     getWaterInRange,
     insertWater,
@@ -32,6 +34,7 @@ export {
 } from "./water.js";
 export {
     deleteWeight,
+    getEarliestWeightDate,
     getLatestWeight,
     getWeightByDate,
     getWeightInRange,

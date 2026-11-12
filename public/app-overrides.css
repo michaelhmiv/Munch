@@ -4819,7 +4819,18 @@ dialog .guided-grocery-row input[type="checkbox"] {
 
 .trends-view .trends-pills {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
+    margin: 0;
+}
+
+/* The range switch and Edit share one control row under the heading:
+   pills lead, Edit rides the same line at the right edge. */
+.trends-controls {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
     margin: 2px 0 12px;
 }
 
@@ -5112,16 +5123,23 @@ dialog .guided-grocery-row input[type="checkbox"] {
     border-color: #cfdcc0;
 }
 
-.trends-pin {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+/* The brain glyph (design-authority addendum): one icon, one meaning
+   — "talk to the assistant about this." A 44px tap box around a 22px
+   line glyph in the brand green; never badged, filled, or gold. */
+.brain-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    margin: -10px -8px -10px 0;
     color: #2e5b34;
-    border: 1px solid #2e5b34;
-    border-radius: 999px;
-    padding: 3px 9px;
-    white-space: nowrap;
+    border-radius: 10px;
+    flex: none;
+}
+
+.brain-link:hover {
+    background: #e6eddc;
 }
 
 .trends-digest-lede {
@@ -5629,6 +5647,29 @@ dialog .guided-grocery-row input[type="checkbox"] {
     display: block;
     color: #6e7462;
     font-size: 11.5px;
+}
+
+/* Trends sheets (day drill-down, bucket day lists, contributors,
+   weekday lists) share one grammar inside the dialog's panel frame:
+   hairlines in the dialog's line color, and actions at the board's
+   anchor size (31px drawn, 6px 14px padding, 10px radius). */
+.trends-sheet .trends-sheet-meal {
+    border-top-color: #d8cdb6;
+}
+
+.trends-sheet .trends-food-row {
+    border-bottom-color: #d8cdb6;
+}
+
+.trends-sheet-actions {
+    margin-top: 12px;
+}
+
+.trends-sheet-actions .button {
+    min-height: 31px;
+    padding: 6px 14px;
+    border-radius: 10px;
+    font-size: 13px;
 }
 
 /* =====================================================================

@@ -126,6 +126,20 @@ describe("chat v2 entry seeds", () => {
         expect(seed.summary).toContain("9,100 kcal");
         expect(seed.summary).toContain("2 meals");
         expect(seed.starters).toContain("Explain my week");
+        // Interpretation only (no-prescription law): the seed never
+        // offers to suggest a change.
+        expect(seed.opener.toLowerCase()).not.toContain("suggest");
+        expect(seed.opener.toLowerCase()).not.toContain("change");
+        for (const starter of seed.starters) {
+            expect(starter.toLowerCase()).not.toContain("change");
+        }
+        // The seed is a starting point, not a fence (brain-icon
+        // addendum refinement): the opener states the starting scope
+        // and invites widening to a month or a year, and one starter
+        // is itself a widening ask.
+        expect(seed.opener).toContain("starts with your last seven days");
+        expect(seed.opener).toContain("ask about a month or a year");
+        expect(seed.starters).toContain("How about last month?");
     });
 
     test("feature toggles: a disabled module's surface has no seed (T3)", async () => {

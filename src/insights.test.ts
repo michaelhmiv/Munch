@@ -1,7 +1,8 @@
-import { test, expect } from "bun:test";
+import { describe, test, expect } from "bun:test";
 import {
     buildDailyBuckets,
     computeTrends,
+    computeWeekInWords,
     computeWeeklyDigest,
     computeWeightTrend,
     type DailyBucket,
@@ -388,4 +389,167 @@ test("computeWeeklyDigest reports a zero-limit nutrient held at zero as clear", 
     const buckets = twoDayBuckets({ sugar_g: 0 }, { sugar_g: 0 });
     const out = computeWeeklyDigest(buckets, goals({ daily_sugar_g: 0 }));
     expect(out).toContain("  Sugar: 0g / 0g limit (clear)");
+});
+
+// ------------------------------------------------------- week in words
+
+function wordsBucket(
+    date: string,
+    values: Partial<{
+        calories: number;
+        protein_g: number;
+        waterMl: number;
+        meals: Meal[];
+    }> = {},
+): DailyBucket {
+    const meals = values.meals ?? [
+        meal({ logged_at: `${date}T12:00:00Z`, meal_type: "lunch" }),
+    ];
+    return {
+        date,
+        meals,
+        waterMl: values.waterMl ?? 0,
+        calories: values.calories ?? 2000,
+        protein_g: values.protein_g ?? 0,
+        carbs_g: 0,
+        fat_g: 0,
+        fiber_g: 0,
+        sugar_g: 0,
+        alcohol_g: 0,
+        mealTypes: new Set(meals.map((m) => m.meal_type ?? "")),
+    };
+}
+
+function wordsGoals(partial: Partial<NutritionGoals>): NutritionGoals {
+    return {
+        user_id: "u1",
+        daily_calories: null,
+        daily_protein_g: null,
+        daily_carbs_g: null,
+        daily_fat_g: null,
+        daily_fiber_g: null,
+        daily_sugar_g: null,
+        daily_alcohol_g: null,
+        daily_water_ml: null,
+        target_weight_g: null,
+        updated_at: "2026-11-01T00:00:00Z",
+        ...partial,
+    };
+}
+
+// 2026-11-02 is a Monday; the week runs Mon Nov 2 – Sun Nov 8, 2026.
+const WEEK_DATES = [
+    "2026-11-02",
+    "2026-11-03",
+    "2026-11-04",
+    "2026-11-05",
+    "2026-11-06",
+    "2026-11-07",
+    "2026-11-08",
+];
+
+describe("computeWeekInWords", () => {
+    test("protein misses concentrated on weekend days are named as such", () => {
+        const buckets = WEEK_DATES.map((date, i) =>
+            wordsBucket(date, {
+                // Sat (idx 5) and Sun (idx 6) fall short of 100g.
+                protein_g: i >= 5 ? 70 : 120,
+            }),
+        );
+        const words = computeWeekInWords(
+            buckets,
+            wordsGoals({ daily_protein_g: 100 }),
+        );
+        expect(words).toContain(
+            "Protein hit your target on five of the seven days you logged; both misses were weekend days.",
+        );
+    });
+
+    test("a fully-hit target says every day, with no advice anywhere", () => {
+        const buckets = WEEK_DATES.map((date) =>
+            wordsBucket(date, { protein_g: 130 }),
+        );
+        const words = computeWeekInWords(
+            buckets,
+            wordsGoals({ daily_protein_g: 100 }),
+        );
+        expect(words).toContain(
+            "Protein hit your target on all seven days you logged this week.",
+        );
+        for (const banned of [
+            "try ",
+            "consider",
+            "should",
+            "aim for",
+            "next week,",
+        ]) {
+            expect(words.toLowerCase()).not.toContain(banned);
+        }
+    });
+
+    test("a single miss names its weekday", () => {
+        const buckets = WEEK_DATES.map((date, i) =>
+            wordsBucket(date, { protein_g: i === 2 ? 60 : 120 }),
+        );
+        const words = computeWeekInWords(
+            buckets,
+            wordsGoals({ daily_protein_g: 100 }),
+        );
+        expect(words).toContain(
+            "six of the seven days you logged; the miss was on Wednesday.",
+        );
+    });
+
+    test("weekend days running materially higher become a structural sentence", () => {
+        const buckets = WEEK_DATES.map((date, i) =>
+            wordsBucket(date, {
+                calories: i >= 5 ? 2600 : 1900,
+                protein_g: 120,
+            }),
+        );
+        const words = computeWeekInWords(
+            buckets,
+            wordsGoals({ daily_protein_g: 100 }),
+        );
+        expect(words).toContain(
+            "Weekend days ran higher — 2,600 kcal a day against 1,900 kcal on weekdays.",
+        );
+    });
+
+    test("an empty week and a two-day week say so plainly", () => {
+        const empty = WEEK_DATES.map((date) =>
+            wordsBucket(date, { meals: [], calories: 0 }),
+        );
+        expect(computeWeekInWords(empty, null)).toContain(
+            "Nothing logged in the last seven days",
+        );
+        const two = WEEK_DATES.map((date, i) =>
+            i < 2
+                ? wordsBucket(date)
+                : wordsBucket(date, { meals: [], calories: 0 }),
+        );
+        expect(computeWeekInWords(two, null)).toContain(
+            "Only two days logged in the last seven days",
+        );
+    });
+
+    test("no goals and no material split yields the honest fallback, never a restated average", () => {
+        const buckets = WEEK_DATES.map((date, i) =>
+            wordsBucket(date, {
+                calories: 2000 + (i % 2) * 40,
+                protein_g: 90,
+                meals: [
+                    meal({
+                        logged_at: `${date}T12:00:00Z`,
+                        meal_type: "lunch",
+                        calories: 900,
+                    }),
+                ],
+            }),
+        );
+        const words = computeWeekInWords(buckets, null);
+        expect(words).toContain("logged seven of the last seven days");
+        expect(words).not.toContain("averaged");
+        expect(words).not.toContain("Daily average");
+    });
 });
