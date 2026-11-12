@@ -5291,6 +5291,28 @@ async function openMealDetails(id) {
     );
 }
 
+async function openMealDuplicate(id) {
+    const data = await api(`/api/app/meals/${encodeURIComponent(id)}`, {
+        keepPrevious: true,
+    });
+    const meal = data.meal;
+    const timezone = state.bootstrap?.profile?.timezone || "UTC";
+    const today = dateInTimezone(timezone);
+    const tomorrow = shiftDate(today, 1);
+    const type = meal.mealType || "snack";
+    const typeOptions = ["breakfast", "lunch", "dinner", "snack"]
+        .map(
+            (option) =>
+                `<option value="${option}" ${option === type ? "selected" : ""}>${option[0].toUpperCase() + option.slice(1)}</option>`,
+        )
+        .join("");
+    const itemCount = (meal.items || []).length;
+    openDialog(
+        "Duplicate meal",
+        `<form id="duplicate-meal-form" class="auth-form" data-id="${escapeHtml(id)}"><p class="tiny">${escapeHtml(meal.description || "Meal")} · ${escapeHtml(type)}${itemCount ? ` · ${itemCount} food${itemCount === 1 ? "" : "s"}, copied exactly as logged` : ""}.</p><label class="field"><span>Duplicate to</span><input name="target_date" type="date" value="${escapeHtml(tomorrow)}" required /></label><div class="auth-actions duplicate-day-choices"><button class="button button-secondary button-small" type="button" data-action="duplicate-day-choice" data-date="${escapeHtml(today)}">Today</button><button class="button button-secondary button-small is-selected" type="button" data-action="duplicate-day-choice" data-date="${escapeHtml(tomorrow)}">Tomorrow</button></div><label class="field"><span>Meal type</span><select name="meal_type">${typeOptions}</select></label><button class="button button-primary" type="submit">Duplicate meal</button></form>`,
+    );
+}
+
 function findWaterEntry(id) {
     return state.waterEntries.find((entry) => entry.id === id) || null;
 }
@@ -6550,8 +6572,18 @@ async function handleAction(button) {
         return renderRoute();
     }
     if (action === "duplicate-meal") {
-        toast(
-            "Open your AI assistant and ask Munch to log this meal again. The original entry was not changed.",
+        await openMealDuplicate(button.dataset.id);
+        return;
+    }
+    if (action === "duplicate-day-choice") {
+        // Quick-pick day buttons in the duplicate dialog: they set the
+        // date field (the field stays the source of truth — a picked
+        // date can still be edited) and carry the selected state.
+        const form = button.closest("form");
+        const input = form?.querySelector('[name="target_date"]');
+        if (input) input.value = button.dataset.date;
+        form?.querySelectorAll('[data-action="duplicate-day-choice"]').forEach(
+            (peer) => peer.classList.toggle("is-selected", peer === button),
         );
         return;
     }
@@ -7707,6 +7739,34 @@ document.addEventListener("submit", async (event) => {
                 result.deduplicated
                     ? "This meal was already logged."
                     : "Meal logged.",
+            );
+        }
+        if (form.id === "duplicate-meal-form") {
+            // The copy lands at noon UTC on the picked date — the same
+            // convention the meal composer uses for a chosen day — via
+            // the server's verbatim meal copy (POST /meals/:id/copy):
+            // same foods, same portions, original untouched, and no
+            // pantry draw-down (that lives in the from-pantry log
+            // flow's own confirmation).
+            const targetDate = values.target_date;
+            await api(
+                `/api/app/meals/${encodeURIComponent(form.dataset.id)}/copy`,
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        logged_at: `${targetDate}T12:00:00.000Z`,
+                        meal_type: values.meal_type,
+                    }),
+                    keepPrevious: true,
+                },
+            );
+            toastAction(
+                `Duplicated to ${formatDate(targetDate, { weekday: true })}.`,
+                "View day",
+                () => {
+                    state.date = targetDate;
+                    navigate("/app");
+                },
             );
         }
         if (form.id === "meal-draft-create-form") {
