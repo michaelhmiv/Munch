@@ -136,6 +136,7 @@ import {
     getRecipeWorkspace,
     getCalendarMonthSummary,
     getMealUsualsWorkspace,
+    getTodayRangeWorkspace,
     getTodayWorkspace,
     getTrendsDayDetail,
     getTrendsPeriodContributors,
@@ -1015,6 +1016,12 @@ export function createAppRouter(): Hono {
             "Cache-Control": "no-cache",
         }),
     );
+    app.get("/range-selection.js", async (c) =>
+        c.body(await Bun.file("./public/range-selection.js").text(), 200, {
+            "Content-Type": "text/javascript; charset=utf-8",
+            "Cache-Control": "no-cache",
+        }),
+    );
     app.get("/account-settings.css", async (c) =>
         c.body(await Bun.file("./public/account-settings.css").text(), 200, {
             "Content-Type": "text/css; charset=utf-8",
@@ -1079,6 +1086,20 @@ export function createAppRouter(): Hono {
                 c.get("munchUserId"),
                 requiredQuery(c.req.query("date"), "date"),
                 requiredQuery(c.req.query("meal_type"), "meal_type"),
+            ),
+        ),
+    );
+
+    // Today range mode (cohesion slice 2): the calendar-range payload —
+    // per-day actuals + planned projections and the range aggregate.
+    app.get("/api/app/today/range", async (c) =>
+        privateJson(
+            c,
+            await getTodayRangeWorkspace(
+                c.get("munchUserId"),
+                requiredQuery(c.req.query("start"), "start"),
+                requiredQuery(c.req.query("end"), "end"),
+                capabilitySurfaceFromRequest(c),
             ),
         ),
     );
