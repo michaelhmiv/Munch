@@ -6253,3 +6253,484 @@ dialog .guided-grocery-row input[type="checkbox"] {
     flex: none;
     min-height: 44px;
 }
+
+/* =====================================================================
+   DESIGN AUTHORITY — Direction C (cross-work program, slice 1)
+   ---------------------------------------------------------------------
+   Implements the design authority's FINAL button chapter (§4,
+   Direction C — Michael's pick, Nov 11) on the cross-work surfaces:
+   Recipes, Plan, Groceries, and the dialogs those surfaces open.
+   Governed by the impeccable skill; authority doc:
+   ~/workspace/munch-prep/design-authority.md; visual target: the
+   direction-C frames of munch-plan-pantry-grocery-flow-v6.html.
+   CSS-only slice — no behavior, markup, or copy changes.
+
+   Spec (authority §4/§5, verified against shipped CSS):
+   - Primary: filled brand green #176b3a, white text, ONE per surface.
+   - Secondary: transparent fill, 1px border rule #8a7c63, ink
+     #2b2620 text. (The brief summary's #ddd2bb border was superseded:
+     the authority doc wins — #ddd2bb/#d8cdb6 hairlines are passive
+     rules/dividers only.) The retired beige tint and mid-tan border
+     from the unpicked Direction B appear in no production stylesheet
+     and must not return (their hex values are pinned as stale in
+     scripts/ui-surface-smoke.ts).
+   - Quiet (Close, Remove): no fill, no border, ink-soft #4a4237.
+   - Destructive: transparent fill, danger #8c2f22 border + text.
+   - Geometry (the size anchor): drawn height 31px, padding 6px 14px,
+     radius 10px on buttons/fields/selects, button type .9rem Georgia
+     600 (quiet 500). Drawn size shrinks; the tap area stays >=44px on
+     an invisible ::after overlay (the v6 board's shipped pattern).
+   - Dialogs are panel #fffdf8 (the --paper-card token; never pure
+     white — the shared frame above already carries it) and fields
+     inside them invert to paper #f6f1e7 wells. Fields on paper
+     screens stay panel-filled.
+   OUT OF SCOPE here: the Recipes card action strip
+   (.recipe-panel-actions — slice 2; its pre-C geometry is re-pinned
+   below so this pass leaves it pixel-identical) and library sorting.
+   ===================================================================== */
+
+/* ---------- Button geometry: the 31px anchor ---------- */
+
+.recipes-view .button,
+.plan-view .button,
+.groceries-view .button,
+.recipe-detail .button,
+#recipe-create-form .button,
+#recipe-edit-form .button,
+#recipe-compose-form .button,
+#recipe-import-url-form .button,
+#recipe-log-form .button,
+#recipe-plan-form .button,
+#recipe-groceries-form .button,
+#guided-plan-form .button,
+#guidance-preferences-form .button,
+#guided-plan-edit-form .button,
+dialog .swap-candidate .button,
+dialog .guided-plan-pref-action .button,
+#grocery-add-form .button,
+#grocery-edit-form .button,
+dialog:has(.guided-grocery-row) .auth-actions .button,
+dialog:has(
+        .recipe-detail,
+        #recipe-create-form,
+        #recipe-edit-form,
+        #recipe-compose-form,
+        #recipe-import-url-form,
+        #recipe-log-form,
+        #recipe-plan-form,
+        #recipe-groceries-form,
+        #guided-plan-form,
+        #guidance-preferences-form,
+        #guided-plan-edit-form,
+        #grocery-add-form,
+        #grocery-edit-form,
+        .swap-candidate,
+        .guided-grocery-row
+    )
+    .dialog-close {
+    position: relative;
+    min-height: 31px;
+    padding: 6px 14px;
+    border-radius: 10px;
+    font-family: Georgia, "Times New Roman", Times, serif;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+/* The drawn box is 31px; the invisible overlay keeps the tap area at
+   45px tall (31 + 2x7) without moving any layout. */
+.recipes-view .button::after,
+.plan-view .button::after,
+.groceries-view .button::after,
+.recipe-detail .button::after,
+#recipe-create-form .button::after,
+#recipe-edit-form .button::after,
+#recipe-compose-form .button::after,
+#recipe-import-url-form .button::after,
+#recipe-log-form .button::after,
+#recipe-plan-form .button::after,
+#recipe-groceries-form .button::after,
+#guided-plan-form .button::after,
+#guidance-preferences-form .button::after,
+#guided-plan-edit-form .button::after,
+dialog .swap-candidate .button::after,
+dialog .guided-plan-pref-action .button::after,
+#grocery-add-form .button::after,
+#grocery-edit-form .button::after,
+dialog:has(.guided-grocery-row) .auth-actions .button::after,
+dialog:has(
+        .recipe-detail,
+        #recipe-create-form,
+        #recipe-edit-form,
+        #recipe-compose-form,
+        #recipe-import-url-form,
+        #recipe-log-form,
+        #recipe-plan-form,
+        #recipe-groceries-form,
+        #guided-plan-form,
+        #guidance-preferences-form,
+        #guided-plan-edit-form,
+        #grocery-add-form,
+        #grocery-edit-form,
+        .swap-candidate,
+        .guided-grocery-row
+    )
+    .dialog-close::after {
+    content: "";
+    position: absolute;
+    inset: -7px -4px;
+}
+
+/* Grocery row actions keep their measured 8px inline padding (the
+   row is the surface's tightest fit); only the drawn height, radius,
+   and type follow the anchor. */
+.groceries-view .grocery-item-actions .button {
+    min-height: 31px;
+    padding: 6px 8px;
+}
+
+/* Slice-2 exclusion: the Recipes card action strip keeps exactly its
+   pre-C rendering (44px targets, 4px radius, inherited type) until
+   the strip's own slice rebuilds it as the divided bar. */
+.recipes-view .recipe-panel-actions .button {
+    min-height: 44px;
+    padding-top: 9px;
+    padding-bottom: 9px;
+    border-radius: 4px;
+    font-family: inherit;
+}
+
+.recipes-view .recipe-panel-actions .button::after {
+    content: none;
+}
+
+/* ---------- Button tiers (Direction C colors) ---------- */
+
+.recipes-view .button-primary,
+.plan-view .button-primary,
+.groceries-view .button-primary,
+.recipe-detail .button-primary,
+#recipe-create-form .button-primary,
+#recipe-edit-form .button-primary,
+#recipe-compose-form .button-primary,
+#recipe-import-url-form .button-primary,
+#recipe-log-form .button-primary,
+#recipe-plan-form .button-primary,
+#recipe-groceries-form .button-primary,
+#guided-plan-form .button-primary,
+#guidance-preferences-form .button-primary,
+#guided-plan-edit-form .button-primary,
+#grocery-add-form .button-primary,
+#grocery-edit-form .button-primary,
+dialog:has(.guided-grocery-row) .auth-actions .button-primary {
+    background: #176b3a;
+    border-color: #176b3a;
+    color: #fff;
+}
+
+.recipes-view .button-primary:hover,
+.plan-view .button-primary:hover,
+.groceries-view .button-primary:hover,
+.recipe-detail .button-primary:hover,
+#recipe-create-form .button-primary:hover,
+#recipe-edit-form .button-primary:hover,
+#recipe-compose-form .button-primary:hover,
+#recipe-import-url-form .button-primary:hover,
+#recipe-log-form .button-primary:hover,
+#recipe-plan-form .button-primary:hover,
+#recipe-groceries-form .button-primary:hover,
+#guided-plan-form .button-primary:hover,
+#guidance-preferences-form .button-primary:hover,
+#guided-plan-edit-form .button-primary:hover,
+#grocery-add-form .button-primary:hover,
+#grocery-edit-form .button-primary:hover,
+dialog:has(.guided-grocery-row) .auth-actions .button-primary:hover {
+    background: #0b3d24;
+    border-color: #0b3d24;
+    color: #fff;
+}
+
+.recipes-view .button-secondary,
+.plan-view .button-secondary,
+.groceries-view .button-secondary,
+.recipe-detail .button-secondary,
+#recipe-create-form .button-secondary,
+#recipe-edit-form .button-secondary,
+#recipe-compose-form .button-secondary,
+#recipe-import-url-form .button-secondary,
+#recipe-log-form .button-secondary,
+#recipe-plan-form .button-secondary,
+#recipe-groceries-form .button-secondary,
+#guided-plan-form .button-secondary,
+#guidance-preferences-form .button-secondary,
+#guided-plan-edit-form .button-secondary,
+dialog .swap-candidate .button-secondary,
+dialog .guided-plan-pref-action .button-secondary,
+#grocery-add-form .button-secondary,
+#grocery-edit-form .button-secondary {
+    background: transparent;
+    border-color: #8a7c63;
+    color: #2b2620;
+}
+
+/* The base sheet's secondary hover fills a green tint; Direction C
+   secondaries stay transparent with ink text at rest and on hover. */
+.recipes-view .button-secondary:hover,
+.plan-view .button-secondary:hover,
+.groceries-view .button-secondary:hover,
+.recipe-detail .button-secondary:hover,
+#recipe-create-form .button-secondary:hover,
+#recipe-edit-form .button-secondary:hover,
+#recipe-compose-form .button-secondary:hover,
+#recipe-import-url-form .button-secondary:hover,
+#recipe-log-form .button-secondary:hover,
+#recipe-plan-form .button-secondary:hover,
+#recipe-groceries-form .button-secondary:hover,
+#guided-plan-form .button-secondary:hover,
+#guidance-preferences-form .button-secondary:hover,
+#guided-plan-edit-form .button-secondary:hover,
+dialog .swap-candidate .button-secondary:hover,
+dialog .guided-plan-pref-action .button-secondary:hover,
+#grocery-add-form .button-secondary:hover,
+#grocery-edit-form .button-secondary:hover {
+    background: transparent;
+    border-color: #8a7c63;
+    color: #2b2620;
+}
+
+.recipes-view .button-quiet,
+.plan-view .button-quiet,
+.groceries-view .button-quiet,
+.recipe-detail .button-quiet,
+#recipe-create-form .button-quiet,
+#recipe-edit-form .button-quiet,
+#recipe-compose-form .button-quiet,
+#recipe-import-url-form .button-quiet,
+#recipe-log-form .button-quiet,
+#recipe-plan-form .button-quiet,
+#recipe-groceries-form .button-quiet,
+#guided-plan-form .button-quiet,
+#guidance-preferences-form .button-quiet,
+#guided-plan-edit-form .button-quiet,
+#grocery-add-form .button-quiet,
+#grocery-edit-form .button-quiet,
+dialog:has(
+        .recipe-detail,
+        #recipe-create-form,
+        #recipe-edit-form,
+        #recipe-compose-form,
+        #recipe-import-url-form,
+        #recipe-log-form,
+        #recipe-plan-form,
+        #recipe-groceries-form,
+        #guided-plan-form,
+        #guidance-preferences-form,
+        #guided-plan-edit-form,
+        #grocery-add-form,
+        #grocery-edit-form,
+        .swap-candidate,
+        .guided-grocery-row
+    )
+    .dialog-close {
+    background: transparent;
+    border-color: transparent;
+    color: #4a4237;
+    font-weight: 500;
+}
+
+/* Destructive confirms on these surfaces (recipe archive, plan
+   draft/meal removal, grocery clear/remove) carried button-primary's
+   class plus a filled danger override; Direction C destructive is
+   transparent with danger border + text. Declared after the primary
+   pins above so it wins on those dual-class buttons. */
+.recipe-detail .recipe-archive-confirm,
+.plan-view .plan-inline-confirm-danger,
+#guided-plan-edit-form .plan-inline-confirm-danger,
+.groceries-view .grocery-inline-confirm-danger {
+    background: transparent;
+    border-color: #8c2f22;
+    color: #8c2f22;
+}
+
+.recipe-detail .recipe-archive-confirm:hover,
+.plan-view .plan-inline-confirm-danger:hover,
+#guided-plan-edit-form .plan-inline-confirm-danger:hover,
+.groceries-view .grocery-inline-confirm-danger:hover {
+    background: transparent;
+    border-color: #6e241a;
+    color: #6e241a;
+}
+
+/* ---------- Fields and selects: the anchor geometry ---------- */
+
+/* On paper screens, fields stay panel-filled (authority §2.3). */
+.recipes-view .input,
+.recipes-view .field input,
+.recipes-view .field select,
+.plan-view .input,
+.plan-view .field input,
+.plan-view .field select,
+.groceries-view .input,
+.groceries-view .field input,
+.groceries-view .field select {
+    height: 31px;
+    min-height: 31px;
+    padding: 5px 12px;
+    border: 1px solid #8a7c63;
+    border-radius: 10px;
+    background: #fffdf8;
+    color: #2b2620;
+    font-family: Georgia, "Times New Roman", Times, serif;
+    font-size: 1rem;
+}
+
+.recipes-view .field textarea,
+.plan-view .field textarea,
+.groceries-view .field textarea {
+    min-height: 31px;
+    padding: 8px 12px;
+    border: 1px solid #8a7c63;
+    border-radius: 10px;
+    background: #fffdf8;
+    color: #2b2620;
+    font-family: Georgia, "Times New Roman", Times, serif;
+    font-size: 1rem;
+}
+
+/* Inside these surfaces' dialogs, fields invert to paper wells. */
+.recipe-detail input:not([type="checkbox"]):not([type="radio"]),
+.recipe-detail select,
+#recipe-create-form input:not([type="checkbox"]):not([type="radio"]),
+#recipe-create-form select,
+#recipe-edit-form input:not([type="checkbox"]):not([type="radio"]),
+#recipe-edit-form select,
+#recipe-compose-form input:not([type="checkbox"]):not([type="radio"]),
+#recipe-compose-form select,
+#recipe-import-url-form input:not([type="checkbox"]):not([type="radio"]),
+#recipe-import-url-form select,
+#recipe-log-form input:not([type="checkbox"]):not([type="radio"]),
+#recipe-log-form select,
+#recipe-plan-form input:not([type="checkbox"]):not([type="radio"]),
+#recipe-plan-form select,
+#recipe-groceries-form input:not([type="checkbox"]):not([type="radio"]),
+#recipe-groceries-form select,
+#guided-plan-form input:not([type="checkbox"]):not([type="radio"]),
+#guided-plan-form select,
+#guidance-preferences-form input:not([type="checkbox"]):not([type="radio"]),
+#guidance-preferences-form select,
+#guided-plan-edit-form input:not([type="checkbox"]):not([type="radio"]),
+#guided-plan-edit-form select,
+#grocery-add-form input:not([type="checkbox"]):not([type="radio"]),
+#grocery-add-form select,
+#grocery-edit-form input:not([type="checkbox"]):not([type="radio"]),
+#grocery-edit-form select {
+    height: 31px;
+    min-height: 31px;
+    padding: 5px 12px;
+    border: 1px solid #8a7c63;
+    border-radius: 10px;
+    background: #f6f1e7;
+    color: #2b2620;
+    font-family: Georgia, "Times New Roman", Times, serif;
+    font-size: 1rem;
+}
+
+.recipe-detail textarea,
+#recipe-create-form textarea,
+#recipe-edit-form textarea,
+#recipe-compose-form textarea,
+#recipe-import-url-form textarea,
+#recipe-log-form textarea,
+#recipe-plan-form textarea,
+#recipe-groceries-form textarea,
+#guided-plan-form textarea,
+#guidance-preferences-form textarea,
+#guided-plan-edit-form textarea,
+#grocery-add-form textarea,
+#grocery-edit-form textarea {
+    min-height: 31px;
+    padding: 8px 12px;
+    border: 1px solid #8a7c63;
+    border-radius: 10px;
+    background: #f6f1e7;
+    color: #2b2620;
+    font-family: Georgia, "Times New Roman", Times, serif;
+    font-size: 1rem;
+}
+
+/* Focus (authority §5): 2px green outline, 1px offset, on every
+   control in scope. */
+.recipes-view .button:focus-visible,
+.plan-view .button:focus-visible,
+.groceries-view .button:focus-visible,
+.recipes-view .input:focus-visible,
+.recipes-view .field input:focus-visible,
+.recipes-view .field select:focus-visible,
+.recipes-view .field textarea:focus-visible,
+.plan-view .input:focus-visible,
+.plan-view .field input:focus-visible,
+.plan-view .field select:focus-visible,
+.plan-view .field textarea:focus-visible,
+.groceries-view .input:focus-visible,
+.groceries-view .field input:focus-visible,
+.groceries-view .field select:focus-visible,
+.groceries-view .field textarea:focus-visible,
+.recipe-detail .button:focus-visible,
+#recipe-create-form .button:focus-visible,
+#recipe-edit-form .button:focus-visible,
+#recipe-compose-form .button:focus-visible,
+#recipe-import-url-form .button:focus-visible,
+#recipe-log-form .button:focus-visible,
+#recipe-plan-form .button:focus-visible,
+#recipe-groceries-form .button:focus-visible,
+#guided-plan-form .button:focus-visible,
+#guidance-preferences-form .button:focus-visible,
+#guided-plan-edit-form .button:focus-visible,
+#grocery-add-form .button:focus-visible,
+#grocery-edit-form .button:focus-visible {
+    outline: 2px solid #176b3a;
+    outline-offset: 1px;
+}
+
+/* ---------- Grocery checkbox: 22px drawn, 44px tap area ---------- */
+
+/* Supersedes the slice-6 "checkbox IS the 44px target" rule: the
+   approved brief + authority §5 draw the box at 22px inside the
+   label's 44px tap area (the label already carries min-height 44px;
+   it now also carries the 44px width, centered on the box). */
+.groceries-view .grocery-check {
+    justify-content: center;
+    min-width: 44px;
+}
+
+.groceries-view .grocery-check-input {
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    min-height: 22px;
+    flex: 0 0 22px;
+}
+
+/* ---------- Density (authority §8) where these surfaces are touched */
+
+/* Panels on Recipes and Plan move to the tightened scale (7px top
+   margin, 7px 0 3px padding). Groceries already runs tighter (6px)
+   as the canonical density surface and is left as shipped. */
+.recipes-view .panel,
+.plan-view .panel {
+    margin-top: 7px;
+    padding: 7px 0 3px;
+}
+
+.recipes-view .recipe-actions {
+    margin-top: 6px;
+}
+
+.recipes-view .recipe-filter-row {
+    margin-top: 7px;
+}
+
+.recipes-view .recipe-panel {
+    margin-top: 7px;
+    padding: 7px 0 3px;
+}

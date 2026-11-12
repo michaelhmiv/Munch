@@ -3992,15 +3992,24 @@ test("S6 slice 6: Groceries groups by source, checks off at 44px, adds and edits
     await expect(groupHeads.nth(1)).toContainText("From recipe");
     await expect(groupHeads.nth(2)).toContainText("Added manually");
 
-    // The checkbox is the tap target: exactly 44x44, as in the
-    // tightened mock. The purchased fixture item starts checked.
+    // Design authority §5 (Direction C pass): the checkbox draws
+    // 22x22 inside the label's 44px tap area. The purchased fixture
+    // item starts checked.
     const spinachCheck = page.locator(
         '[data-grocery-item-id="fixture-grocery-spinach"] .grocery-check-input',
     );
     const checkBox = await spinachCheck.boundingBox();
     expect(checkBox).not.toBeNull();
-    expect(Math.round(checkBox!.width)).toBe(44);
-    expect(Math.round(checkBox!.height)).toBe(44);
+    expect(Math.round(checkBox!.width)).toBe(22);
+    expect(Math.round(checkBox!.height)).toBe(22);
+    const checkTap = await page
+        .locator(
+            '[data-grocery-item-id="fixture-grocery-spinach"] .grocery-check',
+        )
+        .boundingBox();
+    expect(checkTap).not.toBeNull();
+    expect(Math.round(checkTap!.width)).toBeGreaterThanOrEqual(44);
+    expect(Math.round(checkTap!.height)).toBeGreaterThanOrEqual(44);
     await expect(
         page.locator(
             '[data-grocery-item-id="fixture-grocery-eggs"] .grocery-check-input',
