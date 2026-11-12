@@ -507,6 +507,24 @@ jobs:
                   f"the identifier filter returned {len(bundle_records)} record(s): {returned}")
           bundle_id = exact_matches[0]["id"]
 
+          # The app declares the Associated Domains entitlement
+          # (ios/App/App/App.entitlements — universal links), so the bundle
+          # ID must carry the matching capability or the profile minted
+          # below lacks the entitlement and the archive rejects it (run
+          # 43114783632). Enable it idempotently BEFORE minting: enabling a
+          # capability invalidates existing profiles, and the passes below
+          # delete and re-create the CI profile anyway.
+          capabilities = call("GET", f"/bundleIds/{bundle_id}/bundleIdCapabilities").get("data", [])
+          if any(cap.get("attributes", {}).get("capabilityType") == "ASSOCIATED_DOMAINS"
+                 for cap in capabilities):
+              print("Associated Domains capability already enabled on the bundle ID")
+          else:
+              call("POST", "/bundleIdCapabilities", payload={"data": {
+                  "type": "bundleIdCapabilities",
+                  "attributes": {"capabilityType": "ASSOCIATED_DOMAINS"},
+                  "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle_id}}}}})
+              print("Enabled Associated Domains capability on the bundle ID")
+
           profiles = call("GET", "/profiles?filter[name]=Munch%20App%20Store%20CI&limit=50").get("data", [])
           for profile in profiles:
               call("DELETE", f"/profiles/{profile['id']}")
@@ -572,6 +590,14 @@ jobs:
       - name: Resolve Swift packages
         run: xcodebuild -resolvePackageDependencies -project ios/App/App.xcodeproj -scheme App
 
+      # Signing settings are scoped to the App target in the project file
+      # (Release configuration: Manual style, team, identity, and the
+      # "Munch App Store CI" profile specifier). They must NOT be passed as
+      # command-line overrides here: xcodebuild applies those to EVERY
+      # target, and the SPM package targets (Capacitor plugins, barcode and
+      # camera libraries) reject a manually specified provisioning profile
+      # outright — that is what failed run 43114783632's archive. This is
+      # the same shape as PitTech's proven archive step.
       - name: Archive for App Store Connect
         run: >-
           xcodebuild archive
@@ -584,10 +610,6 @@ jobs:
           CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
           CODE_SIGNING_KEYCHAIN="$MUNCH_KEYCHAIN_PATH"
           CODE_SIGNING_ALLOWED=YES
-          DEVELOPMENT_TEAM=R42LWFBXBH
-          CODE_SIGN_STYLE=Manual
-          CODE_SIGN_IDENTITY="Apple Distribution"
-          PROVISIONING_PROFILE_SPECIFIER="$MUNCH_PROFILE_NAME"
 
       - name: Export and upload to App Store Connect
         env:
