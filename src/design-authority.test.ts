@@ -20,6 +20,13 @@
  *      chart-annotation selectors (the Trends chart header records the
  *      sanction: "the 11px floor governs UI type, not chart
  *      annotation").
+ *  (f) Dialog material: `dialog .auth-card` resolves to the ONE panel
+ *      material (#fffdf8), and no CSS rule whose selector starts with
+ *      `dialog` paints a dialog white (#fff / #ffffff / white).
+ *      Ported from PR #274's dialog check in
+ *      scripts/ui-surface-smoke.ts (branch
+ *      feat/design-authority-ci-checks), adapted to this suite's
+ *      CSS-parser helpers with the same enforcement strength.
  *
  * An exception ships only by amending DESIGN.md and the relevant
  * allow-list here, with the reason recorded, in the same PR.
@@ -376,7 +383,7 @@ const BUTTON_CLASS_REGISTRY = new Map<
         "button-light",
         {
             status: "allow",
-            reason: "legacy styles.css marketing variant with no Direction C tier; retirement rides the styles.css re-skin recorded in DESIGN.md's enforcement punch list",
+            reason: "legacy styles.css marketing variant with no Direction C tier; retirement rides the styles.css re-skin recorded in DESIGN.md's 'Punch list — audit remainder (2026-11-11)', item P1",
         },
     ],
 ]);
@@ -739,6 +746,65 @@ describe("design authority (e): 11px type floor", () => {
                     offenders.push(
                         `public/${name}:${rule.line} ${rule.selectors.join(", ")} sets font-size ${raw} (${sizePx}px, below the 11px floor)`,
                     );
+                }
+            }
+        }
+        expect(offenders).toEqual([]);
+    });
+});
+
+/* ---------------- (f) dialog material ----------------
+ * Ported from PR #274 (scripts/ui-surface-smoke.ts on
+ * feat/design-authority-ci-checks): dialogs are the panel material
+ * (authority §2 / Surface rules) — the dialog card is #fffdf8, and no
+ * dialog rule paints a dialog white. Adapted to this suite's parser:
+ * declarations are resolved through each sheet's CSS variables and
+ * colors normalized, so #fff, #ffffff, and white are one value. No
+ * exceptions, no allow-list. */
+
+describe("design authority (f): dialog material", () => {
+    test("dialog .auth-card resolves to the panel material #fffdf8", async () => {
+        let declared = 0;
+        const offenders: string[] = [];
+        for (const name of publicFiles(".css")) {
+            const sheet = await loadSheet(name);
+            const decls = declsFor(sheet, "dialog .auth-card");
+            const fill = colorOf(
+                decls,
+                sheet.vars,
+                "background",
+                "background-color",
+            );
+            if (fill === null) continue;
+            declared++;
+            if (fill !== PANEL) {
+                offenders.push(
+                    `public/${name} dialog .auth-card resolves to ${fill}, not the panel material ${PANEL}`,
+                );
+            }
+        }
+        expect(declared).toBeGreaterThan(0);
+        expect(offenders).toEqual([]);
+    });
+
+    test("no CSS rule whose selector starts with dialog paints a dialog white", async () => {
+        const offenders: string[] = [];
+        for (const name of publicFiles(".css")) {
+            const sheet = await loadSheet(name);
+            for (const rule of sheet.rules) {
+                for (const selector of rule.selectors) {
+                    if (!selector.startsWith("dialog")) continue;
+                    const fill = colorOf(
+                        rule.declarations,
+                        sheet.vars,
+                        "background",
+                        "background-color",
+                    );
+                    if (fill === "#ffffff") {
+                        offenders.push(
+                            `public/${name}:${rule.line} ${selector} paints a dialog white`,
+                        );
+                    }
                 }
             }
         }

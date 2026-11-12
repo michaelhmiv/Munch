@@ -174,3 +174,15 @@ or allow-listed with a reason in the check; and no `font-size` below the
 11px floor appears outside the allow-listed chart annotations. A change
 that needs an exception amends this chapter and the check's allow-list —
 with the reason recorded — in the same PR.
+
+### Punch list — audit remainder (2026-11-11)
+
+Found by the enforcement audit, NOT fixed in the enforcement PR — each
+item needs its own pass or ruling:
+
+- **P1 — `public/styles.css` legacy grammar** (`:root` lines 52–100; `.button-secondary` line 336 white fill; `.button-light` line 395; `.button` radius 12px + primary shadow): pre-authority palette (green/ink scales) serving the app as base layer (app tiers are corrected by `app-overrides.css` in cascade) and the reviewer/password pages standalone. Not small/safe: piecemeal edits would split one sheet into two grammars; it needs a dedicated re-skin/retirement pass. Its classes are allow-listed in check (d) with this reason.
+- **P2 — Drawn-geometry reconciliation:** authority anchor is 31px drawn / padding 6px 14px / radius 10px; production ships 44–48px hit boxes with 4px button radius (`public/app-overrides.css` `.button-primary` ~line 1058; dialog radius 8px, lines 1100/1111 vs board 14px). The authority itself records this reconciliation as "a separate, later decision." Not small/safe: it is the geometry pass, not an audit fix. Checks enforce colors + the 44px hit floor today.
+- **P3 — Trends chart palette:** legacy green `#2e5b34` (32 uses in `public/app-overrides.css`, incl. `.trends-pill.is-on`, `.cal-day.is-selected`, chart lines/dots) plus chart hues `#22301f`, `#6e7462`, `#c9bfa3`, `#e6eddc` form a coherent chart system that predates the authority, which names no chart palette beyond gold accents. Needs a chart-palette amendment/ruling, not blind replacement.
+- **P4 — Filled destructive confirms:** `.meal-draft-abandon-confirm` (`public/app-overrides.css` ~lines 1165–1176) is a FILLED danger button (hover `#6e241a`); Direction C destructive is transparent. `#6e241a` (16 uses) is its pressed/hover family. Changing confirm emphasis is a design call on a destructive flow — ruling needed.
+- **P5 — Warning amber family:** `#b98a00` (`public/pantry.css:33` `--warn-line`; `public/app-overrides.css:4202`), `#8a6100` (line 3418), `#8a6d00` (line 4143). The authority defines no warning token; inventing one here would itself be drift. Needs a token ruling.
+- **P6 — Hairline/tint variants:** `#ded5c0` used as the `--line` fallback family (15 uses, e.g. `public/app-overrides.css:4794`) and paper-adjacent tints `#e9e2cf`, `#e3dac4`, `#eae2ce`, `#ede6d2`, `#efe8d6`, `#f1ebda` across Trends/Today surfaces. Consolidation to hairline `#d8cdb6` / panel / paper needs a surface-by-surface visual pass; several are chart bands and selected wells, not passive rules.
