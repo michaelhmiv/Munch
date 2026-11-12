@@ -4949,11 +4949,22 @@ test("chat v2 placement: contextual entries only — no global entry, seeded ope
         "Opens with today's log and goals attached",
     );
 
-    // Meal Plan and Trends carry their own entries.
+    // Meal Plan carries the brain (plan-brain brief): the header
+    // icon whose accessible label is the entry's meaning — the old
+    // "Adjust or explain this plan" text row is gone. Trends still
+    // carries its text entry in this build.
     await gotoRoute(page, "/app/plan");
-    await expect(page.getByTestId("chat-entry-meal_plan")).toContainText(
-        "Adjust or explain this plan",
+    const planBrain = page.getByTestId("brain-entry-meal_plan");
+    await expect(planBrain).toBeVisible();
+    await expect(planBrain).toHaveAttribute(
+        "aria-label",
+        "Talk to the AI about this plan",
     );
+    await expect(planBrain).toHaveAttribute(
+        "href",
+        "/app/chat?surface=meal_plan",
+    );
+    await expect(planBrain).not.toContainText("Adjust or explain");
     await gotoRoute(page, "/app/trends");
     await expect(page.getByTestId("brain-entry-insights")).toHaveAttribute(
         "aria-label",

@@ -2671,16 +2671,14 @@ async function renderPlan() {
     const weekSummary = plannedCount
         ? ` ${number(plannedCount)} planned across ${daysPlanned} of 7 days · ${number(totalCalories / Math.max(daysPlanned, 1))} kcal daily average on planned days.`
         : "";
-    content.innerHTML = `<div class="operate-view plan-view"><div class="page-heading"><div><h2>Week of ${escapeHtml(formatDate(start))}</h2><p>Planned meals stay separate from logged meals.${weekSummary}</p></div><div class="auth-actions"><button class="button button-primary button-small" type="button" data-action="guided-planner">Guided planner</button><button class="button button-secondary button-small" type="button" data-action="guidance-preferences">Preferences</button><button class="button button-secondary button-small" data-action="date-week-prev">Previous week</button><button class="button button-secondary button-small" data-action="date-today">This week</button><button class="button button-secondary button-small" data-action="date-week-next">Next week</button></div></div><div class="meal-groups">${weekDays(
+    content.innerHTML = `<div class="operate-view plan-view"><div class="page-heading"><div><h2>Week of ${escapeHtml(formatDate(start))}</h2><p>Planned meals stay separate from logged meals.${weekSummary}</p></div><div class="auth-actions">${brainChatLink("meal_plan", "Talk to the AI about this plan")}<button class="button button-primary button-small" type="button" data-action="guided-planner">Guided planner</button><button class="button button-secondary button-small" type="button" data-action="guidance-preferences">Preferences</button><button class="button button-secondary button-small" data-action="date-week-prev">Previous week</button><button class="button button-secondary button-small" data-action="date-today">This week</button><button class="button button-secondary button-small" data-action="date-week-next">Next week</button></div></div><div class="meal-groups">${weekDays(
         start,
     )
         .map(
             (date) =>
                 `<section class="meal-group plan-day"><header class="meal-group-header"><div><strong>${escapeHtml(formatDate(date, { weekday: true }))}</strong></div><span>${(byDate[date] || []).length} planned</span></header>${(byDate[date] || []).length ? (byDate[date] || []).map((meal) => `<article class="meal-card plan-meal-card"><div class="meal-card-head"><div><h4>${escapeHtml(meal.recipe_name)}</h4><div class="meal-meta"><span>${escapeHtml(meal.meal_slot || "Meal")}</span><span>${escapeHtml(meal.ownership)}</span>${meal.created_by ? `<span>Added by ${escapeHtml(meal.created_by)}</span>` : ""}</div></div><strong class="plan-servings">${number(meal.servings, 1)} servings</strong></div><div class="meal-macros"><span class="macro-chip">${number((meal.nutrition_per_serving?.calories || 0) * meal.servings)} kcal</span><span class="macro-chip">P ${number((meal.nutrition_per_serving?.protein_g || 0) * meal.servings, 1)}g</span></div><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="view-recipe" data-id="${escapeHtml(meal.recipe_id)}">View recipe</button><button class="button button-secondary button-small" type="button" data-action="meal-swap" data-id="${escapeHtml(meal.planned_meal_id)}" data-version="${escapeHtml(meal.version)}">Swap recipe</button></div></article>`).join("") : `<p class="plan-empty">No meals planned.</p>`}</section>`,
         )
-        .join(
-            "",
-        )}</div>${chatEntryRow("meal_plan", "Adjust or explain this plan", "Opens with this week attached")}</div>`;
+        .join("")}</div></div>`;
 }
 
 function currentWeekStart() {

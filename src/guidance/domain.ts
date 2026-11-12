@@ -183,6 +183,37 @@ export interface ConstraintCheck {
     warnings: string[];
 }
 
+/**
+ * The canonical allergen keys positively matched by a set of
+ * ingredient names against the user's stated allergies — the shared
+ * matcher behind the hard allergy filter (goals law rule 5). Only
+ * POSITIVE alias matches count: an ingredient that matches no known
+ * allergen is not flagged here (the stricter unknown-ingredient
+ * blocking in checkRecipeConstraints stays specific to screening
+ * model-generated proposals). Used by surfaces that must never offer
+ * an allergen idea, e.g. the Plan brain's seed candidates.
+ */
+export function allergenMatchesForIngredients(
+    ingredientNames: string[],
+    allergies: string[],
+): string[] {
+    const canonical = [...new Set(allergies.map(canonicalAllergen))];
+    if (canonical.length === 0) return [];
+    const matched = new Set<string>();
+    for (const name of ingredientNames) {
+        const value = normalized(name);
+        for (const [key, aliases] of Object.entries(allergenAliases)) {
+            if (
+                canonical.includes(key) &&
+                aliases.some((alias) => containsTerm(value, alias))
+            ) {
+                matched.add(key);
+            }
+        }
+    }
+    return [...matched];
+}
+
 /** Conservative ingredient screening. An unknown ingredient is a blocker when
  * the user has listed an allergy, because the recipe text alone cannot establish
  * packaged-food or cross-contact safety. */

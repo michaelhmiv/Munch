@@ -494,3 +494,60 @@ export async function rankSavedRecipesForPantry(input: {
         .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
         .slice(0, Math.max(1, Math.min(12, input.limit ?? 6)));
 }
+
+export interface SavedRecipeWithIngredients {
+    recipe_id: string;
+    revision_id: string;
+    name: string;
+    servings: number;
+    nutrition_per_serving: {
+        calories: number | null;
+        protein_g: number | null;
+        carbs_g: number | null;
+        fat_g: number | null;
+        fiber_g: number | null;
+    };
+    total_minutes: number | null;
+    ingredients: IngredientRequirement[];
+}
+
+/**
+ * The user's saved recipes WITH their ingredient lists, for context
+ * assembly that must reason about ingredients itself (the Plan
+ * brain's seed: pantry coverage per recipe plus the deterministic
+ * allergy screen). Deliberately NOT rankSavedRecipesForPantry: that
+ * path builds the planning context, which can trigger best-effort
+ * AI enrichment of pantry profiles — a seed re-assembled on every
+ * chat send must stay read-only and model-free. Callers compute
+ * availability with evaluateRecipeAvailability against a plain
+ * pantry read.
+ */
+export async function listSavedRecipesWithIngredients(input: {
+    userId: string;
+    scope: InventoryScope;
+    limit?: number;
+}): Promise<SavedRecipeWithIngredients[]> {
+    const rows = await readSavedRecipeRows({
+        userId: input.userId,
+        scope: input.scope,
+        limit: input.limit ?? 24,
+    });
+    return rows.map((row) => ({
+        recipe_id: row.recipe_id,
+        revision_id: row.revision_id,
+        name: row.name,
+        servings: row.servings,
+        nutrition_per_serving: {
+            calories: row.calories_per_serving,
+            protein_g: row.protein_g_per_serving,
+            carbs_g: row.carbs_g_per_serving,
+            fat_g: row.fat_g_per_serving,
+            fiber_g: row.fiber_g_per_serving,
+        },
+        total_minutes:
+            row.preparation_minutes == null && row.cooking_minutes == null
+                ? null
+                : (row.preparation_minutes ?? 0) + (row.cooking_minutes ?? 0),
+        ingredients: ingredientRequirements(row),
+    }));
+}
