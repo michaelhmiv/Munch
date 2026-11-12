@@ -5209,12 +5209,20 @@ async function submitMealPhoto() {
     // the vision pass needs none of a phone camera's megapixels, and
     // every megabyte is upload time on a mobile connection.
     say("Preparing photo…");
+    // Time the on-device prepare so the split between client prep
+    // and server work is visible in the [meal_photo] receive log —
+    // Nov 11's ~10 s perceived lag was nearly all this step while
+    // the server answered in 276 ms. Reported as client_prepare_ms;
+    // the server only ever logs it, never acts on it.
+    const prepareStartedAt = Date.now();
     const prepared = await downscaleImageFile(file);
+    const clientPrepareMs = Math.max(0, Date.now() - prepareStartedAt);
     if (prepared.size > 8 * 1024 * 1024) {
         return say("That photo is over the 8 MB limit — choose a smaller one.");
     }
     const form = new FormData();
     form.append("file", prepared);
+    form.append("client_prepare_ms", String(clientPrepareMs));
     form.append(
         "meal_type",
         document.getElementById("meal-photo-meal-type")?.value || "lunch",
