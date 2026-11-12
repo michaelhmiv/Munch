@@ -28,6 +28,13 @@
     --rule: #8a7c63;
     --green: #176b3a;
     --green-deep: #0b3d24;
+    /* Shared motion tokens — mirrored from styles.css (this page does
+       not load it). One easing curve, three durations; motion
+       decorates, never gates. */
+    --motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --motion-fast: 120ms;
+    --motion-view: 200ms;
+    --motion-dialog: 240ms;
     --green-tint: #eef4ea;
     --danger: #8c2f22;
     --warn-line: #b98a00;
@@ -48,6 +55,34 @@ body {
     font-size: 16px;
     line-height: 1.45;
     -webkit-tap-highlight-color: transparent;
+}
+/* Motion (design-authority-addendum-motion): arriving from the shell
+   is a full document swap, so the page itself settles in on the
+   shared tokens instead of snapping. Opacity/transform only. */
+main {
+    animation: munch-view-in var(--motion-view) var(--motion-ease);
+}
+@keyframes munch-view-in {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+/* Addendum rule 5: reduced motion collapses the scale to instant. */
+@media (prefers-reduced-motion: reduce) {
+    :root {
+        --motion-fast: 0.01ms;
+        --motion-view: 0.01ms;
+        --motion-dialog: 0.01ms;
+    }
+
+    .inventory-skeleton {
+        animation: none;
+    }
 }
 ::selection {
     background: var(--green);
@@ -532,6 +567,23 @@ button:disabled {
     flex-direction: column;
     margin-top: 6px;
 }
+.inventory-skeleton {
+    height: 54px;
+    border-bottom: 1px solid var(--hairline);
+    background: linear-gradient(
+        90deg,
+        var(--paper) 25%,
+        var(--paper-card) 50%,
+        var(--paper) 75%
+    );
+    background-size: 200% 100%;
+    animation: pantry-skeleton 1.4s ease-in-out infinite;
+}
+@keyframes pantry-skeleton {
+    to {
+        background-position: -200% 0;
+    }
+}
 .inventory-row {
     display: flex;
     align-items: center;
@@ -718,14 +770,14 @@ button:disabled {
 
 /* Bottom navigation — mirrored from the app shell's .mobile-bottom-nav
    (styles.css + app-overrides.css; this page loads only pantry.css, so
-   the rules live here like .entry-row above). Same seven destinations,
-   same paper ground and serif grammar, shown at the shell's phone
+   the rules live here like .entry-row above). Same destinations, same
+   paper ground and serif grammar, shown at the shell's phone
    breakpoint so Pantry wayfinding matches every other route. */
 .mobile-bottom-nav {
     display: none;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 899px) {
     body {
         padding-bottom: calc(84px + env(safe-area-inset-bottom));
     }
@@ -737,12 +789,17 @@ button:disabled {
         bottom: 0;
         left: 0;
         display: grid;
-        grid-template-columns: repeat(7, minmax(0, 1fr));
+        grid-template-columns: repeat(6, minmax(0, 1fr));
         padding: 7px max(8px, env(safe-area-inset-right))
             max(7px, env(safe-area-inset-bottom))
             max(8px, env(safe-area-inset-left));
-        border-top: 1px solid var(--line-strong);
-        background: var(--paper-card);
+        /* Literal values, byte-equivalent to the shell copy: this
+           block previously read var(--line-strong) and
+           var(--paper-card) — the first is defined nowhere in this
+           stylesheet (the border silently never painted) and the
+           second is one step off the shell's #fffdf7 ground. */
+        border-top: 1px solid #d8cdb6;
+        background: #fffdf7;
     }
 
     /* Bottom bar, treatment "Refined Line" (approved Nov 11),
@@ -755,7 +812,15 @@ button:disabled {
         min-height: 52px;
         place-items: center;
         border-radius: 10px;
-        color: var(--muted);
+        /* Declared outright, matching the shell anchor: this rule
+           previously set no font-family (labels fell back to the
+           sans body stack) and read var(--muted), which is defined
+           nowhere in this stylesheet, and it inherited this page's
+           1.45 body line-height against the shell's 1.6 — together
+           the visible shrink on arrival. */
+        font-family: Georgia, "Times New Roman", Times, serif;
+        line-height: 1.6;
+        color: #5d5344;
         font-size: 11px;
         font-weight: 400;
         white-space: nowrap;

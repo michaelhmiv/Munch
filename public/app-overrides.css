@@ -1063,6 +1063,11 @@ body.app-page {
 
 .mobile-bottom-nav a {
     font-family: Georgia, "Times New Roman", Times, serif;
+    /* Pinned explicitly: the Pantry copy of this bar inherits its own
+       page's 1.45 body line-height, so both copies now declare the
+       anchor metrics outright instead of inheriting them (motion
+       pass — design-authority-addendum-motion rule 1). */
+    line-height: 1.6;
     color: #5d5344;
     font-weight: 400;
     position: relative;
@@ -1185,6 +1190,127 @@ dialog textarea {
 
 dialog .field > span {
     color: #4a4237;
+}
+
+/* ---------- Motion (design-authority-addendum-motion) ----------
+   Shared tokens live in styles.css :root (--motion-ease/--motion-fast/
+   --motion-view/--motion-dialog). Everything below animates opacity
+   and transform only, so controls stay live during transitions and
+   no interaction ever waits on an animation. */
+
+.boot-state {
+    display: grid;
+    place-items: center;
+    min-height: 46vh;
+}
+
+.boot-mark {
+    width: 76px;
+    height: 76px;
+    animation: munch-fade-in var(--motion-dialog) var(--motion-ease);
+}
+
+/* Every route render builds a fresh .operate-view, so this entrance
+   replays on each view switch and on state-changing re-renders
+   (Add Water and friends): the swap settles instead of snapping. */
+.operate-view {
+    animation: munch-view-in var(--motion-view) var(--motion-ease);
+}
+
+dialog[open] .auth-card {
+    animation: munch-dialog-in var(--motion-dialog) var(--motion-ease);
+}
+
+dialog[open]::backdrop {
+    animation: munch-fade-in var(--motion-dialog) var(--motion-ease);
+}
+
+/* Exit runs shorter than entrance; closeAppDialog() in app.js adds
+   .is-closing and performs the real close when the fade has run. */
+dialog.is-closing .auth-card {
+    animation: munch-dialog-out var(--motion-fast) var(--motion-ease) forwards;
+}
+
+dialog.is-closing::backdrop {
+    animation: munch-fade-out var(--motion-fast) var(--motion-ease) forwards;
+}
+
+/* Deliberately NO transition on .button state colors: a button
+   parked under the cursor at a fractional scroll boundary can
+   flip-flop :hover, and a color transition then runs perpetually
+   (measured in the packaged-bundle e2e: five never-ending
+   transitions on the meal-draft abandon-confirm button, whose box
+   oscillated 1px and never read as stable). Hover/press colors
+   snap, exactly as they did before the motion pass; the press
+   settle below is transform-only and gesture-scoped. */
+.button:active {
+    transform: translateY(1px);
+}
+
+@keyframes munch-view-in {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes munch-dialog-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px) scale(0.99);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes munch-dialog-out {
+    from {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+    to {
+        opacity: 0;
+        transform: translateY(4px) scale(0.99);
+    }
+}
+
+@keyframes munch-fade-in {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes munch-fade-out {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+    }
+}
+
+/* Addendum rule 5: reduced motion collapses the whole scale to
+   instant — durations go to zero and the looping skeleton shimmer
+   stops. Nothing about layout or behavior changes. */
+@media (prefers-reduced-motion: reduce) {
+    :root {
+        --motion-fast: 0.01ms;
+        --motion-view: 0.01ms;
+        --motion-dialog: 0.01ms;
+    }
+
+    .skeleton {
+        animation: none;
+    }
 }
 
 /* Meal-draft review (incl. the photo-draft review — the Amendment F
@@ -1777,11 +1903,13 @@ dialog .summary-card > small {
         white-space: nowrap;
     }
 
-    /* (3b) Bottom nav: seven destinations, seven equal columns, one
-       row. Labels sit at 11px (the floor) so nothing wraps or
-       truncates at 390px. */
+    /* (3b) Bottom nav: at most six destinations (the feature-nav
+       model's ceiling), six equal columns, one row. Labels sit at
+       11px (the floor) so nothing wraps or truncates at 390px. The
+       column count matches the Pantry copy and the JS model's inline
+       value so the pre-JS paint is already at final metrics. */
     .mobile-bottom-nav {
-        grid-template-columns: repeat(7, minmax(0, 1fr));
+        grid-template-columns: repeat(6, minmax(0, 1fr));
         backdrop-filter: none;
     }
 

@@ -73,6 +73,14 @@
         --ink-200: #d8ded9;
         --ink-100: #e9edea;
         --ink-50: #f5f7f5;
+        /* Shared motion tokens (design-authority-addendum-motion.md):
+           one easing curve, three durations. Motion decorates state
+           changes; it never gates them. prefers-reduced-motion
+           collapses the scale to instant (see app-overrides.css). */
+        --motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
+        --motion-fast: 120ms;
+        --motion-view: 200ms;
+        --motion-dialog: 240ms;
         --surface: #ffffff;
         --surface-muted: #f6f8f6;
         --surface-strong: #edf2ee;

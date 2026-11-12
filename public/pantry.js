@@ -283,15 +283,36 @@ function renderInventory(items) {
     }
 }
 
+// Motion pass (design-authority-addendum-motion rule 2): the first
+// load holds the inventory layout with skeleton rows instead of a
+// "Loading Pantry…" text announcement; later reloads keep the current
+// rows on screen until the new data lands. Errors still surface
+// through status() exactly as before.
+let pantryLoadedOnce = false;
+function renderInventorySkeleton() {
+    inventoryEl.replaceChildren();
+    const holder = document.createElement("div");
+    holder.setAttribute("role", "status");
+    holder.setAttribute("aria-label", "Loading Pantry");
+    for (let i = 0; i < 4; i += 1) {
+        const row = document.createElement("div");
+        row.className = "inventory-skeleton";
+        row.setAttribute("aria-hidden", "true");
+        holder.append(row);
+    }
+    inventoryEl.append(holder);
+}
+
 async function loadPantry() {
     if (!pantryEnabled) return;
     try {
-        status("Loading Pantry…");
+        if (!pantryLoadedOnce) renderInventorySkeleton();
         const query = new URLSearchParams({ scope: currentScope() });
         if (searchEl.value.trim()) query.set("q", searchEl.value.trim());
         if (locationFilter) query.set("location", locationFilter);
         const pantry = await api(`/api/app/pantry?${query}`);
         renderInventory(pantry.items || []);
+        pantryLoadedOnce = true;
         status("");
     } catch (error) {
         status(error.message, true);

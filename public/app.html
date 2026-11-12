@@ -8,7 +8,7 @@
         />
         <meta name="robots" content="noindex,nofollow" />
         <meta name="referrer" content="no-referrer" />
-        <meta name="theme-color" content="#f6f8f6" />
+        <meta name="theme-color" content="#f6f1e7" />
         <title>Munch</title>
         <link rel="icon" href="/favicon.ico" />
         <link rel="stylesheet" href="/styles.css" />
@@ -76,20 +76,20 @@
             </aside>
             <main class="app-main">
                 <div class="app-content" id="app-content" tabindex="-1">
-                    <div class="loading-state">
-                        <div>
-                            <div
-                                class="skeleton"
-                                style="width: 180px; height: 18px"
-                            ></div>
-                            <div
-                                class="skeleton spacer-top"
-                                style="width: 280px; height: 54px"
-                            ></div>
-                            <p class="spacer-top">
-                                Loading your Munch workspace…
-                            </p>
-                        </div>
+                    <!-- Boot surface (design-authority-addendum-motion
+                         rule 2): the Munch mark on the paper ground is
+                         the startup state — no skeleton, no loading
+                         text. The first rendered view replaces it and
+                         fades in on the shared motion tokens. -->
+                    <div class="boot-state" role="status">
+                        <img
+                            class="boot-mark"
+                            src="/brand/munch-mark.svg"
+                            alt=""
+                            width="76"
+                            height="76"
+                        />
+                        <span class="sr-only">Loading Munch</span>
                     </div>
                 </div>
             </main>
@@ -212,13 +212,16 @@
         <script type="module" src="/app-patches.js"></script>
         <script>
             // S4 startup honesty: if the app bundle or the first data
-            // load never resolves, the skeleton must not spin forever.
-            // After 12s with the loading state still on screen, swap in
+            // load never resolves, the boot surface must not sit forever.
+            // After 12s with a loading state still on screen, swap in
             // an honest failure state with a reload action. A stored
             // session is untouched by this — it stays on the device.
             window.setTimeout(() => {
                 const content = document.getElementById("app-content");
-                if (!content || !content.querySelector(".loading-state")) {
+                if (
+                    !content ||
+                    !content.querySelector(".boot-state, .loading-state")
+                ) {
                     return;
                 }
                 content.innerHTML =
