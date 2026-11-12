@@ -394,7 +394,7 @@ test("calendar range re-bases Today: totals over the span, meals grouped by day,
         await page.request.get(`/api/app/today/range?start=${start}&end=${end}`)
     ).json();
     expect(payload.aggregate.days).toBe(4);
-    expect(payload.aggregate.dayssWithMeals).toBe(3);
+    expect(payload.aggregate.daysWithMeals).toBe(3);
     expect(payload.aggregate.macros.calories.total).toBe(1600);
     expect(payload.aggregate.macros.calories.dailyAverage).toBe(533.3);
     expect(payload.days[2].date).toBe(empty);
