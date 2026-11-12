@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-const [html, js, css, routes, index, appHtml, appStyles, privacy] =
+const [html, js, css, routes, index, appHtml, appStyles, privacy, iosSmoke] =
     await Promise.all([
         Bun.file("public/pantry.html").text(),
         Bun.file("public/pantry.js").text(),
@@ -10,6 +10,7 @@ const [html, js, css, routes, index, appHtml, appStyles, privacy] =
         Bun.file("public/app.html").text(),
         Bun.file("public/styles.css").text(),
         Bun.file("public/privacy.html").text(),
+        Bun.file("ios/App/AppUITests/MunchSmokeTests.swift").text(),
     ]);
 
 const requiredHtml = [
@@ -42,6 +43,26 @@ if (
 ) {
     throw new Error(
         "The retired per-page Pantry switch resurfaced; the feature-module flag is the only Pantry gate",
+    );
+}
+
+// The iOS boot/flow smoke (MunchSmokeTests.swift, Step 6) proves the
+// Pantry shell rendered by waiting for the search field's "Search
+// Pantry" label, which lives inside #workspace — pantry.js only
+// unhides the workspace after the feature-module gate passes. The
+// smoke kept waiting for the retired switch's text after #258, which
+// failed every post-#258 iOS smoke run while the page itself rendered
+// fine (its failure hierarchy showed the full shell). Keep the two
+// sides coupled: the marker the smoke waits for must be text the
+// shipped page renders, and the retired switch text must never come
+// back as a smoke expectation.
+if (
+    iosSmoke.includes('waitForText("Use Pantry"') ||
+    !iosSmoke.includes('waitForText("Search Pantry"') ||
+    !html.includes("Search Pantry")
+) {
+    throw new Error(
+        "iOS smoke Pantry shell marker drifted from the shipped Pantry page; update MunchSmokeTests.swift and public/pantry.html together",
     );
 }
 

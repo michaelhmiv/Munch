@@ -123,13 +123,22 @@ final class MunchSmokeTests: XCTestCase {
 
         // Step 6 — Pantry opens as its own packaged page and loads the
         // fixture inventory (the item count only appears after
-        // pantry.js has fetched and rendered).
+        // pantry.js has fetched and rendered). The shell signal is the
+        // search field's "Search Pantry" label: it lives inside
+        // #workspace, which pantry.js only unhides after the Settings
+        // feature-module gate passes, so it proves the same render the
+        // page's old per-page enable switch used to prove. That switch
+        // was retired by PR #258 (the module flag is the only Pantry
+        // gate now); this step kept waiting for its text and failed
+        // every post-#258 smoke run while the page rendered fine.
+        // scripts/pantry-ui-smoke.ts guards this coupling — if the
+        // Pantry shell copy changes, update this marker in the same PR.
         tapHittable(
             links(containing: "Pantry"),
             "bottom-nav Pantry link"
         )
         XCTAssertTrue(
-            waitForText("Use Pantry", timeout: 30),
+            waitForText("Search Pantry", timeout: 30),
             "Pantry page never rendered its shell"
         )
         XCTAssertTrue(
