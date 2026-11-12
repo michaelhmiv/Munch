@@ -44,6 +44,7 @@ export const MOBILE_CAPABILITY_IDS = [
     "food.saved.reuse",
     "nutrition.summary",
     "nutrition.goals",
+    "nutrition.goals_intake",
     "guidance.preferences",
     "guidance.goalPreview",
     "guidance.goalCommit",

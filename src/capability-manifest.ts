@@ -706,6 +706,29 @@ export const CAPABILITY_MANIFEST = [
         targetPr: null,
     },
     {
+        // Goals intake (goals intake brief): the goal the user states
+        // in their own words plus the five skippable intake answers,
+        // following the meal.copy precedent — the mcp channel is
+        // websiteOnly with a stated exception. The intake is
+        // first-party context plumbing (goals law rule 6): the shared
+        // goals-context module assembles it for every AI surface, and
+        // MCP clients consume its effects through that assembled
+        // context rather than a raw intake tool.
+        id: "nutrition.goals_intake",
+        mcp: websiteOnly([]),
+        web: complete(["/api/app/goals-intake", "/app/goals"]),
+        app: complete(["/api/app/goals-intake", "/app/goals"]),
+        ios: complete(["/api/app/goals-intake", "/app/goals"]),
+        iosBasis:
+            "Shared bundle: the surface lives inside the packaged SPA (the evidence class S5 used for the Android channel) and iOS packages that same SPA; no platform-specific native dependency.",
+        iosGap: null,
+        iosTargetPr: null,
+        intentionalChannelException:
+            "The intake is context plumbing, not an MCP tool surface: MCP consumers receive the assembled goals context through chat and guidance, and stated allergies already hard-filter MCP-visible suggestions server-side.",
+        gap: null,
+        targetPr: null,
+    },
+    {
         id: "guidance.preferences",
         mcp: complete(["get_guidance_context", "set_guidance_preferences"]),
         web: complete([

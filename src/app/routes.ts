@@ -151,6 +151,11 @@ import {
 } from "../feature-modules-repository.js";
 import { featureModulePatch } from "../feature-modules.js";
 import {
+    getGoalsIntake,
+    saveGoalsIntake,
+} from "../goals-context-repository.js";
+import { goalsIntakePatch } from "../goals-context.js";
+import {
     addCookUpdate,
     buildRecipeCookDish,
     compareCooks,
@@ -1908,6 +1913,31 @@ export function createAppRouter(): Hono {
         }
         return privateJson(c, {
             features: await saveFeatureModules(c.get("munchUserId"), patch),
+        });
+    });
+
+    // Goals intake (goals intake brief): the user's stated goal and
+    // the five skippable intake answers. PUT accepts a partial patch;
+    // a present field replaces the stored value, an absent field
+    // keeps it. Nothing here is required to use the app.
+    app.get("/api/app/goals-intake", async (c) =>
+        privateJson(c, {
+            intake: await getGoalsIntake(c.get("munchUserId")),
+        }),
+    );
+
+    app.put("/api/app/goals-intake", requireSameOrigin, async (c) => {
+        const body = recordValue(await c.req.json(), "Goals intake");
+        const userId = c.get("munchUserId");
+        const next = goalsIntakePatch(
+            await getGoalsIntake(userId),
+            body.intake ?? body,
+        );
+        if (!next) {
+            throw new Error("Goals intake update requires at least one field");
+        }
+        return privateJson(c, {
+            intake: await saveGoalsIntake(userId, next),
         });
     });
 

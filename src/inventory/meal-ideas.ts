@@ -14,6 +14,12 @@ import {
 } from "./meal-planning.js";
 import { pantryPlanningEnabled } from "./planning-profile.js";
 import type { InventoryScope } from "./repository.js";
+import { assembleGoalsContext } from "../goals-context-repository.js";
+import {
+    goalsContextForModel,
+    namesMatchAllergy,
+    type GoalsContext,
+} from "../goals-context.js";
 
 const mealIdeaSchema = z
     .object({
@@ -304,11 +310,31 @@ function compactSavedRecipes(recipes: PantryRecipeCandidate[]) {
     }));
 }
 
-export async function buildMealIdeaContext(input: PantryMealIdeaRequest) {
+export interface MealIdeaContextDependencies {
+    goalsContext?: typeof assembleGoalsContext;
+}
+
+export async function buildMealIdeaContext(
+    input: PantryMealIdeaRequest,
+    dependencies: MealIdeaContextDependencies = {},
+) {
     const assumedStaples = [...new Set(input.assumedStaples ?? [])]
         .map((value) => value.trim())
         .filter(Boolean)
         .slice(0, 20);
+    // The user's stated goal + intake answers, from the one shared
+    // goals-context module (goals law rule 6). Fails soft: meal
+    // ideas work without it, the context simply omits the section.
+    let goalsContext: GoalsContext | null = null;
+    try {
+        goalsContext = await (
+            dependencies.goalsContext ?? assembleGoalsContext
+        )(input.userId);
+    } catch (error) {
+        console.warn("Goals context failed for meal ideas; continuing", {
+            errorName: error instanceof Error ? error.name : "unknown",
+        });
+    }
     const pantry = await getPantryPlanningContext({
         userId: input.userId,
         scope: input.scope,
@@ -342,6 +368,10 @@ export async function buildMealIdeaContext(input: PantryMealIdeaRequest) {
         pantry: compactPantry(pantry),
         pantry_enrichment: pantry.enrichment,
         saved_recipe_candidates: compactSavedRecipes(savedRecipes),
+        // Null when the user has not answered the Goals intake.
+        // `allergies` here is the effective hard-filter list — the
+        // post-filter in requestPantryMealIdeas enforces it in code.
+        goals_context: goalsContext ? goalsContextForModel(goalsContext) : null,
     };
 }
 
@@ -439,7 +469,7 @@ export function validateMealIdeaGrounding(
 }
 
 function systemPrompt() {
-    return `You are Munch's deliberate kitchen planning engine. Recommend actual coherent dishes, not piles of high-macro ingredients. Inspect the entire provided kitchen context: proteins, vegetables, starches, dairy, sauces, condiments, spices, herbs, acids, aromatics, cooking fats, quantities, locations, and saved recipes. A nutrition goal such as high protein is a ranking goal, not candidate-generation logic. Prefer saved recipes when they fit well, but do not force them. Treat missing core ingredients much more seriously than optional garnish. Use seasonings and flavor systems intentionally. Produce genuinely diverse candidates across protein, cuisine/flavor direction, cooking method, or meal format when the Pantry supports diversity. Never claim an ingredient is on hand unless it appears in pantry. Never claim an assumed staple unless it appears in assumed_staples. Put unavailable ingredients only in missing_required or missing_optional. Do not fabricate precise nutrition when the context is uncertain; use null or reasonable rounded estimates. Return JSON only.`;
+    return `You are Munch's deliberate kitchen planning engine. Recommend actual coherent dishes, not piles of high-macro ingredients. Inspect the entire provided kitchen context: proteins, vegetables, starches, dairy, sauces, condiments, spices, herbs, acids, aromatics, cooking fats, quantities, locations, and saved recipes. A nutrition goal such as high protein is a ranking goal, not candidate-generation logic. Prefer saved recipes when they fit well, but do not force them. Treat missing core ingredients much more seriously than optional garnish. Use seasonings and flavor systems intentionally. Produce genuinely diverse candidates across protein, cuisine/flavor direction, cooking method, or meal format when the Pantry supports diversity. Never claim an ingredient is on hand unless it appears in pantry. Never claim an assumed staple unless it appears in assumed_staples. Put unavailable ingredients only in missing_required or missing_optional. Do not fabricate precise nutrition when the context is uncertain; use null or reasonable rounded estimates. When goals_context is present, factor the user's stated goal and intake answers into which ideas you pick — the goal in their own words governs; do not invent goals they did not state. HARD RULE: never include any item from goals_context.allergies, in any form, in a candidate's name, ingredients, or description — those are the user's stated allergies. (A deterministic filter also removes violations after you respond; do not rely on it.) Return JSON only.`;
 }
 
 function safeLogValue(value: string): string {
@@ -470,6 +500,36 @@ function logPlanningPhase(
  * outside the retry: an ungrounded response is unusable and throws, so
  * the user sees a retryable failure instead of invented meal ideas.
  */
+/**
+ * Deterministic allergy post-filter (goals law rule 5): a candidate
+ * whose name, description, flavor system, or any ingredient list
+ * implicates a user-stated allergy is REMOVED here, in code — the
+ * model is told about the allergies, but its compliance is never the
+ * guarantee. Matching uses the shared allergen alias table, so
+ * "shrimp" in an idea screens against a stated "shellfish" allergy.
+ */
+export function filterMealIdeasForAllergies(
+    response: PantryMealIdeasResponse,
+    allergies: readonly string[],
+): PantryMealIdeasResponse {
+    if (allergies.length === 0) return response;
+    const candidates = response.candidates.filter((candidate) => {
+        const texts = [
+            candidate.name,
+            candidate.description,
+            ...candidate.flavor_system,
+            ...candidate.on_hand_ingredients,
+            ...candidate.assumed_staples,
+            ...candidate.missing_required,
+            ...candidate.missing_optional,
+        ];
+        return !namesMatchAllergy(texts, allergies);
+    });
+    return candidates.length === response.candidates.length
+        ? response
+        : { ...response, candidates };
+}
+
 export async function requestPantryMealIdeas(
     config: PlanningModelConfig,
     context: Awaited<ReturnType<typeof buildMealIdeaContext>>,
@@ -556,8 +616,17 @@ export async function requestPantryMealIdeas(
                 continue;
             }
             const grounded = validateMealIdeaGrounding(parsed, context);
+            const filtered = filterMealIdeasForAllergies(
+                grounded,
+                context.goals_context?.allergies ?? [],
+            );
+            if (filtered.candidates.length === 0) {
+                throw new Error(
+                    "Pantry planning model returned no meal candidates clear of the stated allergies",
+                );
+            }
             logPlanningPhase("success", config.model, startedAt, callsUsed);
-            return grounded;
+            return filtered;
         } catch (error) {
             // HTTP/transport failures and grounding failures keep
             // single-attempt semantics; only unparseable output retries.

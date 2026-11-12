@@ -43,6 +43,8 @@ import {
     type PlanningScope,
 } from "../planning/repository.js";
 import { getNutritionGoals } from "../storage.js";
+import { assembleGoalsContext } from "../goals-context-repository.js";
+import { goalsContextForModel, namesMatchAllergy } from "../goals-context.js";
 import type { StructuredMealItemInput } from "../structured-meals/types.js";
 import { dateInTz, hourInTz } from "../tz.js";
 import {
@@ -78,6 +80,7 @@ export interface NextUpDependencies {
     profile?: (userId: string) => Promise<{ timezone: string | null } | null>;
     features?: (userId: string) => Promise<FeatureModules>;
     goals?: typeof getNutritionGoals;
+    goalsContext?: typeof assembleGoalsContext;
     preferences?: typeof getGuidancePreferences;
     today?: typeof getTodayWorkspace;
     pantry?: typeof getPantry;
@@ -162,6 +165,15 @@ export async function assembleNextUpContext(
         soft(() => (dependencies.today ?? getTodayWorkspace)(userId, date)),
     ]);
 
+    // The stated goal + intake answers come from the one shared
+    // goals-context module (goals law rule 6) — the reads above are
+    // handed over as preloaded slices so nothing is fetched twice.
+    const goalsContext = await soft(() =>
+        (dependencies.goalsContext ?? assembleGoalsContext)(userId, {
+            preloaded: { targets: goals, guidancePreferences: preferences },
+        }),
+    );
+
     const totals: NextUpNutrition = today
         ? {
               calories: today.totals.calories ?? 0,
@@ -245,14 +257,20 @@ export async function assembleNextUpContext(
         .filter((item) => item.purchased_at == null)
         .map((item) => item.name);
 
+    // Hard filters (goals law rule 5): the guidance preferences'
+    // lists, the intake's never-suggest list, and — matched with the
+    // allergen alias table, not just by name — the intake's stated
+    // allergies. A match removes the candidate outright.
     const banned = [
         ...(preferences?.allergies ?? []),
         ...(preferences?.excluded_ingredients ?? []),
+        ...(goalsContext?.never_suggest ?? []),
     ];
+    const intakeAllergies = goalsContext?.allergies ?? [];
     const isBanned = (names: string[]) =>
         banned.some((bannedName) =>
             names.some((name) => namesMatch(name, bannedName)),
-        );
+        ) || namesMatchAllergy(names, intakeAllergies);
 
     const candidates: NextUpCandidate[] = [];
     if (features.recipes) {
@@ -374,6 +392,7 @@ export async function assembleNextUpContext(
             groceries: features.groceries,
             pantry: features.pantry,
         },
+        goals_context: goalsContext ? goalsContextForModel(goalsContext) : null,
     };
     return { context, timezone, isToday };
 }

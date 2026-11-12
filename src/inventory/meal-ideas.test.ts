@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+    filterMealIdeasForAllergies,
     pantryMealIdeasResponseJsonSchema,
     pantryPlanningModelConfig,
     requestPantryMealIdeas,
@@ -211,6 +212,75 @@ describe("Pantry meal idea model request (S2 reliability pattern)", () => {
             }),
         ).rejects.toThrow("invalid JSON");
         expect(calls).toBe(2);
+    });
+
+    test("a planted allergen candidate is removed by the deterministic post-filter", async () => {
+        // Both candidates ground cleanly against the pantry; the
+        // first implicates the stated shellfish allergy through its
+        // name (shrimp → shellfish via the alias table). The model
+        // returning it anyway must not put it on screen (rule 5).
+        const planted = {
+            ...response().candidates[0],
+            name: "Garlic shrimp beef bowl",
+            description: "Beef bowl with a shrimp garnish",
+            source: "generated" as const,
+            saved_recipe_id: null,
+        };
+        const allergicContext = {
+            ...context,
+            goals_context: {
+                stated_goal: null,
+                activity_band: null,
+                eating_pattern: null,
+                hardest_meal: null,
+                never_suggest: [],
+                allergies: ["shellfish"],
+            },
+        };
+        const result = await requestPantryMealIdeas(
+            modelConfig,
+            allergicContext as any,
+            {
+                fetcher: async () =>
+                    envelope(
+                        JSON.stringify({
+                            candidates: [planted, response().candidates[0]],
+                            planning_notes: [],
+                        }),
+                    ),
+            },
+        );
+        expect(result.candidates).toHaveLength(1);
+        expect(result.candidates[0]?.name).toBe("Smoky beef bowl");
+    });
+});
+
+describe("meal idea allergy post-filter (goals law rule 5)", () => {
+    test("removes a candidate whose ingredient list implicates an allergy", () => {
+        const withPeanut = {
+            ...response().candidates[0],
+            name: "Satay beef bowl",
+            on_hand_ingredients: ["ground beef", "peanut sauce"],
+        };
+        const filtered = filterMealIdeasForAllergies(
+            { candidates: [withPeanut], planning_notes: [] },
+            ["peanut"],
+        );
+        // Grounding is not this filter's job — it screens the final
+        // output on any field, including ungrounded text.
+        expect(filtered.candidates).toHaveLength(0);
+    });
+
+    test("no stated allergies returns the response untouched", () => {
+        const original = response();
+        expect(filterMealIdeasForAllergies(original, [])).toBe(original);
+    });
+
+    test("clean candidates pass through unchanged", () => {
+        const original = response();
+        const filtered = filterMealIdeasForAllergies(original, ["shellfish"]);
+        expect(filtered.candidates).toHaveLength(1);
+        expect(filtered.candidates[0]?.name).toBe("Smoky beef bowl");
     });
 });
 

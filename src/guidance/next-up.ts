@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { GuidancePreferences } from "./contracts.js";
+import type { goalsContextForModel } from "../goals-context.js";
 
 /**
  * Next up — the pure domain of the Today guidance rework (brief
@@ -93,6 +94,14 @@ export interface NextUpContext {
     /** Suggestion candidates from saved recipes + recent meals. */
     candidates: NextUpCandidate[];
     features: NextUpFeatureFlags;
+    /**
+     * The user's stated goal + intake answers, from the shared
+     * goals-context module (goals law rule 6). Null when the user
+     * has not answered the Goals intake. Candidates were already
+     * hard-filtered against its allergy / never-suggest lists during
+     * assembly; the composer may cite the stated goal as data.
+     */
+    goals_context?: ReturnType<typeof goalsContextForModel>;
 }
 
 export interface NextUpLanding {
@@ -608,6 +617,7 @@ export function fingerprintNextUpContext(context: NextUpContext): string {
             ingredient_names: candidate.ingredient_names,
         })),
         features: context.features,
+        goals_context: context.goals_context ?? null,
     };
     return createHash("sha256")
         .update(JSON.stringify(stable))

@@ -148,6 +148,8 @@ jobs:
         run: bun scripts/nutrition-platform-smoke.ts
       - name: Exercise feature module toggles persistence and RLS
         run: bun scripts/feature-modules-smoke.ts
+      - name: Exercise goals intake persistence, context assembly, and RLS
+        run: bun scripts/goals-intake-smoke.ts
       - name: Exercise Next up cache, goal-prompt dismissal, Log it drafts, and RLS
         run: bun scripts/next-up-smoke.ts
       - name: Exercise recipe heal revisions, cook-mode progress persistence, and grocery merge provenance

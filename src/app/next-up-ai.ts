@@ -67,6 +67,12 @@ export function nextUpModelContext(context: NextUpContext) {
         day_part: context.day_part,
         target_slot: targetSlotFor(context),
         remaining_budget: remainingBudget(context),
+        // The goal the user stated in their own words + their intake
+        // answers (shared goals-context module, goals law rule 6) —
+        // data to factor the pick around, never a source of numbers:
+        // the reason's figures are still validated against the
+        // structured context only. Omitted when nothing was stated.
+        ...(context.goals_context ? { user_goals: context.goals_context } : {}),
         pantry_on_hand: context.pantry.map((item) => ({
             name: item.name,
             quantity: item.quantity,
