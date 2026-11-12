@@ -306,6 +306,13 @@ test("just logging strips the app to its spine; pantry data survives the round t
         ).toHaveCount(0);
         await page.locator('[data-action="create-recipe"]').click();
         const createDialog = page.locator("#app-dialog");
+        // Both Playwright projects drive the SAME reviewer account
+        // against the same database, and each creates these recipes:
+        // fixed names collide across projects (the second project
+        // finds the first project's panel in its count assertion).
+        // Run-unique names keep each project's count honest.
+        const stewName = `Consolidated Plan Stew ${Date.now()}`;
+        const plainSoupName = `Consolidated Plain Soup ${Date.now()}`;
         const planToggle = createDialog.locator("[data-recipe-plan-toggle]");
         await expect(planToggle).toHaveCount(1);
         await expect(planToggle).not.toBeChecked();
@@ -322,9 +329,7 @@ test("just logging strips the app to its spine; pantry data survives the round t
         await expect(createDialog.locator("button[type='submit']")).toHaveText(
             "Save, plan, and add groceries",
         );
-        await createDialog
-            .locator('input[name="name"]')
-            .fill("Consolidated Plan Stew");
+        await createDialog.locator('input[name="name"]').fill(stewName);
         await createDialog
             .locator('textarea[name="instructions"]')
             .fill("Simmer everything for 10 minutes.");
@@ -352,7 +357,7 @@ test("just logging strips the app to its spine; pantry data survives the round t
         ).toBeVisible();
         await expect(
             page.locator(".recipe-panel", {
-                hasText: "Consolidated Plan Stew",
+                hasText: stewName,
             }),
         ).toHaveCount(1);
 
@@ -369,9 +374,7 @@ test("just logging strips the app to its spine; pantry data survives the round t
         );
         expect(planningResponse.status(), "GET planning").toBe(200);
         const planning = await planningResponse.json();
-        expect(JSON.stringify(planning.plannedMeals)).toContain(
-            "Consolidated Plan Stew",
-        );
+        expect(JSON.stringify(planning.plannedMeals)).toContain(stewName);
 
         // The same form with the box left unchecked is exactly the
         // plain create: saved to the library, never planned.
@@ -379,9 +382,7 @@ test("just logging strips the app to its spine; pantry data survives the round t
         await expect(
             createDialog.locator("[data-recipe-plan-toggle]"),
         ).not.toBeChecked();
-        await createDialog
-            .locator('input[name="name"]')
-            .fill("Consolidated Plain Soup");
+        await createDialog.locator('input[name="name"]').fill(plainSoupName);
         await createDialog
             .locator('textarea[name="instructions"]')
             .fill("Boil, season, serve.");
@@ -409,7 +410,7 @@ test("just logging strips the app to its spine; pantry data survives the round t
         ).toBeVisible();
         await expect(
             page.locator(".recipe-panel", {
-                hasText: "Consolidated Plain Soup",
+                hasText: plainSoupName,
             }),
         ).toHaveCount(1);
         const planningAfterPlain = await (
@@ -419,10 +420,10 @@ test("just logging strips the app to its spine; pantry data survives the round t
             )
         ).json();
         expect(JSON.stringify(planningAfterPlain.recipes)).toContain(
-            "Consolidated Plain Soup",
+            plainSoupName,
         );
         expect(JSON.stringify(planningAfterPlain.plannedMeals)).not.toContain(
-            "Consolidated Plain Soup",
+            plainSoupName,
         );
     } finally {
         // Leave the shared suite account in the shipped default.
