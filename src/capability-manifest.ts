@@ -1162,9 +1162,9 @@ export const CAPABILITY_MANIFEST = [
     {
         id: "recipe.search",
         mcp: complete(["search_recipes"]),
-        web: complete(["/api/app/planning", "#recipe-filter"]),
-        app: complete(["/api/app/planning", "#recipe-filter"]),
-        ios: complete(["/api/app/planning", "#recipe-filter"]),
+        web: complete(["/api/app/planning", "#recipe-filter", "#recipe-sort"]),
+        app: complete(["/api/app/planning", "#recipe-filter", "#recipe-sort"]),
+        ios: complete(["/api/app/planning", "#recipe-filter", "#recipe-sort"]),
         iosBasis:
             "Shared bundle: iOS packages the same .mobile-web artifact as Android (same build script, cap sync ios) and reaches the same routes over the bearer transport; this outcome has no platform-specific native dependency.",
         iosGap: null,

@@ -905,6 +905,8 @@ const RECIPE_FIXTURES = [
         },
         times_scheduled: 6,
         times_logged: 9,
+        last_logged_at: "2026-11-02T12:00:00.000Z",
+        created_at: "2026-09-01T00:00:00.000Z",
     },
     {
         recipe_id: "fixture-overnight-oats",
@@ -922,6 +924,8 @@ const RECIPE_FIXTURES = [
         },
         times_scheduled: 3,
         times_logged: 11,
+        last_logged_at: "2026-11-10T12:00:00.000Z",
+        created_at: "2026-11-01T00:00:00.000Z",
     },
     {
         recipe_id: "fixture-turkey-chili",
@@ -939,6 +943,8 @@ const RECIPE_FIXTURES = [
         },
         times_scheduled: 2,
         times_logged: 4,
+        last_logged_at: "2026-11-08T12:00:00.000Z",
+        created_at: "2026-10-01T00:00:00.000Z",
     },
     {
         recipe_id: "fixture-salmon",
@@ -956,6 +962,8 @@ const RECIPE_FIXTURES = [
         },
         times_scheduled: 4,
         times_logged: 5,
+        last_logged_at: "2026-11-05T12:00:00.000Z",
+        created_at: "2026-08-01T00:00:00.000Z",
     },
 ];
 
@@ -3550,18 +3558,22 @@ test("S6 slice 1: the single ad slot lives on Today, flag-gated and Premium-hidd
     expect(lastCall.visible).toBe(false);
 });
 
-test("S6 slice 4: Recipes library rows carry View / Log / Add-to-plan and no ad slot", async ({
+test("S6 slice 4 + cross-work slice 2: Recipes library cards carry the View · Log · Plan strip, real sorting, and no ad slot", async ({
     page,
 }) => {
     await bootPackagedApp(page);
     await gotoRoute(page, "/app/recipes");
 
-    // The fused library: one themed panel per recipe in the fixture,
-    // each with the mock's three row actions.
+    // The fused library: one themed panel per recipe in the fixture.
+    // Slice 2's default sort is Most cooked, so the fixture's
+    // 11-times-logged Overnight Oats leads (the payload order is
+    // Lemon 9 / Oats 11 / Turkey 4 / Salmon 5).
     const panels = page.locator(".recipe-panel");
     await expect(panels).toHaveCount(4);
-    await expect(panels.first()).toContainText("Lemon Herb Chicken & Rice");
-    await expect(panels.first()).toContainText("512 kcal");
+    await expect(panels.first()).toContainText("Overnight Oats");
+    await expect(panels.first()).toContainText("385 kcal");
+    await expect(panels.first()).toContainText("logged 11 times");
+    await expect(panels.first()).toContainText("last cooked November 10");
     const firstPanel = panels.first();
     await expect(
         firstPanel.locator('[data-action="view-recipe"]'),
@@ -3572,6 +3584,51 @@ test("S6 slice 4: Recipes library rows carry View / Log / Add-to-plan and no ad 
     await expect(
         firstPanel.locator('[data-action="plan-recipe"]'),
     ).toBeVisible();
+
+    // The card strip is exactly View · Log · Plan — "Add to grocery
+    // list" left the card (the detail view keeps its own action).
+    const stripButtons = firstPanel.locator(".recipe-panel-actions .button");
+    await expect(stripButtons).toHaveCount(3);
+    await expect(stripButtons.nth(0)).toHaveText("View");
+    await expect(stripButtons.nth(1)).toHaveText("Log");
+    await expect(stripButtons.nth(2)).toHaveText("Plan");
+    await expect(
+        page.locator('.recipe-panel [data-action="recipe-groceries"]'),
+    ).toHaveCount(0);
+
+    // Sorting is real: each order reorders the rendered cards.
+    const titles = () =>
+        page.locator(".recipe-panel .recipe-title").allTextContents();
+    await page.locator("#recipe-sort").selectOption("a-z");
+    await expect
+        .poll(titles)
+        .toEqual([
+            "Lemon Herb Chicken & Rice",
+            "Overnight Oats",
+            "Sheet-Pan Salmon & Broccoli",
+            "Turkey Chili",
+        ]);
+    await page.locator("#recipe-sort").selectOption("recently-made");
+    await expect
+        .poll(titles)
+        .toEqual([
+            "Overnight Oats",
+            "Turkey Chili",
+            "Sheet-Pan Salmon & Broccoli",
+            "Lemon Herb Chicken & Rice",
+        ]);
+
+    // Search composes with the active sort: under Newest, the two
+    // titles containing "a" render newest-first.
+    await page.locator("#recipe-sort").selectOption("newest");
+    await page.locator("#recipe-filter").fill("a");
+    await expect
+        .poll(titles)
+        .toEqual(["Overnight Oats", "Sheet-Pan Salmon & Broccoli"]);
+    await page.locator("#recipe-filter").fill("");
+    await page.locator("#recipe-sort").selectOption("most-cooked");
+    await expect(panels).toHaveCount(4);
+    await expect(panels.first()).toContainText("Overnight Oats");
 
     // No ad slot on Recipes — not with the flag off, and not with it on
     // either (the app's only slot is on Today; the Recipes placements
