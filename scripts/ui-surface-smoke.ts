@@ -755,4 +755,204 @@ if (!householdRoutes.includes('href="/editorial.css"')) {
     );
 }
 
+// DESIGN AUTHORITY (ratified 2026-11-11) — the mechanically checkable
+// subset of the design authority, enforced in CI so compliance stops
+// depending on discipline. Authority: design-authority.md (Direction C
+// buttons; panel #fffdf8; rule tan #8a7c63; gold reserved). Audit of
+// record: parity-program/design-authority-audit-2026-11-11.md.
+// Where a check cannot pass on current main because of a recorded
+// audit finding, the finding's selectors are enumerated as RECORDED
+// EXCEPTIONS below: they are the fix list, not a hiding place — any
+// NEW occurrence outside the sanctioned contexts fails this smoke.
+const designAuthorityFiles: string[] = [];
+for await (const path of new Bun.Glob("public/**/*.{css,js,html,txt}").scan(
+    ".",
+)) {
+    designAuthorityFiles.push(path);
+}
+const designAuthoritySources = new Map<string, string>();
+for (const path of designAuthorityFiles) {
+    designAuthoritySources.set(path, await Bun.file(path).text());
+}
+
+// Retired colors (authority §1): the beige button tint and the mid-tan
+// border appear in no production stylesheet and must never return.
+for (const [path, source] of designAuthoritySources) {
+    const lower = source.toLowerCase();
+    for (const retired of ["#efe9db", "#b8a888"]) {
+        if (lower.includes(retired)) {
+            throw new Error(
+                `Design authority: retired color ${retired} found in ${path}`,
+            );
+        }
+    }
+}
+
+// Minimal CSS rule reader (comments stripped; media-query nesting
+// tracked) so the checks below key on the enclosing selector, which
+// is where the authority's context rules live.
+function cssRules(css: string): { selector: string; body: string }[] {
+    const stripped = css.replace(/\/\*[\s\S]*?\*\//g, "");
+    const rules: { selector: string; body: string }[] = [];
+    const stack: { selector: string; text: string }[] = [
+        { selector: "", text: "" },
+    ];
+    for (const ch of stripped) {
+        const top = stack[stack.length - 1];
+        if (ch === "{") {
+            const selector = top.text.split(";").pop()?.trim() ?? "";
+            stack.push({ selector, text: "" });
+            top.text = "";
+        } else if (ch === "}") {
+            const frame = stack.pop()!;
+            if (frame.text.includes(":")) {
+                rules.push({ selector: frame.selector, body: frame.text });
+            }
+        } else {
+            top.text += ch;
+        }
+    }
+    return rules;
+}
+const allCssRules: { path: string; selector: string; body: string }[] = [];
+for (const [path, source] of designAuthoritySources) {
+    if (!path.endsWith(".css")) continue;
+    for (const rule of cssRules(source)) {
+        allCssRules.push({ path, ...rule });
+    }
+}
+const GOLD_HEX = "#8a6d3b";
+const GOLD_SANCTIONED = [
+    /\.mobile-bottom-nav\s+a\.is-active::after/, // active-tab dot
+    /\.cal-day\.is-today/, // calendar today marker
+    /\.trends-/, // chart accents (bars, rolling line, reference marks)
+];
+const GOLD_RECORDED_EXCEPTIONS = [
+    /\.next-up-kicker/, // audit V1 — Next-up kicker text (surface being removed)
+    /\.meal-draft-dirty/, // audit V1 — meal-editor dirty-state text
+    /\.recipe-unresolved/, // audit V1 — recipe unresolved badge
+];
+for (const rule of allCssRules) {
+    if (!rule.body.toLowerCase().includes(GOLD_HEX)) continue;
+    const sanctioned = GOLD_SANCTIONED.some((re) => re.test(rule.selector));
+    const recorded = GOLD_RECORDED_EXCEPTIONS.some((re) =>
+        re.test(rule.selector),
+    );
+    if (!sanctioned && !recorded) {
+        throw new Error(
+            `Design authority: gold ${GOLD_HEX} used outside its reserved contexts in ${rule.path} [${rule.selector}] — see audit V1`,
+        );
+    }
+}
+// In JS, gold may appear only as a data colorway value in an object
+// literal (the macro/meal color maps — chart/data accents), never as
+// chrome styling.
+for (const [path, source] of designAuthoritySources) {
+    if (!path.endsWith(".js")) continue;
+    for (const line of source.split("\n")) {
+        if (!line.toLowerCase().includes(GOLD_HEX)) continue;
+        if (!/^\s*[\w"']+\s*:\s*"#8a6d3b"/i.test(line)) {
+            throw new Error(
+                `Design authority: gold ${GOLD_HEX} used outside a data colorway in ${path}: ${line.trim().slice(0, 80)}`,
+            );
+        }
+    }
+}
+
+// Type floor (authority §7): nothing renders below 11px. Sanctioned
+// exception: Trends chart annotation selectors ONLY (approved
+// renderings). Recorded legacy exceptions are audit V7's fix list.
+const FONT_SANCTIONED = [
+    /\.trends-(ref-label|daylabels|endlabels|donut|column|months|window-row)/,
+];
+const FONT_RECORDED_EXCEPTIONS = [
+    /\.nutrition-card\.compact/, // audit V7 — ≈9.9px
+    /\.metric-tile/, // audit V7 — ≈10.9px
+    /status-chip/, // audit V7 — ≈10.9px
+    /\.import-native-table/, // audit V7 — ≈10.7px
+];
+for (const rule of allCssRules) {
+    for (const match of rule.body.matchAll(
+        /font-size:\s*([0-9.]+)(px|rem|em)\b/g,
+    )) {
+        const value = parseFloat(match[1]);
+        const px = match[2] === "px" ? value : value * 16;
+        if (px >= 11) continue;
+        const sanctioned = FONT_SANCTIONED.some((re) => re.test(rule.selector));
+        const recorded = FONT_RECORDED_EXCEPTIONS.some((re) =>
+            re.test(rule.selector),
+        );
+        if (!sanctioned && !recorded) {
+            throw new Error(
+                `Design authority: font-size ${match[0]} below the 11px floor in ${rule.path} [${rule.selector}] — see audit V7`,
+            );
+        }
+    }
+}
+
+// Button spec, Direction C (authority §4): the base tier rules in
+// app-overrides.css carry the spec's exact values.
+function ruleBody(selector: string): string {
+    const rule = allCssRules.find(
+        (r) => r.path === "public/app-overrides.css" && r.selector === selector,
+    );
+    if (!rule) {
+        throw new Error(
+            `Design authority: missing base rule ${selector} in public/app-overrides.css`,
+        );
+    }
+    return rule.body.replace(/\s+/g, " ").toLowerCase();
+}
+const primaryBody = ruleBody(".button-primary");
+if (
+    !primaryBody.includes("background: #176b3a") ||
+    !primaryBody.includes("border-color: #176b3a")
+) {
+    throw new Error(
+        "Design authority: .button-primary no longer carries the Direction C spec (#176b3a fill and border)",
+    );
+}
+if (!ruleBody(".button-primary:hover").includes("#0b3d24")) {
+    throw new Error(
+        "Design authority: .button-primary:hover no longer uses green-deep #0b3d24",
+    );
+}
+const secondaryBody = ruleBody(".button-secondary");
+if (
+    !secondaryBody.includes("background: transparent") ||
+    !secondaryBody.includes("border-color: #8a7c63") ||
+    !secondaryBody.includes("color: #2b2620")
+) {
+    throw new Error(
+        "Design authority: .button-secondary no longer carries the Direction C spec (transparent fill, #8a7c63 border, ink text)",
+    );
+}
+
+// Dialogs (authority §2): the dialog card is the panel material with a
+// hairline border, and no dialog rule paints a dialog white.
+const dialogCardPainted = allCssRules
+    .filter((r) => r.selector === "dialog .auth-card")
+    .some((r) =>
+        /background:\s*(#fffdf8|var\(--paper-card\))/.test(
+            r.body.replace(/\s+/g, " ").toLowerCase(),
+        ),
+    );
+if (!dialogCardPainted) {
+    throw new Error(
+        "Design authority: dialog .auth-card no longer uses the panel material (#fffdf8)",
+    );
+}
+for (const rule of allCssRules) {
+    if (!/^dialog/.test(rule.selector)) continue;
+    if (
+        /background:\s*(white|#fff|#ffffff)\b/.test(
+            rule.body.replace(/\s+/g, " ").toLowerCase(),
+        )
+    ) {
+        throw new Error(
+            `Design authority: dialog rule paints a dialog white in ${rule.path} [${rule.selector}]`,
+        );
+    }
+}
+
 console.log("UI surface and unified account responsive smoke checks passed.");
