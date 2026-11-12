@@ -1,7 +1,5 @@
 import {
-    addMealDraftQuestion,
-    createMealDraft,
-    upsertMealDraftItem,
+    createMealDraftWithItemsAndQuestions,
     type MealDraft,
 } from "../meal-drafts/index.js";
 import { PHOTO_DRAFT_PLACEHOLDER_DESCRIPTION } from "../meal-drafts/naming.js";
@@ -50,7 +48,13 @@ export async function createMealPhotoDraft(input: {
         input.vision.items,
         input.groundingDeps,
     );
-    let draft = await createMealDraft({
+    // Persistence is ONE transaction (photo-latency fix, 2026-11-12):
+    // the previous shape ran create + one upsert per item + one
+    // question insert per question, each a separate transaction that
+    // re-loaded the whole draft — a quadratic tax inside draft_build.
+    // Questions link to items by position; the bulk create resolves
+    // them to the persisted item records.
+    const draft = await createMealDraftWithItemsAndQuestions({
         userId: input.userId,
         sourceMode: "photo",
         mealType: input.mealType,
@@ -60,31 +64,20 @@ export async function createMealPhotoDraft(input: {
         // fixed meal-slot time. The field stays editable in review.
         loggedAt: input.loggedAt ?? new Date().toISOString(),
         notes: PHOTO_DRAFT_NOTES,
+        items: grounded.map((entry) => entry.draftItem),
+        questions: grounded.flatMap((entry, index) =>
+            entry.question
+                ? [
+                      {
+                          questionKey: entry.question.questionKey,
+                          prompt: entry.question.prompt,
+                          impactScore: entry.question.impactScore,
+                          itemPosition: index,
+                      },
+                  ]
+                : [],
+        ),
     });
-    for (const [index, entry] of grounded.entries()) {
-        draft = await upsertMealDraftItem({
-            userId: input.userId,
-            draftId: draft.id,
-            expectedVersion: draft.version,
-            position: index,
-            item: entry.draftItem,
-        });
-    }
-    // Questions reference the persisted item records, so they are added
-    // after every item exists, threading the draft version each time.
-    for (const [index, entry] of grounded.entries()) {
-        if (!entry.question) continue;
-        const record = draft.items.find((item) => item.position === index);
-        draft = await addMealDraftQuestion({
-            userId: input.userId,
-            draftId: draft.id,
-            expectedVersion: draft.version,
-            questionKey: entry.question.questionKey,
-            prompt: entry.question.prompt,
-            impactScore: entry.question.impactScore,
-            itemId: record?.id,
-        });
-    }
     return {
         draft,
         grounded,

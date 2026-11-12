@@ -142,6 +142,62 @@ describe("chooseCandidatesViaDecisions (harness adapter, productionized)", () =>
         expect(item.candidates[1].source_database).toBe("open_food_facts");
     });
 
+    test("batches over the 8-question cap run concurrently and merge identically", async () => {
+        // 9 ambiguous items => two chunks (8 + 1). The chunks are
+        // independent Decisions calls; they must overlap in flight
+        // (the sequential loop was pure draft_build latency) and the
+        // merged result must equal what sequential calls would give.
+        const manyRequests: MealPhotoCandidateChoiceRequest[] = Array.from(
+            { length: 9 },
+            (_, index) => ({
+                key: `item:${index}`,
+                itemName: `food ${index}`,
+                cookingMethod: null,
+                candidates: [
+                    {
+                        candidateId: `usda:${index}`,
+                        name: `Food ${index}`,
+                        brand: null,
+                        provider: "usda",
+                    },
+                ],
+            }),
+        );
+        let inFlight = 0;
+        let maxInFlight = 0;
+        const fetcher: DecisionsFetcher = async (_input, init) => {
+            inFlight += 1;
+            maxInFlight = Math.max(maxInFlight, inFlight);
+            try {
+                await new Promise((resolve) => setTimeout(resolve, 25));
+                const body = JSON.parse(String(init?.body ?? "{}"));
+                const answers: Record<string, unknown> = {};
+                for (const questionKey of Object.keys(body.questions)) {
+                    answers[questionKey] = {
+                        type: "choice",
+                        choice: "c0",
+                        confidence: 0.5,
+                    };
+                }
+                return decisionsResponse(answers);
+            } finally {
+                inFlight -= 1;
+            }
+        };
+        const result = await chooseCandidatesViaDecisions(
+            manyRequests,
+            testConfig(),
+            { fetcher },
+        );
+        expect(result.size).toBe(9);
+        for (let index = 0; index < 9; index++) {
+            expect(result.get(`item:${index}`)?.candidateId).toBe(
+                `usda:${index}`,
+            );
+        }
+        expect(maxInFlight).toBeGreaterThanOrEqual(2);
+    });
+
     test("an option key outside the candidate list is discarded, never honoured", async () => {
         const result = await chooseCandidatesViaDecisions(
             requests,
