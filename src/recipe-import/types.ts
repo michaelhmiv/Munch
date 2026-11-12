@@ -83,12 +83,16 @@ export const recipeImportDraftOutputSchema = z.object({
             "schema_org_json_ld",
             "microdata",
             "recipe_card_html",
+            "photo_vision",
         ]),
         version: z.string(),
     }),
     source: z.object({
-        submitted_url: z.string().url(),
-        final_url: z.string().url(),
+        // URL imports carry real URLs; a photo import has no URL at
+        // all (the photo is transient and never hosted), so its
+        // submitted/final URLs are null rather than invented.
+        submitted_url: z.string().url().nullable(),
+        final_url: z.string().url().nullable(),
         canonical_url: z.string().url().nullable(),
         title: z.string().nullable(),
         site_name: z.string().nullable(),
@@ -103,7 +107,7 @@ export const recipeImportDraftOutputSchema = z.object({
         cooking_minutes: z.number().int().nonnegative().optional(),
         source_type: z.literal("imported"),
         source_title: z.string().max(500).optional(),
-        source_url: z.string().url(),
+        source_url: z.string().url().optional(),
         ingredients: z.array(importedIngredientSchema).min(1).max(200),
     }),
     nutrition: z.object({
@@ -162,7 +166,11 @@ export interface ParsedRecipeIngredient {
 }
 
 export interface ParsedRecipe {
-    strategy: "schema_org_json_ld" | "microdata" | "recipe_card_html";
+    strategy:
+        | "schema_org_json_ld"
+        | "microdata"
+        | "recipe_card_html"
+        | "photo_vision";
     name: string;
     description?: string;
     servings: number;
@@ -229,6 +237,28 @@ export interface RecipeImportIngredientAssignment {
     assumption?: string;
     confidence: number;
     rationale?: string;
+}
+
+export const RECIPE_PHOTO_PARSER_VERSION = "photo-vision-1.0.0";
+
+/**
+ * A recipe read from a photo by the vision path (photo-vision.ts),
+ * already in the parser's shape so the preview service can run it
+ * through the exact enrichment pipeline URL imports use. `warnings`
+ * carries everything the reader found unreadable or uncertain — the
+ * service forwards them into the draft's warnings/requires_review
+ * pattern; nothing here is ever invented to fill a gap.
+ */
+export interface PhotoExtractedRecipe {
+    name: string;
+    description?: string;
+    servings?: number;
+    instructions: string[];
+    preparationMinutes?: number;
+    cookingMinutes?: number;
+    sourceTitle?: string;
+    ingredients: ParsedRecipeIngredient[];
+    warnings: RecipeImportWarning[];
 }
 
 export interface RecipeImportSemanticResolver {

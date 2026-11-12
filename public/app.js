@@ -2346,6 +2346,13 @@ async function renderRecipes() {
     const importButton = canCreate
         ? '<button class="button button-primary button-small" data-action="import-recipe-url">Import recipe from website</button>'
         : "";
+    // Cross-work slice 3: the Photo door sits beside Import — a
+    // photo/screenshot of a recipe is read into the same
+    // import-review dialog. Direction-C secondary at the 31px anchor
+    // (design authority §4; .recipe-photo-door in app-overrides.css).
+    const photoButton = canCreate
+        ? '<button class="button button-secondary button-small recipe-photo-door" data-action="import-recipe-photo">Photo</button>'
+        : "";
     const createButton = canCreate
         ? '<button class="button button-secondary button-small" data-action="create-recipe">Create recipe</button>'
         : "";
@@ -2363,7 +2370,7 @@ async function renderRecipes() {
     // divided View · Log · Plan strip riding each card. No ad slot
     // exists on this surface: the app's only slot is on Today (final
     // ad law).
-    content.innerHTML = `<div class="operate-view recipes-view"><div class="page-heading"><div><h2>Recipe library</h2><p>${data.recipes.length} structured recipe${data.recipes.length === 1 ? "" : "s"}.</p></div></div><div class="auth-actions recipe-actions">${importButton}${createButton}</div><div class="recipe-filter-row"><label class="field" for="recipe-filter"><span>Filter recipes</span><input class="input" id="recipe-filter" type="search" placeholder="Search by name" aria-label="Filter recipes" value="${escapeHtml(state.recipeQuery)}" /></label><label class="field" for="recipe-sort"><span>Sort</span><select class="select" id="recipe-sort" aria-label="Sort recipes">${sortOptions}</select></label></div><div class="recipe-list" id="recipe-grid">${data.recipes.length ? recipeCardsHtml() : `<div class="empty-state"><div><h3>No recipes yet</h3><p>Import a recipe from a public website and review it before saving, or create one manually.</p>${canCreate ? `<div class="auth-actions spacer-top">${importButton}${createButton}</div>` : ""}</div></div>`}</div></div>`;
+    content.innerHTML = `<div class="operate-view recipes-view"><div class="page-heading"><div><h2>Recipe library</h2><p>${data.recipes.length} structured recipe${data.recipes.length === 1 ? "" : "s"}.</p></div></div><div class="auth-actions recipe-actions">${importButton}${photoButton}${createButton}</div><div class="recipe-filter-row"><label class="field" for="recipe-filter"><span>Filter recipes</span><input class="input" id="recipe-filter" type="search" placeholder="Search by name" aria-label="Filter recipes" value="${escapeHtml(state.recipeQuery)}" /></label><label class="field" for="recipe-sort"><span>Sort</span><select class="select" id="recipe-sort" aria-label="Sort recipes">${sortOptions}</select></label></div><div class="recipe-list" id="recipe-grid">${data.recipes.length ? recipeCardsHtml() : `<div class="empty-state"><div><h3>No recipes yet</h3><p>Import a recipe from a public website or a photo and review it before saving, or create one manually.</p>${canCreate ? `<div class="auth-actions spacer-top">${importButton}${photoButton}${createButton}</div>` : ""}</div></div>`}</div></div>`;
 }
 
 function recipeIngredientFromFood(food, portionId) {
@@ -2837,7 +2844,13 @@ function recipeImportReviewMarkup(draft) {
         ? `<div class="panel spacer-top"><strong>${unresolved.length} ingredient${unresolved.length === 1 ? "" : "s"} need${unresolved.length === 1 ? "s" : ""} review</strong><ul class="food-items spacer-top">${unresolved.map((item) => `<li><span><strong>${escapeHtml(item.raw_text)}</strong><small>${escapeHtml(item.resolution)} match · use the food search or edit the fields below</small></span></li>`).join("")}</ul></div>`
         : "";
     const nutrition = draft.nutrition?.per_serving || {};
-    return `<div class="recipe-detail"><p>Preview only — nothing has been saved. Munch resolved what it could, applied reasonable assumptions, and left only materially uncertain ingredients for review.</p><p class="tiny"><a href="${escapeHtml(draft.source.final_url)}" target="_blank" rel="noreferrer">${escapeHtml(draft.source.final_url)}</a> · ${escapeHtml(draft.parser.strategy)} · ${resolved.length}/${review.length} ingredients resolved</p><div class="meal-macros spacer-top"><span class="macro-chip">${number(nutrition.calories)} kcal/serving</span><span class="macro-chip">P ${number(nutrition.protein_g, 1)}g</span><span class="macro-chip">C ${number(nutrition.carbs_g, 1)}g</span><span class="macro-chip">F ${number(nutrition.fat_g, 1)}g</span></div>${warningMarkup}${assumptionMarkup}${unresolvedMarkup}</div>`;
+    // Photo imports carry no source URL (the photo is transient and
+    // never hosted): the source line names the photo instead of
+    // linking to an address that does not exist.
+    const sourceLine = draft.source.final_url
+        ? `<a href="${escapeHtml(draft.source.final_url)}" target="_blank" rel="noreferrer">${escapeHtml(draft.source.final_url)}</a> · ${escapeHtml(draft.parser.strategy)} · ${resolved.length}/${review.length} ingredients resolved`
+        : `Recipe photo · ${escapeHtml(draft.parser.strategy)} · ${resolved.length}/${review.length} ingredients resolved`;
+    return `<div class="recipe-detail"><p>Preview only — nothing has been saved. Munch resolved what it could, applied reasonable assumptions, and left only materially uncertain ingredients for review.</p><p class="tiny">${sourceLine}</p><div class="meal-macros spacer-top"><span class="macro-chip">${number(nutrition.calories)} kcal/serving</span><span class="macro-chip">P ${number(nutrition.protein_g, 1)}g</span><span class="macro-chip">C ${number(nutrition.carbs_g, 1)}g</span><span class="macro-chip">F ${number(nutrition.fat_g, 1)}g</span></div>${warningMarkup}${assumptionMarkup}${unresolvedMarkup}</div>`;
 }
 
 function recipeFormRecordFromImport(draft) {
@@ -2897,6 +2910,75 @@ function openRecipeImport() {
         "Import recipe from a website",
         `<form id="recipe-import-url-form" class="auth-form"><p>Paste a public HTTPS recipe page. Munch will check the page, parse the recipe, interpret the ingredient language, match nutrition sources, and show you an editable review before anything is saved.</p><p class="tiny">This is separate from <strong>Create recipe</strong>; you do not need to open the recipe editor first.</p><label class="field"><span>Recipe URL</span><input name="url" type="url" inputmode="url" maxlength="2000" placeholder="https://example.com/recipe" required /></label>${recipeImportProgressMarkup()}<button class="button button-primary" type="submit">Check recipe page</button></form>`,
     );
+}
+
+// Cross-work slice 3: photo recipe import. The dialog reuses the
+// shared capture control (photo-capture.js — camera-first, library
+// secondary, client downscale) exactly like the meal-photo dialog;
+// the server read lands in the SAME import-review dialog as the URL
+// importer (openRecipeImportReview), same fields, same save path.
+function openRecipePhotoImport() {
+    stopRecipeImportProgress();
+    recipeImport.draft = null;
+    openDialog(
+        "Import recipe from a photo",
+        `<div class="recipe-photo-capture">
+            <p>Photograph a cookbook page, recipe card, or screenshot. Munch reads the recipe into an editable review before anything is saved, and the photo itself is processed transiently — it is never kept.</p>
+            <div class="field">${photoCaptureMarkup({ inputId: "recipe-photo-file", label: "Recipe photo" })}</div>
+            <p class="tiny recipe-photo-status" id="recipe-photo-status" role="alert"></p>
+            <div class="auth-actions">
+                <button class="button button-primary" type="button" data-action="submit-recipe-photo" id="recipe-photo-submit">Read recipe photo</button>
+                <button class="button button-secondary" type="button" data-action="import-recipe-url">Import from a website instead</button>
+            </div>
+        </div>`,
+    );
+}
+
+async function submitRecipePhoto() {
+    const status = document.getElementById("recipe-photo-status");
+    const submit = document.getElementById("recipe-photo-submit");
+    const input = document.getElementById("recipe-photo-file");
+    const file = input?.files?.[0];
+    const say = (message) => {
+        if (status) status.textContent = message;
+    };
+    if (!file) return say("Take or choose a recipe photo first.");
+    say("Preparing photo…");
+    const prepared = await downscaleImageFile(file);
+    if (prepared.size > 8 * 1024 * 1024) {
+        return say("That photo is over the 8 MB limit — choose a smaller one.");
+    }
+    const form = new FormData();
+    form.append("file", prepared);
+    if (submit) submit.disabled = true;
+    say("Sending photo…");
+    const stageTimers = [
+        setTimeout(() => say("Reading the recipe…"), 2500),
+        setTimeout(() => say("Matching ingredients…"), 6500),
+        setTimeout(
+            () =>
+                say(
+                    "Still working — this photo is taking a little longer than usual.",
+                ),
+            12000,
+        ),
+    ];
+    try {
+        const data = await api("/api/app/recipes/import-photo-preview", {
+            method: "POST",
+            body: form,
+            keepPrevious: true,
+        });
+        openRecipeImportReview(data.draft);
+    } catch (error) {
+        if (submit) submit.disabled = false;
+        say(
+            error.message ||
+                "Recipe import could not read that photo. Nothing was saved.",
+        );
+    } finally {
+        for (const timer of stageTimers) clearTimeout(timer);
+    }
 }
 
 function openRecipeCreate(planEnabled = false) {
@@ -7282,6 +7364,8 @@ async function handleAction(button) {
     }
     if (action === "create-recipe") return openRecipeCreate();
     if (action === "import-recipe-url") return openRecipeImport();
+    if (action === "import-recipe-photo") return openRecipePhotoImport();
+    if (action === "submit-recipe-photo") return submitRecipePhoto();
     if (action === "compose-recipe") return openRecipeCompose();
     if (action === "add-recipe-ingredient") {
         syncRecipeComposerFromDom();

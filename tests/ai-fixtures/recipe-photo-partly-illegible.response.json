@@ -1,0 +1,20 @@
+{
+    "choices": [
+        {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+                "content": "{\"is_recipe\": true, \"title\": \"Tomato Soup\", \"servings\": null, \"description\": null, \"preparation_minutes\": null, \"cooking_minutes\": 30, \"source_title\": null, \"ingredients\": [{\"raw_text\": \"2 cups crushed tomatoes\", \"name\": \"crushed tomatoes\", \"quantity\": 2, \"unit\": \"cup\", \"preparation\": null, \"optional\": false, \"confidence\": 0.93}, {\"raw_text\": \"1 onion, diced\", \"name\": \"onion\", \"quantity\": 1, \"unit\": null, \"preparation\": \"diced\", \"optional\": false, \"confidence\": 0.55}], \"instructions\": [\"Simmer everything for 30 minutes.\"], \"warnings\": [\"The servings line is cut off in the photo.\", \"The onion quantity is smudged.\"]}",
+                "role": "assistant"
+            }
+        }
+    ],
+    "id": "fixture-recipe-photo-partly-illegible",
+    "model": "meta/muse-ember",
+    "object": "chat.completion",
+    "usage": {
+        "completion_tokens": 210,
+        "prompt_tokens": 1400,
+        "total_tokens": 1610
+    }
+}

@@ -17,6 +17,7 @@ const FORBIDDEN_MCP_MODULES = new Set([
     "meal-photo/draft-add-parse.ts",
     "meal-photo/draft-add.ts",
     "recipe-import/semantic-resolver.ts",
+    "recipe-import/photo-vision.ts",
 ]);
 
 const FORBIDDEN_MCP_SOURCE_PATTERNS: Array<[RegExp, string]> = [

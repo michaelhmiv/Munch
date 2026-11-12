@@ -2058,6 +2058,31 @@ dialog .summary-card > small {
     margin-top: 8px;
 }
 
+/* Cross-work slice 3 — the Photo door: direction C secondary
+   (design authority §4: transparent fill, rule border #8a7c63, ink
+   text) drawn at the 31px anchor (§4 geometry: 6px 14px padding,
+   10px radius, .9rem/600). The invisible ::after overlay keeps the
+   tap area at ≥44px, the board's hit-area pattern (same as the
+   slice-2 card strip segments). */
+.recipes-view .recipe-actions .recipe-photo-door {
+    min-height: 31px;
+    height: 31px;
+    padding: 6px 14px;
+    border: 1px solid #8a7c63;
+    border-radius: 10px;
+    background: transparent;
+    color: #2b2620;
+    font-size: 0.9rem;
+    font-weight: 600;
+    position: relative;
+}
+
+.recipes-view .recipe-actions .recipe-photo-door::after {
+    content: "";
+    position: absolute;
+    inset: -7px 0;
+}
+
 /* Cross-work slice 2: search and Sort share one row (v6 board
    frame 1) — the search field takes the flexible column, the Sort
    select hugs its content. Both controls draw at the design
@@ -2177,12 +2202,30 @@ dialog .summary-card > small {
     /* Heading actions: one deliberate single row with intentional
        horizontal scroll (P1/P7, slice 1's heading pattern) instead of
        a ragged wrap or a full-width stack. The filter field keeps its
-       own full-width row under it. */
+       own full-width row under it. Slice 3 adds a third door (Photo),
+       so the row gains the operate-view F10 affordance — hidden
+       scrollbar plus a trailing edge fade — so the scroll reads as
+       intentional, not clipped. */
     .recipes-view .recipe-actions {
         display: flex;
         flex-wrap: nowrap;
         overflow-x: auto;
         padding-bottom: 4px;
+        scrollbar-width: none;
+        -webkit-mask-image: linear-gradient(
+            to right,
+            #000 calc(100% - 28px),
+            transparent 100%
+        );
+        mask-image: linear-gradient(
+            to right,
+            #000 calc(100% - 28px),
+            transparent 100%
+        );
+    }
+
+    .recipes-view .recipe-actions::-webkit-scrollbar {
+        display: none;
     }
 
     .recipes-view .recipe-actions .button {

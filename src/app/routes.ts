@@ -66,7 +66,15 @@ import { decisionsConfig } from "../decisions/config.js";
 import { evaluateMealPhotoGate } from "../decisions/gate.js";
 import { chooseCandidatesForMealPhoto } from "../decisions/decider.js";
 import { RecipeImportError } from "../recipe-import/fetch.js";
-import { previewRecipeUrl } from "../recipe-import/service.js";
+import {
+    readRecipePhoto,
+    recipePhotoVisionConfig,
+    RecipePhotoNoRecipeError,
+} from "../recipe-import/photo-vision.js";
+import {
+    previewRecipePhoto,
+    previewRecipeUrl,
+} from "../recipe-import/service.js";
 import { getWebsiteRecipeImportSemanticResolver } from "../recipe-import/semantic-resolver.js";
 import {
     deleteSavedFood,
@@ -2078,6 +2086,130 @@ export function createAppRouter(): Hono {
                 },
             );
             return privateJson(c, { draft });
+        },
+    );
+
+    // Cross-work slice 3: photo recipe import. One Ember vision
+    // read (photo-vision.ts) transcribes the photo into a structured
+    // recipe, then the SAME enrichment pipeline as URL import builds
+    // the draft for the import-review dialog — nothing is saved here,
+    // and the photo bytes are processed transiently, never retained
+    // (the meal-photo law). AI features are free for every account
+    // (Amendment D): no entitlement check and no meter here.
+    app.post(
+        "/api/app/recipes/import-photo-preview",
+        requireSameOrigin,
+        async (c) => {
+            const userId = c.get("munchUserId");
+            const capabilities = await resolveRequestMunchCapabilities(
+                c,
+                userId,
+            );
+            if (
+                !capabilities.personalRecipesRead &&
+                !capabilities.householdRead
+            ) {
+                throw new Error("Recipe capability is unavailable");
+            }
+            const visionConfig = recipePhotoVisionConfig();
+            if (!visionConfig) {
+                return privateJsonStatus(
+                    c,
+                    {
+                        error: "recipe_photo_unavailable",
+                        message:
+                            "Photo import is unavailable right now. Creating a recipe manually always works.",
+                        manual_entry_available: true,
+                        transient_media: true,
+                    },
+                    503,
+                );
+            }
+            const form = await c.req.parseBody();
+            const uploaded = form.file;
+            if (
+                !uploaded ||
+                typeof uploaded !== "object" ||
+                typeof (uploaded as File).arrayBuffer !== "function"
+            ) {
+                return privateJsonStatus(
+                    c,
+                    {
+                        error: "recipe_photo_invalid_image",
+                        message: "Choose a recipe photo first.",
+                        manual_entry_available: true,
+                    },
+                    400,
+                );
+            }
+            const file = uploaded as File;
+            if (!/^image\/(jpeg|png|webp)$/i.test(file.type)) {
+                return privateJsonStatus(
+                    c,
+                    {
+                        error: "recipe_photo_invalid_image",
+                        message: "Recipe photo must be JPEG, PNG, or WebP.",
+                        manual_entry_available: true,
+                    },
+                    400,
+                );
+            }
+            if (file.size < 1 || file.size > 8 * 1024 * 1024) {
+                return privateJsonStatus(
+                    c,
+                    {
+                        error: "recipe_photo_invalid_image",
+                        message:
+                            "Recipe photo must be between 1 byte and 8 MB.",
+                        manual_entry_available: true,
+                    },
+                    400,
+                );
+            }
+            try {
+                const bytes = new Uint8Array(await file.arrayBuffer());
+                const extracted = await readRecipePhoto(
+                    { mimeType: file.type, bytes },
+                    visionConfig,
+                );
+                const semanticResolver =
+                    capabilitySurfaceFromRequest(c) === "android"
+                        ? undefined
+                        : getWebsiteRecipeImportSemanticResolver();
+                const draft = await previewRecipePhoto(extracted, {
+                    semanticResolver,
+                });
+                return privateJson(c, {
+                    draft,
+                    transient_media: true,
+                    photo_retained: false,
+                });
+            } catch (error) {
+                if (error instanceof RecipePhotoNoRecipeError) {
+                    return privateJsonStatus(
+                        c,
+                        {
+                            error: "recipe_photo_no_recipe",
+                            message: error.message,
+                            retake_available: true,
+                            manual_entry_available: true,
+                            transient_media: true,
+                        },
+                        422,
+                    );
+                }
+                return privateJsonStatus(
+                    c,
+                    {
+                        error: "recipe_photo_failed",
+                        message:
+                            "Recipe import could not read that photo. Try again, or create the recipe manually.",
+                        manual_entry_available: true,
+                        transient_media: true,
+                    },
+                    502,
+                );
+            }
         },
     );
 

@@ -20,7 +20,9 @@ import {
 import { parseRecipeHtml, RECIPE_IMPORT_PARSER_VERSION } from "./parser.js";
 import type {
     FetchedRecipePage,
+    ParsedRecipe,
     ParsedRecipeIngredient,
+    PhotoExtractedRecipe,
     RecipeImportAssumption,
     RecipeImportIngredientAssignment,
     RecipeImportIngredientAssignmentRequest,
@@ -30,7 +32,10 @@ import type {
     RecipeImportSemanticResolver,
     RecipeImportWarning,
 } from "./types.js";
-import { recipeImportDraftOutputSchema } from "./types.js";
+import {
+    RECIPE_PHOTO_PARSER_VERSION,
+    recipeImportDraftOutputSchema,
+} from "./types.js";
 
 const MATCH_CANDIDATE_LIMIT = 3;
 const AUTO_MATCH_MIN_CONFIDENCE = 0.84;
@@ -380,7 +385,7 @@ function isLowImpactIngredient(ingredient: ParsedRecipeIngredient): boolean {
 
 function lowImpactIngredient(
     ingredient: ParsedRecipeIngredient,
-    sourceUrl: string,
+    sourceUrl: string | undefined,
     strategy: string,
     semanticLabel?: string,
 ): EnrichedIngredient {
@@ -402,7 +407,7 @@ function lowImpactIngredient(
             preparation: ingredient.preparation,
             optional: ingredient.optional,
             source_type: "user_supplied",
-            source_url: sourceUrl,
+            ...(sourceUrl ? { source_url: sourceUrl } : {}),
             confidence: ingredient.semanticConfidence,
             source_snapshot: {
                 resolution_layer: "recipe_url",
@@ -414,7 +419,7 @@ function lowImpactIngredient(
                 semantic_confidence: ingredient.semanticConfidence ?? null,
                 raw_ingredient: ingredient.rawText,
                 normalized_ingredient: ingredient.name,
-                imported_source_url: sourceUrl,
+                imported_source_url: sourceUrl ?? null,
                 assumption: assumption.message,
                 impact: "low",
                 nutrition_treatment: hasMeasuredQuantity
@@ -434,7 +439,7 @@ function lowImpactIngredient(
 
 function modelEstimatedIngredient(
     ingredient: ParsedRecipeIngredient,
-    sourceUrl: string,
+    sourceUrl: string | undefined,
     strategy: string,
     semanticLabel?: string,
     candidates: FoodCandidate[] = [],
@@ -463,7 +468,7 @@ function modelEstimatedIngredient(
             preparation: ingredient.preparation,
             optional: ingredient.optional,
             source_type: "model_estimate",
-            source_url: sourceUrl,
+            ...(sourceUrl ? { source_url: sourceUrl } : {}),
             confidence: ingredient.semanticConfidence ?? 0.35,
             source_snapshot: {
                 resolution_layer: "recipe_url",
@@ -475,7 +480,7 @@ function modelEstimatedIngredient(
                 semantic_confidence: ingredient.semanticConfidence ?? null,
                 raw_ingredient: ingredient.rawText,
                 normalized_ingredient: ingredient.name,
-                imported_source_url: sourceUrl,
+                imported_source_url: sourceUrl ?? null,
                 assumption: assumption.message,
                 nutrition_treatment: "provider_unavailable_model_estimate",
                 candidate_count: candidates.length,
@@ -501,7 +506,7 @@ function isLowImpactUnmeasurable(ingredient: ParsedRecipeIngredient): boolean {
 
 function enrichIngredient(
     ingredient: ParsedRecipeIngredient,
-    sourceUrl: string,
+    sourceUrl: string | undefined,
     candidates: FoodCandidate[],
     strategy: string,
     semanticLabel: string | undefined,
@@ -633,7 +638,7 @@ function enrichIngredient(
                 parser_strategy: strategy,
                 raw_ingredient: ingredient.rawText,
                 normalized_ingredient: ingredient.name,
-                imported_source_url: sourceUrl,
+                imported_source_url: sourceUrl ?? null,
                 ...(semanticLabel
                     ? {
                           semantic_resolution_layer: semanticLabel,
@@ -834,7 +839,7 @@ async function searchIngredientCandidates(
 
 async function enrichIngredients(
     ingredients: ParsedRecipeIngredient[],
-    sourceUrl: string,
+    sourceUrl: string | undefined,
     foodSearch: Pick<FoodSearchService, "search">,
     strategy: string,
     semanticResolver?: RecipeImportSemanticResolver,
@@ -1190,34 +1195,87 @@ export async function previewRecipeUrl(
             semanticMs = Math.max(0, Date.now() - semanticStartedAt);
         }
     }
-    const enrichedResult = await enrichIngredients(
+    return buildImportDraft({
+        parsed,
         ingredients,
         sourceUrl,
         foodSearch,
-        parsed.strategy,
-        options.semanticResolver,
-        !semanticWarning,
+        semanticResolver: options.semanticResolver,
+        allowSemanticAssignment: !semanticWarning,
+        leadingWarnings: [
+            ...parsed.warnings.filter(
+                (entry) =>
+                    !["quantity_range", "quantity_unparsed"].includes(
+                        entry.code,
+                    ),
+            ),
+            ...(semanticWarning ? [semanticWarning] : []),
+        ],
+        parserVersion: RECIPE_IMPORT_PARSER_VERSION,
+        draftSource: {
+            submitted_url: page.submittedUrl,
+            final_url: page.finalUrl,
+            canonical_url: canonicalUrl,
+            title: parsed.sourceTitle ?? null,
+            site_name: parsed.siteName ?? null,
+            author: parsed.author ?? null,
+        },
+        logFields: {
+            semantic_enabled: Boolean(options.semanticResolver),
+            semantic_fallback: Boolean(semanticWarning),
+            fetch_ms: fetchMs,
+            parse_ms: parseMs,
+            semantic_ms: semanticMs,
+        },
+        importStartedAt,
+    });
+}
+
+interface BuildImportDraftInput {
+    parsed: ParsedRecipe;
+    ingredients: ParsedRecipeIngredient[];
+    sourceUrl: string | undefined;
+    foodSearch: Pick<FoodSearchService, "search">;
+    semanticResolver?: RecipeImportSemanticResolver;
+    allowSemanticAssignment: boolean;
+    leadingWarnings: RecipeImportWarning[];
+    parserVersion: string;
+    draftSource: RecipeImportDraft["source"];
+    logFields: Record<string, string | number | boolean>;
+    importStartedAt: number;
+}
+
+/**
+ * The shared tail of every import preview: enrichment (provider
+ * matching + bounded semantic assignment), nutrition, review state,
+ * and the draft the review dialog renders. URL and photo imports
+ * differ only in how they produce the parsed recipe and its source
+ * provenance — everything from here on is one pipeline.
+ */
+async function buildImportDraft(
+    input: BuildImportDraftInput,
+): Promise<RecipeImportDraft> {
+    const enrichedResult = await enrichIngredients(
+        input.ingredients,
+        input.sourceUrl,
+        input.foodSearch,
+        input.parsed.strategy,
+        input.semanticResolver,
+        input.allowSemanticAssignment,
     );
-    const warnings = [
-        ...parsed.warnings.filter(
-            (entry) =>
-                !["quantity_range", "quantity_unparsed"].includes(entry.code),
-        ),
-        ...(semanticWarning ? [semanticWarning] : []),
-        ...enrichedResult.warnings,
-    ];
+    const warnings = [...input.leadingWarnings, ...enrichedResult.warnings];
     for (const entry of enrichedResult.results)
         if (entry.warning) warnings.push(entry.warning);
     const recipe = {
-        name: parsed.name,
-        servings: parsed.servings,
-        description: parsed.description,
-        instructions: parsed.instructions,
-        preparation_minutes: parsed.preparationMinutes,
-        cooking_minutes: parsed.cookingMinutes,
+        name: input.parsed.name,
+        servings: input.parsed.servings,
+        description: input.parsed.description,
+        instructions: input.parsed.instructions,
+        preparation_minutes: input.parsed.preparationMinutes,
+        cooking_minutes: input.parsed.cookingMinutes,
         source_type: "imported" as const,
-        source_title: parsed.sourceTitle,
-        source_url: sourceUrl,
+        source_title: input.parsed.sourceTitle,
+        source_url: input.sourceUrl,
         ingredients: enrichedResult.results.map((entry) => entry.ingredient),
     };
     const calculation = calculateNutrition(toRecipeInput(recipe));
@@ -1247,8 +1305,8 @@ export async function previewRecipeUrl(
         warnings.some(
             (entry) => entry.severity === "error" || entry.blocking !== false,
         ) ||
-        parsed.instructions.length === 0 ||
-        parsed.servings === 1;
+        input.parsed.instructions.length === 0 ||
+        input.parsed.servings === 1;
     const draft = recipeImportDraftOutputSchema.parse({
         schema_version: 2,
         status:
@@ -1259,17 +1317,10 @@ export async function previewRecipeUrl(
                 : "ready",
         requires_review: requiresReview,
         parser: {
-            strategy: parsed.strategy,
-            version: RECIPE_IMPORT_PARSER_VERSION,
+            strategy: input.parsed.strategy,
+            version: input.parserVersion,
         },
-        source: {
-            submitted_url: page.submittedUrl,
-            final_url: page.finalUrl,
-            canonical_url: canonicalUrl,
-            title: parsed.sourceTitle ?? null,
-            site_name: parsed.siteName ?? null,
-            author: parsed.author ?? null,
-        },
+        source: input.draftSource,
         recipe,
         nutrition: {
             status: calculation.nutritionStatus,
@@ -1282,8 +1333,8 @@ export async function previewRecipeUrl(
     });
     logRecipeImportSummary({
         status: draft.status,
-        parsed_ingredients: parsed.ingredients.length,
-        normalized_ingredients: ingredients.length,
+        parsed_ingredients: input.parsed.ingredients.length,
+        normalized_ingredients: input.ingredients.length,
         resolved_ingredients: draft.ingredient_review.filter(
             (entry) =>
                 entry.resolution === "matched" ||
@@ -1296,11 +1347,7 @@ export async function previewRecipeUrl(
         ).length,
         assumptions: draft.assumptions.length,
         warnings: draft.warnings.length,
-        semantic_enabled: Boolean(options.semanticResolver),
-        semantic_fallback: Boolean(semanticWarning),
-        fetch_ms: fetchMs,
-        parse_ms: parseMs,
-        semantic_ms: semanticMs,
+        ...input.logFields,
         search_ms: enrichedResult.stats.searchMs,
         rerank_ms: enrichedResult.stats.rerankMs,
         assignment_ms: enrichedResult.stats.assignmentMs,
@@ -1309,7 +1356,77 @@ export async function previewRecipeUrl(
         cache_hits: enrichedResult.stats.cacheHits,
         rerank_requests: enrichedResult.stats.rerankRequests,
         assignment_requests: enrichedResult.stats.assignmentRequests,
-        total_ms: Math.max(0, Date.now() - importStartedAt),
+        total_ms: Math.max(0, Date.now() - input.importStartedAt),
     });
     return draft;
+}
+
+/**
+ * Photo import preview (cross-work slice 3): the vision reader's
+ * extraction arrives already structured, so it enters the same
+ * pipeline the URL importer uses from enrichment on — provider
+ * matching, bounded semantic assignment for uncertain ingredients,
+ * nutrition, and the identical draft shape for the review dialog.
+ * The vision call replaces the URL flow's normalize stage (the reader
+ * returns structured components directly); the semantic resolver is
+ * still passed through for assignment/rerank inside enrichment.
+ * A photo has no source URL: provenance records the photo strategy
+ * and null URLs rather than an invented address.
+ */
+export async function previewRecipePhoto(
+    extracted: PhotoExtractedRecipe,
+    options: RecipeImportDependencies = {},
+): Promise<RecipeImportDraft> {
+    if (!extracted.name.trim() || extracted.ingredients.length === 0) {
+        throw new Error(
+            "Recipe import could not read a recipe in that photo: no legible recipe was found.",
+        );
+    }
+    const importStartedAt = Date.now();
+    const parsed: ParsedRecipe = {
+        strategy: "photo_vision",
+        name: extracted.name,
+        description: extracted.description,
+        // Servings the photo did not legibly state stay a flagged
+        // placeholder (the vision layer warned about it); the review
+        // dialog is where the user corrects it before saving.
+        servings: extracted.servings ?? 1,
+        instructions: extracted.instructions,
+        preparationMinutes: extracted.preparationMinutes,
+        cookingMinutes: extracted.cookingMinutes,
+        sourceTitle: extracted.sourceTitle,
+        ingredients: extracted.ingredients,
+        warnings: extracted.warnings,
+    };
+    const foodSearch = options.foodSearch ?? getFoodSearchService();
+    const ingredients = parsed.ingredients.map((ingredient) => ({
+        ...ingredient,
+        name: normalizeIngredientSearchText(ingredient.name),
+    }));
+    return buildImportDraft({
+        parsed,
+        ingredients,
+        sourceUrl: undefined,
+        foodSearch,
+        semanticResolver: options.semanticResolver,
+        allowSemanticAssignment: true,
+        leadingWarnings: [...extracted.warnings],
+        parserVersion: RECIPE_PHOTO_PARSER_VERSION,
+        draftSource: {
+            submitted_url: null,
+            final_url: null,
+            canonical_url: null,
+            title: extracted.sourceTitle ?? null,
+            site_name: null,
+            author: null,
+        },
+        logFields: {
+            semantic_enabled: Boolean(options.semanticResolver),
+            semantic_fallback: false,
+            fetch_ms: 0,
+            parse_ms: 0,
+            semantic_ms: 0,
+        },
+        importStartedAt,
+    });
 }
