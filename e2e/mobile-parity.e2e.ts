@@ -1433,23 +1433,6 @@ function fixtureJson(pathname: string, method: string): unknown | undefined {
             },
         };
     }
-    if (pathname === "/api/app/guidance/next-up") {
-        // Next up (guidance rework): the parity fixtures exercise the
-        // honest quiet state; the populated card is covered by the
-        // dedicated mobile-next-up spec.
-        return {
-            date: "2026-11-10",
-            day_part: "midday",
-            is_today: true,
-            state: "quiet",
-            objective_set: true,
-            goal_prompt: { show: false },
-            quiet_line:
-                "Nothing needs deciding right now — log the next meal when you eat it.",
-            primary: null,
-            secondary: [],
-        };
-    }
     if (pathname === "/api/app/settings") return settingsFixture();
     if (pathname === "/api/app/sign-in-methods" && method === "GET") {
         return signInMethodsFixture();
@@ -3506,25 +3489,32 @@ test("S6 slice 1: the single ad slot lives on Today, flag-gated and Premium-hidd
     ).toBe(true);
 
     // Flag ON for a free packaged account: exactly one slot, in-flow
-    // directly under Next up and above Meals; the native
-    // banner is requested visible with the flag forwarded.
+    // directly under the day summary (the macros panel) and above
+    // Meals; the native banner is requested visible with the flag
+    // forwarded. The standing Next Up section is gone (plan-brain
+    // brief Part 2): no panel, no heading, nothing fetched for it.
     adsFlagOn = true;
     await page.reload();
     await expect(page.getByRole("button", { name: "Add water" })).toBeVisible();
+    await expect(page.locator('[data-testid="next-up"]')).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Next up" })).toHaveCount(0);
     const slot = page.locator('[data-testid="today-ad-slot"]');
     await expect(slot).toHaveCount(1);
     await expect(slot).toBeVisible();
     const slotBox = await slot.boundingBox();
-    const guidanceBox = await page
-        .getByRole("heading", { name: "Next up" })
+    const summaryBox = await page
+        .locator(".today-view .panel")
+        .first()
         .boundingBox();
     const mealsBox = await page
         .getByRole("heading", { name: "Meals" })
         .boundingBox();
     expect(slotBox).not.toBeNull();
-    expect(guidanceBox).not.toBeNull();
+    expect(summaryBox).not.toBeNull();
     expect(mealsBox).not.toBeNull();
-    expect(slotBox!.y).toBeGreaterThanOrEqual(guidanceBox!.y);
+    expect(slotBox!.y).toBeGreaterThanOrEqual(
+        summaryBox!.y + summaryBox!.height - 1,
+    );
     expect(slotBox!.y + slotBox!.height).toBeLessThanOrEqual(mealsBox!.y);
     // Slim and stable: the reserve is the mock's 54px grammar.
     expect(slotBox!.height).toBeGreaterThanOrEqual(54);
@@ -4939,15 +4929,12 @@ test("chat v2 placement: contextual entries only — no global entry, seeded ope
         0,
     );
 
-    // Today: the entry sits inside the guidance panel, labelled for
-    // its surface, under the guidance it attaches to.
+    // Today carries NO chat entry anymore (plan-brain brief Part 2:
+    // the "Ask about today" row died with the Next Up section it sat
+    // in — Today has no brain; the chat is reached from the brains
+    // on Plan, Pantry, and Trends).
     await gotoRoute(page, "/app");
-    const todayEntry = page.getByTestId("chat-entry-today");
-    await expect(todayEntry).toBeVisible();
-    await expect(todayEntry).toContainText("Ask about today");
-    await expect(todayEntry).toContainText(
-        "Opens with today's log and goals attached",
-    );
+    await expect(page.getByTestId("chat-entry-today")).toHaveCount(0);
 
     // Meal Plan carries the brain (plan-brain brief): the header
     // icon whose accessible label is the entry's meaning — the old
@@ -4971,10 +4958,10 @@ test("chat v2 placement: contextual entries only — no global entry, seeded ope
         /Ask the assistant about your trends/,
     );
 
-    // Entering from Today opens the seeded conversation: context
-    // strip, the opener written from that context, its starters.
-    await gotoRoute(page, "/app");
-    await page.getByTestId("chat-entry-today").click();
+    // The today seed still assembles for a conversation opened at
+    // the surface URL directly: context strip, the opener written
+    // from that context, its starters.
+    await gotoRoute(page, "/app/chat?surface=today");
     await expect(page).toHaveURL(/\/app\/chat\?surface=today/);
     await expect(page.getByTestId("chat-seed")).toBeVisible();
     await expect(page.getByTestId("chat-seed")).toContainText(

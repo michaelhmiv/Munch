@@ -680,58 +680,14 @@ function pendingDraftCard(draft) {
     return `<article class="meal-card"><strong>${escapeHtml(draft.description || `${draft.sourceMode} meal`)}</strong><p>${escapeHtml(status)} · ${draft.itemCount} item${draft.itemCount === 1 ? "" : "s"}</p><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="open-meal-draft" data-id="${escapeHtml(draft.id)}">Review draft</button></div></article>`;
 }
 
-// Next up (guidance rework D1–D7): the proactive suggestion section
-// that replaced the restating "Today's guidance" panel. The server
-// composes ONE grounded suggestion (or one honest quiet line); this
-// renders it compactly — title, reason, expected nutrition, landing —
-// with its actions, and the "Ask about today" chat entry stays at
-// the section's foot in every state (D7). The objective enum never
-// renders; the one-time goal prompt (D6) offers the existing
-// preferences flow as three plain choices plus a permanent dismiss.
-function nextUpGoalPrompt() {
-    return `<div class="next-up-goal-prompt"><p>Suggestions can aim at a goal once you set one.</p><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="next-up-goal" data-objective="lose">Lose weight</button><button class="button button-secondary button-small" type="button" data-action="next-up-goal" data-objective="maintain">Maintain</button><button class="button button-secondary button-small" type="button" data-action="next-up-goal" data-objective="gain">Gain weight</button><button class="button button-quiet button-small" type="button" data-action="next-up-goal-dismiss" aria-label="Dismiss goal prompt">Dismiss</button></div></div>`;
-}
-
-function nextUpPanel(nextUp) {
-    const chatRow = chatEntryRow(
-        "today",
-        "Ask about today",
-        "Opens with today's log and goals attached",
-    );
-    if (!nextUp) {
-        return `<section class="panel panel-span-12 next-up-panel" data-testid="next-up"><div class="panel-title"><h3>Next up</h3></div>${chatRow}</section>`;
-    }
-    let body = "";
-    const primary = nextUp.primary;
-    if (nextUp.state === "suggestion" && primary) {
-        const slotLabel = primary.slot[0].toUpperCase() + primary.slot.slice(1);
-        const nutrition = `${number(primary.nutrition.calories)} kcal · P ${number(primary.nutrition.protein_g, 1)}g · C ${number(primary.nutrition.carbs_g, 1)}g · F ${number(primary.nutrition.fat_g, 1)}g`;
-        const servingsNote =
-            primary.kind === "recipe"
-                ? ` · ${number(primary.servings, 2)} serving${primary.servings === 1 ? "" : "s"}`
-                : "";
-        body = `<article class="next-up-card"><div class="next-up-head"><h4 class="next-up-title">${escapeHtml(primary.name)}</h4><p class="next-up-kicker">${escapeHtml(slotLabel)}${primary.kind === "recipe" ? " · from your recipes" : " · you logged it before"}</p></div><p class="next-up-reason">${escapeHtml(primary.reason)}</p><p class="next-up-nutrition">${escapeHtml(nutrition)}${escapeHtml(servingsNote)}</p>${primary.landing_text ? `<p class="next-up-landing">${escapeHtml(primary.landing_text)}</p>` : ""}${primary.missing_ingredients?.length ? `<p class="next-up-needs">Needs: ${escapeHtml(primary.missing_ingredients.join(", "))}</p>` : ""}<div class="next-up-actions"><button class="button button-primary next-up-log-action" type="button" data-action="next-up-log" data-candidate="${escapeHtml(primary.candidate_id)}" data-slot="${escapeHtml(primary.slot)}" data-servings="${escapeHtml(primary.servings)}">Log it</button>${primary.actions.plan ? `<button class="button button-secondary" type="button" data-action="next-up-plan" data-candidate="${escapeHtml(primary.candidate_id)}" data-slot="${escapeHtml(primary.slot)}" data-servings="${escapeHtml(primary.servings)}">Plan it</button>` : ""}${primary.actions.groceries ? `<button class="button button-secondary next-up-groceries-action" type="button" data-action="next-up-groceries" data-candidate="${escapeHtml(primary.candidate_id)}">Add missing to groceries</button>` : ""}</div></article>${(nextUp.secondary || []).length ? `<ul class="next-up-secondary">${nextUp.secondary.map((line) => `<li>${escapeHtml(line.text)}</li>`).join("")}</ul>` : ""}${nextUp.goal_prompt?.show ? nextUpGoalPrompt() : ""}`;
-    } else {
-        body = `${nextUp.quiet_line ? `<p class="next-up-quiet">${escapeHtml(nextUp.quiet_line)}</p>` : ""}${nextUp.goal_prompt?.show ? nextUpGoalPrompt() : ""}`;
-    }
-    return `<section class="panel panel-span-12 next-up-panel" data-testid="next-up"><div class="panel-title"><h3>Next up</h3></div>${body}${chatRow}</section>`;
-}
-
 async function renderToday() {
     setLoading("Loading today’s meals and progress…");
     const data = await api(
         `/api/app/today?date=${encodeURIComponent(state.date)}`,
     );
     // Forward view: a future date is a projection, not a day — the
-    // server attaches plannedProjection and the guidance compose (an
-    // AI surface for a lived day) is never fetched for it.
+    // server attaches plannedProjection for it.
     const isFutureDay = Boolean(data.plannedProjection);
-    const nextUp = isFutureDay
-        ? null
-        : await api(
-              `/api/app/guidance/next-up?date=${encodeURIComponent(state.date)}`,
-              { keepPrevious: true },
-          );
     state.waterEntries = data.water?.entries || [];
     state.weightEntries = data.weight || [];
     const goals = data.goals || {};
@@ -742,7 +698,6 @@ async function renderToday() {
     const latestWeightValue = latestWeight
         ? weightFromGrams(latestWeight.weight_g, weightUnit)
         : null;
-    const guidancePanel = isFutureDay ? "" : nextUpPanel(nextUp);
     const macrosSection = isFutureDay
         ? data.plannedMeals?.length
             ? plannedMacrosPanel(data.plannedProjection, goals)
@@ -751,14 +706,17 @@ async function renderToday() {
     const mealsPanel = isFutureDay
         ? `<div class="panel-title"><h3>Planned meals</h3><span>${data.plannedMeals.length} planned</span></div>${plannedDayMeals(data.plannedMeals)}`
         : `<div class="panel-title"><h3>Meals</h3><span>${data.meals.length} logged</span></div>${groupedMeals(data.meals)}`;
-    // S6 slice 1 (Editorial Serif fusion, tightened Today mock): order is
-    // heading → day totals → Next up → the single ad slot →
-    // Meals / Daily details. The ad slot markup is empty unless the
-    // ADS-FOUNDATION flag is on for a free packaged account. A future
-    // day swaps the totals for the Planned projection, drops Next up
-    // and the ad slot (both belong to a lived day), and lists planned
-    // meals where logged meals would sit.
-    content.innerHTML = `<div class="operate-view today-view"><div class="page-heading"><div class="today-heading-row"><h2>${escapeHtml(formatDate(state.date, { weekday: true }))}</h2>${isFutureDay ? `<span class="day-kind-chip">Planned</span>` : ""}<div class="today-heading-icons"><button class="button button-secondary button-small trends-icon-btn" type="button" data-action="open-calendar" aria-label="Open calendar" title="Calendar"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg></button><button class="button button-secondary button-small trends-icon-btn" type="button" data-action="open-trends" aria-label="Open Trends" title="Trends"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><rect x="4" y="12" width="3.4" height="7" rx="1"/><rect x="10.3" y="7" width="3.4" height="12" rx="1"/><rect x="16.6" y="9.5" width="3.4" height="9.5" rx="1"/></svg></button></div></div><div class="auth-actions"></div></div><section class="panel">${macrosSection}</section>${guidancePanel}${isFutureDay ? "" : todayAdSlotMarkup()}<div class="dashboard-grid"><section class="panel panel-span-8">${mealsPanel}</section><aside class="panel panel-span-4"><div class="panel-title"><h3>Daily details</h3></div><div class="summary-grid" style="grid-template-columns:1fr 1fr">${metricCard("Water", data.water.totalMl, " ml", goals.daily_water_ml, false, { key: "today-water", targetLink: true, body: waterMetricDetail(data.water.entries) })}${metricCard("Weight", latestWeightValue, ` ${weightUnit}`, null, false, { key: "today-weight", body: weightMetricDetail(data.weight, weightUnit) })}</div><div class="auth-actions"><button class="button button-secondary button-small" data-action="add-water">Add water</button><button class="button button-secondary button-small" data-action="add-weight">Add weight</button></div><div class="panel-title spacer-top"><h3>Hydration entries</h3><span>${state.waterEntries.length}</span></div>${waterEntryRows(state.waterEntries)}<div class="panel-title spacer-top"><h3>Weight entries</h3><span>${state.weightEntries.length}</span></div>${weightEntryRows(state.weightEntries, weightUnit)}${data.drafts?.length ? `<div class="panel-title spacer-top"><h3>Pending drafts</h3><span>${data.drafts.length}</span></div><div class="meal-groups">${data.drafts.map(pendingDraftCard).join("")}</div>` : ""}${!isFutureDay && data.plannedMeals?.length ? `<div class="panel-title spacer-top"><h3>Planned today</h3><span>${data.plannedMeals.length}</span></div>${data.plannedMeals.map((meal) => `<div class="food-row"><div><strong>${escapeHtml(meal.recipe_name)}</strong><small>${escapeHtml(meal.meal_slot || "Meal")} · ${number(meal.servings, 1)} servings</small></div><span>${meal.nutrition_per_serving?.calories ? `${number(meal.nutrition_per_serving.calories * meal.servings)} kcal` : ""}</span><button class="button button-quiet button-small" type="button" data-action="view-recipe" data-id="${escapeHtml(meal.recipe_id)}">View recipe</button></div>`).join("")}` : ""}</aside></div></div>`;
+    // S6 slice 1 (Editorial Serif fusion, tightened Today mock), as
+    // amended by the Next Up removal (plan-brain brief Part 2): order
+    // is heading → day totals → the single ad slot → Meals / Daily
+    // details. The standing Next Up suggestion section is removed —
+    // no standing AI card on Today; the ad slot keeps its position
+    // directly under the day summary panel. The ad slot markup is
+    // empty unless the ADS-FOUNDATION flag is on for a free packaged
+    // account. A future day swaps the totals for the Planned
+    // projection, drops the ad slot (it belongs to a lived day), and
+    // lists planned meals where logged meals would sit.
+    content.innerHTML = `<div class="operate-view today-view"><div class="page-heading"><div class="today-heading-row"><h2>${escapeHtml(formatDate(state.date, { weekday: true }))}</h2>${isFutureDay ? `<span class="day-kind-chip">Planned</span>` : ""}<div class="today-heading-icons"><button class="button button-secondary button-small trends-icon-btn" type="button" data-action="open-calendar" aria-label="Open calendar" title="Calendar"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg></button><button class="button button-secondary button-small trends-icon-btn" type="button" data-action="open-trends" aria-label="Open Trends" title="Trends"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><rect x="4" y="12" width="3.4" height="7" rx="1"/><rect x="10.3" y="7" width="3.4" height="12" rx="1"/><rect x="16.6" y="9.5" width="3.4" height="9.5" rx="1"/></svg></button></div></div><div class="auth-actions"></div></div><section class="panel">${macrosSection}</section>${isFutureDay ? "" : todayAdSlotMarkup()}<div class="dashboard-grid"><section class="panel panel-span-8">${mealsPanel}</section><aside class="panel panel-span-4"><div class="panel-title"><h3>Daily details</h3></div><div class="summary-grid" style="grid-template-columns:1fr 1fr">${metricCard("Water", data.water.totalMl, " ml", goals.daily_water_ml, false, { key: "today-water", targetLink: true, body: waterMetricDetail(data.water.entries) })}${metricCard("Weight", latestWeightValue, ` ${weightUnit}`, null, false, { key: "today-weight", body: weightMetricDetail(data.weight, weightUnit) })}</div><div class="auth-actions"><button class="button button-secondary button-small" data-action="add-water">Add water</button><button class="button button-secondary button-small" data-action="add-weight">Add weight</button></div><div class="panel-title spacer-top"><h3>Hydration entries</h3><span>${state.waterEntries.length}</span></div>${waterEntryRows(state.waterEntries)}<div class="panel-title spacer-top"><h3>Weight entries</h3><span>${state.weightEntries.length}</span></div>${weightEntryRows(state.weightEntries, weightUnit)}${data.drafts?.length ? `<div class="panel-title spacer-top"><h3>Pending drafts</h3><span>${data.drafts.length}</span></div><div class="meal-groups">${data.drafts.map(pendingDraftCard).join("")}</div>` : ""}${!isFutureDay && data.plannedMeals?.length ? `<div class="panel-title spacer-top"><h3>Planned today</h3><span>${data.plannedMeals.length}</span></div>${data.plannedMeals.map((meal) => `<div class="food-row"><div><strong>${escapeHtml(meal.recipe_name)}</strong><small>${escapeHtml(meal.meal_slot || "Meal")} · ${number(meal.servings, 1)} servings</small></div><span>${meal.nutrition_per_serving?.calories ? `${number(meal.nutrition_per_serving.calories * meal.servings)} kcal` : ""}</span><button class="button button-quiet button-small" type="button" data-action="view-recipe" data-id="${escapeHtml(meal.recipe_id)}">View recipe</button></div>`).join("")}` : ""}</aside></div></div>`;
 }
 
 // =====================================================================
@@ -5859,99 +5817,6 @@ async function handleAction(button) {
     }
     if (action === "guided-planner") return openGuidedPlanner();
     if (action === "guidance-preferences") return openGuidancePreferences();
-    if (action === "next-up-plan") {
-        // D3: schedule the suggested recipe for the suggested slot.
-        button.disabled = true;
-        const result = await api("/api/app/guidance/next-up/plan", {
-            method: "POST",
-            body: JSON.stringify({
-                date: state.date,
-                candidate_id: button.dataset.candidate,
-                slot: button.dataset.slot,
-                servings: Number(button.dataset.servings || 1),
-            }),
-            keepPrevious: true,
-        });
-        toast(`Planned for ${result.slot}.`);
-        await renderRoute();
-        return;
-    }
-    if (action === "next-up-log") {
-        // D3: pre-filled draft through confirm-before-save — this
-        // only OPENS the review; nothing logs until Confirm there.
-        button.disabled = true;
-        const result = await api("/api/app/guidance/next-up/log", {
-            method: "POST",
-            body: JSON.stringify({
-                date: state.date,
-                candidate_id: button.dataset.candidate,
-                slot: button.dataset.slot,
-                servings: Number(button.dataset.servings || 1),
-            }),
-            keepPrevious: true,
-        });
-        await openMealDraft(result.draft_id);
-        return;
-    }
-    if (action === "next-up-groceries") {
-        button.disabled = true;
-        const result = await api("/api/app/guidance/next-up/groceries", {
-            method: "POST",
-            body: JSON.stringify({
-                date: state.date,
-                candidate_id: button.dataset.candidate,
-            }),
-            keepPrevious: true,
-        });
-        toast(
-            result.added || result.merged
-                ? `Groceries updated — ${result.added} added, ${result.merged} merged.`
-                : "Everything for that meal is already on hand or listed.",
-        );
-        await renderRoute();
-        return;
-    }
-    if (action === "next-up-goal") {
-        // D6: set the objective through the existing preferences
-        // flow (the same confirmed, versioned write the Preferences
-        // dialog makes) — targets stay editable in Settings.
-        button.disabled = true;
-        const current = await api("/api/app/guidance/preferences", {
-            keepPrevious: true,
-        });
-        // The read model embeds `version` in the preferences object,
-        // but the write schema is strict — version travels as
-        // expected_version only, never inside the preferences body.
-        const { version: _readVersion, ...currentPreferences } =
-            current.preferences;
-        await api("/api/app/guidance/preferences", {
-            method: "PUT",
-            body: JSON.stringify({
-                preferences: {
-                    ...currentPreferences,
-                    objective: button.dataset.objective,
-                },
-                expected_version: Number(current.preferences.version),
-                confirm: true,
-            }),
-            keepPrevious: true,
-        });
-        toast("Goal set. You can fine-tune targets in Settings.");
-        await renderRoute();
-        return;
-    }
-    if (action === "next-up-goal-dismiss") {
-        // D6: one-time — the dismissal is stored on the account, so
-        // the prompt never renders again on any surface.
-        button.disabled = true;
-        await api("/api/app/guidance/next-up/goal-prompt/dismiss", {
-            method: "POST",
-            body: JSON.stringify({}),
-            keepPrevious: true,
-        });
-        await renderRoute();
-        return;
-    }
     if (action === "guidance-preferences-confirm") {
         const form = document.querySelector("#guidance-preferences-form");
         if (!form) return;

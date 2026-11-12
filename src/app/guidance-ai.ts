@@ -231,9 +231,10 @@ export async function generateGuidanceProposals(
         // endpoints that do not collect or train on request data —
         // this request carries user preferences and history context.
         provider: { data_collection: "deny" },
-        // Same reasoning-mandatory alignment as next-up-ai: Ember
-        // without this param can spend its token budget reasoning
-        // and return empty content.
+        // Reasoning-mandatory alignment (the #251 lesson, first
+        // learned on the retired next-up composer): Ember without
+        // this param can spend its token budget reasoning and
+        // return empty content.
         ...openRouterReasoningParam(config.model),
         messages: [
             {

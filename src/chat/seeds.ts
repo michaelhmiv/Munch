@@ -2,12 +2,10 @@ import {
     getMealHistoryWorkspace,
     getTodayWorkspace,
 } from "../app/repository.js";
-import { readNextUpCacheForDate } from "../app/next-up-repository.js";
 import {
     allergenMatchesForIngredients,
     objectiveLabel,
 } from "../guidance/domain.js";
-import type { NextUpComposition } from "../guidance/next-up.js";
 import { getGuidancePreferences } from "../guidance-repository.js";
 import {
     CHAT_SURFACE_FEATURE_MODULES,
@@ -63,10 +61,6 @@ export interface ChatSeedDependencies {
     preferences?: typeof getGuidancePreferences;
     recipes?: typeof listSavedRecipesWithIngredients;
     features?: (userId: string) => Promise<FeatureModules>;
-    nextUp?: (
-        userId: string,
-        date: string,
-    ) => Promise<NextUpComposition | null>;
 }
 
 const MAX_SEED_MEALS = 12;
@@ -119,13 +113,9 @@ async function todaySeed(
     date: string,
     deps: ChatSeedDependencies,
 ): Promise<ChatEntrySeed> {
-    const [today, goals, nextUp] = await Promise.all([
+    const [today, goals] = await Promise.all([
         soft(() => (deps.today ?? getTodayWorkspace)(userId, date)),
         soft(() => (deps.goals ?? getNutritionGoals)(userId)),
-        // Next up (guidance rework D3): a conversation opened from
-        // Today's "Ask the agent" carries the current suggestion's
-        // context. Cache-only read — opening chat never composes.
-        soft(() => (deps.nextUp ?? readNextUpCacheForDate)(userId, date)),
     ]);
     const meals = (today?.meals ?? []).slice(0, MAX_SEED_MEALS).map((meal) => ({
         description: meal.description,
@@ -156,13 +146,6 @@ async function todaySeed(
             meals,
             totals,
             goal_calories: goalCalories,
-            next_up: nextUp
-                ? {
-                      candidate_id: nextUp.candidate_id,
-                      servings: nextUp.servings,
-                      reason: nextUp.reason,
-                  }
-                : null,
         },
     };
 }
