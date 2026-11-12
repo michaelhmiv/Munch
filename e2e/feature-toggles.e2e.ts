@@ -251,9 +251,23 @@ test("just logging strips the app to its spine; pantry data survives the round t
         await expect(card.locator('[data-action="plan-recipe"]')).toHaveCount(
             0,
         );
+        // Consolidated create (Michael, Nov 11): the header exposes
+        // exactly one create entry — there is no Compose button —
+        // and with Plan off the create form carries no plan opt-in.
+        await expect(page.locator('[data-action="create-recipe"]')).toHaveCount(
+            1,
+        );
+        await expect(page.locator('[data-action="create-recipe"]')).toHaveText(
+            "Create recipe",
+        );
         await expect(
             page.locator('[data-action="compose-recipe"]'),
         ).toHaveCount(0);
+        await page.locator('[data-action="create-recipe"]').click();
+        await expect(
+            page.locator("#app-dialog [data-recipe-plan-toggle]"),
+        ).toHaveCount(0);
+        await page.locator(".dialog-close").click();
         await card.locator('[data-action="view-recipe"]').click();
         await expect(
             page.locator('#app-dialog [data-action="plan-recipe"]'),
@@ -276,6 +290,140 @@ test("just logging strips the app to its spine; pantry data survives the round t
         await page.goto("/app/pantry");
         await expect(page.locator("#inventory")).toContainText(
             "Toggle Test Oats",
+        );
+
+        // Consolidated create (Michael, Nov 11): with every module
+        // back on, the recipe header still exposes exactly one
+        // create entry, and the "Also add to plan" opt-in inside
+        // the form is what routes a submit down the compose path.
+        await setFeatures(page, ALL_ON);
+        await page.goto("/app/recipes");
+        await expect(page.locator('[data-action="create-recipe"]')).toHaveCount(
+            1,
+        );
+        await expect(
+            page.locator('[data-action="compose-recipe"]'),
+        ).toHaveCount(0);
+        await page.locator('[data-action="create-recipe"]').click();
+        const createDialog = page.locator("#app-dialog");
+        // Both Playwright projects drive the SAME reviewer account
+        // against the same database, and each creates these recipes:
+        // fixed names collide across projects (the second project
+        // finds the first project's panel in its count assertion).
+        // Run-unique names keep each project's count honest.
+        const stewName = `Consolidated Plan Stew ${Date.now()}`;
+        const plainSoupName = `Consolidated Plain Soup ${Date.now()}`;
+        const planToggle = createDialog.locator("[data-recipe-plan-toggle]");
+        await expect(planToggle).toHaveCount(1);
+        await expect(planToggle).not.toBeChecked();
+        await expect(
+            createDialog.locator("[data-recipe-plan-fields]"),
+        ).toBeHidden();
+        await expect(createDialog.locator("button[type='submit']")).toHaveText(
+            "Create recipe",
+        );
+        await planToggle.check();
+        await expect(
+            createDialog.locator("[data-recipe-plan-fields]"),
+        ).toBeVisible();
+        await expect(createDialog.locator("button[type='submit']")).toHaveText(
+            "Save, plan, and add groceries",
+        );
+        await createDialog.locator('input[name="name"]').fill(stewName);
+        await createDialog
+            .locator('textarea[name="instructions"]')
+            .fill("Simmer everything for 10 minutes.");
+        await createDialog
+            .locator('[data-action="add-recipe-ingredient"]')
+            .click();
+        const plannedIngredient = createDialog.locator(
+            "[data-recipe-ingredient-index='0']",
+        );
+        await plannedIngredient
+            .locator('[data-recipe-field="name"]')
+            .fill("Water");
+        await plannedIngredient
+            .locator('[data-recipe-field="quantity"]')
+            .fill("2");
+        await plannedIngredient
+            .locator('[data-recipe-field="unit"]')
+            .fill("cups");
+        await plannedIngredient
+            .locator('[data-recipe-field="calories"]')
+            .fill("0");
+        await createDialog.locator("button[type='submit']").click();
+        await expect(
+            page.locator(".toast", { hasText: "Recipe saved and planned" }),
+        ).toBeVisible();
+        await expect(
+            page.locator(".recipe-panel", {
+                hasText: stewName,
+            }),
+        ).toHaveCount(1);
+
+        // The opt-in submit really planned the recipe (today, the
+        // form's default planned date): the planning workspace
+        // separates plannedMeals from the recipe library, so this
+        // cannot pass on the library entry alone.
+        const dayMs = 24 * 60 * 60 * 1000;
+        const isoDay = (time: number) =>
+            new Date(time).toISOString().slice(0, 10);
+        const planningResponse = await page.request.get(
+            `/api/app/planning?start=${isoDay(Date.now() - 7 * dayMs)}&end=${isoDay(Date.now() + 7 * dayMs)}`,
+            { headers: { origin: new URL(page.url()).origin } },
+        );
+        expect(planningResponse.status(), "GET planning").toBe(200);
+        const planning = await planningResponse.json();
+        expect(JSON.stringify(planning.plannedMeals)).toContain(stewName);
+
+        // The same form with the box left unchecked is exactly the
+        // plain create: saved to the library, never planned.
+        await page.locator('[data-action="create-recipe"]').click();
+        await expect(
+            createDialog.locator("[data-recipe-plan-toggle]"),
+        ).not.toBeChecked();
+        await createDialog.locator('input[name="name"]').fill(plainSoupName);
+        await createDialog
+            .locator('textarea[name="instructions"]')
+            .fill("Boil, season, serve.");
+        await createDialog
+            .locator('[data-action="add-recipe-ingredient"]')
+            .click();
+        const plainIngredient = createDialog.locator(
+            "[data-recipe-ingredient-index='0']",
+        );
+        await plainIngredient
+            .locator('[data-recipe-field="name"]')
+            .fill("Water");
+        await plainIngredient
+            .locator('[data-recipe-field="quantity"]')
+            .fill("1");
+        await plainIngredient
+            .locator('[data-recipe-field="unit"]')
+            .fill("cups");
+        await plainIngredient
+            .locator('[data-recipe-field="calories"]')
+            .fill("0");
+        await createDialog.locator("button[type='submit']").click();
+        await expect(
+            page.locator(".toast", { hasText: "Recipe created." }),
+        ).toBeVisible();
+        await expect(
+            page.locator(".recipe-panel", {
+                hasText: plainSoupName,
+            }),
+        ).toHaveCount(1);
+        const planningAfterPlain = await (
+            await page.request.get(
+                `/api/app/planning?start=${isoDay(Date.now() - 7 * dayMs)}&end=${isoDay(Date.now() + 7 * dayMs)}`,
+                { headers: { origin: new URL(page.url()).origin } },
+            )
+        ).json();
+        expect(JSON.stringify(planningAfterPlain.recipes)).toContain(
+            plainSoupName,
+        );
+        expect(JSON.stringify(planningAfterPlain.plannedMeals)).not.toContain(
+            plainSoupName,
         );
     } finally {
         // Leave the shared suite account in the shipped default.

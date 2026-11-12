@@ -1296,17 +1296,20 @@ export const CAPABILITY_MANIFEST = [
         mcp: complete(["save_recipe_and_plan"]),
         web: complete([
             "POST /api/app/recipes/compose",
-            "[data-action=compose-recipe]",
+            "[data-action=create-recipe]",
+            "[data-recipe-plan-toggle]",
             "/app/recipes",
         ]),
         app: complete([
             "POST /api/app/recipes/compose",
-            "[data-action=compose-recipe]",
+            "[data-action=create-recipe]",
+            "[data-recipe-plan-toggle]",
             "/app/recipes",
         ]),
         ios: complete([
             "POST /api/app/recipes/compose",
-            "[data-action=compose-recipe]",
+            "[data-action=create-recipe]",
+            "[data-recipe-plan-toggle]",
             "/app/recipes",
         ]),
         iosBasis:

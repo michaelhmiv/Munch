@@ -1950,17 +1950,13 @@ async function renderRecipes() {
         ? '<button class="button button-primary button-small" data-action="import-recipe-url">Import recipe from website</button>'
         : "";
     const createButton = canCreate
-        ? '<button class="button button-secondary button-small" data-action="create-recipe">Create manually</button>'
+        ? '<button class="button button-secondary button-small" data-action="create-recipe">Create recipe</button>'
         : "";
-    // Feature toggles (T7): compose is a plan flow end to end (its
-    // endpoint saves, schedules, and stocks groceries atomically), so
-    // with Meal Plan off the entry goes away — recipes are still
-    // created and imported above. The per-card Add to plan button
-    // hides on the same flag.
-    const composeButton =
-        canCreate && featureFlags().plan
-            ? '<button class="button button-secondary button-small" data-action="compose-recipe">Compose + plan</button>'
-            : "";
+    // Consolidated create (Michael, Nov 11): ONE create entry —
+    // planning is an opt-in inside the create form ("Also add to
+    // plan"), not a second header button. Feature toggles (T7): the
+    // form's plan opt-in hides with Meal Plan off, and the per-card
+    // Add to plan button hides on the same flag.
     const planRecipeButton = (recipeId) =>
         featureFlags().plan
             ? `<button class="button button-secondary button-small" type="button" data-action="plan-recipe" data-id="${escapeHtml(recipeId)}">Add to plan</button>`
@@ -1979,7 +1975,7 @@ async function renderRecipes() {
     // handlers the detail dialog has always offered; the list data
     // already carries revision_id). No ad slot exists on this surface:
     // the app's only slot is on Today (final ad law).
-    content.innerHTML = `<div class="operate-view recipes-view"><div class="page-heading"><div><h2>Recipe library</h2><p>${data.recipes.length} structured recipe${data.recipes.length === 1 ? "" : "s"}.</p></div></div><div class="auth-actions recipe-actions">${importButton}${createButton}${composeButton}</div><div class="recipe-filter-row"><label class="field" for="recipe-filter"><span>Filter recipes</span><input class="input" id="recipe-filter" type="search" placeholder="Search by name" aria-label="Filter recipes" /></label></div><div class="recipe-list" id="recipe-grid">${data.recipes.length ? data.recipes.map((recipe) => `<section class="panel recipe-panel" data-recipe-name="${escapeHtml(recipe.name.toLowerCase())}"><span class="source-chip ${recipe.ownership === "household" ? "source-saved" : "source-usda"}">${escapeHtml(recipe.ownership)}</span><h3 class="recipe-title">${escapeHtml(recipe.name)}</h3><p class="recipe-meta">${number(recipe.servings, 1)} servings · ${escapeHtml(recipe.nutrition_status)} nutrition · per serving: <strong>${number(recipe.nutrition_per_serving?.calories)} kcal · P ${number(recipe.nutrition_per_serving?.protein_g, 1)}g · C ${number(recipe.nutrition_per_serving?.carbs_g, 1)}g · F ${number(recipe.nutrition_per_serving?.fat_g, 1)}g</strong> · Scheduled ${number(recipe.times_scheduled)} times · logged ${number(recipe.times_logged)} times</p><div class="auth-actions recipe-panel-actions"><button class="button button-primary button-small" type="button" data-action="view-recipe" data-id="${escapeHtml(recipe.recipe_id)}">View recipe</button><button class="button button-secondary button-small" type="button" data-action="log-recipe" data-id="${escapeHtml(recipe.recipe_id)}" data-revision="${escapeHtml(recipe.revision_id || "")}">Log recipe</button>${planRecipeButton(recipe.recipe_id)}${groceryRecipeButton(recipe)}</div></section>`).join("") : `<div class="empty-state"><div><h3>No recipes yet</h3><p>Import a recipe from a public website and review it before saving, or create one manually.</p>${canCreate ? `<div class="auth-actions spacer-top">${importButton}${createButton}</div>` : ""}</div></div>`}</div></div>`;
+    content.innerHTML = `<div class="operate-view recipes-view"><div class="page-heading"><div><h2>Recipe library</h2><p>${data.recipes.length} structured recipe${data.recipes.length === 1 ? "" : "s"}.</p></div></div><div class="auth-actions recipe-actions">${importButton}${createButton}</div><div class="recipe-filter-row"><label class="field" for="recipe-filter"><span>Filter recipes</span><input class="input" id="recipe-filter" type="search" placeholder="Search by name" aria-label="Filter recipes" /></label></div><div class="recipe-list" id="recipe-grid">${data.recipes.length ? data.recipes.map((recipe) => `<section class="panel recipe-panel" data-recipe-name="${escapeHtml(recipe.name.toLowerCase())}"><span class="source-chip ${recipe.ownership === "household" ? "source-saved" : "source-usda"}">${escapeHtml(recipe.ownership)}</span><h3 class="recipe-title">${escapeHtml(recipe.name)}</h3><p class="recipe-meta">${number(recipe.servings, 1)} servings · ${escapeHtml(recipe.nutrition_status)} nutrition · per serving: <strong>${number(recipe.nutrition_per_serving?.calories)} kcal · P ${number(recipe.nutrition_per_serving?.protein_g, 1)}g · C ${number(recipe.nutrition_per_serving?.carbs_g, 1)}g · F ${number(recipe.nutrition_per_serving?.fat_g, 1)}g</strong> · Scheduled ${number(recipe.times_scheduled)} times · logged ${number(recipe.times_logged)} times</p><div class="auth-actions recipe-panel-actions"><button class="button button-primary button-small" type="button" data-action="view-recipe" data-id="${escapeHtml(recipe.recipe_id)}">View recipe</button><button class="button button-secondary button-small" type="button" data-action="log-recipe" data-id="${escapeHtml(recipe.recipe_id)}" data-revision="${escapeHtml(recipe.revision_id || "")}">Log recipe</button>${planRecipeButton(recipe.recipe_id)}${groceryRecipeButton(recipe)}</div></section>`).join("") : `<div class="empty-state"><div><h3>No recipes yet</h3><p>Import a recipe from a public website and review it before saving, or create one manually.</p>${canCreate ? `<div class="auth-actions spacer-top">${importButton}${createButton}</div>` : ""}</div></div>`}</div></div>`;
 }
 
 function recipeIngredientFromFood(food, portionId) {
@@ -2052,10 +2048,15 @@ function recipeIngredientFromRecent(recent) {
     };
 }
 
-function recipeComposeSectionMarkup() {
-    // Feature toggles (T7): the compose flow's grocery step hides
-    // when Groceries is off — the plan fields stay, and the submit
-    // sends an empty grocery list.
+function recipePlanSectionMarkup(planEnabled) {
+    // Consolidated create (Michael, Nov 11): planning rides the one
+    // create form behind an "Also add to plan" opt-in instead of a
+    // separate compose form. Until the box is checked the fields
+    // render hidden and disabled, so a plain create never trips
+    // their required validation and never sends plan data.
+    // Feature toggles (T7): the grocery step hides when Groceries
+    // is off — the plan fields stay, and the submit sends an empty
+    // grocery list.
     const groceriesOn = featureFlags().groceries;
     const groceryBlock = groceriesOn
         ? `<div class="panel-title spacer-top"><div><h3>Explicit grocery items</h3><span>Munch does not infer pantry inventory.</span></div><button class="button button-secondary button-small" type="button" data-action="add-recipe-grocery">Add grocery item</button></div><div id="recipe-compose-groceries"></div>`
@@ -2063,17 +2064,44 @@ function recipeComposeSectionMarkup() {
     const summary = groceriesOn
         ? "Save the recipe, schedule it, and add only the groceries you explicitly still need."
         : "Save the recipe and schedule it.";
-    return `<section class="recipe-editor-section"><div class="panel-title"><div><h3>Plan this recipe</h3><span>${summary}</span></div></div><div class="meal-composer-grid"><label class="field"><span>Planned date</span><input name="planned_date" type="date" value="${escapeHtml(state.date)}" required /></label><label class="field"><span>Meal slot</span><select name="meal_slot"><option value="breakfast">Breakfast</option><option value="lunch">Lunch</option><option value="dinner" selected>Dinner</option><option value="snack">Snack</option></select></label><label class="field"><span>Servings planned</span><input name="planned_servings" type="number" min="0.01" step="0.01" value="1" required /></label></div><label class="field"><span>Planning note</span><input name="note" maxlength="500" placeholder="Optional note for this planned meal" /></label>${groceryBlock}</section>`;
+    const disabled = planEnabled ? "" : " disabled";
+    return `<section class="recipe-editor-section"><label class="checkbox-row"><input type="checkbox" name="add_to_plan" data-recipe-plan-toggle${planEnabled ? " checked" : ""} /><span>Also add to plan</span></label><div data-recipe-plan-fields${planEnabled ? "" : " hidden"}><div class="panel-title"><div><h3>Plan this recipe</h3><span>${summary}</span></div></div><div class="meal-composer-grid"><label class="field"><span>Planned date</span><input name="planned_date" type="date" value="${escapeHtml(state.date)}" required${disabled} /></label><label class="field"><span>Meal slot</span><select name="meal_slot"${disabled}><option value="breakfast">Breakfast</option><option value="lunch">Lunch</option><option value="dinner" selected>Dinner</option><option value="snack">Snack</option></select></label><label class="field"><span>Servings planned</span><input name="planned_servings" type="number" min="0.01" step="0.01" value="1" required${disabled} /></label></div><label class="field"><span>Planning note</span><input name="note" maxlength="500" placeholder="Optional note for this planned meal"${disabled} /></label>${groceryBlock}</div></section>`;
 }
 
-function recipeFormMarkup(mode, recipe = null) {
+function recipePlanSubmitLabel(form, planOn) {
+    if (planOn)
+        return featureFlags().groceries
+            ? "Save, plan, and add groceries"
+            : "Save and plan";
+    return form.querySelector('input[name="source_type"]')?.value === "imported"
+        ? "Save imported recipe"
+        : "Create recipe";
+}
+
+function syncRecipePlanSection(form) {
+    const toggle = form?.querySelector("[data-recipe-plan-toggle]");
+    const fields = form?.querySelector("[data-recipe-plan-fields]");
+    if (!toggle || !fields) return;
+    const planOn = toggle.checked;
+    fields.hidden = !planOn;
+    fields
+        .querySelectorAll("input, select, textarea, button")
+        .forEach((control) => {
+            control.disabled = !planOn;
+        });
+    const submit = form.querySelector("button[type='submit']");
+    if (submit) submit.textContent = recipePlanSubmitLabel(form, planOn);
+}
+
+function recipeFormMarkup(mode, recipe = null, options = {}) {
     const editing = mode === "edit";
-    const composing = mode === "compose";
-    const formId = editing
-        ? "recipe-edit-form"
-        : composing
-          ? "recipe-compose-form"
-          : "recipe-create-form";
+    const formId = editing ? "recipe-edit-form" : "recipe-create-form";
+    // Consolidated create (Michael, Nov 11): there is no compose
+    // mode anymore. The create form carries the plan section as an
+    // opt-in, shown only while the Meal Plan module is on; the
+    // compose entry point pre-checks the box via options.planEnabled.
+    const planSectionOn = !editing && featureFlags().plan;
+    const planEnabled = planSectionOn && Boolean(options.planEnabled);
     const scopeOptions = editing
         ? '<input type="hidden" name="scope" value="personal" />'
         : `<label class="field"><span>Save to</span><select name="scope">${state.bootstrap?.capabilities?.recipeWrite !== false ? '<option value="personal">Personal recipes</option>' : ""}${state.bootstrap?.capabilities?.householdRecipeWrite ? '<option value="household">Household recipes</option>' : ""}</select></label>`;
@@ -2092,14 +2120,14 @@ function recipeFormMarkup(mode, recipe = null) {
           : "";
     const submitLabel = editing
         ? "Save new revision"
-        : composing
+        : planEnabled
           ? featureFlags().groceries
               ? "Save, plan, and add groceries"
               : "Save and plan"
           : imported
             ? "Save imported recipe"
             : "Create recipe";
-    return `<form id="${formId}" class="auth-form"${editing ? ` data-id="${escapeHtml(recipe.id)}" data-version="${escapeHtml(recipe.version)}"` : ""}><div class="meal-composer-grid"><label class="field"><span>Recipe name</span><input name="name" value="${escapeHtml(recipe?.name || "")}" maxlength="200" required /></label><label class="field"><span>Servings</span><input name="servings" type="number" min="0.01" step="0.01" value="${escapeHtml(recipe?.servings ?? 2)}" required /></label></div>${scopeOptions}<label class="field"><span>Description</span><textarea name="description" rows="2" maxlength="2000" placeholder="What is this recipe for?">${escapeHtml(recipe?.description || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Prep time (minutes)</span><input name="preparation_minutes" type="number" min="0" step="1" value="${escapeHtml(recipe?.preparation_minutes ?? "")}" /></label><label class="field"><span>Cook time (minutes)</span><input name="cooking_minutes" type="number" min="0" step="1" value="${escapeHtml(recipe?.cooking_minutes ?? "")}" /></label></div><section class="recipe-editor-section"><div class="panel-title"><div><h3>Ingredients</h3><span>Search verified foods or add your own.</span></div><button class="button button-secondary button-small" type="button" data-action="add-recipe-ingredient">Add ingredient</button></div><div class="meal-composer-search"><div class="meal-composer-search-row"><input class="input" id="recipe-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><span class="tiny">Food search facts are stored with this revision.</span></div><div id="recipe-food-results" class="meal-food-results"></div></div><div id="recipe-ingredients" class="meal-selected-items"></div></section><label class="field"><span>Instructions</span><textarea name="instructions" rows="6" maxlength="20000" placeholder="One step per line" required>${escapeHtml(recipe?.instructions?.join("\n") || "")}</textarea><small class="tiny">Put each instruction on its own line.</small></label><div class="meal-composer-grid"><label class="field"><span>Source title</span><input name="source_title" maxlength="500" value="${escapeHtml(sourceTitle)}" placeholder="Optional cookbook, site, or note" /></label>${sourceTypeField}</div>${sourceUrlField}${composing ? recipeComposeSectionMarkup() : ""}<button class="button button-primary" type="submit">${submitLabel}</button></form>`;
+    return `<form id="${formId}" class="auth-form"${editing ? ` data-id="${escapeHtml(recipe.id)}" data-version="${escapeHtml(recipe.version)}"` : ""}><div class="meal-composer-grid"><label class="field"><span>Recipe name</span><input name="name" value="${escapeHtml(recipe?.name || "")}" maxlength="200" required /></label><label class="field"><span>Servings</span><input name="servings" type="number" min="0.01" step="0.01" value="${escapeHtml(recipe?.servings ?? 2)}" required /></label></div>${scopeOptions}<label class="field"><span>Description</span><textarea name="description" rows="2" maxlength="2000" placeholder="What is this recipe for?">${escapeHtml(recipe?.description || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Prep time (minutes)</span><input name="preparation_minutes" type="number" min="0" step="1" value="${escapeHtml(recipe?.preparation_minutes ?? "")}" /></label><label class="field"><span>Cook time (minutes)</span><input name="cooking_minutes" type="number" min="0" step="1" value="${escapeHtml(recipe?.cooking_minutes ?? "")}" /></label></div><section class="recipe-editor-section"><div class="panel-title"><div><h3>Ingredients</h3><span>Search verified foods or add your own.</span></div><button class="button button-secondary button-small" type="button" data-action="add-recipe-ingredient">Add ingredient</button></div><div class="meal-composer-search"><div class="meal-composer-search-row"><input class="input" id="recipe-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><span class="tiny">Food search facts are stored with this revision.</span></div><div id="recipe-food-results" class="meal-food-results"></div></div><div id="recipe-ingredients" class="meal-selected-items"></div></section><label class="field"><span>Instructions</span><textarea name="instructions" rows="6" maxlength="20000" placeholder="One step per line" required>${escapeHtml(recipe?.instructions?.join("\n") || "")}</textarea><small class="tiny">Put each instruction on its own line.</small></label><div class="meal-composer-grid"><label class="field"><span>Source title</span><input name="source_title" maxlength="500" value="${escapeHtml(sourceTitle)}" placeholder="Optional cookbook, site, or note" /></label>${sourceTypeField}</div>${sourceUrlField}${planSectionOn ? recipePlanSectionMarkup(planEnabled) : ""}<button class="button button-primary" type="submit">${submitLabel}</button></form>`;
 }
 
 function renderRecipeIngredients() {
@@ -2469,6 +2497,8 @@ function openRecipeImportReview(draft) {
         `${recipeImportReviewMarkup(draft)}${recipeFormMarkup("create", recipeFormRecordFromImport(draft))}`,
     );
     renderRecipeIngredients();
+    renderRecipeComposeGroceries();
+    syncRecipePlanSection(document.getElementById("recipe-create-form"));
     searchRecipeFoods("");
 }
 
@@ -2477,27 +2507,29 @@ function openRecipeImport() {
     recipeImport.draft = null;
     openDialog(
         "Import recipe from a website",
-        `<form id="recipe-import-url-form" class="auth-form"><p>Paste a public HTTPS recipe page. Munch will check the page, parse the recipe, interpret the ingredient language, match nutrition sources, and show you an editable review before anything is saved.</p><p class="tiny">This is separate from <strong>Create manually</strong>; you do not need to open the recipe editor first.</p><label class="field"><span>Recipe URL</span><input name="url" type="url" inputmode="url" maxlength="2000" placeholder="https://example.com/recipe" required /></label>${recipeImportProgressMarkup()}<button class="button button-primary" type="submit">Check recipe page</button></form>`,
+        `<form id="recipe-import-url-form" class="auth-form"><p>Paste a public HTTPS recipe page. Munch will check the page, parse the recipe, interpret the ingredient language, match nutrition sources, and show you an editable review before anything is saved.</p><p class="tiny">This is separate from <strong>Create recipe</strong>; you do not need to open the recipe editor first.</p><label class="field"><span>Recipe URL</span><input name="url" type="url" inputmode="url" maxlength="2000" placeholder="https://example.com/recipe" required /></label>${recipeImportProgressMarkup()}<button class="button button-primary" type="submit">Check recipe page</button></form>`,
     );
 }
 
-function openRecipeCreate() {
+function openRecipeCreate(planEnabled = false) {
     recipeComposer.ingredients = [];
     recipeComposer.options.clear();
     recipeCompose.groceryItems = [];
-    openDialog("Create recipe", recipeFormMarkup("create"));
+    openDialog(
+        "Create recipe",
+        recipeFormMarkup("create", null, { planEnabled }),
+    );
     renderRecipeIngredients();
+    renderRecipeComposeGroceries();
+    syncRecipePlanSection(document.getElementById("recipe-create-form"));
     searchRecipeFoods("");
 }
 
 function openRecipeCompose() {
-    recipeComposer.ingredients = [];
-    recipeComposer.options.clear();
-    recipeCompose.groceryItems = [];
-    openDialog("Compose recipe and meal plan", recipeFormMarkup("compose"));
-    renderRecipeIngredients();
-    renderRecipeComposeGroceries();
-    searchRecipeFoods("");
+    // Compatibility entry (data-action="compose-recipe"): the
+    // consolidated create form with the plan opt-in pre-enabled.
+    // There is no separate compose form or mode anymore.
+    openRecipeCreate(true);
 }
 
 // Recipe experience R1: an ingredient counts as resolved only when
@@ -5359,6 +5391,13 @@ document.addEventListener("change", (event) => {
     if (target.matches('[data-draft-field="portion_id"]')) {
         applyDraftPortionToEditor(target);
     }
+    if (target.matches("[data-recipe-plan-toggle]")) {
+        // Consolidated create: checking "Also add to plan" reveals
+        // the plan fields and swaps the submit to the compose path;
+        // unchecking disables them again so they neither validate
+        // nor submit.
+        syncRecipePlanSection(target.closest("form"));
+    }
 });
 
 function syncMealComposerFromDom() {
@@ -7946,7 +7985,6 @@ document.addEventListener("submit", async (event) => {
             "preferences-form",
             "goals-form",
             "recipe-create-form",
-            "recipe-compose-form",
             "recipe-edit-form",
             "recipe-log-form",
             "recipe-plan-form",
@@ -8367,41 +8405,46 @@ document.addEventListener("submit", async (event) => {
             toast("Goals saved.");
         }
         if (form.id === "recipe-create-form") {
-            await api("/api/app/recipes", {
-                method: "POST",
-                body: JSON.stringify({
-                    scope: values.scope || "personal",
-                    idempotency_key: crypto.randomUUID(),
-                    recipe: recipePayloadFromForm(values),
-                }),
-                keepPrevious: true,
-            });
-            toast(
-                values.source_type === "imported"
-                    ? "Imported recipe saved."
-                    : "Recipe created.",
-            );
+            // Consolidated create: the "Also add to plan" opt-in
+            // rides the same form. Checked, the submit takes the
+            // compose path (save + schedule + groceries, one atomic
+            // request); unchecked, it is exactly the plain create.
+            if (values.add_to_plan === "on") {
+                const result = await api("/api/app/recipes/compose", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        scope: values.scope || "personal",
+                        planned_date: values.planned_date,
+                        meal_slot: values.meal_slot || undefined,
+                        planned_servings: Number(values.planned_servings),
+                        note: values.note || undefined,
+                        grocery_items_needed: recipeGroceryItemsPayload(),
+                        idempotency_key: crypto.randomUUID(),
+                        recipe: recipePayloadFromForm(values),
+                    }),
+                    keepPrevious: true,
+                });
+                const groceryCount = result.result?.grocery?.items?.length || 0;
+                toast(
+                    `Recipe saved and planned; ${groceryCount} grocery item${groceryCount === 1 ? "" : "s"} added.`,
+                );
+            } else {
+                await api("/api/app/recipes", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        scope: values.scope || "personal",
+                        idempotency_key: crypto.randomUUID(),
+                        recipe: recipePayloadFromForm(values),
+                    }),
+                    keepPrevious: true,
+                });
+                toast(
+                    values.source_type === "imported"
+                        ? "Imported recipe saved."
+                        : "Recipe created.",
+                );
+            }
             recipeImport.draft = null;
-        }
-        if (form.id === "recipe-compose-form") {
-            const result = await api("/api/app/recipes/compose", {
-                method: "POST",
-                body: JSON.stringify({
-                    scope: values.scope || "personal",
-                    planned_date: values.planned_date,
-                    meal_slot: values.meal_slot || undefined,
-                    planned_servings: Number(values.planned_servings),
-                    note: values.note || undefined,
-                    grocery_items_needed: recipeGroceryItemsPayload(),
-                    idempotency_key: crypto.randomUUID(),
-                    recipe: recipePayloadFromForm(values),
-                }),
-                keepPrevious: true,
-            });
-            const groceryCount = result.result?.grocery?.items?.length || 0;
-            toast(
-                `Recipe saved and planned; ${groceryCount} grocery item${groceryCount === 1 ? "" : "s"} added.`,
-            );
         }
         if (form.id === "recipe-edit-form") {
             await api(
