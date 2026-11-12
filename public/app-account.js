@@ -18,6 +18,7 @@ const SETTINGS_ROUTES = new Set([
 
 export const accountRoutes = {
     "/app/more": "more",
+    "/app/goals": "goals",
     "/app/household": "household",
     "/app/settings": "settings",
     "/app/settings/profile": "settings-profile",
@@ -33,6 +34,7 @@ export const accountRoutes = {
 
 export const accountTitles = {
     more: ["Munch workspace", "More"],
+    goals: ["Munch", "Your goals"],
     household: ["Shared workspace", "Household"],
     settings: ["Account and preferences", "Settings"],
     "settings-profile": ["Settings", "Profile & preferences"],
@@ -46,7 +48,10 @@ export const accountTitles = {
 
 export function isAccountRoute(route) {
     return (
-        route === "more" || route === "household" || SETTINGS_ROUTES.has(route)
+        route === "more" ||
+        route === "goals" ||
+        route === "household" ||
+        SETTINGS_ROUTES.has(route)
     );
 }
 
@@ -357,6 +362,40 @@ function statusPill(text, tone = "neutral") {
     return `<span class="account-status account-status-${tone}">${esc(text)}</span>`;
 }
 
+// Goals intake (goals intake brief): the user's stated goal plus
+// five skippable questions. Every field is optional — "No answer" is
+// a real choice on each band question, and blank lists save as
+// empty. Saving posts the whole form, so the stored intake always
+// matches what is on screen. Numeric targets stay on Settings →
+// Nutrition targets; this page never computes or prescribes one.
+const GOALS_ACTIVITY_OPTIONS = [
+    ["under_30", "Under 30 min"],
+    ["30_to_60", "30–60 min"],
+    ["over_60", "Over an hour"],
+];
+const GOALS_EATING_OPTIONS = [
+    ["cook_home", "Cook at home"],
+    ["mix", "A mix"],
+    ["mostly_out", "Mostly eat out"],
+];
+const GOALS_HARDEST_MEAL_OPTIONS = [
+    ["breakfast", "Breakfast"],
+    ["lunch", "Lunch"],
+    ["dinner", "Dinner"],
+    ["snacks", "Snacks"],
+];
+
+function goalsSegmentedField(name, legend, note, options, current) {
+    const choices = [["", "No answer"], ...options];
+    return `<fieldset class="settings-field"><legend>${esc(legend)}</legend>${note ? `<small>${esc(note)}</small>` : ""}<div class="segmented-control">${choices.map(([value, label]) => `<label><input type="radio" name="${esc(name)}" value="${esc(value)}" ${current === value || (value === "" && !current) ? "checked" : ""}><span>${esc(label)}</span></label>`).join("")}</div></fieldset>`;
+}
+
+function goalsIntakePage(intake) {
+    const data = intake || {};
+    const listText = (list) => (Array.isArray(list) ? list.join(", ") : "");
+    return `${sectionHeading("Munch", "Your goals", "Suggestions, meal ideas and the assistant work from what you put here — your goal in your words, not one Munch picks for you. Every question is optional, and you can change or clear any of it whenever you like.")}<form id="goals-intake-form" class="settings-stack">${settingGroup("Your goal", "This is the goal everything else factors around.", `<label class="settings-field"><span>What are you trying to do?</span><textarea name="stated_goal" rows="3" maxlength="500" placeholder="e.g. Lower my fat intake at dinner">${esc(data.stated_goal || "")}</textarea></label>`)}${settingGroup("A few quick questions", "Rough answers are fine. Skip any of them — an unanswered question changes nothing.", `${goalsSegmentedField("activity_band", "How active is a typical day?", "Moving around, on your feet, exercise — all of it together, roughly.", GOALS_ACTIVITY_OPTIONS, data.activity_band || "")}${goalsSegmentedField("eating_pattern", "How do you mostly eat?", "", GOALS_EATING_OPTIONS, data.eating_pattern || "")}${goalsSegmentedField("hardest_meal", "Which meal is hardest to get right?", "", GOALS_HARDEST_MEAL_OPTIONS, data.hardest_meal || "")}<label class="settings-field"><span>Never suggest these</span><small>Foods you dislike, or that haven't worked for you. Comma-separated.</small><input name="never_suggest" value="${esc(listText(data.never_suggest))}" maxlength="600" placeholder="e.g. cilantro, protein shakes"></label><label class="settings-field"><span>Allergies</span><small>Anything listed here is never suggested or planned for you, anywhere in Munch. Comma-separated.</small><input name="allergies" value="${esc(listText(data.allergies))}" maxlength="600" placeholder="e.g. peanuts, shellfish"></label>`)}<div class="settings-savebar"><span class="settings-save-status" role="status" aria-live="polite"></span><button class="button button-primary" type="submit">Save</button></div></form>`;
+}
+
 async function billingPage(data, ctx) {
     const policy = requireProductPolicy(data);
     const premiumPrice = dollars(policy.premiumPriceMonthlyCents);
@@ -594,6 +633,15 @@ function morePage(features) {
         // Today navigation (brief item 6): History's two doors are the
         // calendar sheet's search row and this More card.
         ["/app/log", "History", "Search past meals and review any range", "▤"],
+        // Goals intake (goals intake brief): the stated-goal page —
+        // core context for every AI surface, so it is never behind a
+        // feature toggle.
+        [
+            "/app/goals",
+            "Your goals",
+            "What you're working toward, in your words",
+            "◎",
+        ],
         // Today navigation (brief item 4): Cooks and Recipes traded
         // places — Recipes holds the bottom-nav slot now, so Cooks
         // takes the More-list slot Recipes used to occupy. Feature
@@ -788,6 +836,20 @@ export async function renderAccountRoute(route, ctx) {
         ctx.content.innerHTML = morePage(ctx.state?.bootstrap?.features);
         return;
     }
+    if (route === "goals") {
+        ctx.setLoading("Loading your goals…");
+        let intake = null;
+        try {
+            const result = await ctx.api("/api/app/goals-intake", {
+                keepPrevious: true,
+            });
+            intake = result?.intake ?? null;
+        } catch {
+            intake = null;
+        }
+        ctx.content.innerHTML = `<div class="operate-view goals-view">${goalsIntakePage(intake)}</div>`;
+        return;
+    }
     if (route === "household") {
         ctx.setLoading("Loading household…");
         // S6 slice 8: the Household surface renders inside the shared
@@ -919,6 +981,36 @@ function saveStatus(form, message) {
 }
 
 export async function handleAccountSubmit(form, ctx) {
+    if (form.id === "goals-intake-form") {
+        const values = Object.fromEntries(new FormData(form));
+        const list = (raw) =>
+            String(raw || "")
+                .split(",")
+                .map((item) => item.trim())
+                .filter(Boolean);
+        const intake = {
+            stated_goal: String(values.stated_goal || "").trim() || null,
+            activity_band: values.activity_band || null,
+            eating_pattern: values.eating_pattern || null,
+            hardest_meal: values.hardest_meal || null,
+            never_suggest: list(values.never_suggest),
+            allergies: list(values.allergies),
+        };
+        const submit = form.querySelector("button[type='submit']");
+        if (submit) submit.disabled = true;
+        try {
+            await ctx.api("/api/app/goals-intake", {
+                method: "PUT",
+                body: JSON.stringify({ intake }),
+                keepPrevious: true,
+            });
+            saveStatus(form, "Saved");
+            ctx.toast("Goals saved.");
+        } finally {
+            if (submit) submit.disabled = false;
+        }
+        return true;
+    }
     if (form.id === "settings-profile-form") {
         const values = Object.fromEntries(new FormData(form));
         const body = {

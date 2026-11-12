@@ -31,6 +31,8 @@ import {
 } from "../guidance-repository.js";
 import { websiteGuidanceAiConfig } from "../website-ai-config.js";
 import { generateGuidanceProposals } from "./guidance-ai.js";
+import { assembleGoalsContext } from "../goals-context-repository.js";
+import { goalsContextForModel } from "../goals-context.js";
 import {
     addNextUpGroceries,
     dismissNextUpGoalPrompt,
@@ -163,8 +165,26 @@ async function proposeRecipes(c: any, userId: string, body: unknown) {
         meal_slot: slot.meal_slot,
         servings: slot.servings,
     }));
+    // The stated goal + intake answers come from the one shared
+    // goals-context module (goals law rule 6); its effective allergy
+    // list also drives the deterministic post-filter inside
+    // generateGuidanceProposals (rule 5). Fails soft — proposals work
+    // without it, the context simply omits the section.
+    let goalsContext = null;
+    try {
+        goalsContext = await assembleGoalsContext(userId, {
+            preloaded: { guidancePreferences: context.preferences },
+        });
+    } catch (error) {
+        console.warn("Goals context failed for proposals; continuing", {
+            errorName: error instanceof Error ? error.name : "unknown",
+        });
+    }
     const safeContext = {
         preferences: context.preferences,
+        ...(goalsContext
+            ? { user_goals: goalsContextForModel(goalsContext) ?? undefined }
+            : {}),
         saved_recipe_names: context.saved_recipes
             .slice(0, 40)
             .map((recipe) =>
@@ -189,12 +209,15 @@ async function proposeRecipes(c: any, userId: string, body: unknown) {
     // The model call itself lives in guidance-ai.ts behind an injectable
     // transport (recorded-fixture seam, S2); this handler keeps auth,
     // scope, and context building.
-    return generateGuidanceProposals({
-        config,
-        slots,
-        safeContext,
-        userRequest: request.request ?? "",
-    });
+    return generateGuidanceProposals(
+        {
+            config,
+            slots,
+            safeContext,
+            userRequest: request.request ?? "",
+        },
+        { goalsContext },
+    );
 }
 
 export function createGuidanceRouter(): Hono {

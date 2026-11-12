@@ -7792,6 +7792,7 @@ document.addEventListener("submit", async (event) => {
         [
             "settings-profile-form",
             "settings-goals-form",
+            "goals-intake-form",
             "household-create-form",
             "household-invite-form",
         ].includes(form.id)

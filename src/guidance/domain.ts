@@ -16,6 +16,17 @@ const allergenAliases: Record<string, string[]> = {
     milk: [
         "milk",
         "cheese",
+        // Specific cheeses match the category too (the goals-intake
+        // hard filter screens free-text dish names, where "cheddar"
+        // appears far more often than the word "cheese").
+        "cheddar",
+        "mozzarella",
+        "parmesan",
+        "feta",
+        "ricotta",
+        "brie",
+        "gouda",
+        "provolone",
         "butter",
         "cream",
         "whey",
@@ -157,13 +168,13 @@ const knownIngredients = new Set(
     ].map(normalized),
 );
 
-function containsTerm(ingredient: string, term: string): boolean {
+export function containsTerm(ingredient: string, term: string): boolean {
     const value = normalized(ingredient);
     const target = normalized(term);
     return value === target || ` ${value} `.includes(` ${target} `);
 }
 
-function canonicalAllergen(value: string): string {
+export function canonicalAllergen(value: string): string {
     const text = normalized(value).replace(/ /g, "_");
     if (text.includes("nut") && !text.includes("peanut")) return "tree_nut";
     if (text.includes("shell") || text.includes("crustacean"))
@@ -176,6 +187,22 @@ function canonicalAllergen(value: string): string {
     if (text.includes("fish")) return "fish";
     if (text.includes("peanut")) return "peanut";
     return text;
+}
+
+/**
+ * The canonical allergen keys an ingredient name implicates, via the
+ * alias table (shrimp → shellfish, cheddar → milk, …). Exported for
+ * the goals-context allergy post-filter (goals law rule 5), which
+ * screens AI suggestion outputs with the same matching this module
+ * applies to plan drafts — one alias table, one behavior.
+ */
+export function allergenKeysForName(name: string): string[] {
+    const value = normalized(name);
+    return Object.entries(allergenAliases)
+        .filter(([, aliases]) =>
+            aliases.some((alias) => containsTerm(value, alias)),
+        )
+        .map(([key]) => key);
 }
 
 export interface ConstraintCheck {

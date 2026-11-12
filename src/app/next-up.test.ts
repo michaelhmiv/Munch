@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { getNextUp, type NextUpDependencies } from "./next-up.js";
 import type { NextUpComposition } from "../guidance/next-up.js";
+import { buildGoalsContext } from "../goals-context.js";
 
 /**
  * Next up service fixtures (guidance rework acceptance 1): the
@@ -462,5 +463,106 @@ describe("next-up service", () => {
         const response = await getNextUp("user-1", DATE, deps);
         expect(response.state).toBe("quiet");
         expect(response.primary).toBeNull();
+    });
+
+    test("intake allergies hard-filter candidates via the allergen alias table", async () => {
+        // The recipe's ingredients say "Shrimp"; the intake allergy
+        // says "shellfish". Name matching alone would miss it — the
+        // shared goals-context filter must not (goals law rule 5).
+        const state = freshState();
+        const deps = makeDeps(state, {
+            recipes: async () => [
+                {
+                    recipe_id: RECIPE_ID,
+                    revision_id: REVISION_ID,
+                    name: "Shrimp rice bowl",
+                    version: 1,
+                    ownership: "personal",
+                    servings: 2,
+                    nutrition_status: "complete",
+                    nutrition_per_serving: {
+                        calories: 520,
+                        protein_g: 42,
+                        carbs_g: 48,
+                        fat_g: 16,
+                    },
+                    preparation_minutes: 10,
+                    cooking_minutes: 20,
+                    times_scheduled: 0,
+                    last_scheduled_date: null,
+                    times_logged: 0,
+                    last_logged_at: null,
+                    updated_at: "2026-11-09T10:00:00.000Z",
+                },
+            ],
+            guidanceContext: async () => ({
+                saved_recipes: [
+                    {
+                        id: RECIPE_ID,
+                        ingredients: ["Shrimp", "Rice", "Broccoli"],
+                    },
+                ],
+            }),
+            goalsContext: async () =>
+                buildGoalsContext({
+                    intake: {
+                        stated_goal: null,
+                        activity_band: null,
+                        eating_pattern: null,
+                        hardest_meal: null,
+                        never_suggest: [],
+                        allergies: ["shellfish"],
+                    },
+                }),
+        });
+        const response = await getNextUp("user-1", DATE, deps);
+        expect(response.state).toBe("quiet");
+        expect(response.primary).toBeNull();
+    });
+
+    test("the stated goal reaches the compose request as user_goals", async () => {
+        const state = freshState();
+        let requestBody = "";
+        const deps = makeDeps(state, {
+            aiConfig: () => AI_CONFIG,
+            fetcher: async (_input: unknown, init?: { body?: string }) => {
+                state.fetchCalls += 1;
+                requestBody = String(init?.body ?? "");
+                return new Response(
+                    JSON.stringify({
+                        choices: [
+                            {
+                                message: {
+                                    content: JSON.stringify({
+                                        candidate_id: `recipe:${RECIPE_ID}`,
+                                        servings: 1,
+                                        reason: "It uses the chicken breast before it goes off.",
+                                    }),
+                                },
+                            },
+                        ],
+                    }),
+                    {
+                        status: 200,
+                        headers: { "content-type": "application/json" },
+                    },
+                );
+            },
+            goalsContext: async () =>
+                buildGoalsContext({
+                    intake: {
+                        stated_goal: "Lower my fat intake at dinner",
+                        activity_band: "30_to_60",
+                        eating_pattern: null,
+                        hardest_meal: "dinner",
+                        never_suggest: [],
+                        allergies: [],
+                    },
+                }),
+        });
+        const response = await getNextUp("user-1", DATE, deps);
+        expect(response.state).toBe("suggestion");
+        expect(requestBody).toContain("user_goals");
+        expect(requestBody).toContain("Lower my fat intake at dinner");
     });
 });
