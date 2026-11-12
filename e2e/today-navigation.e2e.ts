@@ -422,12 +422,12 @@ test("calendar range re-bases Today: totals over the span, meals grouped by day,
     // the note row naming the span. (Today sits on the range start,
     // so the sheet opens on the span's own month.)
     await page.locator('[data-action="open-calendar"]').click();
-    await expect(
-        dialog.locator(`.cal-day[data-date="${start}"]`),
-    ).toHaveClass(/is-range-start/);
-    await expect(
-        dialog.locator(`.cal-day[data-date="${middle}"]`),
-    ).toHaveClass(/is-in-range/);
+    await expect(dialog.locator(`.cal-day[data-date="${start}"]`)).toHaveClass(
+        /is-range-start/,
+    );
+    await expect(dialog.locator(`.cal-day[data-date="${middle}"]`)).toHaveClass(
+        /is-in-range/,
+    );
     await expect(dialog.locator(`.cal-day[data-date="${end}"]`)).toHaveClass(
         /is-range-end/,
     );
@@ -442,25 +442,27 @@ test("calendar range re-bases Today: totals over the span, meals grouped by day,
         `[data-action="toggle-range-day"][data-date="${middle}"]`,
     );
     await expect(middleRow).toContainText("No meals logged");
-    await expect(
-        page.locator(`#range-day-detail-${middle}`),
-    ).toContainText("No meals logged.");
+    await expect(page.locator(`#range-day-detail-${middle}`)).toContainText(
+        "No meals logged.",
+    );
     // Expanding a logged day reveals its meals in place.
     const startRow = page.locator(
         `[data-action="toggle-range-day"][data-date="${start}"]`,
     );
     await startRow.click();
     await expect(startRow).toHaveAttribute("aria-expanded", "true");
-    await expect(
-        page.locator(`#range-day-detail-${start}`),
-    ).toContainText("Range seed alpha");
-    await expect(
-        page.locator(`#range-day-detail-${end}`),
-    ).toBeHidden();
+    await expect(page.locator(`#range-day-detail-${start}`)).toContainText(
+        "Range seed alpha",
+    );
+    await expect(page.locator(`#range-day-detail-${end}`)).toBeHidden();
     await page.screenshot({ path: `${CAPTURE_DIR}/range-390.png` });
 
-    // Clear returns to the single-day view of today.
-    await page.locator('[data-action="calendar-clear-range"]').click();
+    // Clear returns to the single-day view of today. (Scoped to the
+    // range bar: the closed calendar sheet keeps its own Clear range
+    // button in the dialog DOM.)
+    await page
+        .locator('.range-bar [data-action="calendar-clear-range"]')
+        .click();
     await expect(page.locator(".range-bar")).toHaveCount(0);
     await expect(
         page.locator('.macro-tile[data-macro="calories"]'),
@@ -593,9 +595,9 @@ test("mixed range keeps actuals and planned projections apart, each labeled", as
     await expect(caloriesTile).toContainText("Logged");
     await expect(caloriesTile).toContainText("Planned");
     await expect(caloriesTile).not.toContainText("On target");
-    await expect(page.locator(".panel-title", { hasText: "Meals" })).toContainText(
-        "planned",
-    );
+    await expect(
+        page.locator(".panel-title", { hasText: "Meals" }),
+    ).toContainText("planned");
     const futureRow = page.locator(
         `[data-action="toggle-range-day"][data-date="${futureDay}"]`,
     );
@@ -630,9 +632,7 @@ test("long range nests month → week → day, and every level reconciles", asyn
     // is the sum of its weeks, each week the sum of its days, and
     // the months sum to the aggregate's actual total.
     const payload = await (
-        await page.request.get(
-            `/api/app/today/range?start=${start}&end=${end}`,
-        )
+        await page.request.get(`/api/app/today/range?start=${start}&end=${end}`)
     ).json();
     expect(payload.aggregate.days).toBe(41);
     expect(payload.hierarchy.length).toBeGreaterThanOrEqual(2);
@@ -644,7 +644,10 @@ test("long range nests month → week → day, and every level reconciles", asyn
         );
         const daySum = month.weeks
             .flatMap((week: { days: { calories: number }[] }) => week.days)
-            .reduce((sum: number, day: { calories: number }) => sum + day.calories, 0);
+            .reduce(
+                (sum: number, day: { calories: number }) => sum + day.calories,
+                0,
+            );
         expect(weekSum).toBe(month.calories);
         expect(daySum).toBe(month.calories);
         hierarchyTotal += month.calories;
@@ -680,9 +683,13 @@ test("long range nests month → week → day, and every level reconciles", asyn
     const lastMonth = monthRows.last();
     await lastMonth.click();
     await expect(lastMonth).toHaveAttribute("aria-expanded", "true");
-    const weekRows = page.locator('[data-action="toggle-range-week"]');
+    // Weeks are scoped to the opened month: earlier months' week
+    // rows stay hidden behind their collapsed month rows.
+    const monthDetailId = await lastMonth.getAttribute("aria-controls");
+    const weekRows = page.locator(
+        `#${monthDetailId} [data-action="toggle-range-week"]`,
+    );
     await expect(weekRows.first()).toBeVisible();
-    // Weeks of earlier months stay hidden behind their collapsed rows.
     const lastWeek = weekRows.last();
     await lastWeek.click();
     const endRow = page.locator(
