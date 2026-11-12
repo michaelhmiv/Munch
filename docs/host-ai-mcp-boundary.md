@@ -11,7 +11,7 @@ When Munch is invoked through MCP, the connected host model owns semantic interp
 
 Munch MCP tools own factual and deterministic application responsibilities: authorization, household scope, canonical food/provider lookup, barcode lookup, Pantry state, structured nutrition data, deterministic Pantry/recipe matching and ranking, quantity/unit handling, idempotency, validation, persistence, and explicit mutations.
 
-The standalone website may use Munch's configured OpenRouter model when a feature genuinely needs semantic or vision inference and there is no host model present. Website model selection is centralized through `MUNCH_AI_MODEL`.
+The standalone website may use OpenRouter when a feature genuinely needs model inference and there is no host model present. Generative website work is selected through `MUNCH_AI_MODEL` (currently Qwen 3.7 Flash). Bounded recipe food-candidate decisions may use the separate `MUNCH_DECISION_MODEL` (Jev Latest) through the same `OPENROUTER_API_KEY`.
 
 ## Expected flows
 
@@ -41,7 +41,7 @@ The shared recipe import service performs model inference only when a website se
 
 ### Standalone website
 
-Website receipt/photo upload, website Pantry meal ideas, and website-assisted recipe import may call OpenRouter because no host model is present. These clients use the single shared website model selector `MUNCH_AI_MODEL`.
+Website receipt/photo upload and Pantry meal ideas may call the generative OpenRouter model because no host model is present. Website-assisted recipe import uses the generative model for semantic normalization and search refinement, while an optional decision model handles bounded selection among already retrieved provider candidates. The decision layer cannot invent provider IDs; low-confidence, NO_MATCH, malformed, or unavailable decision results fall back to the existing generative assignment path.
 
 ## Cost and reliability implications
 
@@ -55,4 +55,4 @@ Provider food searches (for example USDA or Open Food Facts) are factual data re
 
 The same test runs deterministic recipe URL preview with website AI credentials deliberately present and traps global network fetches. This proves that credentials alone cannot silently activate the website semantic resolver on the MCP/shared-service path.
 
-Any future AI-backed website module must remain outside the MCP dependency graph. If a new MCP use case needs reasoning, expose the factual state and deterministic action primitives required for the host model to perform that reasoning instead of adding an internal model call.
+The website decision client (`src/website-decision-client.ts`) is also forbidden from the MCP dependency graph. Any future AI-backed website module must remain outside the MCP dependency graph. If a new MCP use case needs reasoning, expose the factual state and deterministic action primitives required for the host model to perform that reasoning instead of adding an internal model call.
