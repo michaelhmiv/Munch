@@ -422,7 +422,8 @@ if (!appOverridesSource.includes(".recipes-view .recipe-panel")) {
 
 // S6 slice 6 (Groceries fusion): the list renders inside the shared
 // .operate-view Editorial Serif scope grouped by source, the checkbox
-// is the 44px tap target, and both destructive flows (remove item,
+// sits in a 44px tap area (drawn 22px since the Direction C pass),
+// and both destructive flows (remove item,
 // clear purchased) use slice 1's inline confirmation — never the
 // native confirm. The surface carries no ad markup (the app's only
 // ad slot is on Today — final ad law).
@@ -458,6 +459,51 @@ for (const pin of [
         throw new Error(
             `Groceries fusion styles are missing from app-overrides.css: ${pin}`,
         );
+    }
+}
+
+// Design authority, Direction C (cross-work slice 1): the Recipes,
+// Plan, and Groceries surfaces — and the dialogs they open — carry
+// the FINAL button spec from the design authority (§4): secondary =
+// transparent fill, rule #8a7c63 border, ink text; quiet = ink-soft
+// text only; destructive = transparent danger; the 31px drawn anchor
+// (6px 14px padding, 10px radius) with the >=44px invisible tap
+// overlay; dialog fields invert to paper wells. The retired beige
+// #efe9db and mid-tan #b8a888 (invented rendering-pass colors, in no
+// production stylesheet) must never return to the stylesheet.
+for (const stale of ["#efe9db", "#b8a888"]) {
+    if (appOverridesSource.toLowerCase().includes(stale)) {
+        throw new Error(
+            `Retired Direction B color returned to app-overrides.css: ${stale}`,
+        );
+    }
+}
+const directionCStart = appOverridesSource.indexOf(
+    "DESIGN AUTHORITY — Direction C",
+);
+if (directionCStart === -1) {
+    throw new Error("Direction C styles are missing from app-overrides.css");
+}
+const directionC = appOverridesSource.slice(directionCStart);
+for (const pin of [
+    ".recipes-view .button-secondary",
+    ".plan-view .button-secondary",
+    ".groceries-view .button-secondary",
+    "border-color: #8a7c63",
+    "color: #2b2620",
+    ".groceries-view .button-quiet",
+    "color: #4a4237",
+    ".grocery-inline-confirm-danger",
+    "border-color: #8c2f22",
+    "min-height: 31px",
+    "padding: 6px 14px",
+    "border-radius: 10px",
+    "inset: -7px -4px",
+    "background: #f6f1e7",
+    ".recipes-view .recipe-panel-actions .button",
+]) {
+    if (!directionC.includes(pin)) {
+        throw new Error(`Direction C styles are missing their pin: ${pin}`);
     }
 }
 
