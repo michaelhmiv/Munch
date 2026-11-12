@@ -80,7 +80,7 @@ describe("bottom-bar metric parity (addendum rule 1)", () => {
             "@media (max-width: 899px)",
         );
         expect(nav).toContain("border-top: 1px solid #d8cdb6;");
-        expect(nav).toContain("background: #fffdf7;");
+        expect(nav).toContain("background: #fffdf8;");
         expect(nav).toContain(
             "grid-template-columns: repeat(6, minmax(0, 1fr));",
         );

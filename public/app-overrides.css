@@ -76,7 +76,7 @@ dialog .auth-card {
 .duplicate-day-choices .button.is-selected {
     background: #176b3a;
     border-color: #176b3a;
-    color: #fffdf7;
+    color: #fffdf8;
 }
 
 .app-content .meal-card + .meal-card {
@@ -1088,7 +1088,7 @@ body.app-page {
    by green + a bold label + a single gold dot under it — the pill
    background and underline the bar shipped with are gone. */
 .mobile-bottom-nav {
-    background: #fffdf7;
+    background: #fffdf8;
     border-top: 1px solid #d8cdb6;
 }
 
