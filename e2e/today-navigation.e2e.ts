@@ -356,14 +356,29 @@ test("calendar range re-bases Today: totals over the span, meals grouped by day,
     await page.setViewportSize({ width: 390, height: 844 });
     await signIn(page);
 
+    // Four-day span, three days seeded (the second project run
+    // re-seeds the same idempotency keys, so every assertion below
+    // must already hold with all three meals in place).
     const today = new Date().toISOString().slice(0, 10);
     const start = shiftDay(today, -60);
     const middle = shiftDay(today, -59);
-    const end = shiftDay(today, -58);
+    const empty = shiftDay(today, -58);
+    const end = shiftDay(today, -57);
     await seedMeal(page, start, "Range seed alpha", "lunch", [
         {
             name: "Range chicken",
             nutrients: { calories: 500, protein_g: 40, carbs_g: 20, fat_g: 10 },
+        },
+    ]);
+    await seedMeal(page, middle, "Range seed middle", "breakfast", [
+        {
+            name: "Range eggs",
+            nutrients: {
+                calories: 400,
+                protein_g: 130,
+                carbs_g: 10,
+                fat_g: 20,
+            },
         },
     ]);
     await seedMeal(page, end, "Range seed beta", "dinner", [
@@ -374,16 +389,16 @@ test("calendar range re-bases Today: totals over the span, meals grouped by day,
     ]);
 
     // The range payload: exact totals for the seeded span, judged
-    // over the two logged days of the three.
+    // over the three logged days of the four.
     const payload = await (
         await page.request.get(`/api/app/today/range?start=${start}&end=${end}`)
     ).json();
-    expect(payload.aggregate.days).toBe(3);
-    expect(payload.aggregate.daysWithMeals).toBe(2);
-    expect(payload.aggregate.macros.calories.total).toBe(1200);
-    expect(payload.aggregate.macros.calories.dailyAverage).toBe(600);
-    expect(payload.days[1].date).toBe(middle);
-    expect(payload.days[1].meals).toHaveLength(0);
+    expect(payload.aggregate.days).toBe(4);
+    expect(payload.aggregate.dayWithMeals).toBe(3);
+    expect(payload.aggregate.macros.calories.total).toBe(1600);
+    expect(payload.aggregate.macros.calories.dailyAverage).toBe(533.3);
+    expect(payload.days[2].date).toBe(empty);
+    expect(payload.days[2].meals).toHaveLength(0);
 
     // Hotel-style picking, entered through the sheet header's Range
     // toggle (a plain tap still means "that day" until it is on):
@@ -412,13 +427,15 @@ test("calendar range re-bases Today: totals over the span, meals grouped by day,
     );
     // The range bar carries the full label and the day count; the
     // tile re-bases to the range total with a per-day average line.
-    await expect(page.locator(".range-bar")).toContainText("3 days");
+    await expect(page.locator(".range-bar")).toContainText("4 days");
     const caloriesTile = page.locator('.macro-tile[data-macro="calories"]');
-    await expect(caloriesTile).toContainText("1,200");
-    await expect(caloriesTile).toContainText("avg 600");
+    await expect(caloriesTile).toContainText("1,600");
+    await expect(caloriesTile).toContainText("avg 533");
+    // No on-target line: one day of the four is unlogged.
+    await expect(caloriesTile).not.toContainText("On target");
 
     // Reopening the calendar paints the committed span as one band:
-    // solid endpoints, the day between in the soft-green well, and
+    // solid endpoints, the days between in the soft-green well, and
     // the note row naming the span. (Today sits on the range start,
     // so the sheet opens on the span's own month.)
     await page.locator('[data-action="open-calendar"]').click();
@@ -431,18 +448,19 @@ test("calendar range re-bases Today: totals over the span, meals grouped by day,
     await expect(dialog.locator(`.cal-day[data-date="${end}"]`)).toHaveClass(
         /is-range-end/,
     );
-    await expect(dialog.locator(".cal-range-row")).toContainText("3 days");
+    await expect(dialog.locator(".cal-range-row")).toContainText("4 days");
     await page.screenshot({
         path: `${CAPTURE_DIR}/calendar-range-390.png`,
     });
     await dialog.locator('[data-action="close-dialog"]').click();
     await expect(dialog).toBeHidden();
-    // Days collapse to one row each; the middle day reads honestly.
-    const middleRow = page.locator(
-        `[data-action="toggle-range-day"][data-date="${middle}"]`,
+
+    // Days collapse to one row each; the unlogged day reads honestly.
+    const emptyRow = page.locator(
+        `[data-action="toggle-range-day"][data-date="${empty}"]`,
     );
-    await expect(middleRow).toContainText("No meals logged");
-    await expect(page.locator(`#range-day-detail-${middle}`)).toContainText(
+    await expect(emptyRow).toContainText("No meals logged");
+    await expect(page.locator(`#range-day-detail-${empty}`)).toContainText(
         "No meals logged.",
     );
     // Expanding a logged day reveals its meals in place.
@@ -458,19 +476,8 @@ test("calendar range re-bases Today: totals over the span, meals grouped by day,
     await page.screenshot({ path: `${CAPTURE_DIR}/range-390.png` });
 
     // The on-target line appears only when every day in the range
-    // is logged (frame 4's rule): seed the middle day and re-pick
-    // the fully logged two-day span start → middle.
-    await seedMeal(page, middle, "Range seed middle", "breakfast", [
-        {
-            name: "Range eggs",
-            nutrients: {
-                calories: 400,
-                protein_g: 130,
-                carbs_g: 10,
-                fat_g: 20,
-            },
-        },
-    ]);
+    // is logged (frame 4's rule): re-pick the fully logged two-day
+    // span start → middle. Both days are under the calorie ceiling.
     await page.locator('[data-action="open-calendar"]').click();
     await dialog.locator('[data-action="calendar-range-mode"]').click();
     await dialog.locator(`.cal-day[data-date="${start}"]`).click();
