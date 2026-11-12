@@ -919,7 +919,7 @@ function openMacroBreakdown(key) {
         .join("");
     openDialog(
         config.label,
-        `<div class="macro-sheet-head"><p class="macro-sheet-total"><b>${format(dayTotal)}</b>${target ? ` of ${format(target)} target` : ""} today</p>${brainChatLink("today", `Ask the assistant about today's ${config.label.toLowerCase()}`)}</div>${groups || `<p class="tiny">No meals logged for this day.</p>`}`,
+        `<p class="macro-sheet-total"><b>${format(dayTotal)}</b>${target ? ` of ${format(target)} target` : ""} today</p>${groups || `<p class="tiny">No meals logged for this day.</p>`}`,
         `<div class="macro-sheet-foot"><span>Day total</span><b>${format(dayTotal)}</b></div>`,
     );
 }
@@ -1577,7 +1577,7 @@ function trendsCardMarkup(card, index) {
 function trendsDigestMarkup(data) {
     const digest = data.digest;
     const checkin = state.trendsCheckin;
-    return `<section class="panel trends-card trends-digest" data-card-key="digest"><div class="trends-card-head"><div><h3>The week in words</h3><p class="trends-sub">Digest</p></div>${brainChatLink("insights", "Explain my week — ask the assistant about this week")}</div><p class="trends-digest-lede">${escapeHtml(digest.weekly)}</p><details class="trends-more"><summary>Trend analysis</summary><p>${escapeHtml(digest.trends || "No data in range.")}</p></details><details class="trends-more"><summary>Meal patterns</summary><p>${escapeHtml(digest.patterns || "No data in range.")}</p></details>${checkin ? `<div class="trends-checkin"><h4>Weekly check-in</h4><p>${number(checkin.coverage_percent)}% coverage · ${number(checkin.nutrition_target_coverage_days)} of ${number(checkin.calendar_days)} days with recorded nutrition.</p>${checkin.observations?.length ? `<ul>${checkin.observations.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}</div>` : ""}</section>`;
+    return `<section class="panel trends-card trends-digest" data-card-key="digest"><div class="trends-card-head"><div><h3>The week in words</h3><p class="trends-sub">Digest</p></div>${brainChatLink("insights", "Ask the assistant about your trends — starts with this week's check-in")}</div><p class="trends-digest-lede">${escapeHtml(digest.weekly)}</p><details class="trends-more"><summary>Trend analysis</summary><p>${escapeHtml(digest.trends || "No data in range.")}</p></details><details class="trends-more"><summary>Meal patterns</summary><p>${escapeHtml(digest.patterns || "No data in range.")}</p></details>${checkin ? `<div class="trends-checkin"><h4>Weekly check-in</h4><p>${number(checkin.coverage_percent)}% coverage · ${number(checkin.nutrition_target_coverage_days)} of ${number(checkin.calendar_days)} days with recorded nutrition.</p>${checkin.observations?.length ? `<ul>${checkin.observations.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}</div>` : ""}</section>`;
 }
 
 function paintTrends() {

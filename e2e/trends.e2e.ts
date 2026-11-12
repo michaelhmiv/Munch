@@ -346,14 +346,18 @@ test("sparse dashboard: empty states are honest, Digest carries the brain entry,
         page.locator('.trends-card[data-card-key="line:weight"] .trends-empty'),
     ).toContainText("3 or more days");
     // The Digest sits last and is unremovable in edit mode. The
-    // "Pinned" tag is gone; the brain glyph in the card head is the
-    // Explain-my-week entry now (design-authority addendum).
+    // "Pinned" tag is gone; the brain glyph in the card head opens
+    // the full chat, seeded with the check-in as a starting snapshot
+    // (design-authority addendum + its refinement).
     const digest = page.locator('.trends-card[data-card-key="digest"]');
     await expect(digest).toContainText("The week in words");
     await expect(digest).not.toContainText("Pinned");
     const brain = digest.getByTestId("brain-entry-insights");
     await expect(brain).toBeVisible();
-    await expect(brain).toHaveAttribute("aria-label", /Explain my week/);
+    await expect(brain).toHaveAttribute(
+        "aria-label",
+        /Ask the assistant about your trends/,
+    );
     await expect(brain).toHaveAttribute("href", "/app/chat?surface=insights");
     // Acceptance: the first card is on the first screen, no scrolling.
     const box = await calories.boundingBox();

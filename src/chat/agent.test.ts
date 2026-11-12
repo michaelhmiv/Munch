@@ -1,8 +1,18 @@
 import { describe, expect, test } from "bun:test";
+import { MCP_TOOL_CAPABILITY_MAP } from "../capability-manifest.js";
+import { CONDITIONAL_PREMIUM_MCP_TOOL_CAPABILITY_MAP } from "../inventory/capabilities.js";
+import { MCP_INFRASTRUCTURE_TOOLS } from "../mcp-infrastructure.js";
 import { MAX_TOOL_CALLS_PER_MESSAGE, requestChatReply } from "./agent.js";
 import type { ChatAiConfig } from "./config.js";
 import type { ChatContextSummary } from "./context.js";
-import type { ChatToolExecution, ChatModelTool } from "./tools.js";
+import type { ChatToolHost, McpToolDefinition } from "./mcp-host.js";
+import { assembleEntrySeed, type ChatSeedDependencies } from "./seeds.js";
+import {
+    ChatToolExecutor,
+    deriveChatToolDefinitions,
+    type ChatToolExecution,
+    type ChatModelTool,
+} from "./tools.js";
 
 const config: ChatAiConfig = {
     apiKey: "fixture-key",
@@ -306,5 +316,203 @@ describe("chat v2 agent loop", () => {
         // No JSON response-format lock in v2: the loop needs native
         // tool calling and a plain-text final reply.
         expect(request?.body.response_format).toBeUndefined();
+    });
+});
+
+// ------------------------------------------------- seed scope widening
+//
+// Brain-icon addendum refinement (Michael, 2026-11-11): a seeded
+// conversation's seed is a starting snapshot, NOT a fence. This test
+// runs the real seed assembler, the real catalog derivation, and the
+// real tool executor: asked "How about last month?", the agent must
+// pull that wider range through get_meals_by_date_range and answer
+// from what comes back — never from the seed's seven-day window.
+
+const FULL_CATALOG: string[] = [
+    ...Object.keys(MCP_TOOL_CAPABILITY_MAP),
+    ...Object.keys(CONDITIONAL_PREMIUM_MCP_TOOL_CAPABILITY_MAP),
+    ...MCP_INFRASTRUCTURE_TOOLS,
+];
+
+function catalogDefinitions(): McpToolDefinition[] {
+    return FULL_CATALOG.map((name) => ({
+        name,
+        description: `${name} description`,
+        inputSchema:
+            name === "get_meals_by_date_range"
+                ? {
+                      type: "object",
+                      properties: {
+                          start_date: { type: "string" },
+                          end_date: { type: "string" },
+                      },
+                      required: ["start_date", "end_date"],
+                  }
+                : { type: "object", properties: {} },
+    }));
+}
+
+function insightsSeedDeps(): ChatSeedDependencies {
+    return {
+        profile: async () => ({ timezone: "UTC" }),
+        history: async () =>
+            ({
+                totals: {
+                    calories: 9100,
+                    proteinG: 400,
+                    carbsG: 900,
+                    fatG: 300,
+                    fiberG: 40,
+                },
+                meals: [{ description: "Soup" }, { description: "Pasta" }],
+                endDate: "2026-11-10",
+            }) as never,
+        features: async () => ({
+            plan: true,
+            recipes: true,
+            groceries: true,
+            pantry: true,
+            cooks: true,
+        }),
+    };
+}
+
+describe("seeded Trends conversation scope", () => {
+    test("asked for last month, the agent pulls that range through its tools and answers from it", async () => {
+        const seed = await assembleEntrySeed(
+            "user-1",
+            "insights",
+            insightsSeedDeps(),
+        );
+        expect(seed).not.toBeNull();
+        const seedStart = String(seed!.data.start_date);
+        const seedEnd = String(seed!.data.end_date);
+        // The seed snapshot spans exactly seven days.
+        expect((Date.parse(seedEnd) - Date.parse(seedStart)) / 86_400_000).toBe(
+            6,
+        );
+
+        // "Last month" relative to the seed's end: the full prior
+        // calendar month, entirely before the seed window.
+        const seedEndDate = new Date(`${seedEnd}T12:00:00Z`);
+        const lastMonthEnd = new Date(
+            Date.UTC(
+                seedEndDate.getUTCFullYear(),
+                seedEndDate.getUTCMonth(),
+                0,
+            ),
+        );
+        const lastMonthStart = new Date(
+            Date.UTC(
+                lastMonthEnd.getUTCFullYear(),
+                lastMonthEnd.getUTCMonth(),
+                1,
+            ),
+        );
+        const iso = (date: Date) => date.toISOString().slice(0, 10);
+        const rangeStart = iso(lastMonthStart);
+        const rangeEnd = iso(lastMonthEnd);
+        expect(rangeEnd < seedStart).toBe(true);
+
+        // The tools on offer are the real derived catalog.
+        const { tools: derivedTools } =
+            deriveChatToolDefinitions(catalogDefinitions());
+        expect(derivedTools.map((tool) => tool.name)).toContain(
+            "get_meals_by_date_range",
+        );
+
+        // The real executor over a recording host that answers with
+        // the requested range's own figures.
+        const hostCalls: Array<{
+            name: string;
+            args: Record<string, unknown>;
+        }> = [];
+        const host: ChatToolHost = {
+            async listTools() {
+                return [];
+            },
+            async callTool(name, args) {
+                hostCalls.push({ name, args });
+                return {
+                    content: [
+                        {
+                            type: "text",
+                            text: JSON.stringify({
+                                start_date: args.start_date,
+                                end_date: args.end_date,
+                                meal_count: 58,
+                                total_calories: 61200,
+                            }),
+                        },
+                    ],
+                };
+            },
+            async close() {},
+        };
+        const executor = new ChatToolExecutor({
+            host,
+            search: async () => ({ candidates: [], failures: [] }),
+        });
+
+        const { fetcher, requests } = scriptedFetcher([
+            toolCallEnvelope([
+                {
+                    id: "call-1",
+                    name: "get_meals_by_date_range",
+                    arguments: JSON.stringify({
+                        start_date: rangeStart,
+                        end_date: rangeEnd,
+                    }),
+                },
+            ]),
+            textEnvelope(
+                "Last month you logged 58 meals totalling 61,200 kcal — a wider picture than the seven-day snapshot we started with.",
+            ),
+        ]);
+        const result = await requestChatReply(
+            {
+                config,
+                context,
+                entrySeed: seed,
+                history: [],
+                message: "How about last month?",
+                tools: derivedTools,
+            },
+            {
+                fetcher,
+                executeTool: (name, args) => executor.execute(name, args),
+            },
+        );
+
+        expect(result.status).toBe("ok");
+        const firstBody = JSON.stringify(requests[0]?.body);
+        // The seed rode along as the starting snapshot…
+        expect(firstBody).toContain("entry_seed");
+        expect(firstBody).toContain("Last 7 days: 9,100 kcal");
+        // …the system prompt tells the model it is not a boundary…
+        expect(firstBody).toContain("starting snapshot");
+        // …and the range tool was among the tools on offer.
+        const offered = (
+            requests[0]?.body.tools as Array<{ function: { name: string } }>
+        ).map((tool) => tool.function.name);
+        expect(offered).toContain("get_meals_by_date_range");
+        // The executor pulled exactly the wider range — a full prior
+        // month, not the seed's seven-day window.
+        expect(hostCalls).toEqual([
+            {
+                name: "get_meals_by_date_range",
+                args: { start_date: rangeStart, end_date: rangeEnd },
+            },
+        ]);
+        // The final answer was built from the pulled range's data.
+        const secondMessages = JSON.stringify(requests[1]?.body.messages);
+        expect(secondMessages).toContain("61200");
+        expect(secondMessages).toContain(rangeStart);
+        if (result.status === "ok") {
+            expect(result.reply).toContain("61,200");
+            expect(result.toolCalls).toEqual([
+                { name: "get_meals_by_date_range", outcome: "ok" },
+            ]);
+        }
     });
 });

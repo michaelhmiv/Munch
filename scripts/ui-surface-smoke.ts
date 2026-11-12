@@ -213,10 +213,12 @@ const appSource = await Bun.file("public/app.js").text();
 if (
     !appSource.includes('data-action="trends-range"') ||
     !appSource.includes('action === "trends-range"') ||
-    !appSource.includes("state.trendsRangeDays")
+    !appSource.includes("state.trendsRangeKey") ||
+    !appSource.includes('key: "ytd"') ||
+    !appSource.includes('key: "all"')
 ) {
     throw new Error(
-        "Trends Week/Month/3 Mo controls are rendered without a working range handler",
+        "Trends Week/Month/3 Mo/YTD/All time controls are rendered without a working range handler",
     );
 }
 const browserEntryPoints = [

@@ -133,6 +133,13 @@ describe("chat v2 entry seeds", () => {
         for (const starter of seed.starters) {
             expect(starter.toLowerCase()).not.toContain("change");
         }
+        // The seed is a starting point, not a fence (brain-icon
+        // addendum refinement): the opener states the starting scope
+        // and invites widening to a month or a year, and one starter
+        // is itself a widening ask.
+        expect(seed.opener).toContain("starts with your last seven days");
+        expect(seed.opener).toContain("ask about a month or a year");
+        expect(seed.starters).toContain("How about last month?");
     });
 
     test("feature toggles: a disabled module's surface has no seed (T3)", async () => {

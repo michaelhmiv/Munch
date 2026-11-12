@@ -11,7 +11,7 @@ import { getWeeklyGuidance } from "../src/guidance-repository.js";
 // returned HTTP 500, api() threw, and the whole view fell to "That
 // view could not be loaded." This harness also pins the Trends
 // surface contract: the Digest carries the narratives + check-in +
-// the "Explain my week" brain entry (T8), and chart reference lines
+// the brain entry (T8), and chart reference lines
 // carry their values as on-chart labels (T13).
 
 const appSource = readFileSync(new URL("./app.js", import.meta.url), "utf8");
@@ -182,7 +182,8 @@ describe("Trends workspace + Digest check-in window", () => {
         // and no "Pinned" tag anywhere on the surface.
         expect(html).toContain("The week in words");
         expect(html).toContain("Weekly check-in");
-        expect(html).toContain("Explain my week");
+        expect(html).toContain("Ask the assistant about your trends");
+        expect(html).toContain("starts with this week's check-in");
         expect(html).toContain('data-testid="brain-entry-insights"');
         expect(html).not.toContain("Pinned");
         expect(html).not.toContain("trends-pin");
