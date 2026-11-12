@@ -1,3 +1,5 @@
+import { featureModuleEnabled } from "../feature-modules.js";
+import { getFeatureModules } from "../feature-modules-repository.js";
 import type { DatabaseTransaction } from "../platform/database.js";
 import { withUserDatabase } from "../platform/database.js";
 import {
@@ -401,30 +403,20 @@ async function acquireInTransaction(
     return { item, deduplicated: false };
 }
 
-export async function getPantryPreference(userId: string): Promise<boolean> {
-    return withUserDatabase(userId, async (tx) => {
-        const rows = await tx<Array<{ pantry_enabled: boolean }>>`
-            select pantry_enabled from munch.account_preferences where user_id = ${userId}
-        `;
-        return rows[0]?.pantry_enabled === true;
-    });
+/**
+ * Pantry enablement is the Settings feature-module flag and nothing
+ * else (Nov 11): the legacy account_preferences.pantry_enabled
+ * switch — once mirrored by a "Use Pantry" checkbox on the Pantry
+ * page — was retired when the feature toggles shipped (PR #241), so
+ * the module flag is the single source of truth for every Pantry
+ * gate. The legacy column is no longer read or written.
+ */
+async function pantryModuleEnabled(userId: string): Promise<boolean> {
+    return featureModuleEnabled(await getFeatureModules(userId), "pantry");
 }
 
-export async function setPantryPreference(input: {
-    userId: string;
-    enabled: boolean;
-}): Promise<boolean> {
-    return withUserDatabase(input.userId, async (tx) => {
-        const rows = await tx<Array<{ pantry_enabled: boolean }>>`
-            insert into munch.account_preferences (user_id, pantry_enabled)
-            values (${input.userId}, ${input.enabled})
-            on conflict (user_id) do update
-            set pantry_enabled = excluded.pantry_enabled, updated_at = now()
-            returning pantry_enabled
-        `;
-        return rows[0]?.pantry_enabled === true;
-    });
-}
+/** The module-off error, mirroring the other modules' service gates. */
+const PANTRY_MODULE_OFF_ERROR = "Pantry is turned off in Settings";
 
 export async function getPantry(input: {
     userId: string;
@@ -435,11 +427,8 @@ export async function getPantry(input: {
     includeDepleted?: boolean;
     limit?: number;
 }) {
+    const enabled = await pantryModuleEnabled(input.userId);
     return withUserDatabase(input.userId, async (tx) => {
-        const preference = await tx<Array<{ pantry_enabled: boolean }>>`
-            select pantry_enabled from munch.account_preferences where user_id = ${input.userId}
-        `;
-        const enabled = preference[0]?.pantry_enabled === true;
         if (!enabled)
             return {
                 enabled: false,
@@ -514,12 +503,9 @@ export async function reconcilePantry(input: {
     if (input.operations.length < 1 || input.operations.length > 100) {
         throw new Error("Reconcile 1 to 100 Pantry operations at a time");
     }
+    if (!(await pantryModuleEnabled(input.userId)))
+        throw new Error(PANTRY_MODULE_OFF_ERROR);
     return withUserDatabase(input.userId, async (tx) => {
-        const enabledRows = await tx<Array<{ pantry_enabled: boolean }>>`
-            select pantry_enabled from munch.account_preferences where user_id = ${input.userId}
-        `;
-        if (enabledRows[0]?.pantry_enabled !== true)
-            throw new Error("Pantry is not enabled");
         const spaceId = await getOrCreateSpace(tx, input.userId, input.scope);
         const results: Array<{
             action: string;
@@ -718,12 +704,9 @@ export async function reconcilePurchase(input: {
         throw new Error("Purchase idempotency key is required");
     if (input.lines.length < 1 || input.lines.length > 200)
         throw new Error("Reconcile 1 to 200 purchase lines at a time");
+    if (!(await pantryModuleEnabled(input.userId)))
+        throw new Error(PANTRY_MODULE_OFF_ERROR);
     return withUserDatabase(input.userId, async (tx) => {
-        const enabledRows = await tx<Array<{ pantry_enabled: boolean }>>`
-            select pantry_enabled from munch.account_preferences where user_id = ${input.userId}
-        `;
-        if (enabledRows[0]?.pantry_enabled !== true)
-            throw new Error("Pantry is not enabled");
         const spaceId = await getOrCreateSpace(tx, input.userId, input.scope);
         const existing = await tx<Array<{ id: string; status: string }>>`
             select id, status from munch.purchase_reconciliations

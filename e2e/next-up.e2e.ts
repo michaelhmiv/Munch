@@ -173,12 +173,9 @@ test.describe("next up guidance rework", () => {
         }
 
         // --- Seed the populated context (D2) ---
+        // Pantry needs no enable step: the module flag defaults on
+        // (Nov 11) and is the only gate.
         const today = new Date().toISOString().slice(0, 10);
-        const pantrySettings = await page.request.patch(
-            "/api/app/pantry/settings",
-            { headers: originOf(page), data: { enabled: true } },
-        );
-        expect(pantrySettings.status(), "enable pantry").toBe(200);
         const pantrySeed = await page.request.post(
             "/api/app/pantry/reconcile",
             {

@@ -317,7 +317,7 @@ export function registerInventoryTools(
                                     ? pantry.items.length
                                         ? `Found ${pantry.items.length} Pantry item${pantry.items.length === 1 ? "" : "s"}.`
                                         : "Pantry is enabled but no matching inventory items were found."
-                                    : "Pantry is not enabled.",
+                                    : "Pantry is turned off in Settings.",
                             },
                         ],
                         structuredContent: pantry,

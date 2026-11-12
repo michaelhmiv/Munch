@@ -8,8 +8,7 @@ const {
     createHousehold,
     createHouseholdInvitation,
 } = await import("../src/households/repository.js");
-const { reconcilePantry, setPantryPreference } =
-    await import("../src/inventory/repository.js");
+const { reconcilePantry } = await import("../src/inventory/repository.js");
 const { saveRecipeAndPlan } = await import("../src/planning/repository.js");
 const { createCook } = await import("../src/cooks/repository.js");
 const { closePlatformDatabase, withUserDatabase } =
@@ -76,8 +75,6 @@ await saveRecipeAndPlan({
     idempotencyKey: `export:${crypto.randomUUID()}`,
 });
 
-await setPantryPreference({ userId: owner.userId, enabled: true });
-await setPantryPreference({ userId: member.userId, enabled: true });
 const pantryResult = await reconcilePantry({
     userId: owner.userId,
     scope: { type: "household", householdId: household.householdId },

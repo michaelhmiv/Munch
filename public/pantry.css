@@ -152,30 +152,6 @@ body {
     color: var(--green);
     margin: 0;
 }
-.switch-row {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 8px;
-    min-height: 44px;
-    background: var(--paper-card);
-    border: 1px solid var(--rule);
-    border-radius: 4px;
-    padding: 8px 12px;
-    font-size: 14px;
-    font-weight: 700;
-    white-space: nowrap;
-    cursor: pointer;
-}
-.switch-row input {
-    width: 22px;
-    height: 22px;
-    min-height: 22px;
-    padding: 0;
-    flex: 0 0 auto;
-    accent-color: var(--green);
-    cursor: pointer;
-}
 
 /* Panels, not cards: a hairline rule and tight padding, per the
    Editorial Serif grammar (no white boxes, no shadows, no 16px radii). */
@@ -651,10 +627,6 @@ button:disabled {
     }
     .hero .lede {
         max-width: 34ch;
-    }
-    .switch-row {
-        align-self: flex-start;
-        flex: 0 0 auto;
     }
     .topbar nav {
         display: none;
