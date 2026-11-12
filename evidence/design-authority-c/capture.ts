@@ -282,9 +282,7 @@ async function measure(label: string) {
         const secondary = document.querySelector(
             ".button-secondary:not(.recipe-panel-actions .button-secondary)",
         );
-        const secondaryStyle = secondary
-            ? getComputedStyle(secondary)
-            : null;
+        const secondaryStyle = secondary ? getComputedStyle(secondary) : null;
         const secondaryRect = secondary?.getBoundingClientRect();
         return {
             greenPrimariesVisible: primaries.length,
@@ -298,8 +296,7 @@ async function measure(label: string) {
                       fontFamily: secondaryStyle.fontFamily,
                   }
                 : null,
-            overflowX:
-                document.documentElement.scrollWidth > window.innerWidth,
+            overflowX: document.documentElement.scrollWidth > window.innerWidth,
         };
     });
     console.log(label, JSON.stringify(report));
@@ -316,9 +313,7 @@ await page.screenshot({ path: join(outDir, "recipes-390.png") });
 
 // Recipe detail dialog (a dialog on the Recipes surface).
 await page
-    .locator(
-        '[data-action="view-recipe"][data-id="fixture-salmon"]',
-    )
+    .locator('[data-action="view-recipe"][data-id="fixture-salmon"]')
     .first()
     .click();
 await page.waitForSelector("dialog[open] .recipe-detail", {
