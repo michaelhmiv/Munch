@@ -1,7 +1,7 @@
 // Today calendar range selection (cohesion program, slice 2):
 // hotel-style date picking as a pure state machine, unit-tested in
 // range-selection.test.ts and driven by app.js's calendar. Picking
-// is an explicit mode inside the calendar sheet ("Select a range")
+// is an explicit mode inside the calendar sheet (the header Range toggle)
 // so a plain day tap keeps its established meaning — land on that
 // day (the contract the navigation suites pin).
 //
@@ -59,6 +59,40 @@ export function rangeCellState(selection, date) {
     }
     if (selection.anchor && date === selection.anchor) return "anchor";
     return null;
+}
+
+/**
+ * Signed per-day delta text for the range tiles (approved rendering,
+ * Nov 11): "+4" over the daily target, "−77" under it (U+2212 minus,
+ * as the rendering draws it), "0" exactly on it. Null without a
+ * target — a nutrient with no goal shows its plain average instead.
+ */
+export function signedDeltaText(delta, digits = 0) {
+    if (delta == null || Number.isNaN(Number(delta))) return null;
+    const format = new Intl.NumberFormat("en-US", {
+        maximumFractionDigits: digits,
+    });
+    const value = Number(delta);
+    if (value > 0) return `+${format.format(value)}`;
+    if (value < 0) return `−${format.format(Math.abs(value))}`;
+    return "0";
+}
+
+/**
+ * The tile/micro average line, exactly as the approved rendering
+ * labels it: with a target, "avg 144 g · +4/day" (average, then the
+ * signed delta against the daily target); without one, the plain
+ * average, "avg 63 g/day". `unit` carries its leading space
+ * (" g", " kcal", " mg").
+ */
+export function rangeAverageLine(dailyAverage, averageDelta, unit, digits = 0) {
+    const format = new Intl.NumberFormat("en-US", {
+        maximumFractionDigits: digits,
+    });
+    const average = format.format(Number(dailyAverage) || 0);
+    const delta = signedDeltaText(averageDelta, digits);
+    if (delta == null) return `avg ${average}${unit}/day`;
+    return `avg ${average}${unit} · ${delta}/day`;
 }
 
 /** Inclusive list of YYYY-MM-DD dates from start through end. */

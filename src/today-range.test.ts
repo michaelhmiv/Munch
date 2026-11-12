@@ -320,6 +320,64 @@ describe("buildRangeHierarchy", () => {
         expect(grandTotal).toBe(6000);
     });
 
+    test("planned-only days enter the hierarchy as zero actuals — projections never reconcile into it", () => {
+        const planned = projectPlannedDay([
+            {
+                recipe_name: "Soup",
+                meal_slot: "dinner",
+                servings: 1,
+                nutrition_per_serving: {
+                    calories: 600,
+                    protein_g: 20,
+                    carbs_g: 60,
+                    fat_g: 25,
+                    fiber_g: 8,
+                    sugar_g: 9,
+                    sodium_mg: 700,
+                },
+                counted: true,
+            },
+        ]);
+        const days: RangeDayInput[] = [
+            {
+                date: "2026-11-30",
+                relation: "past",
+                meals: [meal(500, 30, 40, 15)],
+                planned: null,
+            },
+            {
+                date: "2026-12-01",
+                relation: "future",
+                meals: [],
+                planned,
+            },
+        ];
+        const hierarchy = buildRangeHierarchy(days);
+        // The planned day is present (its row can render, tagged
+        // Planned) but contributes no actuals at any level.
+        const december = hierarchy.find((month) => month.month === "2026-12");
+        expect(december?.calories).toBe(0);
+        expect(december?.mealCount).toBe(0);
+        expect(december?.weeks[0].days[0]).toEqual({
+            date: "2026-12-01",
+            calories: 0,
+            mealCount: 0,
+        });
+        const grandTotal = hierarchy.reduce(
+            (sum, month) => sum + month.calories,
+            0,
+        );
+        expect(grandTotal).toBe(500);
+        // And the aggregate keeps the same line: the future day is a
+        // planned day, not a logged or judged day.
+        const aggregate = aggregateTodayRange(days, goals);
+        expect(aggregate.plannedDays).toBe(1);
+        expect(aggregate.daysWithMeals).toBe(1);
+        expect(aggregate.macros.calories.daysJudged).toBe(1);
+        expect(aggregate.macros.calories.total).toBe(500);
+        expect(aggregate.plannedTotals?.calories).toBe(600);
+    });
+
     test("weeks are Sunday-start; a week crossing a month boundary splits by month", () => {
         const hierarchy = buildRangeHierarchy(sixtyDays);
         const november = hierarchy[0];

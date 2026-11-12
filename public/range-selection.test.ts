@@ -3,7 +3,9 @@ import {
     applyRangeTap,
     eachDateInRange,
     emptyRangeSelection,
+    rangeAverageLine,
     rangeCellState,
+    signedDeltaText,
 } from "./range-selection.js";
 
 describe("applyRangeTap — the hotel-style selection state machine", () => {
@@ -90,5 +92,37 @@ describe("eachDateInRange", () => {
         expect(eachDateInRange("2026-11-09", "2026-11-09")).toEqual([
             "2026-11-09",
         ]);
+    });
+});
+
+describe("rangeAverageLine / signedDeltaText — the approved tile math labels", () => {
+    test("signed delta: over a limit reads +, short of a floor reads −", () => {
+        // Ceiling nutrient averaging over its daily target.
+        expect(signedDeltaText(23)).toBe("+23");
+        // Floor nutrient averaging short of its daily target (U+2212).
+        expect(signedDeltaText(-5)).toBe("−5");
+        expect(signedDeltaText(0)).toBe("0");
+        expect(signedDeltaText(null)).toBeNull();
+    });
+
+    test("with a target: average plus signed delta per day", () => {
+        // The rendering's own frame-3 numbers: calories and fiber.
+        expect(rangeAverageLine(2023, -77, " kcal")).toBe(
+            "avg 2,023 kcal · −77/day",
+        );
+        expect(rangeAverageLine(144, 4, " g", 1)).toBe("avg 144 g · +4/day");
+        expect(rangeAverageLine(24, -6, " g", 1)).toBe("avg 24 g · −6/day");
+    });
+
+    test("without a target: the plain average, no delta", () => {
+        expect(rangeAverageLine(63, null, " g", 1)).toBe("avg 63 g/day");
+        expect(rangeAverageLine(2336, null, " mg")).toBe("avg 2,336 mg/day");
+        expect(rangeAverageLine(82, null, " mg")).toBe("avg 82 mg/day");
+    });
+
+    test("fractional averages keep their digit precision", () => {
+        expect(rangeAverageLine(143.6, 3.6, " g", 1)).toBe(
+            "avg 143.6 g · +3.6/day",
+        );
     });
 });
