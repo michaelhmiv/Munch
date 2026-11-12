@@ -331,6 +331,15 @@ jobs:
             test-results/recipe-experience-captures/
           if-no-files-found: ignore
           retention-days: 14
+      - name: Upload pantry draw-down captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: munch-pantry-drawdown-captures
+          path: |
+            test-results/pantry-drawdown-captures/
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Upload browser traces on failure
         if: failure()
         uses: actions/upload-artifact@v4

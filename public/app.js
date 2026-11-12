@@ -3490,13 +3490,69 @@ function planCardActions(meal) {
         : `${viewButton}${swapButton}`;
 }
 
-function openRecipeLog(id, revisionId) {
+function openRecipeLog(id, revisionId, options = {}) {
+    // Cross-work §4: "From my pantry" — servings cooked drive the
+    // pantry draw-down, servings eaten drive the logged nutrition,
+    // and the two stay visibly separate. The option exists only
+    // while the Pantry module is on (hidden entirely, never
+    // disabled). Guided-cook entry points default it checked;
+    // library/detail entry points default it unchecked.
+    const pantryOn = featureFlags().pantry;
+    const fromPantryDefault = Boolean(options.fromPantryDefault);
+    const pantryFields = pantryOn
+        ? `<label class="checkbox-row"><input type="checkbox" name="from_pantry" ${fromPantryDefault ? "checked" : ""} /> From my pantry</label><label class="field" data-cooked-field ${fromPantryDefault ? "" : "hidden"}><span>Servings cooked</span><input name="servings_cooked" type="number" min="0.01" step="0.01" value="1" /></label>`
+        : "";
     openDialog(
         "Log saved recipe",
-        `<form id="recipe-log-form" class="auth-form" data-id="${escapeHtml(id)}" data-revision="${escapeHtml(revisionId || "")}"><p>Use the saved ingredients and nutrition exactly as stored. Choose how much you ate.</p><label class="field"><span>Servings consumed</span><input name="servings_consumed" type="number" min="0.01" step="0.01" value="1" required /></label><label class="field"><span>Meal type</span><select name="meal_type">${mealTypeOptionsHtml(
+        `<form id="recipe-log-form" class="auth-form" data-id="${escapeHtml(id)}" data-revision="${escapeHtml(revisionId || "")}"><p>Use the saved ingredients and nutrition exactly as stored. Choose how much you ate.</p>${pantryFields}<label class="field"><span>Servings consumed</span><input name="servings_consumed" type="number" min="0.01" step="0.01" value="1" required /></label><label class="field"><span>Meal type</span><select name="meal_type">${mealTypeOptionsHtml(
             defaultMealType(new Date(), state.bootstrap?.profile?.timezone),
         )}</select></label><label class="field"><span>Notes</span><input name="notes" maxlength="4000" placeholder="Optional" /></label><button class="button button-primary" type="submit">Log meal</button></form>`,
     );
+}
+
+// Cross-work §4 confirmation: the draw-down summary rides the log
+// confirmation as data-shaped rows in the existing food-row style —
+// amount used + estimated remainder per ingredient, skipped
+// ingredients named as skipped. No filler lines.
+let pendingDrawdownSummary = null;
+
+function queueDrawdownSummary(drawdown) {
+    if (!drawdown) return;
+    if (drawdown.status === "applied" && drawdown.lines?.length) {
+        pendingDrawdownSummary = drawdown;
+    } else if (drawdown.status === "not_applied") {
+        pendingDrawdownSummary = drawdown;
+    }
+}
+
+function drawdownSummaryMarkup(drawdown) {
+    if (drawdown.status === "not_applied") {
+        return `<section class="food-items"><article class="food-row"><div><strong>Pantry draw-down</strong><small>Not applied</small></div></article></section>`;
+    }
+    const rows = drawdown.lines
+        .map((line) => {
+            const detail =
+                line.status === "skipped"
+                    ? `Skipped · ${escapeHtml(line.reason || "not in pantry")}`
+                    : [
+                          line.used_quantity == null
+                              ? null
+                              : `−${number(line.used_quantity, 3)}${line.used_unit ? ` ${escapeHtml(line.used_unit)}` : ""}`,
+                          escapeHtml(line.remainder_text || ""),
+                      ]
+                          .filter(Boolean)
+                          .join(" · ");
+            return `<article class="food-row"><div><strong>${escapeHtml(line.pantry_name || line.ingredient)}</strong><small>${detail}</small></div></article>`;
+        })
+        .join("");
+    return `<section class="food-items">${rows}</section>`;
+}
+
+function showPendingDrawdownSummary() {
+    if (!pendingDrawdownSummary) return;
+    const drawdown = pendingDrawdownSummary;
+    pendingDrawdownSummary = null;
+    openDialog("Pantry draw-down", drawdownSummaryMarkup(drawdown));
 }
 
 function openRecipePlan(id) {
@@ -4379,7 +4435,7 @@ function cookModeMarkup(detail) {
                 .join("");
             const finishBlock =
                 allStepsDone && detail.cook.status === "active"
-                    ? `<div class="cook-mode-finish"><p><strong>Every step is checked off.</strong></p><div class="auth-actions" data-cook-actions data-context="detail" data-id="${escapeHtml(detail.cook.id)}" data-status="${escapeHtml(detail.cook.status)}"><button class="button button-primary" type="button" data-action="log-recipe" data-id="${escapeHtml(dish.recipe_id)}" data-revision="${escapeHtml(dish.recipe_revision_id)}">Log recipe</button><button class="button button-secondary" type="button" data-action="finish-cook" data-id="${escapeHtml(detail.cook.id)}">Finish cook</button></div></div>`
+                    ? `<div class="cook-mode-finish"><p><strong>Every step is checked off.</strong></p><div class="auth-actions" data-cook-actions data-context="detail" data-id="${escapeHtml(detail.cook.id)}" data-status="${escapeHtml(detail.cook.status)}"><button class="button button-primary" type="button" data-action="log-recipe" data-from-pantry="1" data-id="${escapeHtml(dish.recipe_id)}" data-revision="${escapeHtml(dish.recipe_revision_id)}">Log recipe</button><button class="button button-secondary" type="button" data-action="finish-cook" data-id="${escapeHtml(detail.cook.id)}">Finish cook</button></div></div>`
                     : "";
             return `<section class="cook-detail-section cook-mode" data-cook-mode data-dish-id="${escapeHtml(dish.id)}"><div class="panel-title"><div><h3>Cook mode</h3><span data-cook-mode-progress>${checkedIngredients.size} of ${(dish.actual_ingredients || []).length} ingredients · ${checkedSteps.size} of ${steps.length} steps</span></div></div>${ingredients ? `<h4 class="cook-mode-heading">Ingredients</h4><div class="cook-mode-list">${ingredients}</div>` : ""}${steps.length ? `<h4 class="cook-mode-heading">Steps</h4><div class="cook-mode-list">${stepRows}</div>` : `<p class="tiny">This recipe has no recorded steps.</p>`}${finishBlock}</section>`;
         })
@@ -4478,7 +4534,7 @@ function cookDetailMarkup(detail) {
                 escapeHtml(detail.cook.version) +
                 '">Edit dish</button>' +
                 (dish.recipe_id
-                    ? '<button class="button button-quiet button-small" type="button" data-action="log-cook-dish" data-id="' +
+                    ? '<button class="button button-quiet button-small" type="button" data-action="log-cook-dish" data-from-pantry="1" data-id="' +
                       escapeHtml(dish.recipe_id) +
                       '" data-revision="' +
                       escapeHtml(dish.recipe_revision_id || "") +
@@ -6848,11 +6904,17 @@ function openMealComposer() {
     mealComposer.options.clear();
     mealComposer.usuals.clear();
     mealComposer.yesterday = null;
+    // Cross-work §4: single foods — the logged amount is the used
+    // amount, so "From my pantry" is a checkbox only, no extra
+    // field. Present only while the Pantry module is on.
+    const pantryField = featureFlags().pantry
+        ? `<label class="checkbox-row"><input type="checkbox" name="from_pantry" /> From my pantry</label>`
+        : "";
     openDialog(
         "Add meal",
         `<form id="meal-form" class="auth-form"><input type="hidden" name="logged_at" value="${escapeHtml(`${state.date}T12:00:00.000Z`)}" /><label class="field"><span>Meal name</span><input name="description" value="Meal" maxlength="500" required /></label><label class="field"><span>Meal type</span><select name="meal_type">${mealTypeOptionsHtml(
             defaultMealType(new Date(), state.bootstrap?.profile?.timezone),
-        )}</select></label><section class="meal-composer-search"><div class="panel-title"><h3>Find foods</h3><span>Verified, saved, and recent</span></div><div id="meal-usuals" class="meal-usuals" hidden></div><div class="meal-composer-search-row"><input class="input" id="meal-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><input class="input" id="meal-food-barcode" inputmode="numeric" placeholder="Barcode" aria-label="Food barcode" /><button class="button button-secondary" type="button" data-action="lookup-food-barcode">Look up</button></div><div id="meal-food-results" class="meal-food-results"></div></section><section><div class="panel-title"><h3>Selected foods</h3><button class="button button-secondary button-small" type="button" data-action="add-manual-food">Add manual food</button></div><div id="meal-selected-items" class="meal-selected-items"></div></section><label class="field"><span>Notes</span><textarea name="notes" rows="2" maxlength="4000" placeholder="Optional"></textarea></label><button class="button button-primary" type="submit">Log meal</button></form>`,
+        )}</select></label><section class="meal-composer-search"><div class="panel-title"><h3>Find foods</h3><span>Verified, saved, and recent</span></div><div id="meal-usuals" class="meal-usuals" hidden></div><div class="meal-composer-search-row"><input class="input" id="meal-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><input class="input" id="meal-food-barcode" inputmode="numeric" placeholder="Barcode" aria-label="Food barcode" /><button class="button button-secondary" type="button" data-action="lookup-food-barcode">Look up</button></div><div id="meal-food-results" class="meal-food-results"></div></section><section><div class="panel-title"><h3>Selected foods</h3><button class="button button-secondary button-small" type="button" data-action="add-manual-food">Add manual food</button></div><div id="meal-selected-items" class="meal-selected-items"></div></section>${pantryField}<label class="field"><span>Notes</span><textarea name="notes" rows="2" maxlength="4000" placeholder="Optional"></textarea></label><button class="button button-primary" type="submit">Log meal</button></form>`,
     );
     renderMealComposerItems();
     searchMealFoods("");
@@ -8368,7 +8430,9 @@ async function handleAction(button) {
     }
     if (action === "view-recipe") return openRecipe(button.dataset.id);
     if (action === "log-recipe")
-        return openRecipeLog(button.dataset.id, button.dataset.revision);
+        return openRecipeLog(button.dataset.id, button.dataset.revision, {
+            fromPantryDefault: button.dataset.fromPantry === "1",
+        });
     if (action === "log-as-planned")
         return openPlannedLog({
             planned_meal_id: button.dataset.plannedMealId,
@@ -8384,7 +8448,9 @@ async function handleAction(button) {
         return;
     }
     if (action === "log-cook-dish")
-        return openRecipeLog(button.dataset.id, button.dataset.revision);
+        return openRecipeLog(button.dataset.id, button.dataset.revision, {
+            fromPantryDefault: button.dataset.fromPantry === "1",
+        });
     if (action === "plan-recipe") return openRecipePlan(button.dataset.id);
     if (action === "recipe-groceries")
         return openRecipeGroceries(
@@ -9025,6 +9091,17 @@ document.addEventListener("input", (event) => {
         document.querySelectorAll("[data-food-label]").forEach((row) => {
             row.hidden = !row.dataset.foodLabel.includes(value);
         });
+    }
+    if (
+        event.target.name === "from_pantry" &&
+        event.target.closest?.("#recipe-log-form")
+    ) {
+        // Cross-work §4: servings cooked only exist while the meal
+        // is drawn from the pantry.
+        const cookedField = event.target
+            .closest("form")
+            ?.querySelector("[data-cooked-field]");
+        if (cookedField) cookedField.hidden = !event.target.checked;
     }
     if (event.target.id === "recipe-filter") {
         // Slice 2: the query is view state and the grid re-renders
@@ -9691,6 +9768,7 @@ document.addEventListener("submit", async (event) => {
                     logged_at: values.logged_at,
                     notes: values.notes || undefined,
                     idempotency_key: crypto.randomUUID(),
+                    from_pantry: values.from_pantry === "on",
                     items,
                 }),
                 keepPrevious: true,
@@ -9700,6 +9778,7 @@ document.addEventListener("submit", async (event) => {
                     ? "This meal was already logged."
                     : "Meal logged.",
             );
+            queueDrawdownSummary(result.drawdown);
         }
         if (form.id === "duplicate-meal-form") {
             // The copy lands at noon UTC on the picked date — the same
@@ -9881,12 +9960,17 @@ document.addEventListener("submit", async (event) => {
             toast("Recipe updated with a new revision.");
         }
         if (form.id === "recipe-log-form") {
+            const fromPantry = values.from_pantry === "on";
             const result = await api(
                 `/api/app/recipes/${encodeURIComponent(form.dataset.id)}/log`,
                 {
                     method: "POST",
                     body: JSON.stringify({
                         servings_consumed: Number(values.servings_consumed),
+                        servings_cooked: fromPantry
+                            ? Number(values.servings_cooked)
+                            : undefined,
+                        from_pantry: fromPantry,
                         meal_type: values.meal_type,
                         notes: values.notes || undefined,
                         recipe_revision_id: form.dataset.revision || undefined,
@@ -9900,6 +9984,7 @@ document.addEventListener("submit", async (event) => {
                     ? "This recipe meal was already logged."
                     : "Recipe meal logged.",
             );
+            queueDrawdownSummary(result.drawdown);
         }
         if (form.id === "planned-log-form") {
             const result = await api(
@@ -10035,6 +10120,9 @@ document.addEventListener("submit", async (event) => {
         if (dialog.open) closeAppDialog();
         await renderRoute();
         showPendingPantryRunOutPrompts();
+        // Cross-work §4: a queued pantry draw-down summary is the
+        // log's confirmation — it opens over the re-rendered route.
+        showPendingDrawdownSummary();
     } catch (error) {
         pendingPantryRunOutPrompts = [];
         toast(error.message || "Save failed", "error");
