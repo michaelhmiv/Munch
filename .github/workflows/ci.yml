@@ -38,6 +38,8 @@ jobs:
         run: bun run submission:check
       - name: Verify responsive UI surfaces
         run: bun scripts/ui-surface-smoke.ts
+      - name: Enforce design authority (Direction C law)
+        run: bun test src/design-authority.test.ts
       - name: Verify connect page routes do not shadow OAuth
         run: bun scripts/connect-route-smoke.ts
       - name: Verify premium Pantry web surface

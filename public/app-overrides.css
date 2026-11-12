@@ -76,7 +76,7 @@ dialog .auth-card {
 .duplicate-day-choices .button.is-selected {
     background: #176b3a;
     border-color: #176b3a;
-    color: #fffdf7;
+    color: #fffdf8;
 }
 
 .app-content .meal-card + .meal-card {
@@ -883,7 +883,7 @@ dialog .auth-card {
 
 .import-native-table th {
     color: var(--ink-500);
-    font-size: 0.67rem;
+    font-size: 0.6875rem;
     letter-spacing: 0.04em;
     text-transform: uppercase;
 }
@@ -1088,7 +1088,7 @@ body.app-page {
    by green + a bold label + a single gold dot under it — the pill
    background and underline the bar shipped with are gone. */
 .mobile-bottom-nav {
-    background: #fffdf7;
+    background: #fffdf8;
     border-top: 1px solid #d8cdb6;
 }
 
@@ -3769,7 +3769,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .settings-view .settings-inline-alert {
-    border-left: 3px solid #b3261e;
+    border-left: 3px solid #8c2f22;
     background: #fffdf8;
     color: #8c2f22;
     font-size: 14px;
@@ -3810,7 +3810,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 
 /* Danger zone: the mock's red rule. */
 .settings-view .settings-danger {
-    border-top: 2px solid #b3261e;
+    border-top: 2px solid #8c2f22;
 }
 
 .settings-view .settings-danger > header {
@@ -3818,7 +3818,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .settings-view .settings-danger > header h3 {
-    color: #b3261e;
+    color: #8c2f22;
 }
 
 .settings-view .settings-danger > header p {
@@ -3827,8 +3827,8 @@ dialog .guided-grocery-row input[type="checkbox"] {
 
 .settings-view .button-danger {
     background: transparent;
-    border-color: #b3261e;
-    color: #b3261e;
+    border-color: #8c2f22;
+    color: #8c2f22;
     border-radius: 4px;
 }
 
@@ -4597,7 +4597,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 /* ---------- Danger group (mock .danger grammar) ---------- */
 
 .household-view .settings-danger {
-    border-top: 2px solid #b3261e;
+    border-top: 2px solid #8c2f22;
 }
 
 .household-view .settings-danger > header {
@@ -4605,7 +4605,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .household-view .settings-danger > header h3 {
-    color: #b3261e;
+    color: #8c2f22;
 }
 
 .household-view .settings-danger > header p {
@@ -4614,13 +4614,13 @@ dialog .guided-grocery-row input[type="checkbox"] {
 
 .household-view .button-danger {
     background: transparent;
-    color: #b3261e;
-    border: 1px solid #b3261e;
+    color: #8c2f22;
+    border: 1px solid #8c2f22;
 }
 
 .household-view .button-danger:hover {
     background: #fdf3f2;
-    color: #b3261e;
+    color: #8c2f22;
 }
 
 /* ---------- Empty state (no household connected) ---------- */
@@ -5038,12 +5038,12 @@ dialog .guided-grocery-row input[type="checkbox"] {
     gap: 12px;
     margin-top: 12px;
     padding: 10px 0;
-    background: var(--panel, #fffdf7);
+    background: var(--panel, #fffdf8);
     border-top: 1px solid var(--line, #ded5c0);
 }
 
 .meal-draft-dirty {
-    color: #8a6d3b;
+    color: #5d5344;
     font-weight: 600;
 }
 
@@ -5108,7 +5108,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 .trends-pill.is-on {
     background: #2e5b34;
     border-color: #2e5b34;
-    color: #fffdf7;
+    color: #fffdf8;
 }
 
 .trends-pair {
@@ -5118,7 +5118,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .trends-view .trends-card {
-    background: #fffdf7;
+    background: #fffdf8;
     border: 1px solid #ded5c0;
     border-radius: 14px;
     padding: 14px 14px 12px;
@@ -5368,7 +5368,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     font-size: 14px;
     font-weight: 600;
     color: #2e5b34;
-    background: #fffdf7;
+    background: #fffdf8;
     border: 1.5px dashed #b9c4a4;
     border-radius: 14px;
     padding: 13px;
@@ -5536,7 +5536,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 .trends-toggle button.is-on {
     background: #2e5b34;
     border-color: #2e5b34;
-    color: #fffdf7;
+    color: #fffdf8;
 }
 
 .trends-columns {
@@ -5718,7 +5718,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .trends-window-row small {
-    font-size: 10.5px;
+    font-size: 11px;
     color: #6e7462;
     white-space: nowrap;
 }
@@ -6041,7 +6041,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     border: 1px dashed #ded5c0;
     border-radius: 10px;
     padding: 9px 12px;
-    background: #fffef9;
+    background: #fffdf8;
 }
 
 .macro-micros-cols {
@@ -6133,7 +6133,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 .macro-sheet-foot {
     position: sticky;
     bottom: 0;
-    background: #fffdf7;
+    background: #fffdf8;
     border-top: 1px solid #ded5c0;
     padding: 11px 2px 2px;
     margin-top: 10px;
@@ -6225,11 +6225,11 @@ dialog .guided-grocery-row input[type="checkbox"] {
 
 .cal-day.is-selected {
     background: #2e5b34;
-    color: #fffdf7;
+    color: #fffdf8;
 }
 
 .cal-day.is-selected .cal-day-num {
-    color: #fffdf7;
+    color: #fffdf8;
 }
 
 .cal-dot {
@@ -6240,7 +6240,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .cal-day.is-selected .cal-dot {
-    background: #fffdf7;
+    background: #fffdf8;
 }
 
 .cal-dot-space {
@@ -6342,9 +6342,9 @@ dialog .guided-grocery-row input[type="checkbox"] {
 .recipe-unresolved {
     flex: none;
     padding: 3px 8px;
-    border: 1px solid var(--gold, #8a6d3b);
+    border: 1px solid #8a7c63;
     border-radius: 999px;
-    color: var(--gold, #8a6d3b);
+    color: #4a4237;
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.02em;

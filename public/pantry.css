@@ -327,8 +327,8 @@ button.secondary {
     border-color: var(--rule);
 }
 button.secondary:hover {
-    background: var(--paper-card);
-    color: var(--green);
+    background: transparent;
+    color: var(--ink);
 }
 button:disabled {
     opacity: 0.5;
@@ -799,7 +799,7 @@ button:disabled {
            stylesheet (the border silently never painted) and the
            second is one step off the shell's #fffdf7 ground. */
         border-top: 1px solid #d8cdb6;
-        background: #fffdf7;
+        background: #fffdf8;
     }
 
     /* Bottom bar, treatment "Refined Line" (approved Nov 11),
