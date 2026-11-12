@@ -353,11 +353,256 @@ export function fitWithinEdge(width, height, maxEdge) {
     };
 }
 
+function concatBytes(parts) {
+    const total = parts.reduce((sum, part) => sum + part.length, 0);
+    const out = new Uint8Array(total);
+    let at = 0;
+    for (const part of parts) {
+        out.set(part, at);
+        at += part.length;
+    }
+    return out;
+}
+
+/**
+ * JPEG metadata strip, byte level: walk the segment list the same
+ * way parseJpegDimensions does, copying every segment EXCEPT APP1
+ * (the EXIF / XMP carrier — GPS lives inside EXIF) and COM (free
+ * text). At Start-Of-Scan the rest of the file is entropy data and
+ * is copied verbatim. Returns { bytes, dropped } or null when the
+ * stream is not a complete, well-formed JPEG.
+ */
+function stripJpegMetadataBytes(bytes) {
+    if (bytes.length < 2 || bytes[0] !== 0xff || bytes[1] !== 0xd8) {
+        return null;
+    }
+    const parts = [bytes.subarray(0, 2)];
+    let dropped = false;
+    let offset = 2;
+    while (offset < bytes.length) {
+        if (bytes[offset] !== 0xff) return null;
+        let markerAt = offset + 1;
+        while (markerAt < bytes.length && bytes[markerAt] === 0xff) {
+            markerAt += 1;
+        }
+        if (markerAt >= bytes.length) return null;
+        const marker = bytes[markerAt];
+        const segmentStart = offset;
+        offset = markerAt + 1;
+        // Standalone markers (SOI, TEM, RSTn) carry no length.
+        if (
+            marker === 0xd8 ||
+            marker === 0x01 ||
+            (marker >= 0xd0 && marker <= 0xd7)
+        ) {
+            parts.push(bytes.subarray(segmentStart, offset));
+            continue;
+        }
+        if (marker === 0xd9) {
+            // EOI with no scan before it: copy it and any tail.
+            parts.push(bytes.subarray(segmentStart));
+            return { bytes: concatBytes(parts), dropped };
+        }
+        if (offset + 1 >= bytes.length) return null;
+        const segmentLength = (bytes[offset] << 8) | bytes[offset + 1];
+        if (segmentLength < 2 || offset + segmentLength > bytes.length) {
+            return null;
+        }
+        if (marker === 0xda) {
+            // Start of scan: header + entropy tail, verbatim.
+            parts.push(bytes.subarray(segmentStart));
+            return { bytes: concatBytes(parts), dropped };
+        }
+        if (marker === 0xe1 || marker === 0xfe) {
+            dropped = true;
+        } else {
+            parts.push(bytes.subarray(segmentStart, offset + segmentLength));
+        }
+        offset += segmentLength;
+    }
+    return null;
+}
+
+/**
+ * PNG metadata strip, byte level: walk the chunk list, copying
+ * every chunk EXCEPT the metadata carriers — eXIf (EXIF/GPS) and
+ * the free-text chunks tEXt / zTXt / iTXt. Chunk bytes (length,
+ * type, data, CRC) are copied untouched for everything kept.
+ * Returns { bytes, dropped } or null when the stream is not a
+ * complete PNG (no IEND).
+ */
+function stripPngMetadataBytes(bytes) {
+    const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    if (bytes.length < 8) return null;
+    for (let i = 0; i < signature.length; i += 1) {
+        if (bytes[i] !== signature[i]) return null;
+    }
+    const dropTypes = new Set(["eXIf", "tEXt", "zTXt", "iTXt"]);
+    const parts = [bytes.subarray(0, 8)];
+    let dropped = false;
+    let offset = 8;
+    let firstChunk = true;
+    while (offset < bytes.length) {
+        if (offset + 8 > bytes.length) return null;
+        const length =
+            ((bytes[offset] << 24) |
+                (bytes[offset + 1] << 16) |
+                (bytes[offset + 2] << 8) |
+                bytes[offset + 3]) >>>
+            0;
+        const type = String.fromCharCode(
+            bytes[offset + 4],
+            bytes[offset + 5],
+            bytes[offset + 6],
+            bytes[offset + 7],
+        );
+        if (firstChunk && type !== "IHDR") return null;
+        firstChunk = false;
+        const chunkTotal = 12 + length;
+        if (offset + chunkTotal > bytes.length) return null;
+        if (dropTypes.has(type)) {
+            dropped = true;
+        } else {
+            parts.push(bytes.subarray(offset, offset + chunkTotal));
+        }
+        offset += chunkTotal;
+        if (type === "IEND") {
+            if (offset < bytes.length) parts.push(bytes.subarray(offset));
+            return { bytes: concatBytes(parts), dropped };
+        }
+    }
+    return null;
+}
+
+/**
+ * WebP metadata strip, byte level: walk the RIFF chunk list,
+ * copying every chunk EXCEPT EXIF and XMP , and clear the EXIF /
+ * XMP feature flags in VP8X so the header agrees with the body.
+ * The RIFF size is recomputed over the kept chunks. Returns
+ * { bytes, dropped } or null when the stream is malformed.
+ */
+function stripWebpMetadataBytes(bytes) {
+    if (bytes.length < 12) return null;
+    if (
+        bytes[0] !== 0x52 || // R
+        bytes[1] !== 0x49 || // I
+        bytes[2] !== 0x46 || // F
+        bytes[3] !== 0x46 || // F
+        bytes[8] !== 0x57 || // W
+        bytes[9] !== 0x45 || // E
+        bytes[10] !== 0x42 || // B
+        bytes[11] !== 0x50 // P
+    ) {
+        return null;
+    }
+    const riffSize =
+        (bytes[4] | (bytes[5] << 8) | (bytes[6] << 16) | (bytes[7] << 24)) >>>
+        0;
+    const bodyEnd = Math.min(bytes.length, 8 + riffSize);
+    const dropTypes = new Set(["EXIF", "XMP "]);
+    const parts = [];
+    let dropped = false;
+    let offset = 12;
+    while (offset < bodyEnd) {
+        if (offset + 8 > bodyEnd) return null;
+        const type = String.fromCharCode(
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
+        );
+        const size =
+            (bytes[offset + 4] |
+                (bytes[offset + 5] << 8) |
+                (bytes[offset + 6] << 16) |
+                (bytes[offset + 7] << 24)) >>>
+            0;
+        const chunkTotal = 8 + size + (size % 2);
+        if (offset + chunkTotal > bodyEnd) return null;
+        if (dropTypes.has(type)) {
+            dropped = true;
+        } else if (type === "VP8X" && size >= 1) {
+            // Copy before clearing the EXIF (0x08) / XMP (0x04)
+            // feature flags — subarray views share the source.
+            const chunk = bytes.slice(offset, offset + chunkTotal);
+            chunk[8] &= ~(0x08 | 0x04);
+            parts.push(chunk);
+        } else {
+            parts.push(bytes.subarray(offset, offset + chunkTotal));
+        }
+        offset += chunkTotal;
+    }
+    if (offset !== bodyEnd) return null;
+    const body = concatBytes(parts);
+    const header = new Uint8Array(12);
+    header.set(bytes.subarray(0, 4), 0);
+    const newRiffSize = 4 + body.length;
+    header[4] = newRiffSize & 0xff;
+    header[5] = (newRiffSize >> 8) & 0xff;
+    header[6] = (newRiffSize >> 16) & 0xff;
+    header[7] = (newRiffSize >> 24) & 0xff;
+    header.set(bytes.subarray(8, 12), 8);
+    const tail =
+        bodyEnd < bytes.length ? bytes.subarray(bodyEnd) : new Uint8Array(0);
+    return { bytes: concatBytes([header, body, tail]), dropped };
+}
+
+function stripImageMetadataBytes(bytes) {
+    if (!bytes || bytes.length < 2) return null;
+    if (bytes[0] === 0xff && bytes[1] === 0xd8) {
+        return stripJpegMetadataBytes(bytes);
+    }
+    if (bytes[0] === 0x89 && bytes[1] === 0x50) {
+        return stripPngMetadataBytes(bytes);
+    }
+    if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[8] === 0x57) {
+        return stripWebpMetadataBytes(bytes);
+    }
+    return null;
+}
+
+/**
+ * Remove EXIF/GPS (and sibling free-text metadata) from an image
+ * file WITHOUT decoding its pixels: a container-level segment /
+ * chunk walk for JPEG, PNG and WebP. The cost is one read of the
+ * file's bytes plus a copy — milliseconds next to a full-frame
+ * decode, so the prepare fast path keeps its speed.
+ *
+ * Returns the file itself when the container parses cleanly and
+ * provably carries no metadata segments; a stripped copy when
+ * segments were dropped; null when the container is unrecognized
+ * or malformed (GIF, AVIF, a truncated file), in which case the
+ * caller falls back to a canvas re-encode.
+ */
+export async function stripImageMetadata(file) {
+    if (!file || typeof file.arrayBuffer !== "function") return null;
+    let bytes;
+    try {
+        bytes = new Uint8Array(await file.arrayBuffer());
+    } catch {
+        return null;
+    }
+    const result = stripImageMetadataBytes(bytes);
+    if (!result) return null;
+    if (!result.dropped) return file;
+    return new File([result.bytes], file.name || "photo", {
+        type: file.type,
+        lastModified: Date.now(),
+    });
+}
+
 /**
  * Downscale an image file client-side before upload (photo-flow P7):
  * long edge capped at PHOTO_DOWNSCALE_MAX_EDGE, re-encoded as JPEG.
- * Any failure — undecodable image, no canvas, a result that is not
- * actually smaller — returns the original file untouched.
+ * Any failure — undecodable image, no canvas — returns the original
+ * file untouched.
+ *
+ * Privacy invariant: a file this function PREPARES never carries
+ * the source's EXIF/GPS onward. In-cap files are metadata-stripped
+ * at the container level (see stripImageMetadata); everything else
+ * is canvas re-encoded, and canvas output carries no source
+ * metadata by construction. The original bytes are handed back
+ * only when preparation itself was impossible.
  *
  * Fast path: the header probe learns the frame's dimensions WITHOUT
  * decoding it, and the decoder is then handed those dimensions as
@@ -374,19 +619,31 @@ export async function downscaleImageFile(
     { maxEdge = PHOTO_DOWNSCALE_MAX_EDGE, quality = 0.85 } = {},
 ) {
     if (!file || !String(file.type ?? "").startsWith("image/")) return file;
-    if (
-        typeof createImageBitmap === "undefined" ||
-        typeof document === "undefined"
-    ) {
-        return file;
-    }
     try {
         const probed = await probeImageDimensions(file);
         const probedFit = probed
             ? fitWithinEdge(probed.width, probed.height, maxEdge)
             : null;
-        // Known dimensions, already inside the cap: no decode at all.
-        if (probedFit && !probedFit.scaled) return file;
+        // True once the canvas re-encode below is the ONLY thing
+        // standing between the source bytes and the upload — its
+        // output is then accepted even when it is not smaller than
+        // the original, because the original carries metadata the
+        // re-encode provably does not.
+        let reencodeIsTheStrip = false;
+        // Known dimensions, already inside the cap: no pixel decode.
+        // Strip metadata at the container level instead of handing
+        // the original bytes — EXIF/GPS included — to the upload.
+        if (probedFit && !probedFit.scaled) {
+            const stripped = await stripImageMetadata(file);
+            if (stripped) return stripped;
+            reencodeIsTheStrip = true;
+        }
+        if (
+            typeof createImageBitmap === "undefined" ||
+            typeof document === "undefined"
+        ) {
+            return file;
+        }
         let bitmap = null;
         let decoderScaled = false;
         if (probedFit?.scaled) {
@@ -410,9 +667,13 @@ export async function downscaleImageFile(
         // pass-through case. The canvas draw below uses `fitted`,
         // computed from the bitmap's real size, so a decoder that
         // ignored the resize options still lands on the right size.
+        // An UNSCALED bitmap from the plain decode means the frame
+        // was in-cap all along (its header was unprobeable, or its
+        // container unrecognized): the canvas draw below is then a
+        // same-size re-encode whose only job is the metadata strip —
+        // returning the original here would upload its EXIF.
         if (!fitted.scaled && !decoderScaled) {
-            bitmap.close?.();
-            return file;
+            reencodeIsTheStrip = true;
         }
         const canvas = document.createElement("canvas");
         canvas.width = fitted.width;
@@ -427,7 +688,12 @@ export async function downscaleImageFile(
         const blob = await new Promise((resolve) =>
             canvas.toBlob(resolve, "image/jpeg", quality),
         );
-        if (!blob || blob.size >= file.size) return file;
+        if (!blob) return file;
+        // A downscale that came out larger than the source failed
+        // its purpose and the original is preferred — UNLESS this
+        // re-encode is the metadata strip, where the original is
+        // precisely what must not be uploaded.
+        if (!reencodeIsTheStrip && blob.size >= file.size) return file;
         const baseName = String(file.name || "photo").replace(/\.[^.]+$/, "");
         return new File([blob], `${baseName}.jpg`, {
             type: "image/jpeg",

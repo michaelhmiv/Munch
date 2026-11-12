@@ -5,6 +5,7 @@ import {
     parseImageDimensions,
     photoCaptureMarkup,
     probeImageDimensions,
+    stripImageMetadata,
 } from "./photo-capture.js";
 
 /**
@@ -177,6 +178,303 @@ function webpVp8Header(width: number, height: number) {
     bytes[28] = height & 0xff;
     bytes[29] = (height >> 8) & 0xff;
     return bytes;
+}
+
+function pngChunk(type: string, data: Uint8Array) {
+    const out = new Uint8Array(12 + data.length);
+    out[0] = (data.length >>> 24) & 0xff;
+    out[1] = (data.length >>> 16) & 0xff;
+    out[2] = (data.length >>> 8) & 0xff;
+    out[3] = data.length & 0xff;
+    out.set(new TextEncoder().encode(type), 4);
+    out.set(data, 8);
+    return out;
+}
+
+/** A complete, well-formed PNG: signature, IHDR, extras, IDAT, IEND. */
+function pngComplete(
+    width: number,
+    height: number,
+    extraChunks: Uint8Array[] = [],
+) {
+    const ihdr = new Uint8Array(13);
+    ihdr[0] = (width >>> 24) & 0xff;
+    ihdr[1] = (width >>> 16) & 0xff;
+    ihdr[2] = (width >>> 8) & 0xff;
+    ihdr[3] = width & 0xff;
+    ihdr[4] = (height >>> 24) & 0xff;
+    ihdr[5] = (height >>> 16) & 0xff;
+    ihdr[6] = (height >>> 8) & 0xff;
+    ihdr[7] = height & 0xff;
+    ihdr[8] = 8; // bit depth
+    ihdr[9] = 2; // colour type: truecolour
+    const parts = [
+        new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        pngChunk("IHDR", ihdr),
+        ...extraChunks,
+        pngChunk("IDAT", new Uint8Array([0x78, 0x9c, 0x63, 0x60])),
+        pngChunk("IEND", new Uint8Array(0)),
+    ];
+    const total = parts.reduce((sum, part) => sum + part.length, 0);
+    const out = new Uint8Array(total);
+    let at = 0;
+    for (const part of parts) {
+        out.set(part, at);
+        at += part.length;
+    }
+    return out;
+}
+
+/**
+ * A complete JPEG whose APP1 carries an EXIF header and a GPS
+ * payload, followed by SOF0 and a Start-Of-Scan with entropy bytes.
+ */
+function jpegWithExif(width: number, height: number) {
+    const parts: number[] = [0xff, 0xd8]; // SOI
+    parts.push(0xff, 0xe0, 0x00, 0x10, ...new Array(14).fill(0)); // APP0
+    const exifPayload = [
+        ...new TextEncoder().encode("Exif\0\0GPS 37.7749 -122.4194"),
+    ];
+    parts.push(
+        0xff,
+        0xe1,
+        ((exifPayload.length + 2) >> 8) & 0xff,
+        (exifPayload.length + 2) & 0xff,
+        ...exifPayload,
+    );
+    parts.push(
+        0xff,
+        0xc0, // SOF0
+        0x00,
+        0x11,
+        0x08,
+        (height >> 8) & 0xff,
+        height & 0xff,
+        (width >> 8) & 0xff,
+        width & 0xff,
+        0x03,
+        1,
+        0x22,
+        0,
+        2,
+        0x11,
+        1,
+        3,
+        0x11,
+        1,
+    );
+    parts.push(
+        0xff,
+        0xda, // SOS
+        0x00,
+        0x0c,
+        0x03,
+        1,
+        0x00,
+        2,
+        0x11,
+        3,
+        0x11,
+        0x00,
+        0x3f,
+        0x00,
+        0x7e, // entropy byte 1
+        0x42, // entropy byte 2
+        0xff,
+        0xd9, // EOI
+    );
+    return new Uint8Array(parts);
+}
+
+function webpChunk(fourcc: string, data: Uint8Array) {
+    const padded = data.length + (data.length % 2);
+    const out = new Uint8Array(8 + padded);
+    out.set(new TextEncoder().encode(fourcc), 0);
+    out[4] = data.length & 0xff;
+    out[5] = (data.length >> 8) & 0xff;
+    out[6] = (data.length >> 16) & 0xff;
+    out[7] = (data.length >> 24) & 0xff;
+    out.set(data, 8);
+    return out;
+}
+
+/** A complete VP8X WebP with EXIF + XMP chunks and their VP8X flags set. */
+function webpWithExif(width: number, height: number) {
+    const vp8x = new Uint8Array(10);
+    vp8x[0] = 0x08 | 0x04; // EXIF + XMP feature flags
+    const w = width - 1;
+    const h = height - 1;
+    vp8x[4] = w & 0xff;
+    vp8x[5] = (w >> 8) & 0xff;
+    vp8x[6] = (w >> 16) & 0xff;
+    vp8x[7] = h & 0xff;
+    vp8x[8] = (h >> 8) & 0xff;
+    vp8x[9] = (h >> 16) & 0xff;
+    const chunks = [
+        webpChunk("VP8X", vp8x),
+        webpChunk("EXIF", new TextEncoder().encode("GPSWEBP 37.7749")),
+        webpChunk("XMP ", new TextEncoder().encode("<x:xmpmeta/>")),
+        webpChunk("VP8L", new Uint8Array([0x2f, 0x00, 0x00, 0x00, 0x00])),
+    ];
+    const bodyLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    const out = new Uint8Array(12 + bodyLength);
+    out.set(new TextEncoder().encode("RIFF"), 0);
+    const riffSize = 4 + bodyLength;
+    out[4] = riffSize & 0xff;
+    out[5] = (riffSize >> 8) & 0xff;
+    out[6] = (riffSize >> 16) & 0xff;
+    out[7] = (riffSize >> 24) & 0xff;
+    out.set(new TextEncoder().encode("WEBP"), 8);
+    let at = 12;
+    for (const chunk of chunks) {
+        out.set(chunk, at);
+        at += chunk.length;
+    }
+    return out;
+}
+
+describe("stripImageMetadata (container-level EXIF strip)", () => {
+    const asText = (bytes: Uint8Array) =>
+        new TextDecoder("iso-8859-1").decode(bytes);
+
+    test("a JPEG loses its EXIF/GPS APP1; the scan tail survives verbatim", async () => {
+        const original = jpegWithExif(800, 600);
+        const file = new File([original], "meal.jpg", {
+            type: "image/jpeg",
+        });
+        const stripped = await stripImageMetadata(file);
+        expect(stripped).not.toBeNull();
+        expect(stripped).not.toBe(file);
+        const bytes = new Uint8Array(await stripped!.arrayBuffer());
+        expect(asText(bytes)).not.toContain("Exif");
+        expect(asText(bytes)).not.toContain("GPS");
+        expect(asText(bytes)).not.toContain("37.7749");
+        expect(bytes.length).toBeLessThan(original.length);
+        expect(parseImageDimensions(bytes)).toEqual({
+            width: 800,
+            height: 600,
+        });
+        // Entropy bytes + EOI at the tail are byte-identical.
+        expect(bytes.slice(-4)).toEqual(
+            new Uint8Array([0x7e, 0x42, 0xff, 0xd9]),
+        );
+    });
+
+    test("a JPEG with no APP1 is returned as itself, verified clean", async () => {
+        const complete = new File([jpegWithExifClean(800, 600)], "c.jpg", {
+            type: "image/jpeg",
+        });
+        expect(await stripImageMetadata(complete)).toBe(complete);
+    });
+
+    test("a PNG loses eXIf and text chunks; image chunks survive", async () => {
+        const original = pngComplete(800, 600, [
+            pngChunk("eXIf", new TextEncoder().encode("GPSPNG 37.7749")),
+            pngChunk("tEXt", new TextEncoder().encode("Comment\0shot at home")),
+        ]);
+        const file = new File([original], "meal.png", {
+            type: "image/png",
+        });
+        const stripped = await stripImageMetadata(file);
+        expect(stripped).not.toBeNull();
+        expect(stripped).not.toBe(file);
+        const bytes = new Uint8Array(await stripped!.arrayBuffer());
+        expect(asText(bytes)).not.toContain("eXIf");
+        expect(asText(bytes)).not.toContain("GPSPNG");
+        expect(asText(bytes)).not.toContain("shot at home");
+        expect(asText(bytes)).toContain("IDAT");
+        expect(asText(bytes)).toContain("IEND");
+        expect(parseImageDimensions(bytes)).toEqual({
+            width: 800,
+            height: 600,
+        });
+    });
+
+    test("a WebP loses EXIF and XMP chunks; VP8X flags are cleared", async () => {
+        const file = new File([webpWithExif(800, 600)], "meal.webp", {
+            type: "image/webp",
+        });
+        const stripped = await stripImageMetadata(file);
+        expect(stripped).not.toBeNull();
+        expect(stripped).not.toBe(file);
+        const bytes = new Uint8Array(await stripped!.arrayBuffer());
+        expect(asText(bytes)).not.toContain("GPSWEBP");
+        expect(asText(bytes)).not.toContain("xmpmeta");
+        // RIFF size recomputed: file length minus 8, little-endian.
+        const riffSize =
+            (bytes[4] |
+                (bytes[5] << 8) |
+                (bytes[6] << 16) |
+                (bytes[7] << 24)) >>>
+            0;
+        expect(riffSize).toBe(bytes.length - 8);
+        // VP8X data starts at 12 (header) + 8 (chunk header) = 20.
+        expect(bytes[20] & (0x08 | 0x04)).toBe(0);
+        expect(parseImageDimensions(bytes)).toEqual({
+            width: 800,
+            height: 600,
+        });
+    });
+
+    test("unrecognized or truncated containers read as cannot-strip", async () => {
+        const gif = new File(
+            [new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61])],
+            "anim.gif",
+            { type: "image/gif" },
+        );
+        expect(await stripImageMetadata(gif)).toBeNull();
+        const truncated = new File(
+            [jpegWithExif(800, 600).slice(0, 10)],
+            "cut.jpg",
+            { type: "image/jpeg" },
+        );
+        expect(await stripImageMetadata(truncated)).toBeNull();
+    });
+});
+
+function jpegWithExifClean(width: number, height: number) {
+    // jpegWithExif minus the APP1: rebuild by stripping manually —
+    // simpler: same layout with an APP0-only header + SOS tail.
+    const parts: number[] = [0xff, 0xd8];
+    parts.push(0xff, 0xe0, 0x00, 0x10, ...new Array(14).fill(0));
+    parts.push(
+        0xff,
+        0xc0,
+        0x00,
+        0x11,
+        0x08,
+        (height >> 8) & 0xff,
+        height & 0xff,
+        (width >> 8) & 0xff,
+        width & 0xff,
+        0x03,
+        1,
+        0x22,
+        0,
+        2,
+        0x11,
+        1,
+        3,
+        0x11,
+        1,
+        0xff,
+        0xda,
+        0x00,
+        0x0c,
+        0x03,
+        1,
+        0x00,
+        2,
+        0x11,
+        3,
+        0x11,
+        0x00,
+        0x3f,
+        0x00,
+        0xff,
+        0xd9,
+    );
+    return new Uint8Array(parts);
 }
 
 describe("parseImageDimensions (header probe)", () => {
@@ -373,14 +671,62 @@ describe("downscaleImageFile (decoder-resize fast path)", () => {
         expect(prepared).not.toBe(file);
     });
 
-    test("a frame already inside the cap returns untouched, no decode", async () => {
+    test("a metadata-free frame already inside the cap returns untouched, no decode", async () => {
         const calls = stubBrowser({ fullWidth: 800, fullHeight: 600 });
-        const file = new File([pngHeader(800, 600)], "small.png", {
+        const file = new File([pngComplete(800, 600)], "small.png", {
             type: "image/png",
         });
         const prepared = await downscaleImageFile(file);
         expect(prepared).toBe(file);
         expect(calls).toHaveLength(0);
+    });
+
+    test("an in-cap JPEG with EXIF/GPS uploads stripped bytes, no decode", async () => {
+        // createImageBitmap is stubbed to throw: the strip must
+        // happen at the container level, before any decode exists.
+        const calls = stubBrowser({ fullWidth: 800, fullHeight: 600 });
+        const file = new File([jpegWithExif(800, 600)], "meal.jpg", {
+            type: "image/jpeg",
+        });
+        const prepared = await downscaleImageFile(file);
+        expect(calls).toHaveLength(0);
+        expect(prepared).not.toBe(file);
+        const bytes = new Uint8Array(await prepared.arrayBuffer());
+        const text = new TextDecoder("iso-8859-1").decode(bytes);
+        expect(text).not.toContain("Exif");
+        expect(text).not.toContain("GPS");
+        expect(text).not.toContain("37.7749");
+        expect(parseImageDimensions(bytes)).toEqual({
+            width: 800,
+            height: 600,
+        });
+    });
+
+    test("an in-cap PNG with an eXIf chunk uploads stripped bytes, no decode", async () => {
+        const calls = stubBrowser({ fullWidth: 800, fullHeight: 600 });
+        const file = new File(
+            [
+                pngComplete(800, 600, [
+                    pngChunk(
+                        "eXIf",
+                        new TextEncoder().encode("GPSLAT 37.7749"),
+                    ),
+                ]),
+            ],
+            "meal.png",
+            { type: "image/png" },
+        );
+        const prepared = await downscaleImageFile(file);
+        expect(calls).toHaveLength(0);
+        expect(prepared).not.toBe(file);
+        const bytes = new Uint8Array(await prepared.arrayBuffer());
+        const text = new TextDecoder("iso-8859-1").decode(bytes);
+        expect(text).not.toContain("eXIf");
+        expect(text).not.toContain("GPSLAT");
+        expect(parseImageDimensions(bytes)).toEqual({
+            width: 800,
+            height: 600,
+        });
     });
 
     test("an unprobeable header keeps the plain full-decode path", async () => {
