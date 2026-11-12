@@ -74,6 +74,8 @@ const mealComposer = {
     items: [],
     options: new Map(),
     searchTimer: null,
+    usuals: new Map(),
+    yesterday: null,
 };
 
 const mealDraftReview = {
@@ -5028,6 +5030,10 @@ document.addEventListener("change", (event) => {
         renderMealComposerItems();
         return;
     }
+    if (target.matches('#meal-form select[name="meal_type"]')) {
+        // Usuals are per meal slot: refetch for the newly chosen slot.
+        void loadMealUsuals();
+    }
     if (target.matches('[data-draft-field="portion_id"]')) {
         applyDraftPortionToEditor(target);
     }
@@ -5094,7 +5100,7 @@ function renderMealComposerItems() {
                 return `<article class="meal-composer-item" data-composer-index="${index}"><div class="meal-composer-item-head"><div><strong>${escapeHtml(foodTitle(item.food))}</strong><small>${sourceBadge(item.savedFoodId ? "saved_food" : item.food.provider)} ${confidenceBadge(item.food.confidence)}</small></div><button class="button button-quiet button-small" type="button" data-action="remove-meal-item" data-index="${index}">Remove</button></div><div class="meal-composer-grid"><label class="field"><span>Portion</span><select data-composer-field="portion_id">${portions.map((portion) => `<option value="${escapeHtml(portion.id)}" ${!item.customPortion && portion.id === item.portionId ? "selected" : ""}>${escapeHtml(portionOptionLabelJs(portion))}</option>`).join("")}<option value="__custom__" ${item.customPortion ? "selected" : ""}>Custom portion…</option></select></label><label class="field"><span>Quantity</span><input data-composer-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity || 1)}" /></label>${item.customPortion ? `<label class="field"><span>Custom portion</span><input data-composer-field="portion_label" value="${escapeHtml(item.portionLabel || "")}" placeholder="e.g. 1 large glass" /></label><label class="field"><span>Gram weight</span><input data-composer-field="gram_weight" type="number" min="0.01" step="0.1" value="${escapeHtml(item.customGramWeight || "")}" /></label>` : ""}</div><small class="meal-composer-macros">${foodMacroLine(item.food, item.portionId)}</small></article>`;
             }
             const nutrients = item.nutrients || {};
-            return `<article class="meal-composer-item" data-composer-index="${index}"><div class="meal-composer-item-head"><div><strong>${item.kind === "recent" ? escapeHtml(item.name) : "Manual food"}</strong><small>${sourceBadge(item.sourceType || "user_supplied")} ${item.kind === "recent" ? "From recent meal history" : "Enter the nutrition used"}</small></div><button class="button button-quiet button-small" type="button" data-action="remove-meal-item" data-index="${index}">Remove</button></div><div class="meal-composer-grid"><label class="field"><span>Name</span><input data-composer-field="name" value="${escapeHtml(item.name || "")}" required /></label><label class="field"><span>Portion</span><input data-composer-field="portion_label" value="${escapeHtml(item.portionLabel || "")}" placeholder="1 bowl, 1 slice…" /></label><label class="field"><span>Quantity</span><input data-composer-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity || 1)}" /></label></div><div class="meal-composer-nutrients">${["calories", "protein_g", "carbs_g", "fat_g", "fiber_g", "sugar_g", "sodium_mg"].map((key) => `<label class="field"><span>${escapeHtml(key.replaceAll("_g", " (g)").replace("sodium_mg", "sodium (mg)"))}</span><input data-composer-field="${key}" type="number" min="0" step="0.1" value="${escapeHtml(nutrients[key] ?? "")}" /></label>`).join("")}</div></article>`;
+            return `<article class="meal-composer-item" data-composer-index="${index}"><div class="meal-composer-item-head"><div><strong>${item.kind === "recent" ? escapeHtml(item.name) : "Manual food"}</strong><small>${sourceBadge(item.sourceType || "user_supplied")} ${item.kind === "recent" ? (item.fromUsuals ? "From your usuals" : "From recent meal history") : "Enter the nutrition used"}</small></div><button class="button button-quiet button-small" type="button" data-action="remove-meal-item" data-index="${index}">Remove</button></div><div class="meal-composer-grid"><label class="field"><span>Name</span><input data-composer-field="name" value="${escapeHtml(item.name || "")}" required /></label><label class="field"><span>Portion</span><input data-composer-field="portion_label" value="${escapeHtml(item.portionLabel || "")}" placeholder="1 bowl, 1 slice…" /></label><label class="field"><span>Quantity</span><input data-composer-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity || 1)}" /></label></div><div class="meal-composer-nutrients">${["calories", "protein_g", "carbs_g", "fat_g", "fiber_g", "sugar_g", "sodium_mg"].map((key) => `<label class="field"><span>${escapeHtml(key.replaceAll("_g", " (g)").replace("sodium_mg", "sodium (mg)"))}</span><input data-composer-field="${key}" type="number" min="0" step="0.1" value="${escapeHtml(nutrients[key] ?? "")}" /></label>`).join("")}</div></article>`;
         })
         .join("");
 }
@@ -5213,6 +5219,110 @@ async function selectMealOption(key) {
     renderMealComposerItems();
 }
 
+// "Your usuals": the server ranks the user's own habitual foods for
+// the composer's meal slot and the viewed date's day class (see
+// /api/app/usuals). Cold start — or any fetch failure — renders
+// nothing: the section stays hidden until history earns it.
+function renderMealUsuals(data) {
+    const root = document.getElementById("meal-usuals");
+    if (!root) return;
+    mealComposer.usuals.clear();
+    mealComposer.yesterday = data?.sameAsYesterday ?? null;
+    const usuals = data?.usuals ?? [];
+    if (usuals.length === 0 && !mealComposer.yesterday) {
+        root.innerHTML = "";
+        root.hidden = true;
+        return;
+    }
+    const yesterdayButton = mealComposer.yesterday
+        ? `<button class="button button-secondary button-small" type="button" data-action="add-yesterday-meal">Same as yesterday</button>`
+        : "";
+    const rows = usuals
+        .map((usual, index) => {
+            const key = `usual:${index}`;
+            mealComposer.usuals.set(key, usual);
+            const portion = usual.portionLabel
+                ? `${number(usual.quantity, 2)} × ${usual.portionLabel}`
+                : `Quantity ${number(usual.quantity, 2)}`;
+            const calories =
+                usual.nutrients?.calories == null
+                    ? null
+                    : Math.round(usual.nutrients.calories * usual.quantity);
+            return `<button class="meal-search-result" type="button" data-action="select-meal-usual" data-key="${key}"><span><strong>${escapeHtml(usual.name)}</strong><small>${sourceBadge("past_meal")} ${escapeHtml(portion)} · logged ${number(usual.logCount)} times</small></span><span>${calories == null ? "" : `${number(calories)} kcal`}</span></button>`;
+        })
+        .join("");
+    root.innerHTML = `<div class="meal-search-section"><div class="meal-usuals-head"><h4>Your usuals</h4>${yesterdayButton}</div>${rows}</div>`;
+    root.hidden = false;
+}
+
+async function loadMealUsuals() {
+    const root = document.getElementById("meal-usuals");
+    if (!root) return;
+    const slot =
+        document.querySelector('#meal-form select[name="meal_type"]')?.value ||
+        "lunch";
+    try {
+        const data = await api(
+            `/api/app/usuals?date=${encodeURIComponent(state.date)}&meal_type=${encodeURIComponent(slot)}`,
+            { keepPrevious: true },
+        );
+        // A slower response for a previous slot must not overwrite
+        // the usuals of the slot now selected.
+        const currentSlot =
+            document.querySelector('#meal-form select[name="meal_type"]')
+                ?.value || "lunch";
+        if (!document.getElementById("meal-usuals")) return;
+        if (data.mealType && data.mealType !== currentSlot) return;
+        renderMealUsuals(data);
+    } catch {
+        // Usuals are an assistive surface: on failure the row simply
+        // does not appear, like a cold start.
+        renderMealUsuals(null);
+    }
+}
+
+function usualComposerItem(entry, resolutionLayer, extraSnapshot = {}) {
+    return {
+        kind: "recent",
+        name: entry.name,
+        quantity: entry.quantity || 1,
+        portionLabel: entry.portionLabel || "",
+        nutrients: entry.nutrients,
+        sourceType: "past_meal",
+        provider: entry.provider,
+        providerFoodId: entry.providerFoodId,
+        fromUsuals: true,
+        sourceSnapshot: {
+            resolution_layer: resolutionLayer,
+            ...extraSnapshot,
+        },
+    };
+}
+
+function selectMealUsual(key) {
+    syncMealComposerFromDom();
+    const usual = mealComposer.usuals.get(key);
+    if (!usual) return;
+    mealComposer.items.push(
+        usualComposerItem(usual, "usuals", { usual_key: usual.key }),
+    );
+    renderMealComposerItems();
+}
+
+function addYesterdayMeal() {
+    syncMealComposerFromDom();
+    const yesterday = mealComposer.yesterday;
+    if (!yesterday?.items?.length) return;
+    for (const entry of yesterday.items) {
+        mealComposer.items.push(
+            usualComposerItem(entry, "usuals_same_as_yesterday", {
+                meal_id: yesterday.mealId,
+            }),
+        );
+    }
+    renderMealComposerItems();
+}
+
 async function lookupMealBarcode() {
     const input = document.getElementById("meal-food-barcode");
     const root = document.getElementById("meal-food-results");
@@ -5234,12 +5344,15 @@ async function lookupMealBarcode() {
 function openMealComposer() {
     mealComposer.items = [];
     mealComposer.options.clear();
+    mealComposer.usuals.clear();
+    mealComposer.yesterday = null;
     openDialog(
         "Add meal",
-        `<form id="meal-form" class="auth-form"><input type="hidden" name="logged_at" value="${escapeHtml(`${state.date}T12:00:00.000Z`)}" /><label class="field"><span>Meal name</span><input name="description" value="Meal" maxlength="500" required /></label><label class="field"><span>Meal type</span><select name="meal_type"><option value="breakfast">Breakfast</option><option value="lunch" selected>Lunch</option><option value="dinner">Dinner</option><option value="snack">Snack</option></select></label><section class="meal-composer-search"><div class="panel-title"><h3>Find foods</h3><span>Verified, saved, and recent</span></div><div class="meal-composer-search-row"><input class="input" id="meal-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><input class="input" id="meal-food-barcode" inputmode="numeric" placeholder="Barcode" aria-label="Food barcode" /><button class="button button-secondary" type="button" data-action="lookup-food-barcode">Look up</button></div><div id="meal-food-results" class="meal-food-results"></div></section><section><div class="panel-title"><h3>Selected foods</h3><button class="button button-secondary button-small" type="button" data-action="add-manual-food">Add manual food</button></div><div id="meal-selected-items" class="meal-selected-items"></div></section><label class="field"><span>Notes</span><textarea name="notes" rows="2" maxlength="4000" placeholder="Optional"></textarea></label><button class="button button-primary" type="submit">Log meal</button></form>`,
+        `<form id="meal-form" class="auth-form"><input type="hidden" name="logged_at" value="${escapeHtml(`${state.date}T12:00:00.000Z`)}" /><label class="field"><span>Meal name</span><input name="description" value="Meal" maxlength="500" required /></label><label class="field"><span>Meal type</span><select name="meal_type"><option value="breakfast">Breakfast</option><option value="lunch" selected>Lunch</option><option value="dinner">Dinner</option><option value="snack">Snack</option></select></label><section class="meal-composer-search"><div class="panel-title"><h3>Find foods</h3><span>Verified, saved, and recent</span></div><div id="meal-usuals" class="meal-usuals" hidden></div><div class="meal-composer-search-row"><input class="input" id="meal-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><input class="input" id="meal-food-barcode" inputmode="numeric" placeholder="Barcode" aria-label="Food barcode" /><button class="button button-secondary" type="button" data-action="lookup-food-barcode">Look up</button></div><div id="meal-food-results" class="meal-food-results"></div></section><section><div class="panel-title"><h3>Selected foods</h3><button class="button button-secondary button-small" type="button" data-action="add-manual-food">Add manual food</button></div><div id="meal-selected-items" class="meal-selected-items"></div></section><label class="field"><span>Notes</span><textarea name="notes" rows="2" maxlength="4000" placeholder="Optional"></textarea></label><button class="button button-primary" type="submit">Log meal</button></form>`,
     );
     renderMealComposerItems();
     searchMealFoods("");
+    void loadMealUsuals();
 }
 
 function openMealDraftComposer() {
@@ -6300,6 +6413,14 @@ async function handleAction(button) {
     }
     if (action === "select-meal-option") {
         await selectMealOption(button.dataset.key);
+        return;
+    }
+    if (action === "select-meal-usual") {
+        selectMealUsual(button.dataset.key);
+        return;
+    }
+    if (action === "add-yesterday-meal") {
+        addYesterdayMeal();
         return;
     }
     if (action === "remove-meal-item") {
