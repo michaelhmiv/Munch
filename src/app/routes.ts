@@ -135,6 +135,7 @@ import {
     getPlanningWorkspace,
     getRecipeWorkspace,
     getCalendarMonthSummary,
+    getMealUsualsWorkspace,
     getTodayWorkspace,
     getTrendsDayDetail,
     getTrendsPeriodContributors,
@@ -1044,6 +1045,21 @@ export function createAppRouter(): Hono {
             await getCalendarMonthSummary(
                 c.get("munchUserId"),
                 requiredQuery(c.req.query("month"), "month"),
+            ),
+        ),
+    );
+
+    // "Your usuals" for the meal composer: the user's own habitual
+    // foods for one meal slot and the viewed date's day class, plus
+    // yesterday's same-slot meal to copy. Resurfacing only — see
+    // src/app/usuals.ts.
+    app.get("/api/app/usuals", async (c) =>
+        privateJson(
+            c,
+            await getMealUsualsWorkspace(
+                c.get("munchUserId"),
+                requiredQuery(c.req.query("date"), "date"),
+                requiredQuery(c.req.query("meal_type"), "meal_type"),
             ),
         ),
     );

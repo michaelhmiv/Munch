@@ -74,6 +74,17 @@ import {
     TRENDS_NUTRIENT_BY_KEY,
     type TrendsMealInput,
 } from "../trends.js";
+import {
+    computeUsuals,
+    dayClassForLocalDate,
+    isUsualMealType,
+    nutrientsPerQuantity,
+    USUAL_HISTORY_WINDOW_DAYS,
+    type UsualFood,
+    type UsualMealType,
+    type UsualObservation,
+} from "./usuals.js";
+import type { NutrientValues } from "../food-providers/types.js";
 import { getTrendsDashboardLayout } from "../trends-layout.js";
 import { getFeatureModules } from "../feature-modules-repository.js";
 import { fromGrams } from "../units.js";
@@ -411,6 +422,136 @@ export async function getCalendarMonthSummary(
         month: month.month,
         timezone,
         days: assembleCalendarMonthDays(counts),
+    };
+}
+
+export interface UsualCarryItem {
+    name: string;
+    provider: string | null;
+    providerFoodId: string | null;
+    portionLabel: string | null;
+    quantity: number;
+    /** Per-quantity values, matching the meal-create scaling contract. */
+    nutrients: NutrientValues;
+}
+
+export interface MealUsualsWorkspace {
+    date: string;
+    mealType: UsualMealType;
+    dayClass: "weekday" | "weekend";
+    usuals: UsualFood[];
+    sameAsYesterday: {
+        date: string;
+        mealId: string;
+        description: string;
+        items: UsualCarryItem[];
+    } | null;
+}
+
+function itemNutrientTotals(item: AppMealItem): NutrientValues {
+    const totals: NutrientValues = {};
+    const entries: Array<[keyof NutrientValues, number | null]> = [
+        ["calories", item.calories],
+        ["protein_g", item.proteinG],
+        ["carbs_g", item.carbsG],
+        ["fat_g", item.fatG],
+        ["fiber_g", item.fiberG],
+        ["sugar_g", item.sugarG],
+        ["alcohol_g", item.alcoholG],
+        ["sodium_mg", item.sodiumMg],
+        ["saturated_fat_g", item.saturatedFatG],
+        ["cholesterol_mg", item.cholesterolMg],
+        ["potassium_mg", item.potassiumMg],
+    ];
+    for (const [key, value] of entries) {
+        if (typeof value === "number") totals[key] = value;
+    }
+    return totals;
+}
+
+function carryItem(item: AppMealItem): UsualCarryItem {
+    return {
+        name: item.name,
+        provider: item.provider,
+        providerFoodId: item.providerFoodId,
+        portionLabel: item.portionLabel,
+        quantity:
+            typeof item.quantity === "number" && item.quantity > 0
+                ? item.quantity
+                : 1,
+        nutrients: nutrientsPerQuantity(
+            itemNutrientTotals(item),
+            item.quantity,
+        ),
+    };
+}
+
+/**
+ * "Your usuals" for one meal slot on one local date: the user's own
+ * habitual foods for that slot and day class (see ./usuals.ts for the
+ * ranking and portion rules), plus yesterday's meal in the same slot
+ * when one exists, ready to copy into a new meal. Cold start is an
+ * empty list and a null copy source — the client renders nothing.
+ */
+export async function getMealUsualsWorkspace(
+    userId: string,
+    dateValue: string,
+    mealTypeValue: string,
+): Promise<MealUsualsWorkspace> {
+    const date = validateLocalDate(dateValue);
+    if (!isUsualMealType(mealTypeValue)) {
+        throw new Error("Invalid meal type");
+    }
+    const profile = await getProfile(userId);
+    const timezone = profile?.timezone ?? "UTC";
+    const windowStart = shiftLocalDate(date, -USUAL_HISTORY_WINDOW_DAYS);
+    const meals = await attachItems(
+        userId,
+        await getMealsInRange(userId, windowStart, date, timezone),
+    );
+
+    const observations: UsualObservation[] = [];
+    for (const meal of meals) {
+        if (meal.meal_type !== mealTypeValue) continue;
+        const localDate = dateInTz(meal.logged_at, timezone);
+        for (const item of meal.items) {
+            observations.push({
+                localDate,
+                loggedAt: meal.logged_at,
+                name: item.name,
+                provider: item.provider,
+                providerFoodId: item.providerFoodId,
+                portionLabel: item.portionLabel,
+                quantity: item.quantity,
+                nutrients: itemNutrientTotals(item),
+            });
+        }
+    }
+
+    const yesterdayDate = shiftLocalDate(date, -1);
+    const yesterdayMeals = meals
+        .filter(
+            (meal) =>
+                meal.meal_type === mealTypeValue &&
+                dateInTz(meal.logged_at, timezone) === yesterdayDate,
+        )
+        .sort((a, b) => b.logged_at.localeCompare(a.logged_at));
+    const yesterdayMeal = yesterdayMeals[0];
+
+    return {
+        date,
+        mealType: mealTypeValue,
+        dayClass: dayClassForLocalDate(date),
+        usuals: computeUsuals(observations, date),
+        sameAsYesterday:
+            yesterdayMeal && yesterdayMeal.items.length > 0
+                ? {
+                      date: yesterdayDate,
+                      mealId: yesterdayMeal.id,
+                      description: yesterdayMeal.description,
+                      items: yesterdayMeal.items.map(carryItem),
+                  }
+                : null,
     };
 }
 

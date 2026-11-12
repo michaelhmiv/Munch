@@ -453,6 +453,21 @@ dialog .auth-card {
     text-transform: uppercase;
 }
 
+.meal-usuals {
+    margin-bottom: 10px;
+}
+
+.meal-usuals[hidden] {
+    display: none;
+}
+
+.meal-usuals-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
 .meal-search-result {
     display: flex;
     align-items: center;

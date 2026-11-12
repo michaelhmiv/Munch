@@ -300,6 +300,15 @@ jobs:
             test-results/today-navigation-captures/
           if-no-files-found: ignore
           retention-days: 14
+      - name: Upload Usuals captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: munch-usuals-captures
+          path: |
+            test-results/usuals-captures/
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Upload feature toggle captures
         if: always()
         uses: actions/upload-artifact@v4
