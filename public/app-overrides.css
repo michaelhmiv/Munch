@@ -673,6 +673,29 @@ dialog .auth-card {
     margin-top: 2px;
 }
 
+/* The recipe editor's plan opt-in ("Also add to plan") is a lone
+   checkbox-row in a scrolling dialog: at the native 13px the toggle's
+   whole hitbox is smaller than the row's own top padding zone, so a
+   tap (or a hit test) landing a few px high misses the input entirely
+   and hits the section — on mobile the toggle read as unclickable and
+   the feature-toggles e2e hung on it for the full action timeout
+   (measured: the mobile hit path can land ~13px above the layout
+   center of a bottom-of-scroll target). Drawn at the shopping-mode
+   food-row size (28px) in a 44px row, so the input's own box stays
+   the hit target across that whole band. */
+.recipe-editor-section .checkbox-row {
+    align-items: center;
+    min-height: 44px;
+}
+
+.recipe-editor-section .checkbox-row input[type="checkbox"] {
+    width: 28px;
+    height: 28px;
+    flex: 0 0 auto;
+    margin-top: 0;
+    accent-color: #176b3a;
+}
+
 /* Shopping mode (Grocery fix G2): the class is applied only while
    the groceries route is on screen (see applyShoppingModeChrome in
    app.js). The sidebar drops away, but the groceries page-heading
