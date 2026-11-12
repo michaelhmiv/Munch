@@ -6269,14 +6269,61 @@ dialog .guided-grocery-row input[type="checkbox"] {
     color: #5d5344;
 }
 
-/* Range mode (cohesion slice 2): the calendar span washes in the
-   green tint (the authority's selected-day well), endpoints carry
-   the solid selected treatment, and the status row under the grid
-   states the in-progress selection. Range days stack in the Meals
-   panel with a hairline rule between them. */
+/* Range mode (owner-approved rendering, Nov 11): endpoints keep
+   the shipped selected fill with the band's outer corners rounded;
+   the days between sit in the components' own soft-green well,
+   bridged across the 2px grid gap so the span reads as one band. */
+.cal-day.is-range-start,
+.cal-day.is-range-end {
+    background: #2e5b34;
+    color: #fffdf7;
+    position: relative;
+}
+
+.cal-day.is-range-start {
+    border-radius: 10px 0 0 10px;
+}
+
+.cal-day.is-range-end {
+    border-radius: 0 10px 10px 0;
+}
+
+.cal-day.is-range-start .cal-day-num,
+.cal-day.is-range-end .cal-day-num {
+    color: #fffdf7;
+}
+
+.cal-day.is-range-start .cal-dot,
+.cal-day.is-range-end .cal-dot {
+    background: #fffdf7;
+}
+
 .cal-day.is-in-range {
-    background: #eef4ea;
+    background: #e6eddc;
     border-radius: 0;
+    position: relative;
+}
+
+.cal-day.is-in-range::before,
+.cal-day.is-in-range::after,
+.cal-day.is-range-start::after,
+.cal-day.is-range-end::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: #e6eddc;
+}
+
+.cal-day.is-in-range::before,
+.cal-day.is-range-end::before {
+    left: -2px;
+}
+
+.cal-day.is-in-range::after,
+.cal-day.is-range-start::after {
+    right: -2px;
 }
 
 .cal-range-row {
@@ -6289,10 +6336,182 @@ dialog .guided-grocery-row input[type="checkbox"] {
     color: #4a4237;
 }
 
-.range-day + .range-day {
+.cal-range-note {
+    font-size: 13.5px;
+    min-height: 20px;
+}
+
+.cal-range-note b {
+    font-weight: 600;
+    color: #2b2620;
+}
+
+/* The sheet header carries the Range toggle next to Close; its on
+   state is direction C's filled primary (design authority §4), its
+   off state the direction-C secondary it also carries as a class
+   (transparent fill, rule border, ink text). The pressed selector
+   outranks .button-secondary (and its :hover) on specificity so the
+   on state can never fall back to the outline secondary — the
+   QC-gate F1 failure on PR #277's first captures. */
+.sheet-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.button-secondary.range-toggle[aria-pressed="true"] {
+    background: #176b3a;
+    border-color: #176b3a;
+    color: #fffdf7;
+}
+
+.button-secondary.range-toggle[aria-pressed="true"]:hover {
+    background: #0b3d24;
+    border-color: #0b3d24;
+    color: #fffdf7;
+}
+
+/* Range-mode Today (approved rendering frames 3/4/6): the range bar
+   under the heading, the logged/planned split row, the tile meta
+   lines, and the collapsible day rows of the breakdown. */
+.range-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 44px;
+}
+
+.range-dates {
+    font-size: 13.5px;
+    color: #4a4237;
+}
+
+.range-split {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 1px 0 8px;
+    font-size: 13.5px;
+    color: #22301f;
+}
+
+.range-split b {
+    font-weight: 600;
+}
+
+.range-split .split-planned {
+    color: #2e5b34;
+}
+
+.macro-tile-meta {
+    font-size: 12px;
+    color: #6e7462;
+    margin-top: 2px;
+}
+
+.planned-tag {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #2e5b34;
+}
+
+.micro-val {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.micro-avg {
+    display: block;
+    font-size: 12px;
+    color: #6e7462;
+}
+
+/* Daily details stack full width in range mode: the two-up grid
+   cannot hold the Water card's per-day breakdown at 390px. */
+.operate-view .summary-grid.summary-grid-range {
+    grid-template-columns: 1fr;
+}
+
+.metric-detail-total {
     border-top: 1px solid #d8cdb6;
-    margin-top: 10px;
-    padding-top: 4px;
+    margin-top: 2px;
+    padding-top: 5px;
+}
+
+/* Breakdown rows: the meal-group-header grammar as a 48px row, at
+   three indent levels for the month → week → day hierarchy. */
+.range-day {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid #d8cdb6;
+    padding: 10px 0;
+    min-height: 48px;
+    cursor: pointer;
+    font: inherit;
+}
+
+.range-day-name {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 16.5px;
+    font-weight: 600;
+    color: #2b2620;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.range-day-meta {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 13px;
+    font-style: italic;
+    color: #5d5344;
+    white-space: nowrap;
+}
+
+.range-day-chev {
+    color: #2e5b34;
+    font-style: normal;
+    margin-left: 6px;
+}
+
+.day-tag {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.day-tag.planned {
+    color: #2e5b34;
+}
+
+.day-tag.today {
+    color: #8a6d3b;
+}
+
+.range-day.lvl-month .range-day-name {
+    font-size: 18px;
+}
+
+.range-day.lvl-week {
+    padding-left: 16px;
+}
+
+.range-day.lvl-day {
+    padding-left: 32px;
+}
+
+.hier-meals {
+    margin-left: 32px;
 }
 
 .cal-history-row {

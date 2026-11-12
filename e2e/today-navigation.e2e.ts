@@ -52,6 +52,29 @@ async function seedMeal(
     expect(response.status(), `seed meal ${description}`).toBe(200);
 }
 
+async function setDailyCalorieTarget(page: Page, dailyCalories: number) {
+    // The real goals surface (PUT /api/app/goals, the same call the
+    // settings goals form makes): confirm is required, and every
+    // other target is sent blank so this journey's rendering depends
+    // on exactly this one target and nothing an earlier suite left.
+    const response = await page.request.put("/api/app/goals", {
+        headers: { origin: new URL(page.url()).origin },
+        data: {
+            confirm: true,
+            idempotency_key: `today-nav-range-e2e-goals-${dailyCalories}`,
+            daily_calories: dailyCalories,
+            daily_protein_g: null,
+            daily_carbs_g: null,
+            daily_fat_g: null,
+            daily_fiber_g: null,
+            daily_sugar_g: null,
+            daily_alcohol_g: null,
+            daily_water_ml: null,
+        },
+    });
+    expect(response.status(), "PUT /api/app/goals").toBe(200);
+}
+
 function shiftDay(date: string, days: number): string {
     const value = new Date(`${date}T12:00:00Z`);
     value.setUTCDate(value.getUTCDate() + days);
@@ -356,14 +379,36 @@ test("calendar range re-bases Today: totals over the span, meals grouped by day,
     await page.setViewportSize({ width: 390, height: 844 });
     await signIn(page);
 
+    // This journey sets its own calorie target: the on-target line
+    // asserted below exists only when a daily target is set, and no
+    // other suite member sets one for the reviewer account. 2,000
+    // kcal is a ceiling every seeded day sits under (500 / 400 /
+    // 700), so the fully logged two-day span reads 2 of 2 on target.
+    await setDailyCalorieTarget(page, 2000);
+
+    // Four-day span, three days seeded (the second project run
+    // re-seeds the same idempotency keys, so every assertion below
+    // must already hold with all three meals in place).
     const today = new Date().toISOString().slice(0, 10);
     const start = shiftDay(today, -60);
     const middle = shiftDay(today, -59);
-    const end = shiftDay(today, -58);
+    const empty = shiftDay(today, -58);
+    const end = shiftDay(today, -57);
     await seedMeal(page, start, "Range seed alpha", "lunch", [
         {
             name: "Range chicken",
             nutrients: { calories: 500, protein_g: 40, carbs_g: 20, fat_g: 10 },
+        },
+    ]);
+    await seedMeal(page, middle, "Range seed middle", "breakfast", [
+        {
+            name: "Range eggs",
+            nutrients: {
+                calories: 400,
+                protein_g: 130,
+                carbs_g: 10,
+                fat_g: 20,
+            },
         },
     ]);
     await seedMeal(page, end, "Range seed beta", "dinner", [
@@ -374,24 +419,28 @@ test("calendar range re-bases Today: totals over the span, meals grouped by day,
     ]);
 
     // The range payload: exact totals for the seeded span, judged
-    // over the two logged days of the three.
+    // over the three logged days of the four.
     const payload = await (
         await page.request.get(`/api/app/today/range?start=${start}&end=${end}`)
     ).json();
-    expect(payload.aggregate.days).toBe(3);
-    expect(payload.aggregate.daysWithMeals).toBe(2);
-    expect(payload.aggregate.macros.calories.total).toBe(1200);
-    expect(payload.aggregate.macros.calories.dailyAverage).toBe(600);
-    expect(payload.days[1].date).toBe(middle);
-    expect(payload.days[1].meals).toHaveLength(0);
+    expect(payload.aggregate.days).toBe(4);
+    expect(payload.aggregate.daysWithMeals).toBe(3);
+    expect(payload.aggregate.macros.calories.total).toBe(1600);
+    expect(payload.aggregate.macros.calories.dailyAverage).toBe(533.3);
+    expect(payload.days[2].date).toBe(empty);
+    expect(payload.days[2].meals).toHaveLength(0);
 
-    // Hotel-style picking, entered through the sheet's explicit
-    // range mode (a plain tap still means "that day"): first tap
-    // anchors with the start stated, second tap commits the range.
+    // Hotel-style picking, entered through the sheet header's Range
+    // toggle (a plain tap still means "that day" until it is on):
+    // first tap anchors with the start stated, second tap commits.
     const dialog = page.locator("#app-dialog");
     await page.locator('[data-action="open-calendar"]').click();
     await expect(dialog.locator(".cal-grid")).toBeVisible();
-    await dialog.locator('[data-action="calendar-range-mode"]').click();
+    const rangeToggle = dialog.locator('[data-action="calendar-range-mode"]');
+    await expect(rangeToggle).toHaveText("Range");
+    await expect(rangeToggle).toHaveAttribute("aria-pressed", "false");
+    await rangeToggle.click();
+    await expect(rangeToggle).toHaveAttribute("aria-pressed", "true");
     const monthsBack =
         (Number(today.slice(0, 4)) - Number(start.slice(0, 4))) * 12 +
         (Number(today.slice(5, 7)) - Number(start.slice(5, 7)));
@@ -406,22 +455,106 @@ test("calendar range re-bases Today: totals over the span, meals grouped by day,
     await expect(page.locator(".today-view .page-heading h2")).toContainText(
         "–",
     );
-    await expect(page.locator(".day-kind-chip")).toHaveText("3 days");
-    await expect(
-        page.locator('.macro-tile[data-macro="calories"]'),
-    ).toContainText("1,200");
-    await expect(page.locator("#app-content")).toContainText(
-        "Range seed alpha",
+    // The range bar carries the full label and the day count; the
+    // tile re-bases to the range total with a per-day average line.
+    await expect(page.locator(".range-bar")).toContainText("4 days");
+    const caloriesTile = page.locator('.macro-tile[data-macro="calories"]');
+    await expect(caloriesTile).toContainText("1,600");
+    await expect(caloriesTile).toContainText("avg 533");
+    // QC-gate F2: the average divides by the 3 LOGGED days, not the
+    // 4 calendar days, and the tile discloses that basis in itself
+    // (÷4 would read 400 — the undisclosed line read as wrong). The
+    // exact average-line grammar is pinned in the unit tests; here
+    // the tile must carry the disclosure (and, with the calorie
+    // target this journey set in its own setup above, the signed
+    // delta form).
+    await expect(caloriesTile).toContainText("per logged day");
+    // The micro tiles disclose on the same rule.
+    await page.locator('[data-action="toggle-micros"]').click();
+    await expect(page.locator("#today-micros")).toContainText("per logged day");
+    await page.locator('[data-action="toggle-micros"]').click();
+    // No on-target line: one day of the four is unlogged.
+    await expect(caloriesTile).not.toContainText("On target");
+
+    // Reopening the calendar paints the committed span as one band:
+    // solid endpoints, the days between in the soft-green well, and
+    // the note row naming the span. (Today sits on the range start,
+    // so the sheet opens on the span's own month.)
+    await page.locator('[data-action="open-calendar"]').click();
+    await expect(dialog.locator(`.cal-day[data-date="${start}"]`)).toHaveClass(
+        /is-range-start/,
     );
-    await expect(page.locator("#app-content")).toContainText("Range seed beta");
-    await expect(page.locator("#app-content")).toContainText(
+    await expect(dialog.locator(`.cal-day[data-date="${middle}"]`)).toHaveClass(
+        /is-in-range/,
+    );
+    await expect(dialog.locator(`.cal-day[data-date="${end}"]`)).toHaveClass(
+        /is-range-end/,
+    );
+    await expect(dialog.locator(".cal-range-row")).toContainText("4 days");
+    // QC-gate F1: with a committed range painted, range mode is
+    // active in the sheet, so the header toggle reads ON — pressed,
+    // filled with direction C's primary green — not the transparent
+    // outline secondary. And the note row carries no duplicate
+    // "Clear range" (clearing lives in the range bar's ✕ Clear).
+    await expect(rangeToggle).toHaveAttribute("aria-pressed", "true");
+    await expect
+        .poll(() =>
+            rangeToggle.evaluate((el) => getComputedStyle(el).backgroundColor),
+        )
+        .toBe("rgb(23, 107, 58)");
+    await expect(
+        dialog.locator('[data-action="calendar-clear-range"]'),
+    ).toHaveCount(0);
+    await page.screenshot({
+        path: `${CAPTURE_DIR}/calendar-range-390.png`,
+    });
+    await dialog.locator('[data-action="close-dialog"]').click();
+    await expect(dialog).toBeHidden();
+
+    // Days collapse to one row each; the unlogged day reads honestly.
+    const emptyRow = page.locator(
+        `[data-action="toggle-range-day"][data-date="${empty}"]`,
+    );
+    await expect(emptyRow).toContainText("No meals logged");
+    await expect(page.locator(`#range-day-detail-${empty}`)).toContainText(
         "No meals logged.",
     );
+    // Expanding a logged day reveals its meals in place.
+    const startRow = page.locator(
+        `[data-action="toggle-range-day"][data-date="${start}"]`,
+    );
+    await startRow.click();
+    await expect(startRow).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator(`#range-day-detail-${start}`)).toContainText(
+        "Range seed alpha",
+    );
+    await expect(page.locator(`#range-day-detail-${end}`)).toBeHidden();
     await page.screenshot({ path: `${CAPTURE_DIR}/range-390.png` });
 
-    // Clear returns to the single-day view of today.
-    await page.locator('[data-action="calendar-clear-range"]').click();
-    await expect(page.locator(".day-kind-chip")).toHaveCount(0);
+    // The on-target line appears only when every day in the range
+    // is logged (frame 4's rule): re-pick the fully logged two-day
+    // span start → middle. Both days are under the calorie ceiling.
+    await page.locator('[data-action="open-calendar"]').click();
+    await dialog.locator('[data-action="calendar-range-mode"]').click();
+    await dialog.locator(`.cal-day[data-date="${start}"]`).click();
+    await dialog.locator(`.cal-day[data-date="${middle}"]`).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.locator(".range-bar")).toContainText("2 days");
+    await expect(caloriesTile).toContainText("On target · 2 of 2 days");
+    // Fully logged span: logged days ARE the calendar days, so the
+    // average line keeps the undisclosed form (QC-gate F2 choice).
+    await expect(caloriesTile).not.toContainText("per logged day");
+    await page.screenshot({
+        path: `${CAPTURE_DIR}/range-on-target-390.png`,
+    });
+
+    // Clear returns to the single-day view of today. The range bar's
+    // ✕ Clear is the only clear-range action in the app (QC-gate F1
+    // removed the calendar note row's duplicate).
+    await page
+        .locator('.range-bar [data-action="calendar-clear-range"]')
+        .click();
+    await expect(page.locator(".range-bar")).toHaveCount(0);
     await expect(
         page.locator('.macro-tile[data-macro="calories"]'),
     ).toBeVisible();
@@ -522,4 +655,178 @@ test("mixed range keeps actuals and planned projections apart, each labeled", as
     );
     expect(pastEntry.meals.length).toBeGreaterThan(0);
     expect(pastEntry.plannedProjection).toBeNull();
+
+    // The UI keeps the same line (approved rendering, frame 4): a
+    // split row over the tiles, a Logged · Planned line on each
+    // tile, no on-target claim, and Planned tags on the future days.
+    const dialog = page.locator("#app-dialog");
+    await page.locator('[data-action="open-calendar"]').click();
+    await dialog.locator('[data-action="calendar-range-mode"]').click();
+    const monthsBack =
+        (Number(today.slice(0, 4)) - Number(pastDay.slice(0, 4))) * 12 +
+        (Number(today.slice(5, 7)) - Number(pastDay.slice(5, 7)));
+    for (let i = 0; i < monthsBack; i++) {
+        await dialog.locator('[data-action="calendar-prev-month"]').click();
+    }
+    await dialog.locator(`.cal-day[data-date="${pastDay}"]`).click();
+    const monthsForward =
+        (Number(futureDay.slice(0, 4)) - Number(pastDay.slice(0, 4))) * 12 +
+        (Number(futureDay.slice(5, 7)) - Number(pastDay.slice(5, 7)));
+    for (let i = 0; i < monthsForward; i++) {
+        await dialog.locator('[data-action="calendar-next-month"]').click();
+    }
+    await dialog.locator(`.cal-day[data-date="${futureDay}"]`).click();
+    await expect(dialog).toBeHidden();
+
+    const split = page.locator(".range-split");
+    await expect(split).toContainText("Logged");
+    await expect(split).toContainText("Planned");
+    await expect(split).toContainText("kcal");
+    const caloriesTile = page.locator('.macro-tile[data-macro="calories"]');
+    await expect(caloriesTile).toContainText("Logged");
+    await expect(caloriesTile).toContainText("Planned");
+    await expect(caloriesTile).not.toContainText("On target");
+    await expect(
+        page.locator(".panel-title", { hasText: "Meals" }),
+    ).toContainText("planned");
+    const futureRow = page.locator(
+        `[data-action="toggle-range-day"][data-date="${futureDay}"]`,
+    );
+    await expect(futureRow.locator(".day-tag.planned")).toHaveText("Planned");
+    await page.screenshot({ path: `${CAPTURE_DIR}/mixed-range-390.png` });
+});
+
+test("long range nests month → week → day, and every level reconciles", async ({
+    page,
+}) => {
+    test.setTimeout(180_000);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await signIn(page);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const end = shiftDay(today, -35);
+    const start = shiftDay(end, -40);
+    await seedMeal(page, start, "Hierarchy seed alpha", "lunch", [
+        {
+            name: "Hierarchy chicken",
+            nutrients: { calories: 500, protein_g: 40, carbs_g: 20, fat_g: 10 },
+        },
+    ]);
+    await seedMeal(page, end, "Hierarchy seed beta", "dinner", [
+        {
+            name: "Hierarchy rice",
+            nutrients: { calories: 700, protein_g: 30, carbs_g: 60, fat_g: 15 },
+        },
+    ]);
+
+    // Reconciliation is asserted on the payload itself: each month
+    // is the sum of its weeks, each week the sum of its days, and
+    // the months sum to the aggregate's actual total.
+    const payload = await (
+        await page.request.get(`/api/app/today/range?start=${start}&end=${end}`)
+    ).json();
+    expect(payload.aggregate.days).toBe(41);
+    expect(payload.hierarchy.length).toBeGreaterThanOrEqual(2);
+    let hierarchyTotal = 0;
+    for (const month of payload.hierarchy) {
+        const weekSum = month.weeks.reduce(
+            (sum: number, week: { calories: number }) => sum + week.calories,
+            0,
+        );
+        const daySum = month.weeks
+            .flatMap((week: { days: { calories: number }[] }) => week.days)
+            .reduce(
+                (sum: number, day: { calories: number }) => sum + day.calories,
+                0,
+            );
+        expect(weekSum).toBe(month.calories);
+        expect(daySum).toBe(month.calories);
+        hierarchyTotal += month.calories;
+    }
+    expect(hierarchyTotal).toBe(payload.aggregate.macros.calories.total);
+
+    // Drive the calendar: toggle Range on, anchor at the start,
+    // step forward to the end month, commit.
+    const dialog = page.locator("#app-dialog");
+    await page.locator('[data-action="open-calendar"]').click();
+    await dialog.locator('[data-action="calendar-range-mode"]').click();
+    const monthsBack =
+        (Number(today.slice(0, 4)) - Number(start.slice(0, 4))) * 12 +
+        (Number(today.slice(5, 7)) - Number(start.slice(5, 7)));
+    for (let i = 0; i < monthsBack; i++) {
+        await dialog.locator('[data-action="calendar-prev-month"]').click();
+    }
+    await dialog.locator(`.cal-day[data-date="${start}"]`).click();
+    const monthsForward =
+        (Number(end.slice(0, 4)) - Number(start.slice(0, 4))) * 12 +
+        (Number(end.slice(5, 7)) - Number(start.slice(5, 7)));
+    for (let i = 0; i < monthsForward; i++) {
+        await dialog.locator('[data-action="calendar-next-month"]').click();
+    }
+    await dialog.locator(`.cal-day[data-date="${end}"]`).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.locator(".range-bar")).toContainText("41 days");
+
+    // QC-gate F3, frame (a): the hierarchy from the TOP of the
+    // surface — heading, range bar, tiles, and the collapsed month
+    // rows in frame. (The previous capture was mid-scroll, with the
+    // top of the surface out of frame.)
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+    await expect(page.locator(".today-view .page-heading h2")).toBeInViewport();
+    await expect(page.locator(".range-bar")).toBeInViewport();
+    await page.screenshot({ path: `${CAPTURE_DIR}/hierarchy-390.png` });
+
+    // Months start collapsed; open the last month, then its last
+    // week, then the seeded end day — each level in place.
+    const monthRows = page.locator('[data-action="toggle-range-month"]');
+    await expect(monthRows.first()).toBeVisible();
+    const lastMonth = monthRows.last();
+    await lastMonth.click();
+    await expect(lastMonth).toHaveAttribute("aria-expanded", "true");
+    // Weeks are scoped to the opened month: earlier months' week
+    // rows stay hidden behind their collapsed month rows.
+    const monthDetailId = await lastMonth.getAttribute("aria-controls");
+    const weekRows = page.locator(
+        `#${monthDetailId} [data-action="toggle-range-week"]`,
+    );
+    await expect(weekRows.first()).toBeVisible();
+    const lastWeek = weekRows.last();
+    await lastWeek.click();
+    const endRow = page.locator(
+        `[data-action="toggle-range-day"][data-date="${end}"]`,
+    );
+    await expect(endRow).toBeVisible();
+    await endRow.click();
+    const endDetail = page.locator(`#range-day-detail-${end}`);
+    await expect(endDetail).toContainText("Hierarchy seed beta");
+    // QC-gate F3, frame (b): scroll so the expanded day's meals sit
+    // FULLY above the bottom nav (the previous capture let the nav
+    // occlude them) — align the detail's bottom edge to just above
+    // the nav, keeping the day row and its nesting in frame — and
+    // prove it geometrically before shooting.
+    await endDetail.evaluate((el) => {
+        const nav = document.querySelector(".mobile-bottom-nav");
+        if (!nav) return;
+        const detailRect = el.getBoundingClientRect();
+        const navRect = nav.getBoundingClientRect();
+        // Instant, not the page's smooth scroll: the geometry proof
+        // below must measure the settled position.
+        window.scrollBy({
+            top: detailRect.bottom - navRect.top + 6,
+            behavior: "instant",
+        });
+    });
+    const navBox = await page.locator(".mobile-bottom-nav").boundingBox();
+    expect(navBox, "bottom nav has a box").not.toBeNull();
+    await expect
+        .poll(async () => {
+            const box = await endDetail.boundingBox();
+            return box ? box.y + box.height : Number.POSITIVE_INFINITY;
+        })
+        .toBeLessThanOrEqual(navBox!.y + 1);
+    const detailBox = await endDetail.boundingBox();
+    expect(detailBox!.y).toBeGreaterThanOrEqual(0);
+    await page.screenshot({
+        path: `${CAPTURE_DIR}/hierarchy-expanded-390.png`,
+    });
 });
