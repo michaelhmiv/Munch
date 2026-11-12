@@ -242,3 +242,109 @@ test("calendar replaces the day buttons, dots mark logged days, macros break dow
         )
         .toBe(true);
 });
+
+test("future day renders the Planned projection; an unplanned future day is honestly empty", async ({
+    page,
+}) => {
+    test.setTimeout(180_000);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await signIn(page);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const future = shiftDay(today, 6);
+    const emptyFuture = shiftDay(today, 13);
+    const origin = { origin: new URL(page.url()).origin };
+
+    // Seed a recipe with known per-serving nutrition and plan two
+    // servings of it on the future day.
+    const recipeResponse = await page.request.post("/api/app/recipes", {
+        headers: origin,
+        data: {
+            idempotency_key: "forward-view-e2e-soup",
+            recipe: {
+                name: "Forward View Soup",
+                servings: 1,
+                instructions: ["Simmer everything for 20 minutes."],
+                source_type: "user_entered",
+                ingredients: [
+                    {
+                        name: "Vegetable stock",
+                        quantity: 4,
+                        unit: "cups",
+                        nutrients: {
+                            calories: 300,
+                            protein_g: 10,
+                            carbs_g: 40,
+                            fat_g: 12,
+                        },
+                        source_type: "user_supplied",
+                        source_snapshot: { entered_by_user: true },
+                    },
+                ],
+            },
+        },
+    });
+    expect(recipeResponse.status(), "seed recipe").toBe(200);
+    const created = await recipeResponse.json();
+    const planResponse = await page.request.post(
+        `/api/app/recipes/${created.recipe.id}/plan`,
+        {
+            headers: origin,
+            data: {
+                planned_date: future,
+                meal_slot: "dinner",
+                servings: 2,
+                idempotency_key: "forward-view-e2e-plan",
+            },
+        },
+    );
+    expect(planResponse.status(), "plan recipe").toBe(200);
+
+    // The day payload: future days carry the projection (300 kcal × 2
+    // servings), today carries none — actuals only, as before.
+    const futureDay = await (
+        await page.request.get(`/api/app/today?date=${future}`)
+    ).json();
+    expect(futureDay.plannedProjection.totals.calories).toBe(600);
+    expect(futureDay.plannedProjection.totals.proteinG).toBe(20);
+    expect(futureDay.plannedProjection.partial).toBe(false);
+    const todayDay = await (
+        await page.request.get(`/api/app/today?date=${today}`)
+    ).json();
+    expect(todayDay.plannedProjection).toBeNull();
+
+    // Navigate through the calendar to the future day.
+    const monthsBetween = (from: string, to: string) =>
+        (Number(to.slice(0, 4)) - Number(from.slice(0, 4))) * 12 +
+        (Number(to.slice(5, 7)) - Number(from.slice(5, 7)));
+    const dialog = page.locator("#app-dialog");
+    const goToDay = async (fromMonthDate: string, target: string) => {
+        await page.locator('[data-action="open-calendar"]').click();
+        await expect(dialog.locator(".cal-grid")).toBeVisible();
+        const steps = monthsBetween(fromMonthDate, target);
+        for (let i = 0; i < steps; i++) {
+            await dialog.locator('[data-action="calendar-next-month"]').click();
+        }
+        await dialog.locator(`.cal-day[data-date="${target}"]`).click();
+    };
+
+    await goToDay(today, future);
+    await expect(page.locator(".day-kind-chip")).toHaveText("Planned");
+    await expect(
+        page.locator('.macro-tile[data-macro="calories"]'),
+    ).toContainText("600");
+    await expect(page.locator("#app-content")).toContainText(
+        "Forward View Soup",
+    );
+    await expect(page.locator("#app-content")).toContainText("Planned meals");
+    // A future day has no Next up compose and no logged-meals grammar.
+    await expect(page.locator('[data-testid="next-up"]')).toHaveCount(0);
+    await page.screenshot({ path: `${CAPTURE_DIR}/future-planned-390.png` });
+
+    await goToDay(future, emptyFuture);
+    await expect(page.locator(".day-kind-chip")).toHaveText("Planned");
+    await expect(page.locator("#app-content")).toContainText(
+        "Nothing planned for this day",
+    );
+    await expect(page.locator(".macro-tile")).toHaveCount(0);
+});

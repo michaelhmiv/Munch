@@ -54,6 +54,9 @@ const state = {
     // meals/totals/goals for the macro breakdown sheet (item 5).
     calendarMonths: new Map(),
     todayDayData: null,
+    // Forward view: the rendered future day's projection, stashed for
+    // the planned breakdown sheet (same pattern as todayDayData).
+    plannedDayData: null,
     shoppingMode: false,
     cookQuery: "",
     cookFilters: {
@@ -698,10 +701,16 @@ async function renderToday() {
     const data = await api(
         `/api/app/today?date=${encodeURIComponent(state.date)}`,
     );
-    const nextUp = await api(
-        `/api/app/guidance/next-up?date=${encodeURIComponent(state.date)}`,
-        { keepPrevious: true },
-    );
+    // Forward view: a future date is a projection, not a day — the
+    // server attaches plannedProjection and the guidance compose (an
+    // AI surface for a lived day) is never fetched for it.
+    const isFutureDay = Boolean(data.plannedProjection);
+    const nextUp = isFutureDay
+        ? null
+        : await api(
+              `/api/app/guidance/next-up?date=${encodeURIComponent(state.date)}`,
+              { keepPrevious: true },
+          );
     state.waterEntries = data.water?.entries || [];
     state.weightEntries = data.weight || [];
     const goals = data.goals || {};
@@ -712,12 +721,23 @@ async function renderToday() {
     const latestWeightValue = latestWeight
         ? weightFromGrams(latestWeight.weight_g, weightUnit)
         : null;
-    const guidancePanel = nextUpPanel(nextUp);
+    const guidancePanel = isFutureDay ? "" : nextUpPanel(nextUp);
+    const macrosSection = isFutureDay
+        ? data.plannedMeals?.length
+            ? plannedMacrosPanel(data.plannedProjection, goals)
+            : `<div class="panel-title"><h3>Planned</h3></div><div class="empty-state"><div><h3>Nothing planned for this day</h3>${state.bootstrap?.features?.plan === false ? "" : `<div class="auth-actions spacer-top"><button class="button button-secondary button-small" type="button" data-action="open-plan-view">Plan this day</button></div>`}</div></div>`
+        : todayMacrosPanel(data, goals);
+    const mealsPanel = isFutureDay
+        ? `<div class="panel-title"><h3>Planned meals</h3><span>${data.plannedMeals.length} planned</span></div>${plannedDayMeals(data.plannedMeals)}`
+        : `<div class="panel-title"><h3>Meals</h3><span>${data.meals.length} logged</span></div>${groupedMeals(data.meals)}`;
     // S6 slice 1 (Editorial Serif fusion, tightened Today mock): order is
     // heading → day totals → Next up → the single ad slot →
     // Meals / Daily details. The ad slot markup is empty unless the
-    // ADS-FOUNDATION flag is on for a free packaged account.
-    content.innerHTML = `<div class="operate-view today-view"><div class="page-heading"><div class="today-heading-row"><h2>${escapeHtml(formatDate(state.date, { weekday: true }))}</h2><div class="today-heading-icons"><button class="button button-secondary button-small trends-icon-btn" type="button" data-action="open-calendar" aria-label="Open calendar" title="Calendar"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg></button><button class="button button-secondary button-small trends-icon-btn" type="button" data-action="open-trends" aria-label="Open Trends" title="Trends"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><rect x="4" y="12" width="3.4" height="7" rx="1"/><rect x="10.3" y="7" width="3.4" height="12" rx="1"/><rect x="16.6" y="9.5" width="3.4" height="9.5" rx="1"/></svg></button></div></div><div class="auth-actions"></div></div><section class="panel">${todayMacrosPanel(data, goals)}</section>${guidancePanel}${todayAdSlotMarkup()}<div class="dashboard-grid"><section class="panel panel-span-8"><div class="panel-title"><h3>Meals</h3><span>${data.meals.length} logged</span></div>${groupedMeals(data.meals)}</section><aside class="panel panel-span-4"><div class="panel-title"><h3>Daily details</h3></div><div class="summary-grid" style="grid-template-columns:1fr 1fr">${metricCard("Water", data.water.totalMl, " ml", goals.daily_water_ml, false, { key: "today-water", targetLink: true, body: waterMetricDetail(data.water.entries) })}${metricCard("Weight", latestWeightValue, ` ${weightUnit}`, null, false, { key: "today-weight", body: weightMetricDetail(data.weight, weightUnit) })}</div><div class="auth-actions"><button class="button button-secondary button-small" data-action="add-water">Add water</button><button class="button button-secondary button-small" data-action="add-weight">Add weight</button></div><div class="panel-title spacer-top"><h3>Hydration entries</h3><span>${state.waterEntries.length}</span></div>${waterEntryRows(state.waterEntries)}<div class="panel-title spacer-top"><h3>Weight entries</h3><span>${state.weightEntries.length}</span></div>${weightEntryRows(state.weightEntries, weightUnit)}${data.drafts?.length ? `<div class="panel-title spacer-top"><h3>Pending drafts</h3><span>${data.drafts.length}</span></div><div class="meal-groups">${data.drafts.map(pendingDraftCard).join("")}</div>` : ""}${data.plannedMeals?.length ? `<div class="panel-title spacer-top"><h3>Planned today</h3><span>${data.plannedMeals.length}</span></div>${data.plannedMeals.map((meal) => `<div class="food-row"><div><strong>${escapeHtml(meal.recipe_name)}</strong><small>${escapeHtml(meal.meal_slot || "Meal")} · ${number(meal.servings, 1)} servings</small></div><span>${meal.nutrition_per_serving?.calories ? `${number(meal.nutrition_per_serving.calories * meal.servings)} kcal` : ""}</span><button class="button button-quiet button-small" type="button" data-action="view-recipe" data-id="${escapeHtml(meal.recipe_id)}">View recipe</button></div>`).join("")}` : ""}</aside></div></div>`;
+    // ADS-FOUNDATION flag is on for a free packaged account. A future
+    // day swaps the totals for the Planned projection, drops Next up
+    // and the ad slot (both belong to a lived day), and lists planned
+    // meals where logged meals would sit.
+    content.innerHTML = `<div class="operate-view today-view"><div class="page-heading"><div class="today-heading-row"><h2>${escapeHtml(formatDate(state.date, { weekday: true }))}</h2>${isFutureDay ? `<span class="day-kind-chip">Planned</span>` : ""}<div class="today-heading-icons"><button class="button button-secondary button-small trends-icon-btn" type="button" data-action="open-calendar" aria-label="Open calendar" title="Calendar"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg></button><button class="button button-secondary button-small trends-icon-btn" type="button" data-action="open-trends" aria-label="Open Trends" title="Trends"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><rect x="4" y="12" width="3.4" height="7" rx="1"/><rect x="10.3" y="7" width="3.4" height="12" rx="1"/><rect x="16.6" y="9.5" width="3.4" height="9.5" rx="1"/></svg></button></div></div><div class="auth-actions"></div></div><section class="panel">${macrosSection}</section>${guidancePanel}${isFutureDay ? "" : todayAdSlotMarkup()}<div class="dashboard-grid"><section class="panel panel-span-8">${mealsPanel}</section><aside class="panel panel-span-4"><div class="panel-title"><h3>Daily details</h3></div><div class="summary-grid" style="grid-template-columns:1fr 1fr">${metricCard("Water", data.water.totalMl, " ml", goals.daily_water_ml, false, { key: "today-water", targetLink: true, body: waterMetricDetail(data.water.entries) })}${metricCard("Weight", latestWeightValue, ` ${weightUnit}`, null, false, { key: "today-weight", body: weightMetricDetail(data.weight, weightUnit) })}</div><div class="auth-actions"><button class="button button-secondary button-small" data-action="add-water">Add water</button><button class="button button-secondary button-small" data-action="add-weight">Add weight</button></div><div class="panel-title spacer-top"><h3>Hydration entries</h3><span>${state.waterEntries.length}</span></div>${waterEntryRows(state.waterEntries)}<div class="panel-title spacer-top"><h3>Weight entries</h3><span>${state.weightEntries.length}</span></div>${weightEntryRows(state.weightEntries, weightUnit)}${data.drafts?.length ? `<div class="panel-title spacer-top"><h3>Pending drafts</h3><span>${data.drafts.length}</span></div><div class="meal-groups">${data.drafts.map(pendingDraftCard).join("")}</div>` : ""}${!isFutureDay && data.plannedMeals?.length ? `<div class="panel-title spacer-top"><h3>Planned today</h3><span>${data.plannedMeals.length}</span></div>${data.plannedMeals.map((meal) => `<div class="food-row"><div><strong>${escapeHtml(meal.recipe_name)}</strong><small>${escapeHtml(meal.meal_slot || "Meal")} · ${number(meal.servings, 1)} servings</small></div><span>${meal.nutrition_per_serving?.calories ? `${number(meal.nutrition_per_serving.calories * meal.servings)} kcal` : ""}</span><button class="button button-quiet button-small" type="button" data-action="view-recipe" data-id="${escapeHtml(meal.recipe_id)}">View recipe</button></div>`).join("")}` : ""}</aside></div></div>`;
 }
 
 // =====================================================================
@@ -853,6 +873,23 @@ const MICRO_BREAKDOWN = [
     ["Cholesterol", "cholesterolMg", " mg", 0],
 ];
 
+function macroTilesMarkup(totals, goals, action) {
+    const tile = (key, label, value, target) => {
+        const progress = percent(value, target);
+        return `<button type="button" class="macro-tile" data-action="${action}" data-macro="${key}"><span class="macro-tile-label">${label}<span class="macro-tile-chev" aria-hidden="true">›</span></span><span class="macro-tile-value">${number(value, 0)}<small>${key === "calories" ? " kcal" : " g"}</small></span><span class="macro-tile-target">${target ? `of ${number(target, 0)}${key === "calories" ? " kcal" : " g"} target` : "No target set"}</span>${progress == null ? "" : `<span class="macro-tile-bar" aria-hidden="true"><i style="width:${progress}%"></i></span>`}</button>`;
+    };
+    return `<div class="macro-grid">${tile("calories", "Calories", totals.calories, goals.daily_calories)}${tile("protein", "Protein", totals.proteinG, goals.daily_protein_g)}${tile("carbs", "Carbohydrates", totals.carbsG, goals.daily_carbs_g)}${tile("fat", "Fat", totals.fatG, goals.daily_fat_g)}</div>`;
+}
+
+function microsMarkup(microValues) {
+    const microRows = MICRO_BREAKDOWN.map(
+        ([label, field, unit, digits]) =>
+            `<div class="macro-micro-row"><span>${label}</span><span>${number(microValues[field], digits)}${unit}</span></div>`,
+    );
+    const microColumns = `<div><div class="macro-micro-col">${microRows.slice(0, 3).join("")}</div></div><div><div class="macro-micro-col">${microRows.slice(3).join("")}</div></div>`;
+    return `<button type="button" class="macro-expand" data-action="toggle-micros" aria-expanded="false" aria-controls="today-micros"><span>Micronutrients</span><span class="macro-expand-chev" aria-hidden="true">▾</span></button><div class="macro-micros" id="today-micros" hidden><div class="macro-micros-cols">${microColumns}</div></div>`;
+}
+
 function todayMacrosPanel(data, goals) {
     // Stash the day for the breakdown sheet: the sheet reads the same
     // meals the tiles summarize, so its numbers always add up.
@@ -861,12 +898,9 @@ function todayMacrosPanel(data, goals) {
         totals: data.totals || {},
         goals: goals || {},
     };
-    const tile = (key, label, value, target) => {
-        const progress = percent(value, target);
-        return `<button type="button" class="macro-tile" data-action="open-macro-breakdown" data-macro="${key}"><span class="macro-tile-label">${label}<span class="macro-tile-chev" aria-hidden="true">›</span></span><span class="macro-tile-value">${number(value, 0)}<small>${key === "calories" ? " kcal" : " g"}</small></span><span class="macro-tile-target">${target ? `of ${number(target, 0)}${key === "calories" ? " kcal" : " g"} target` : "No target set"}</span>${progress == null ? "" : `<span class="macro-tile-bar" aria-hidden="true"><i style="width:${progress}%"></i></span>`}</button>`;
-    };
-    const microTotal = (field) =>
-        (data.meals || []).reduce(
+    const microValues = {};
+    for (const [, field] of MICRO_BREAKDOWN) {
+        microValues[field] = (data.meals || []).reduce(
             (sum, meal) =>
                 sum +
                 (meal.items || []).reduce(
@@ -875,12 +909,110 @@ function todayMacrosPanel(data, goals) {
                 ),
             0,
         );
-    const microRows = MICRO_BREAKDOWN.map(
-        ([label, field, unit, digits]) =>
-            `<div class="macro-micro-row"><span>${label}</span><span>${number(microTotal(field), digits)}${unit}</span></div>`,
+    }
+    return `${macroTilesMarkup(data.totals, goals, "open-macro-breakdown")}${microsMarkup(microValues)}`;
+}
+
+// Forward view: a future day's macros are a PROJECTION from its planned
+// meals (server-computed, src/planned-projection.ts) — same tile grammar
+// as an actual day, labeled "Planned" so a projection never reads as a
+// fact about what was eaten. Planned recipes carry fiber/sugar/sodium
+// only; the other micros render "—" rather than a false zero.
+function plannedMacrosPanel(projection, goals) {
+    state.plannedDayData = { projection, goals: goals || {} };
+    const totals = projection.totals || {};
+    const microValues = {
+        fiberG: totals.fiberG,
+        sugarG: totals.sugarG,
+        sodiumMg: totals.sodiumMg,
+        saturatedFatG: null,
+        potassiumMg: null,
+        cholesterolMg: null,
+    };
+    const plannedCount =
+        projection.countedMeals + (projection.notCounted || []).length;
+    const note = projection.partial
+        ? `<p class="planned-note">Nutrition counted for ${number(projection.countedMeals)} of ${number(plannedCount)} planned meals. Not counted: ${escapeHtml((projection.notCounted || []).map((meal) => meal.recipe_name).join(", "))}.</p>`
+        : `<p class="planned-note">From ${number(plannedCount)} planned meal${plannedCount === 1 ? "" : "s"}.</p>`;
+    if (!projection.countedMeals) {
+        // Every planned recipe lacks nutrition: zero tiles would read
+        // as a real day of zeros, so the panel is the note alone.
+        return `<div class="panel-title"><h3>Planned</h3><span>Partially planned</span></div>${note}`;
+    }
+    return `<div class="panel-title"><h3>Planned</h3><span>${projection.partial ? "Partially planned" : "Projected from your plan"}</span></div>${macroTilesMarkup(totals, goals, "open-planned-breakdown")}${microsMarkup(microValues)}${note}`;
+}
+
+function openPlannedMacroBreakdown(key) {
+    const config = MACRO_BREAKDOWN[key];
+    const stashed = state.plannedDayData;
+    if (!config || !stashed) return;
+    const { projection, goals } = stashed;
+    const fieldByKey = {
+        calories: "calories",
+        protein: "proteinG",
+        carbs: "carbsG",
+        fat: "fatG",
+    };
+    const field = fieldByKey[key];
+    const format = (value) =>
+        `${number(value || 0, config.digits)}${config.unit}`;
+    const dayTotal = projection.totals[field] || 0;
+    const target = config.goal(goals);
+    const rows = (projection.meals || [])
+        .map(
+            (meal) =>
+                `<div class="macro-sheet-item"><span class="macro-sheet-item-name">${escapeHtml(meal.recipe_name)}<span class="macro-sheet-item-portion">${escapeHtml(meal.meal_slot || "Meal")} · ${number(meal.servings, 1)} servings</span></span><span class="macro-sheet-item-value">${format(meal[field])}</span></div>`,
+        )
+        .join("");
+    const notCounted = (projection.notCounted || []).length
+        ? `<p class="tiny">Not counted — nutrition unavailable: ${escapeHtml(projection.notCounted.map((meal) => meal.recipe_name).join(", "))}.</p>`
+        : "";
+    openDialog(
+        `${config.label} — planned`,
+        `<p class="macro-sheet-total"><b>${format(dayTotal)}</b>${target ? ` of ${format(target)} target` : ""} planned</p><div class="macro-sheet-group">${rows}</div>${notCounted}`,
+        `<div class="macro-sheet-foot"><span>Planned total</span><b>${format(dayTotal)}</b></div>`,
     );
-    const microColumns = `<div><div class="macro-micro-col">${microRows.slice(0, 3).join("")}</div></div><div><div class="macro-micro-col">${microRows.slice(3).join("")}</div></div>`;
-    return `<div class="macro-grid">${tile("calories", "Calories", data.totals.calories, goals.daily_calories)}${tile("protein", "Protein", data.totals.proteinG, goals.daily_protein_g)}${tile("carbs", "Carbohydrates", data.totals.carbsG, goals.daily_carbs_g)}${tile("fat", "Fat", data.totals.fatG, goals.daily_fat_g)}</div><button type="button" class="macro-expand" data-action="toggle-micros" aria-expanded="false" aria-controls="today-micros"><span>Micronutrients</span><span class="macro-expand-chev" aria-hidden="true">▾</span></button><div class="macro-micros" id="today-micros" hidden><div class="macro-micros-cols">${microColumns}</div></div>`;
+}
+
+// A future day's planned meals, grouped by slot in the same order the
+// logged-meal groups use. A meal whose recipe nutrition is unavailable
+// says so on its row instead of showing a false zero.
+function plannedDayMeals(plannedMeals) {
+    const order = ["breakfast", "lunch", "dinner", "snack"];
+    const groups = Object.groupBy(
+        plannedMeals || [],
+        (meal) => meal.meal_slot || "meal",
+    );
+    const keys = [
+        ...order.filter((slot) => groups[slot]?.length),
+        ...Object.keys(groups).filter((slot) => !order.includes(slot)),
+    ];
+    return `<div class="meal-groups">${keys
+        .map((slot) => {
+            const entries = groups[slot] || [];
+            const label =
+                slot === "meal"
+                    ? "Meal"
+                    : slot[0].toUpperCase() + slot.slice(1);
+            const counted = entries.reduce(
+                (sum, meal) =>
+                    sum +
+                    (meal.nutrition_per_serving?.calories
+                        ? meal.nutrition_per_serving.calories * meal.servings
+                        : 0),
+                0,
+            );
+            const anyCounted = entries.some(
+                (meal) => meal.nutrition_per_serving?.calories,
+            );
+            return `<section class="meal-group"><header class="meal-group-header"><div><span class="meal-dot ${escapeHtml(slot)}"></span><strong>${escapeHtml(label)}</strong></div><span>${anyCounted ? `${number(counted)} kcal planned` : "Nutrition not counted"}</span></header>${entries
+                .map(
+                    (meal) =>
+                        `<div class="food-row"><div><strong>${escapeHtml(meal.recipe_name)}</strong><small>${number(meal.servings, 1)} servings</small></div><span>${meal.nutrition_per_serving?.calories ? `${number(meal.nutrition_per_serving.calories * meal.servings)} kcal` : "Nutrition not counted"}</span><button class="button button-quiet button-small" type="button" data-action="view-recipe" data-id="${escapeHtml(meal.recipe_id)}">View recipe</button></div>`,
+                )
+                .join("")}</section>`;
+        })
+        .join("")}</div>`;
 }
 
 function openMacroBreakdown(key) {
@@ -5835,6 +5967,9 @@ async function handleAction(button) {
     }
     if (action === "open-macro-breakdown")
         return openMacroBreakdown(button.dataset.macro);
+    if (action === "open-planned-breakdown")
+        return openPlannedMacroBreakdown(button.dataset.macro);
+    if (action === "open-plan-view") return navigate("/app/plan");
     if (action === "toggle-micros") {
         const panel = document.getElementById("today-micros");
         if (!panel) return;

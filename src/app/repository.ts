@@ -54,9 +54,11 @@ import {
 import {
     dateInTz,
     shiftLocalDate,
+    todayInTz,
     zonedDayStartUtc,
     zonedNextDayStartUtc,
 } from "../tz.js";
+import { projectPlannedDay } from "../planned-projection.js";
 import {
     buildTrendsCard,
     buildTrendsDays,
@@ -329,6 +331,12 @@ export async function getTodayWorkspace(
         weight,
         drafts,
         plannedMeals,
+        // Forward view: a FUTURE day carries a projection of its planned
+        // meals (deterministic arithmetic, src/planned-projection.ts).
+        // Today and past days get null — their view is actuals, exactly
+        // as before; a projection is plan-based and is labeled as such.
+        plannedProjection:
+            date > todayInTz(timezone) ? projectPlannedDay(plannedMeals) : null,
     };
 }
 
