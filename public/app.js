@@ -1045,13 +1045,16 @@ function calendarGridDates(month) {
     return Array.from({ length: 42 }, (_, index) => shiftDate(start, index));
 }
 
-const calendarView = { month: null, token: 0 };
+const calendarView = { month: null, token: 0, picking: false };
 
 async function openCalendar(month) {
-    // A fresh open (dialog closed) starts picking from the committed
-    // state: the active range, if any, paints as the selection. Month
-    // stepping mid-pick keeps the in-progress anchor.
+    // A fresh open (dialog closed) starts from the committed state:
+    // single-day mode, with the active range (if any) painted as the
+    // selection. Range picking is an explicit mode inside the sheet
+    // ("Select a range") so a plain tap keeps its established meaning
+    // — land on that day. Month stepping mid-pick keeps the anchor.
     if (!dialog.open) {
+        calendarView.picking = false;
         state.rangeSelection = {
             anchor: null,
             range: state.todayRange ? { ...state.todayRange } : null,
@@ -1119,11 +1122,13 @@ function paintCalendar() {
         })
         .join("");
     const selection = state.rangeSelection;
-    const rangeStatus = selection.anchor
-        ? `<div class="cal-range-row"><span>Start ${escapeHtml(formatDate(selection.anchor))} — tap an end day, or the same day for a single day.</span></div>`
+    const rangeStatus = calendarView.picking
+        ? selection.anchor
+            ? `<div class="cal-range-row"><span>Start ${escapeHtml(formatDate(selection.anchor))} — tap an end day, or the same day for a single day.</span><button type="button" class="button button-quiet button-small" data-action="calendar-range-cancel">Cancel</button></div>`
+            : `<div class="cal-range-row"><span>Tap a start day, then an end day.</span><button type="button" class="button button-quiet button-small" data-action="calendar-range-cancel">Cancel</button></div>`
         : selection.range
           ? `<div class="cal-range-row"><span>${escapeHtml(formatRangeLabel(selection.range.start, selection.range.end))}</span><button type="button" class="button button-quiet button-small" data-action="calendar-clear-range">Clear range</button></div>`
-          : "";
+          : `<div class="cal-range-row"><button type="button" class="button button-secondary button-small" data-action="calendar-range-mode">Select a range</button></div>`;
     openDialog(
         "Calendar",
         `<div class="cal-nav"><button type="button" class="cal-chevron" data-action="calendar-prev-month" aria-label="Previous month">‹</button><span class="cal-nav-label">${escapeHtml(title)}</span><button type="button" class="cal-chevron" data-action="calendar-next-month" aria-label="Next month">›</button></div><div class="cal-week" aria-hidden="true">${["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((day) => `<span>${day}</span>`).join("")}</div><div class="cal-grid">${cells}</div>${rangeStatus}<button type="button" class="cal-history-row" data-action="calendar-history"><span>Search history</span><span aria-hidden="true">›</span></button>`,
@@ -6579,11 +6584,35 @@ async function handleAction(button) {
         return openCalendar(shiftMonth(calendarView.month, -1));
     if (action === "calendar-next-month")
         return openCalendar(shiftMonth(calendarView.month, 1));
+    if (action === "calendar-range-mode") {
+        calendarView.picking = true;
+        state.rangeSelection = emptyRangeSelection();
+        paintCalendar();
+        return;
+    }
+    if (action === "calendar-range-cancel") {
+        calendarView.picking = false;
+        state.rangeSelection = {
+            anchor: null,
+            range: state.todayRange ? { ...state.todayRange } : null,
+        };
+        paintCalendar();
+        return;
+    }
     if (action === "calendar-day") {
-        // Hotel-style picking (range-selection.js): a first tap
-        // anchors and the calendar stays open; a second tap on a
-        // later day commits the range; the same day again is a
-        // single day; an earlier day restarts the anchor.
+        if (!calendarView.picking) {
+            // The established contract: a tap lands Today on that
+            // day (and leaves range mode, if any).
+            state.todayRange = null;
+            state.rangeSelection = emptyRangeSelection();
+            state.date = button.dataset.date;
+            if (dialog.open) closeAppDialog();
+            return renderRoute();
+        }
+        // Range picking (range-selection.js state machine): a first
+        // tap anchors; a later tap commits the range; the same day
+        // again exits to that single day; an earlier day restarts
+        // the anchor.
         const { selection, outcome } = applyRangeTap(
             state.rangeSelection,
             button.dataset.date,
@@ -6593,6 +6622,7 @@ async function handleAction(button) {
             paintCalendar();
             return;
         }
+        calendarView.picking = false;
         if (dialog.open) closeAppDialog();
         if (outcome === "single") {
             state.todayRange = null;

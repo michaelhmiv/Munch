@@ -385,11 +385,13 @@ test("calendar range re-bases Today: totals over the span, meals grouped by day,
     expect(payload.days[1].date).toBe(middle);
     expect(payload.days[1].meals).toHaveLength(0);
 
-    // Hotel-style picking: first tap anchors (the calendar stays
-    // open with the start stated), second tap commits the range.
+    // Hotel-style picking, entered through the sheet's explicit
+    // range mode (a plain tap still means "that day"): first tap
+    // anchors with the start stated, second tap commits the range.
     const dialog = page.locator("#app-dialog");
     await page.locator('[data-action="open-calendar"]').click();
     await expect(dialog.locator(".cal-grid")).toBeVisible();
+    await dialog.locator('[data-action="calendar-range-mode"]').click();
     const monthsBack =
         (Number(today.slice(0, 4)) - Number(start.slice(0, 4))) * 12 +
         (Number(today.slice(5, 7)) - Number(start.slice(5, 7)));

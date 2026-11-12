@@ -1,6 +1,9 @@
 // Today calendar range selection (cohesion program, slice 2):
 // hotel-style date picking as a pure state machine, unit-tested in
-// range-selection.test.ts and driven by app.js's calendar.
+// range-selection.test.ts and driven by app.js's calendar. Picking
+// is an explicit mode inside the calendar sheet ("Select a range")
+// so a plain day tap keeps its established meaning — land on that
+// day (the contract the navigation suites pin).
 //
 // State: { anchor, range } — anchor is a first tap waiting for its
 // second; range is a completed { start, end } (start === end never
