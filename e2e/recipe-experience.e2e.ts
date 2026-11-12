@@ -120,11 +120,13 @@ test("recipe heals visibly, stocks groceries with merge counts, and cooks in che
     await page.goto("/app/recipes");
     const card = page.locator(".recipe-panel", { hasText: recipeName });
     await expect(card).toBeVisible();
-    // R3 also lives on the card (born flag-aware: Groceries is on).
-    await expect(
-        card.locator('[data-action="recipe-groceries"]'),
-    ).toBeVisible();
-    await card.getByRole("button", { name: "View recipe" }).click();
+    // Cross-work slice 2: the card strip is View · Log · Plan only —
+    // "Add to grocery list" left the card; R3 lives on the detail
+    // view (asserted below), which keeps its own grocery action.
+    await expect(card.locator('[data-action="recipe-groceries"]')).toHaveCount(
+        0,
+    );
+    await card.getByRole("button", { name: "View", exact: true }).click();
     const dialog = page.locator("#app-dialog");
     await expect(
         dialog.locator('[data-action="start-recipe-cook"]'),
@@ -175,7 +177,7 @@ test("recipe heals visibly, stocks groceries with merge counts, and cooks in che
     await page.goto("/app/recipes");
     await page
         .locator(".recipe-panel", { hasText: recipeName })
-        .getByRole("button", { name: "View recipe" })
+        .getByRole("button", { name: "View", exact: true })
         .click();
     await dialog.locator('[data-action="recipe-groceries"]').click();
     await page
@@ -189,7 +191,7 @@ test("recipe heals visibly, stocks groceries with merge counts, and cooks in che
     // ---- R2: cook mode.
     await page
         .locator(".recipe-panel", { hasText: recipeName })
-        .getByRole("button", { name: "View recipe" })
+        .getByRole("button", { name: "View", exact: true })
         .click();
     await dialog.locator('[data-action="start-recipe-cook"]').click();
     const cookMode = dialog.locator("[data-cook-mode]");

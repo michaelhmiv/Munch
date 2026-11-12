@@ -2058,8 +2058,27 @@ dialog .summary-card > small {
     margin-top: 8px;
 }
 
+/* Cross-work slice 2: search and Sort share one row (v6 board
+   frame 1) — the search field takes the flexible column, the Sort
+   select hugs its content. Both controls draw at the design
+   authority's input anchor (§5): 31px drawn, rule border, 10px
+   radius, panel fill on paper. */
 .recipes-view .recipe-filter-row {
     margin-top: 10px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: end;
+}
+
+.recipes-view .recipe-filter-row .field input,
+.recipes-view .recipe-filter-row .field select {
+    min-height: 31px;
+    padding: 5px 12px;
+    border: 1px solid #8a7c63;
+    border-radius: 10px;
+    background: var(--paper-card);
+    font-size: 1rem;
 }
 
 .recipes-view .recipe-filter-row .field {
@@ -2112,23 +2131,46 @@ dialog .summary-card > small {
     color: #2b2620;
 }
 
+/* Cross-work slice 2 — the divided card strip (design authority
+   §4, direction C; v6 board frame 1): one transparent bar on paper
+   with the rule border and hairline dividers between segments.
+   Segments are ink-text secondary buttons drawn at the 31px anchor
+   (radius lives on the bar, 10px); each keeps a ≥44px tap area on
+   an invisible ::after overlay, the board's hit-area pattern. */
 .recipes-view .recipe-panel-actions {
     flex-wrap: nowrap;
-    gap: 8px;
+    gap: 0;
+    min-height: 44px;
+    align-items: center;
     margin-top: 8px;
+    border: 1px solid #8a7c63;
+    border-radius: 10px;
+    background: transparent;
 }
 
-/* The legacy phone rule stacks .auth-actions buttons full-width
-   (flex: 1 1 100% below 620px) — three stacked 44px rows per recipe
-   is exactly the dead space the density law removes. The panel
-   actions are one deliberate equal-share row (the mock's chip row):
-   View / Log / Add to plan, each a full 44px target. */
 .recipes-view .recipe-panel-actions .button {
     flex: 1 1 0;
     min-width: 0;
+    min-height: 31px;
+    height: 31px;
+    font-size: 0.9rem;
     white-space: nowrap;
-    padding-left: 6px;
-    padding-right: 6px;
+    padding: 6px 4px;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    color: #2b2620;
+    position: relative;
+}
+
+.recipes-view .recipe-panel-actions .button + .button {
+    border-left: 1px solid #d8cdb6;
+}
+
+.recipes-view .recipe-panel-actions .button::after {
+    content: "";
+    position: absolute;
+    inset: -7px 0;
 }
 
 @media (max-width: 899px) {

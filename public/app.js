@@ -62,6 +62,13 @@ const state = {
     // covered this session ("scope:pantry_item_id") — asked once per
     // list session, never nagged again.
     pantryRunOutPrompted: new Set(),
+    // Recipes library (cross-work slice 2): the last fetched library,
+    // the search query, and the sort selection. The sort is session
+    // view state (sessionStorage, like shopping mode) — there is no
+    // settings surface for it.
+    recipeLibrary: [],
+    recipeQuery: "",
+    recipeSort: "most-cooked",
     cookQuery: "",
     cookFilters: {
         dish: "",
@@ -1897,9 +1904,126 @@ async function planningData() {
     return api(`/api/app/planning?start=${start}&end=${shiftDate(start, 6)}`);
 }
 
+// Recipes library sorting (cross-work slice 2, Michael's approved
+// flow): the filter row's Sort select drives a REAL reorder of the
+// library data the client already receives — Most cooked reads
+// times_logged, Recently made reads last_logged_at, Newest reads
+// created_at (added to the recipe list payload for this slice), and
+// A–Z reads the title. Ties fall through to the next signal, then to
+// the title, so every order is deterministic. The selection is
+// session view state, persisted like shopping mode.
+const RECIPE_SORT_STORAGE_KEY = "munch-recipe-sort";
+const RECIPE_SORTS = [
+    { value: "most-cooked", label: "Most cooked" },
+    { value: "recently-made", label: "Recently made" },
+    { value: "newest", label: "Newest" },
+    { value: "a-z", label: "A–Z" },
+];
+
+function readRecipeSortPreference() {
+    try {
+        const value = sessionStorage.getItem(RECIPE_SORT_STORAGE_KEY);
+        return RECIPE_SORTS.some((sort) => sort.value === value)
+            ? value
+            : "most-cooked";
+    } catch {
+        return "most-cooked";
+    }
+}
+
+function writeRecipeSortPreference(value) {
+    try {
+        sessionStorage.setItem(RECIPE_SORT_STORAGE_KEY, value);
+    } catch {
+        // Storage unavailable (private WebView): state.recipeSort
+        // still holds the choice for this page session.
+    }
+}
+
+function recipeSortTimestamp(value) {
+    const time = value ? Date.parse(value) : NaN;
+    return Number.isNaN(time) ? 0 : time;
+}
+
+function sortRecipes(recipes, sort) {
+    const byTitle = (a, b) => a.name.localeCompare(b.name);
+    const byTimesLogged = (a, b) =>
+        (Number(b.times_logged) || 0) - (Number(a.times_logged) || 0);
+    const byLastLogged = (a, b) =>
+        recipeSortTimestamp(b.last_logged_at) -
+        recipeSortTimestamp(a.last_logged_at);
+    const sorted = [...recipes];
+    if (sort === "recently-made") {
+        sorted.sort(
+            (a, b) =>
+                byLastLogged(a, b) || byTimesLogged(a, b) || byTitle(a, b),
+        );
+    } else if (sort === "newest") {
+        sorted.sort(
+            (a, b) =>
+                recipeSortTimestamp(b.created_at) -
+                    recipeSortTimestamp(a.created_at) || byTitle(a, b),
+        );
+    } else if (sort === "a-z") {
+        sorted.sort(byTitle);
+    } else {
+        sorted.sort(
+            (a, b) =>
+                byTimesLogged(a, b) || byLastLogged(a, b) || byTitle(a, b),
+        );
+    }
+    return sorted;
+}
+
+function visibleRecipes(recipes, query, sort) {
+    const needle = (query || "").trim().toLowerCase();
+    const filtered = needle
+        ? recipes.filter((recipe) => recipe.name.toLowerCase().includes(needle))
+        : [...recipes];
+    return sortRecipes(filtered, sort);
+}
+
+// One library card (cross-work slice 2): the actions are the divided
+// View · Log · Plan strip from the approved v6 board — three equal
+// segments in one bordered bar, each a real button on the existing
+// handlers. "Add to grocery list" leaves the card here (groceries
+// become flow-driven by a later slice); the recipe DETAIL view keeps
+// its own add-to-grocery action untouched. Feature toggles (T7): the
+// Plan segment hides with Meal Plan off, exactly as the old
+// Add-to-plan button did.
+function recipeCardHtml(recipe) {
+    const planSegment = featureFlags().plan
+        ? `<button class="button button-secondary button-small" type="button" data-action="plan-recipe" data-id="${escapeHtml(recipe.recipe_id)}">Plan</button>`
+        : "";
+    const lastCooked = recipe.last_logged_at
+        ? ` · last cooked ${escapeHtml(formatDate(String(recipe.last_logged_at).slice(0, 10)))}`
+        : "";
+    return `<section class="panel recipe-panel" data-recipe-name="${escapeHtml(recipe.name.toLowerCase())}"><span class="source-chip ${recipe.ownership === "household" ? "source-saved" : "source-usda"}">${escapeHtml(recipe.ownership)}</span><h3 class="recipe-title">${escapeHtml(recipe.name)}</h3><p class="recipe-meta">${number(recipe.servings, 1)} servings · ${escapeHtml(recipe.nutrition_status)} nutrition · per serving: <strong>${number(recipe.nutrition_per_serving?.calories)} kcal · P ${number(recipe.nutrition_per_serving?.protein_g, 1)}g · C ${number(recipe.nutrition_per_serving?.carbs_g, 1)}g · F ${number(recipe.nutrition_per_serving?.fat_g, 1)}g</strong> · Scheduled ${number(recipe.times_scheduled)} times · logged ${number(recipe.times_logged)} times${lastCooked}</p><div class="auth-actions recipe-panel-actions"><button class="button button-secondary button-small" type="button" data-action="view-recipe" data-id="${escapeHtml(recipe.recipe_id)}">View</button><button class="button button-secondary button-small" type="button" data-action="log-recipe" data-id="${escapeHtml(recipe.recipe_id)}" data-revision="${escapeHtml(recipe.revision_id || "")}">Log</button>${planSegment}</div></section>`;
+}
+
+function recipeCardsHtml() {
+    return visibleRecipes(
+        state.recipeLibrary,
+        state.recipeQuery,
+        state.recipeSort,
+    )
+        .map((recipe) => recipeCardHtml(recipe))
+        .join("");
+}
+
+// Search and sort re-render ONLY the card list: the filter inputs
+// live outside #recipe-grid, so typing never loses focus and the
+// pair always compose (the query filters the sorted list).
+function refreshRecipeGrid() {
+    const grid = document.getElementById("recipe-grid");
+    if (grid) grid.innerHTML = recipeCardsHtml();
+}
+
 async function renderRecipes() {
     setLoading("Loading recipes…");
     const data = await planningData();
+    state.recipeLibrary = data.recipes;
+    state.recipeSort = readRecipeSortPreference();
     const canCreate = Boolean(
         state.bootstrap?.capabilities?.recipeWrite ||
         state.bootstrap?.capabilities?.householdRecipeWrite,
@@ -1912,28 +2036,19 @@ async function renderRecipes() {
         : "";
     // Consolidated create (Michael, Nov 11): ONE create entry —
     // planning is an opt-in inside the create form ("Also add to
-    // plan"), not a second header button. Feature toggles (T7): the
-    // form's plan opt-in hides with Meal Plan off, and the per-card
-    // Add to plan button hides on the same flag.
-    const planRecipeButton = (recipeId) =>
-        featureFlags().plan
-            ? `<button class="button button-secondary button-small" type="button" data-action="plan-recipe" data-id="${escapeHtml(recipeId)}">Add to plan</button>`
-            : "";
-    // Recipe experience R3: the card carries Add to grocery list too
-    // (detail has it as well). Born flag-aware (toggles #241 rider):
-    // with Groceries off the button is never rendered.
-    const groceryRecipeButton = (recipe) =>
-        featureFlags().groceries
-            ? `<button class="button button-secondary button-small" type="button" data-action="recipe-groceries" data-id="${escapeHtml(recipe.recipe_id)}" data-name="${escapeHtml(recipe.name)}" data-servings="${escapeHtml(recipe.servings)}">Add to grocery list</button>`
-            : "";
+    // plan"), not a second header button.
+    const sortOptions = RECIPE_SORTS.map(
+        (sort) =>
+            `<option value="${sort.value}"${state.recipeSort === sort.value ? " selected" : ""}>${sort.label}</option>`,
+    ).join("");
     // S6 slice 4 (Recipes fusion): the library renders in the tightened
     // mock's grammar — one hairline panel per recipe, the servings /
-    // nutrition / usage facts merged into a single meta line, and the
-    // View / Log / Add-to-plan actions riding each row (the same
-    // handlers the detail dialog has always offered; the list data
-    // already carries revision_id). No ad slot exists on this surface:
-    // the app's only slot is on Today (final ad law).
-    content.innerHTML = `<div class="operate-view recipes-view"><div class="page-heading"><div><h2>Recipe library</h2><p>${data.recipes.length} structured recipe${data.recipes.length === 1 ? "" : "s"}.</p></div></div><div class="auth-actions recipe-actions">${importButton}${createButton}</div><div class="recipe-filter-row"><label class="field" for="recipe-filter"><span>Filter recipes</span><input class="input" id="recipe-filter" type="search" placeholder="Search by name" aria-label="Filter recipes" /></label></div><div class="recipe-list" id="recipe-grid">${data.recipes.length ? data.recipes.map((recipe) => `<section class="panel recipe-panel" data-recipe-name="${escapeHtml(recipe.name.toLowerCase())}"><span class="source-chip ${recipe.ownership === "household" ? "source-saved" : "source-usda"}">${escapeHtml(recipe.ownership)}</span><h3 class="recipe-title">${escapeHtml(recipe.name)}</h3><p class="recipe-meta">${number(recipe.servings, 1)} servings · ${escapeHtml(recipe.nutrition_status)} nutrition · per serving: <strong>${number(recipe.nutrition_per_serving?.calories)} kcal · P ${number(recipe.nutrition_per_serving?.protein_g, 1)}g · C ${number(recipe.nutrition_per_serving?.carbs_g, 1)}g · F ${number(recipe.nutrition_per_serving?.fat_g, 1)}g</strong> · Scheduled ${number(recipe.times_scheduled)} times · logged ${number(recipe.times_logged)} times</p><div class="auth-actions recipe-panel-actions"><button class="button button-primary button-small" type="button" data-action="view-recipe" data-id="${escapeHtml(recipe.recipe_id)}">View recipe</button><button class="button button-secondary button-small" type="button" data-action="log-recipe" data-id="${escapeHtml(recipe.recipe_id)}" data-revision="${escapeHtml(recipe.revision_id || "")}">Log recipe</button>${planRecipeButton(recipe.recipe_id)}${groceryRecipeButton(recipe)}</div></section>`).join("") : `<div class="empty-state"><div><h3>No recipes yet</h3><p>Import a recipe from a public website and review it before saving, or create one manually.</p>${canCreate ? `<div class="auth-actions spacer-top">${importButton}${createButton}</div>` : ""}</div></div>`}</div></div>`;
+    // nutrition / usage facts merged into a single meta line (slice 2
+    // adds the last-cooked date the payload already carried), and the
+    // divided View · Log · Plan strip riding each card. No ad slot
+    // exists on this surface: the app's only slot is on Today (final
+    // ad law).
+    content.innerHTML = `<div class="operate-view recipes-view"><div class="page-heading"><div><h2>Recipe library</h2><p>${data.recipes.length} structured recipe${data.recipes.length === 1 ? "" : "s"}.</p></div></div><div class="auth-actions recipe-actions">${importButton}${createButton}</div><div class="recipe-filter-row"><label class="field" for="recipe-filter"><span>Filter recipes</span><input class="input" id="recipe-filter" type="search" placeholder="Search by name" aria-label="Filter recipes" value="${escapeHtml(state.recipeQuery)}" /></label><label class="field" for="recipe-sort"><span>Sort</span><select class="select" id="recipe-sort" aria-label="Sort recipes">${sortOptions}</select></label></div><div class="recipe-list" id="recipe-grid">${data.recipes.length ? recipeCardsHtml() : `<div class="empty-state"><div><h3>No recipes yet</h3><p>Import a recipe from a public website and review it before saving, or create one manually.</p>${canCreate ? `<div class="auth-actions spacer-top">${importButton}${createButton}</div>` : ""}</div></div>`}</div></div>`;
 }
 
 function recipeIngredientFromFood(food, portionId) {
@@ -7376,6 +7491,14 @@ document.addEventListener("change", async (event) => {
         );
         return;
     }
+    if (target?.id === "recipe-sort") {
+        // Slice 2: persist the sort as session view state and
+        // re-render the card list in the new order.
+        state.recipeSort = target.value;
+        writeRecipeSortPreference(target.value);
+        refreshRecipeGrid();
+        return;
+    }
     if (target?.matches?.(".cook-mode-check")) {
         // Recipe experience R2: a checklist toggle persists the full
         // checked arrays for that kind on the dish, server-side.
@@ -7475,10 +7598,11 @@ document.addEventListener("input", (event) => {
         });
     }
     if (event.target.id === "recipe-filter") {
-        const value = event.target.value.toLowerCase();
-        document.querySelectorAll("[data-recipe-name]").forEach((card) => {
-            card.hidden = !card.dataset.recipeName.includes(value);
-        });
+        // Slice 2: the query is view state and the grid re-renders
+        // from it, so search always composes with the active sort
+        // (the old hide/show pass froze whatever order the DOM had).
+        state.recipeQuery = event.target.value;
+        refreshRecipeGrid();
     }
 });
 

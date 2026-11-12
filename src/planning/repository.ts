@@ -676,7 +676,8 @@ export async function searchRecipes(input: {
         const rows = await tx<Array<Record<string, unknown>>>`
             select
                 recipe.id, recipe.name, recipe.personal_owner_user_id,
-                recipe.household_id, recipe.updated_at, recipe.version,
+                recipe.household_id, recipe.created_at, recipe.updated_at,
+                recipe.version,
                 revision.id as revision_id, revision.servings,
                 revision.nutrition_status,
                 revision.calories_per_serving,
@@ -735,6 +736,10 @@ export async function searchRecipes(input: {
                 row.last_logged_at == null
                     ? null
                     : new Date(String(row.last_logged_at)).toISOString(),
+            // Additive (cross-work slice 2): the library's "Newest"
+            // sort orders by creation; the payload already carried
+            // updated_at but never the creation timestamp.
+            created_at: new Date(String(row.created_at)).toISOString(),
             updated_at: new Date(String(row.updated_at)).toISOString(),
         }));
     });
