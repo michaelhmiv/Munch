@@ -7454,6 +7454,7 @@ document.addEventListener("submit", async (event) => {
             "edit-water-form",
             "edit-weight-form",
             "meal-draft-create-form",
+            "duplicate-meal-form",
             "preferences-form",
             "goals-form",
             "recipe-create-form",
