@@ -84,6 +84,11 @@ const state = {
     // covered this session ("scope:pantry_item_id") — asked once per
     // list session, never nagged again.
     pantryRunOutPrompted: new Set(),
+    // Cross-work slice 5: the plan → pantry shortfall rundown for the
+    // current week (null = no indicator: modules off, nothing short,
+    // or not loaded yet). Items gain `added: true` as the user adds
+    // them from the rundown — nothing is ever added automatically.
+    shortfall: null,
     // Recipes library (cross-work slice 2): the last fetched library,
     // the search query, and the sort selection. The sort is session
     // view state (sessionStorage, like shopping mode) — there is no
@@ -4176,8 +4181,120 @@ function applyShoppingModeChrome() {
     );
 }
 
+// ---------------------------------------------------------------------
+// Cross-work slice 5 (brief §3) — plan → pantry shortfall.
+//
+// The indicator is a dot on the Groceries nav tab plus a "!" badge
+// beside the Groceries title (design authority §9: a dot or a small
+// badge the user taps — never a banner). Both open the "Short for
+// this week" rundown. The rundown only PROPOSES: items reach the
+// grocery list solely through the Add taps below, which ride the
+// existing POST /api/app/groceries/items path.
+
+function shortfallWeekRange() {
+    const today = dateInTimezone(state.bootstrap?.profile?.timezone || "UTC");
+    const start = shiftDate(
+        today,
+        -((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7),
+    );
+    return { start, end: shiftDate(start, 6) };
+}
+
+async function refreshShortfall() {
+    const flags = featureFlags();
+    if (!flags.plan || !flags.groceries || !flags.pantry) {
+        state.shortfall = null;
+        paintShortfallIndicator();
+        return;
+    }
+    const { start, end } = shortfallWeekRange();
+    try {
+        const data = await api(
+            `/api/app/planning/shortfall?start=${start}&end=${end}`,
+        );
+        state.shortfall = data.shortfall?.enabled ? data.shortfall : null;
+    } catch {
+        // A failed rundown reads as no indicator — never a stale dot.
+        state.shortfall = null;
+    }
+    paintShortfallIndicator();
+}
+
+function paintShortfallIndicator() {
+    const active = Boolean(state.shortfall?.items?.length);
+    document.querySelectorAll('a[data-route="groceries"]').forEach((anchor) => {
+        let dot = anchor.querySelector(".nav-shortfall-dot");
+        if (active && !dot) {
+            dot = document.createElement("span");
+            dot.className = "nav-shortfall-dot";
+            dot.setAttribute("aria-hidden", "true");
+            anchor.append(dot);
+        }
+        if (!active && dot) dot.remove();
+    });
+}
+
+function shortfallQty(value) {
+    return String(Number(Number(value ?? 0).toFixed(2)));
+}
+
+function shortfallRowMarkup(item, index) {
+    const reasons = item.reasons
+        .map((reason) =>
+            reason.times > 1
+                ? `${escapeHtml(reason.recipe_name)} ×${reason.times}`
+                : escapeHtml(reason.recipe_name),
+        )
+        .join(" · ");
+    const pantry =
+        item.pantry_state === "none"
+            ? "Pantry: none"
+            : `Pantry: ~${shortfallQty(item.have_quantity)}${item.need_unit ? ` ${escapeHtml(item.need_unit)}` : ""}`;
+    const need = `need ~${shortfallQty(item.short_quantity)}${item.need_unit ? ` ${escapeHtml(item.need_unit)}` : ""}`;
+    const action = item.added
+        ? `<button class="button button-secondary button-small" type="button" disabled>Added</button>`
+        : `<button class="button button-secondary button-small" type="button" data-action="shortfall-add" data-index="${index}">Add</button>`;
+    return `<div class="shortfall-row"><div class="shortfall-row-main"><strong>${escapeHtml(item.name)}</strong><span>${need} · ${reasons} · ${pantry}</span></div>${action}</div>`;
+}
+
+function openShortfallDialog() {
+    const items = state.shortfall?.items || [];
+    if (!items.length) return;
+    const rows = items
+        .map((item, index) => shortfallRowMarkup(item, index))
+        .join("");
+    const remaining = items.some((item) => !item.added);
+    openDialog(
+        "Short for this week",
+        `<div class="shortfall-rows">${rows}</div>`,
+        remaining
+            ? `<div class="auth-actions spacer-top"><button class="button button-secondary" type="button" data-action="shortfall-add-all">Add all</button></div>`
+            : "",
+    );
+}
+
+async function addShortfallItems(items) {
+    await api("/api/app/groceries/items", {
+        method: "POST",
+        body: JSON.stringify({
+            scope: "personal",
+            items: items.map((item) => ({
+                name: item.name,
+                quantity: item.short_quantity,
+                unit: item.need_unit || undefined,
+                source_planned_meal_id: item.planned_meal_id,
+                note: item.reasons
+                    .map((reason) => reason.recipe_name)
+                    .join(", "),
+            })),
+        }),
+    });
+    for (const item of items) item.added = true;
+}
+
 async function renderGroceries() {
     setLoading("Loading grocery lists…");
+    await refreshShortfall();
     const data = await planningData();
     // S6 slice 6 (density law): the list totals merge into the heading
     // line (the tightened mock carries the same facts in its meta row)
@@ -4211,7 +4328,7 @@ async function renderGroceries() {
             return `<section class="panel grocery-list" data-grocery-scope="${list.scope}"><div class="panel-title"><div><h3>${list.scope === "household" ? "Household list" : "Personal list"}</h3><span>${list.scope === "household" && data.permissions?.householdRole ? `${escapeHtml(data.permissions.householdRole)} · ` : ""}<span class="grocery-list-counts">${list.items.length} items · ${purchasedCount} checked</span></span></div><div class="auth-actions grocery-list-actions">${listAddButton}${editable && purchasedCount ? `<button class="button button-quiet button-small" type="button" data-action="clear-purchased" data-scope="${list.scope}" data-count="${purchasedCount}">Clear purchased</button>` : ""}</div></div>${list.items.length ? groupedItems : `<div class="empty-state"><div><h3>The list is empty</h3><p>Add an item manually or ask your AI assistant to record an explicit shopping need.</p>${editable ? `<div class="auth-actions spacer-top"><button class="button button-primary button-small" type="button" data-action="add-grocery" data-scope="${list.scope}">Add item</button></div>` : ""}</div></div>`}</section>`;
         })
         .join("");
-    content.innerHTML = `<div class="operate-view groceries-view"><div class="page-heading"><div><h2>Groceries</h2><p>Explicit lists only.<span class="grocery-total-counts">${listSummary}</span></p>${state.shoppingMode ? `<p class="shopping-mode-caption">Bigger targets, distractions hidden — for checking off in the store</p>` : ""}</div><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="shopping-mode" aria-pressed="${state.shoppingMode ? "true" : "false"}">${state.shoppingMode ? "Exit shopping mode" : "Shopping mode"}</button></div></div>${lists || `<section class="panel"><div class="empty-state"><div><h3>No grocery lists</h3><p>Grocery lists are not available for this account.</p></div></div></section>`}</div>`;
+    content.innerHTML = `<div class="operate-view groceries-view"><div class="page-heading"><div><h2>Groceries${state.shortfall?.items?.length ? `<button class="shortfall-badge" type="button" data-action="shortfall-open" aria-label="Short for this week — view the rundown">!</button>` : ""}</h2><p>Explicit lists only.<span class="grocery-total-counts">${listSummary}</span></p>${state.shoppingMode ? `<p class="shopping-mode-caption">Bigger targets, distractions hidden — for checking off in the store</p>` : ""}</div><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="shopping-mode" aria-pressed="${state.shoppingMode ? "true" : "false"}">${state.shoppingMode ? "Exit shopping mode" : "Shopping mode"}</button></div></div>${lists || `<section class="panel"><div class="empty-state"><div><h3>No grocery lists</h3><p>Grocery lists are not available for this account.</p></div></div></section>`}</div>`;
 }
 
 function cookCardActionsMarkup(cook) {
@@ -5045,6 +5162,10 @@ async function renderRoute() {
         // flags every route render, so a toggle saved anywhere —
         // including another device — is honored on the next render.
         applyFeatureNav(state.bootstrap?.features);
+        // Cross-work slice 5: keep the Groceries shortfall dot honest
+        // on every route render (fire-and-forget; it paints when the
+        // rundown lands and never blocks navigation).
+        void refreshShortfall();
         // Feature toggles (T3): a disabled module's route lands on
         // Today with the one-line notice — never a dead page.
         const gatedModule = ROUTE_FEATURE_MODULES[state.route];
@@ -7186,6 +7307,28 @@ async function handleAction(button) {
             button.disabled = false;
         }
     }
+    if (action === "shortfall-open") {
+        openShortfallDialog();
+        return;
+    }
+    if (action === "shortfall-add") {
+        const item = state.shortfall?.items?.[Number(button.dataset.index)];
+        if (item && !item.added) {
+            await addShortfallItems([item]);
+            openShortfallDialog();
+        }
+        return;
+    }
+    if (action === "shortfall-add-all") {
+        const pending = (state.shortfall?.items || []).filter(
+            (item) => !item.added,
+        );
+        if (pending.length) {
+            await addShortfallItems(pending);
+            openShortfallDialog();
+        }
+        return;
+    }
     if (action === "toggle-metric-detail") {
         // UX fix wave F2: expand/collapse the totals card's inline
         // decomposition. Pure disclosure — no fetch, no navigation.
@@ -8915,6 +9058,13 @@ document.addEventListener("click", async (event) => {
         link.target !== "_blank"
     ) {
         event.preventDefault();
+        // Cross-work slice 5: the shortfall dot on the Groceries tab
+        // opens the rundown instead of navigating (authority §9 — the
+        // indicator itself is the tap target).
+        if (event.target.closest(".nav-shortfall-dot")) {
+            openShortfallDialog();
+            return;
+        }
         navigate(link.getAttribute("href"));
         return;
     }
