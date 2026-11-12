@@ -4815,16 +4815,24 @@ async function maybeShowLinkPrompt() {
         // pendingNativeLinkPrompt() is null and the cookie alone
         // drives the same endpoint, unchanged.
         const nativeProvider = await pendingNativeLinkPrompt();
-        const { prompt } = await api("/api/app/sign-in-methods/link-prompt", {
-            keepPrevious: true,
-            ...(nativeProvider
-                ? {
-                      headers: {
-                          [LINK_PROMPT_NATIVE_HEADER]: nativeProvider,
-                      },
-                  }
-                : {}),
-        });
+        // This probe goes through requestJson, not api(): api() aborts
+        // the route's tracked in-flight request, and the native record
+        // check above resolves asynchronously — an api() call landing
+        // after the renderer started its load would abort that load
+        // and strand the route on its loading state. A background
+        // prompt probe must never disturb the route it floats over.
+        const { prompt } = await requestJson(
+            "/api/app/sign-in-methods/link-prompt",
+            {
+                ...(nativeProvider
+                    ? {
+                          headers: {
+                              [LINK_PROMPT_NATIVE_HEADER]: nativeProvider,
+                          },
+                      }
+                    : {}),
+            },
+        );
         state.linkPromptChecked = true;
         if (!prompt?.provider) {
             // No prompt for the recorded attempt (already linked,

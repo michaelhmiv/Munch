@@ -2550,6 +2550,14 @@ export async function chooseInstalledPhotos() {
 export async function scanInstalledBarcode() {
     throw new Error("Barcode scanning is unavailable in the bundle e2e");
 }
+export const LINK_PROMPT_NATIVE_HEADER = "x-munch-link-prompt-provider";
+export async function pendingNativeLinkPrompt() {
+    return null;
+}
+export async function clearPendingNativeLinkPrompt() {}
+export async function nativeProviderIdToken() {
+    return null;
+}
 `;
 
 async function bootPackagedApp(page: import("@playwright/test").Page) {
