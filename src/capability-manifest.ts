@@ -670,16 +670,19 @@ export const CAPABILITY_MANIFEST = [
         mcp: complete(["get_nutrition_summary"]),
         web: complete([
             "/api/app/today",
+            "/api/app/today/range",
             "/api/app/meals",
             "/api/app/calendar/month",
         ]),
         app: complete([
             "/api/app/today",
+            "/api/app/today/range",
             "/api/app/meals",
             "/api/app/calendar/month",
         ]),
         ios: complete([
             "/api/app/today",
+            "/api/app/today/range",
             "/api/app/meals",
             "/api/app/calendar/month",
         ]),

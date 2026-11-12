@@ -63,7 +63,11 @@ import {
     zonedDayStartUtc,
     zonedNextDayStartUtc,
 } from "../tz.js";
-import { projectPlannedDay } from "../planned-projection.js";
+import {
+    projectPlannedDay,
+    projectPlannedRange,
+} from "../planned-projection.js";
+import { aggregateTodayRange } from "../today-range.js";
 import {
     buildTrendsCard,
     buildTrendsDays,
@@ -482,6 +486,129 @@ function carryItem(item: AppMealItem): UsualCarryItem {
         nutrients: nutrientsPerQuantity(
             itemNutrientTotals(item),
             item.quantity,
+        ),
+    };
+}
+
+/**
+ * Today range mode (cohesion program, slice 2): one payload for a
+ * calendar range — every day assembled once (actual meals with items,
+ * water, weight, and the day's planned projection when it has one),
+ * plus the deterministic range aggregate from src/today-range.ts.
+ * Capped at 62 days: this is Today's quick look, not a report; Trends
+ * owns long horizons.
+ */
+export const TODAY_RANGE_MAX_DAYS = 62;
+
+export async function getTodayRangeWorkspace(
+    userId: string,
+    startValue: string,
+    endValue: string,
+    surface: MunchCapabilitySurface = "web",
+) {
+    const startDate = validateLocalDate(startValue);
+    const endDate = validateLocalDate(endValue);
+    const dayCount = inclusiveDateSpanDays(startDate, endDate);
+    if (dayCount > TODAY_RANGE_MAX_DAYS) {
+        throw new Error("Date range is too large");
+    }
+    const [profile, capabilities] = await Promise.all([
+        getProfile(userId),
+        resolveMunchCapabilities(userId, surface),
+    ]);
+    const timezone = profile?.timezone ?? "UTC";
+    const [goals, meals, water, weight, plannedMeals] = await Promise.all([
+        getNutritionGoals(userId),
+        getMealsInRange(userId, startDate, endDate, timezone),
+        getWaterInRange(userId, startDate, endDate, timezone),
+        getWeightInRange(userId, startDate, endDate, timezone),
+        // Same Plan-module gate as the single-day workspace: with the
+        // module off, planned data is not assembled at all.
+        (async () => {
+            const features = await getFeatureModules(userId);
+            if (!features.plan) return [];
+            return capabilities.personalPlanningRead ||
+                capabilities.householdRead
+                ? getMealPlan({
+                      userId,
+                      startDate,
+                      endDate,
+                      scope: "all",
+                  })
+                : [];
+        })(),
+    ]);
+    const mealsWithItems = await attachItems(userId, meals);
+    const groupByDate = <T>(
+        entries: readonly T[],
+        dateOf: (entry: T) => string,
+    ) => {
+        const byDate = new Map<string, T[]>();
+        for (const entry of entries) {
+            const date = dateOf(entry);
+            const list = byDate.get(date) ?? [];
+            list.push(entry);
+            byDate.set(date, list);
+        }
+        return byDate;
+    };
+    const mealsByDate = groupByDate(mealsWithItems, (meal) =>
+        dateInTz(meal.logged_at, timezone),
+    );
+    const waterByDate = groupByDate(water, (entry) =>
+        dateInTz(entry.logged_at, timezone),
+    );
+    const weightByDate = groupByDate(weight, (entry) =>
+        dateInTz(entry.logged_at, timezone),
+    );
+    const plannedByDate = groupByDate(plannedMeals, (meal) =>
+        String(meal.planned_date),
+    );
+    const projections = projectPlannedRange(plannedMeals);
+    const today = todayInTz(timezone);
+    const days = Array.from({ length: dayCount }, (_, index) => {
+        const date = shiftLocalDate(startDate, index);
+        const dayMeals = mealsByDate.get(date) ?? [];
+        const dayWater = waterByDate.get(date) ?? [];
+        return {
+            date,
+            relation:
+                date < today
+                    ? ("past" as const)
+                    : date > today
+                      ? ("future" as const)
+                      : ("today" as const),
+            totals: sumNutrition(dayMeals),
+            meals: dayMeals,
+            water: {
+                totalMl: dayWater.reduce(
+                    (sum, entry) => sum + entry.amount_ml,
+                    0,
+                ),
+                entries: dayWater,
+            },
+            weight: (weightByDate.get(date) ?? []).map((entry) => ({
+                ...entry,
+                loggedOn: date,
+            })),
+            plannedMeals: plannedByDate.get(date) ?? [],
+            plannedProjection: projections.get(date) ?? null,
+        };
+    });
+    return {
+        start: startDate,
+        end: endDate,
+        timezone,
+        goals,
+        days,
+        aggregate: aggregateTodayRange(
+            days.map((day) => ({
+                date: day.date,
+                relation: day.relation,
+                meals: day.meals,
+                planned: day.plannedProjection,
+            })),
+            goals,
         ),
     };
 }

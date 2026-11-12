@@ -348,3 +348,159 @@ test("future day renders the Planned projection; an unplanned future day is hone
     );
     await expect(page.locator(".macro-tile")).toHaveCount(0);
 });
+
+test("calendar range re-bases Today: totals over the span, meals grouped by day, clear returns to a single day", async ({
+    page,
+}) => {
+    test.setTimeout(180_000);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await signIn(page);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const start = shiftDay(today, -60);
+    const middle = shiftDay(today, -59);
+    const end = shiftDay(today, -58);
+    await seedMeal(page, start, "Range seed alpha", "lunch", [
+        {
+            name: "Range chicken",
+            nutrients: { calories: 500, protein_g: 40, carbs_g: 20, fat_g: 10 },
+        },
+    ]);
+    await seedMeal(page, end, "Range seed beta", "dinner", [
+        {
+            name: "Range rice",
+            nutrients: { calories: 700, protein_g: 30, carbs_g: 60, fat_g: 15 },
+        },
+    ]);
+
+    // The range payload: exact totals for the seeded span, judged
+    // over the two logged days of the three.
+    const payload = await (
+        await page.request.get(`/api/app/today/range?start=${start}&end=${end}`)
+    ).json();
+    expect(payload.aggregate.days).toBe(3);
+    expect(payload.aggregate.daysWithMeals).toBe(2);
+    expect(payload.aggregate.macros.calories.total).toBe(1200);
+    expect(payload.aggregate.macros.calories.dailyAverage).toBe(600);
+    expect(payload.days[1].date).toBe(middle);
+    expect(payload.days[1].meals).toHaveLength(0);
+
+    // Hotel-style picking: first tap anchors (the calendar stays
+    // open with the start stated), second tap commits the range.
+    const dialog = page.locator("#app-dialog");
+    await page.locator('[data-action="open-calendar"]').click();
+    await expect(dialog.locator(".cal-grid")).toBeVisible();
+    const monthsBack =
+        (Number(today.slice(0, 4)) - Number(start.slice(0, 4))) * 12 +
+        (Number(today.slice(5, 7)) - Number(start.slice(5, 7)));
+    for (let i = 0; i < monthsBack; i++) {
+        await dialog.locator('[data-action="calendar-prev-month"]').click();
+    }
+    await dialog.locator(`.cal-day[data-date="${start}"]`).click();
+    await expect(dialog.locator(".cal-range-row")).toContainText("Start");
+    await dialog.locator(`.cal-day[data-date="${end}"]`).click();
+    await expect(dialog).toBeHidden();
+
+    await expect(page.locator(".today-view .page-heading h2")).toContainText(
+        "–",
+    );
+    await expect(page.locator(".day-kind-chip")).toHaveText("3 days");
+    await expect(
+        page.locator('.macro-tile[data-macro="calories"]'),
+    ).toContainText("1,200");
+    await expect(page.locator("#app-content")).toContainText(
+        "Range seed alpha",
+    );
+    await expect(page.locator("#app-content")).toContainText("Range seed beta");
+    await expect(page.locator("#app-content")).toContainText(
+        "No meals logged.",
+    );
+    await page.screenshot({ path: `${CAPTURE_DIR}/range-390.png` });
+
+    // Clear returns to the single-day view of today.
+    await page.locator('[data-action="calendar-clear-range"]').click();
+    await expect(page.locator(".day-kind-chip")).toHaveCount(0);
+    await expect(
+        page.locator('.macro-tile[data-macro="calories"]'),
+    ).toBeVisible();
+});
+
+test("mixed range keeps actuals and planned projections apart, each labeled", async ({
+    page,
+}) => {
+    test.setTimeout(180_000);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await signIn(page);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const pastDay = shiftDay(today, -1);
+    const futureDay = shiftDay(today, 2);
+    const origin = { origin: new URL(page.url()).origin };
+    await seedMeal(page, pastDay, "Mixed range logged", "lunch", [
+        {
+            name: "Mixed chicken",
+            nutrients: { calories: 400, protein_g: 35, carbs_g: 10, fat_g: 12 },
+        },
+    ]);
+    const recipeResponse = await page.request.post("/api/app/recipes", {
+        headers: origin,
+        data: {
+            idempotency_key: "range-mixed-e2e-soup",
+            recipe: {
+                name: "Range Mixed Soup",
+                servings: 1,
+                instructions: ["Simmer everything for 20 minutes."],
+                source_type: "user_entered",
+                ingredients: [
+                    {
+                        name: "Vegetable stock",
+                        quantity: 4,
+                        unit: "cups",
+                        nutrients: {
+                            calories: 300,
+                            protein_g: 10,
+                            carbs_g: 40,
+                            fat_g: 12,
+                        },
+                        source_type: "user_supplied",
+                        source_snapshot: { entered_by_user: true },
+                    },
+                ],
+            },
+        },
+    });
+    expect(recipeResponse.status(), "seed recipe").toBe(200);
+    const created = await recipeResponse.json();
+    const planResponse = await page.request.post(
+        `/api/app/recipes/${created.recipe.id}/plan`,
+        {
+            headers: origin,
+            data: {
+                planned_date: futureDay,
+                meal_slot: "dinner",
+                servings: 2,
+                idempotency_key: "range-mixed-e2e-plan",
+            },
+        },
+    );
+    expect(planResponse.status(), "plan recipe").toBe(200);
+
+    const payload = await (
+        await page.request.get(
+            `/api/app/today/range?start=${pastDay}&end=${futureDay}`,
+        )
+    ).json();
+    const futureEntry = payload.days.find(
+        (day: { date: string }) => day.date === futureDay,
+    );
+    // The future day carries NO actuals — only its projection — and
+    // the aggregate keeps the 600 planned kcal out of actual totals.
+    expect(futureEntry.totals.calories).toBe(0);
+    expect(futureEntry.plannedProjection.totals.calories).toBe(600);
+    expect(payload.aggregate.plannedTotals.calories).toBe(600);
+    const pastEntry = payload.days.find(
+        (day: { date: string }) => day.date === pastDay,
+    );
+    expect(pastEntry.meals.length).toBeGreaterThan(0);
+    expect(pastEntry.plannedProjection).toBeNull();
+});

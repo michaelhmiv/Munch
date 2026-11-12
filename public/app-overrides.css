@@ -6204,6 +6204,32 @@ dialog .guided-grocery-row input[type="checkbox"] {
     color: #5d5344;
 }
 
+/* Range mode (cohesion slice 2): the calendar span washes in the
+   green tint (the authority's selected-day well), endpoints carry
+   the solid selected treatment, and the status row under the grid
+   states the in-progress selection. Range days stack in the Meals
+   panel with a hairline rule between them. */
+.cal-day.is-in-range {
+    background: #eef4ea;
+    border-radius: 0;
+}
+
+.cal-range-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    font-size: 13px;
+    color: #4a4237;
+}
+
+.range-day + .range-day {
+    border-top: 1px solid #d8cdb6;
+    margin-top: 10px;
+    padding-top: 4px;
+}
+
 .cal-history-row {
     font: inherit;
     width: 100%;

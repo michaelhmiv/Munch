@@ -34,6 +34,11 @@ import {
     queueModuleOffNotice,
     takeModuleOffNotice,
 } from "./feature-nav.js";
+import {
+    applyRangeTap,
+    emptyRangeSelection,
+    rangeCellState,
+} from "./range-selection.js";
 
 installPhotoCapture();
 
@@ -57,6 +62,14 @@ const state = {
     // Forward view: the rendered future day's projection, stashed for
     // the planned breakdown sheet (same pattern as todayDayData).
     plannedDayData: null,
+    // Range mode (cohesion slice 2): todayRange is the committed
+    // { start, end } the Today view is re-based on (null = single
+    // day); rangeSelection is the calendar's in-progress picking
+    // state (see range-selection.js); rangeDayData stashes the last
+    // range payload for the breakdown sheet.
+    todayRange: null,
+    rangeSelection: emptyRangeSelection(),
+    rangeDayData: null,
     shoppingMode: false,
     // "Already have it": pantry items the run-out prompt has already
     // covered this session ("scope:pantry_item_id") — asked once per
@@ -717,6 +730,9 @@ function nextUpPanel(nextUp) {
 }
 
 async function renderToday() {
+    // Range mode re-bases the whole screen (renderRangeToday); the
+    // single-day path below is untouched when no range is committed.
+    if (state.todayRange) return renderRangeToday();
     setLoading("Loading today’s meals and progress…");
     const data = await api(
         `/api/app/today?date=${encodeURIComponent(state.date)}`,
@@ -761,6 +777,247 @@ async function renderToday() {
 }
 
 // =====================================================================
+// Range mode (cohesion slice 2): the Today screen re-based on a
+// calendar range. EVERY section of the single-day view has a defined
+// range behavior:
+// - Heading: the range label + day count + a Clear range action.
+// - Macro tiles: range totals against the PERIOD target (daily ×
+//   days, labeled), per-logged-day average, days-on-target. Tiles
+//   open a per-day breakdown sheet, like the single-day tiles.
+// - Micronutrients: range totals, per-logged-day averages, and
+//   period-scaled targets where a daily target exists.
+// - Meals: grouped by day; future days show their planned meals,
+//   today shows logged meals plus its planned meals as a separate
+//   labeled block — actuals and projections never sum into one
+//   unlabeled number (the aggregate keeps them apart, and a planned
+//   summary line appears only when the range contains planned days).
+// - Water: range total against the period water target + per-day
+//   lines; hydration entries grouped by day.
+// - Weight: latest in range + first→last change; entries listed with
+//   their dates. Weight is never summed.
+// - NOT rendered in range mode (deliberate, see the PR): Next up and
+//   the ad slot (single-day guidance surfaces), Add water / Add
+//   weight (day-scoped entry actions — clear the range to log), and
+//   Pending drafts (account state, not range data; it stays on the
+//   single-day view).
+// =====================================================================
+
+function rangeMacroTilesMarkup(aggregate, goals, plannedOnly) {
+    const tile = (key, label, macro, unit, digits) => {
+        const progress = percent(macro.total, macro.periodTarget);
+        const averageLabel = plannedOnly
+            ? `avg ${number(macro.dailyAverage, digits)}${unit} per planned day`
+            : `avg ${number(macro.dailyAverage, digits)}${unit} per logged day`;
+        const targetLine =
+            macro.periodTarget != null
+                ? `of ${number(macro.periodTarget, 0)}${unit} target · ${number(aggregate.days)} days × ${number(macro.dailyTarget, 0)}${unit}`
+                : "No target set";
+        const onTarget =
+            !plannedOnly && macro.daysOnTarget != null
+                ? ` · target met ${number(macro.daysOnTarget)} of ${number(macro.daysJudged)} logged days`
+                : "";
+        return `<button type="button" class="macro-tile" data-action="open-range-breakdown" data-macro="${key}"><span class="macro-tile-label">${label}<span class="macro-tile-chev" aria-hidden="true">›</span></span><span class="macro-tile-value">${number(macro.total, 0)}<small>${unit}</small></span><span class="macro-tile-target">${targetLine}</span><span class="macro-tile-target">${averageLabel}${onTarget}</span>${progress == null ? "" : `<span class="macro-tile-bar" aria-hidden="true"><i style="width:${progress}%"></i></span>`}</button>`;
+    };
+    const macros = plannedOnly
+        ? {
+              calories: {
+                  total: aggregate.plannedTotals.calories,
+                  dailyAverage:
+                      aggregate.plannedDays > 0
+                          ? aggregate.plannedTotals.calories /
+                            aggregate.plannedDays
+                          : 0,
+                  periodTarget:
+                      goals.daily_calories != null
+                          ? goals.daily_calories * aggregate.days
+                          : null,
+                  dailyTarget: goals.daily_calories ?? null,
+                  daysOnTarget: null,
+                  daysJudged: aggregate.plannedDays,
+              },
+              protein: {
+                  total: aggregate.plannedTotals.proteinG,
+                  dailyAverage:
+                      aggregate.plannedDays > 0
+                          ? aggregate.plannedTotals.proteinG /
+                            aggregate.plannedDays
+                          : 0,
+                  periodTarget:
+                      goals.daily_protein_g != null
+                          ? goals.daily_protein_g * aggregate.days
+                          : null,
+                  dailyTarget: goals.daily_protein_g ?? null,
+                  daysOnTarget: null,
+                  daysJudged: aggregate.plannedDays,
+              },
+              carbs: {
+                  total: aggregate.plannedTotals.carbsG,
+                  dailyAverage:
+                      aggregate.plannedDays > 0
+                          ? aggregate.plannedTotals.carbsG /
+                            aggregate.plannedDays
+                          : 0,
+                  periodTarget:
+                      goals.daily_carbs_g != null
+                          ? goals.daily_carbs_g * aggregate.days
+                          : null,
+                  dailyTarget: goals.daily_carbs_g ?? null,
+                  daysOnTarget: null,
+                  daysJudged: aggregate.plannedDays,
+              },
+              fat: {
+                  total: aggregate.plannedTotals.fatG,
+                  dailyAverage:
+                      aggregate.plannedDays > 0
+                          ? aggregate.plannedTotals.fatG / aggregate.plannedDays
+                          : 0,
+                  periodTarget:
+                      goals.daily_fat_g != null
+                          ? goals.daily_fat_g * aggregate.days
+                          : null,
+                  dailyTarget: goals.daily_fat_g ?? null,
+                  daysOnTarget: null,
+                  daysJudged: aggregate.plannedDays,
+              },
+          }
+        : aggregate.macros;
+    return `<div class="macro-grid">${tile("calories", "Calories", macros.calories, " kcal", 0)}${tile("protein", "Protein", macros.protein, " g", 1)}${tile("carbs", "Carbohydrates", macros.carbs, " g", 1)}${tile("fat", "Fat", macros.fat, " g", 1)}</div>`;
+}
+
+const RANGE_MICROS = [
+    ["Fiber", "fiber", " g", 1],
+    ["Sugar", "sugar", " g", 1],
+    ["Sodium", "sodium", " mg", 0],
+    ["Sat. fat", "saturatedFat", " g", 1],
+    ["Potassium", "potassium", " mg", 0],
+    ["Cholesterol", "cholesterol", " mg", 0],
+];
+
+function rangeMicrosMarkup(aggregate) {
+    const rows = RANGE_MICROS.map(([label, key, unit, digits]) => {
+        const micro = aggregate.micros[key];
+        const target =
+            micro.periodTarget != null
+                ? ` · of ${number(micro.periodTarget, 0)}${unit} target`
+                : "";
+        return `<div class="macro-micro-row"><span>${label}</span><span>${number(micro.total, digits)}${unit} · avg ${number(micro.dailyAverage, digits)}${unit}/day${target}</span></div>`;
+    });
+    const columns = `<div><div class="macro-micro-col">${rows.slice(0, 3).join("")}</div></div><div><div class="macro-micro-col">${rows.slice(3).join("")}</div></div>`;
+    return `<button type="button" class="macro-expand" data-action="toggle-micros" aria-expanded="false" aria-controls="today-micros"><span>Micronutrients</span><span class="macro-expand-chev" aria-hidden="true">▾</span></button><div class="macro-micros" id="today-micros" hidden><div class="macro-micros-cols">${columns}</div></div>`;
+}
+
+function openRangeMacroBreakdown(key) {
+    const config = MACRO_BREAKDOWN[key];
+    const data = state.rangeDayData;
+    if (!config || !data) return;
+    const format = (value) =>
+        `${number(value || 0, config.digits)}${config.unit}`;
+    const aggregateMacro =
+        data.aggregate.daysWithMeals > 0 ? data.aggregate.macros[key] : null;
+    const rangeTotal = aggregateMacro
+        ? aggregateMacro.total
+        : data.aggregate.plannedTotals?.[
+              {
+                  calories: "calories",
+                  protein: "proteinG",
+                  carbs: "carbsG",
+                  fat: "fatG",
+              }[key]
+          ] || 0;
+    const rows = data.days
+        .map((day) => {
+            const actual = day.totals[config.totalsField] || 0;
+            const plannedValue =
+                day.plannedProjection?.totals[config.totalsField];
+            const plannedNote =
+                plannedValue != null
+                    ? `<span class="macro-sheet-item-portion">Planned ${format(plannedValue)} — not counted in the range total</span>`
+                    : "";
+            return `<div class="macro-sheet-item"><span class="macro-sheet-item-name">${escapeHtml(formatDate(day.date, { weekday: true }))}${plannedNote}</span><span class="macro-sheet-item-value">${day.meals.length ? format(actual) : "—"}</span></div>`;
+        })
+        .join("");
+    openDialog(
+        `${config.label} — ${formatRangeLabel(data.start, data.end)}`,
+        `<p class="macro-sheet-total"><b>${format(rangeTotal)}</b> across ${number(data.aggregate.days)} days</p><div class="macro-sheet-group">${rows}</div>`,
+        `<div class="macro-sheet-foot"><span>Range total</span><b>${format(rangeTotal)}</b></div>`,
+    );
+}
+
+async function renderRangeToday() {
+    const { start, end } = state.todayRange;
+    setLoading("Loading the selected range…");
+    const data = await api(
+        `/api/app/today/range?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+    );
+    state.rangeDayData = data;
+    const goals = data.goals || {};
+    const aggregate = data.aggregate;
+    const weightUnit = displayWeightUnit(
+        state.bootstrap?.profile?.preferred_weight_unit,
+    );
+    const allWaterEntries = data.days.flatMap((day) => day.water.entries);
+    const allWeightEntries = data.days.flatMap((day) => day.weight);
+    state.waterEntries = allWaterEntries;
+    state.weightEntries = allWeightEntries;
+    const totalWaterMl = data.days.reduce(
+        (sum, day) => sum + day.water.totalMl,
+        0,
+    );
+    const latestWeight = allWeightEntries.at(-1);
+    const latestWeightValue = latestWeight
+        ? weightFromGrams(latestWeight.weight_g, weightUnit)
+        : null;
+
+    const plannedOnly =
+        aggregate.daysWithMeals === 0 && aggregate.plannedTotals;
+    const macrosSection =
+        aggregate.daysWithMeals === 0 && !aggregate.plannedTotals
+            ? `<div class="panel-title"><h3>Range totals</h3></div><div class="empty-state"><div><h3>No meals logged or planned in this range</h3></div></div>`
+            : `${plannedOnly ? `<div class="panel-title"><h3>Planned</h3><span>Projected from your plan</span></div>` : ""}${rangeMacroTilesMarkup(aggregate, goals, Boolean(plannedOnly))}${rangeMicrosMarkup(aggregate)}${!plannedOnly && aggregate.plannedTotals ? `<div class="panel-title spacer-top"><h3>Planned in this range</h3><span>${number(aggregate.plannedDays)} day${aggregate.plannedDays === 1 ? "" : "s"}</span></div><p class="planned-note">Planned: ${number(aggregate.plannedTotals.calories)} kcal · P ${number(aggregate.plannedTotals.proteinG, 1)}g · C ${number(aggregate.plannedTotals.carbsG, 1)}g · F ${number(aggregate.plannedTotals.fatG, 1)}g — counted separately from the totals above.</p>` : ""}`;
+
+    const totalLogged = data.days.reduce(
+        (sum, day) => sum + day.meals.length,
+        0,
+    );
+    const daySections = data.days
+        .map((day) => {
+            const plannedBlock = day.plannedMeals.length
+                ? `<div class="panel-title spacer-top"><h3>Planned</h3><span>${number(day.plannedMeals.length)} planned</span></div>${plannedDayMeals(day.plannedMeals)}`
+                : "";
+            const mealsBlock = day.meals.length
+                ? groupedMeals(day.meals)
+                : `<p class="tiny">${day.relation === "future" ? "Nothing planned." : "No meals logged."}</p>`;
+            return `<section class="range-day"><div class="panel-title"><h3>${escapeHtml(formatDate(day.date, { weekday: true }))}</h3><span>${number(day.meals.length)} logged${day.plannedMeals.length ? ` · ${number(day.plannedMeals.length)} planned` : ""}</span></div>${day.meals.length ? mealsBlock : day.plannedMeals.length ? "" : mealsBlock}${plannedBlock}</section>`;
+        })
+        .join("");
+
+    const waterByDay = data.days
+        .filter((day) => day.water.entries.length)
+        .map(
+            (day) =>
+                `<div class="panel-title spacer-top"><h3>${escapeHtml(formatDate(day.date))}</h3><span>${number(day.water.totalMl)} ml</span></div>${waterEntryRows(day.water.entries)}`,
+        )
+        .join("");
+    const weightDays = data.days.filter((day) => day.weight.length);
+    const firstWeightDay = weightDays[0];
+    const lastWeightDay = weightDays.at(-1);
+    const weightChange =
+        firstWeightDay && lastWeightDay && firstWeightDay !== lastWeightDay
+            ? weightFromGrams(
+                  lastWeightDay.weight.at(-1).weight_g -
+                      firstWeightDay.weight[0].weight_g,
+                  weightUnit,
+              )
+            : null;
+    const waterTarget =
+        goals.daily_water_ml != null
+            ? goals.daily_water_ml * aggregate.days
+            : null;
+
+    content.innerHTML = `<div class="operate-view today-view"><div class="page-heading"><div class="today-heading-row"><h2>${escapeHtml(formatRangeLabel(start, end))}</h2><span class="day-kind-chip">${number(aggregate.days)} days</span><div class="today-heading-icons"><button class="button button-secondary button-small trends-icon-btn" type="button" data-action="open-calendar" aria-label="Open calendar" title="Calendar"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg></button><button class="button button-secondary button-small trends-icon-btn" type="button" data-action="open-trends" aria-label="Open Trends" title="Trends"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><rect x="4" y="12" width="3.4" height="7" rx="1"/><rect x="10.3" y="7" width="3.4" height="12" rx="1"/><rect x="16.6" y="9.5" width="3.4" height="9.5" rx="1"/></svg></button></div></div><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="calendar-clear-range">Clear range</button></div></div><section class="panel">${macrosSection}</section><div class="dashboard-grid"><section class="panel panel-span-8"><div class="panel-title"><h3>Meals</h3><span>${number(totalLogged)} logged</span></div>${daySections}</section><aside class="panel panel-span-4"><div class="panel-title"><h3>Range details</h3></div><div class="summary-grid" style="grid-template-columns:1fr 1fr">${metricCard("Water", totalWaterMl, " ml", waterTarget, false, { key: "range-water", body: `<p class="tiny">${number(aggregate.days)} days${waterTarget != null ? ` · target ${number(waterTarget)} ml (${number(goals.daily_water_ml)} ml × ${number(aggregate.days)} days)` : ""}</p>` })}${metricCard("Weight", latestWeightValue, ` ${weightUnit}`, null, false, { key: "range-weight", body: weightChange != null ? `<p class="tiny">${weightChange >= 0 ? "+" : ""}${number(weightChange, 1)} ${escapeHtml(weightUnit)} across the range</p>` : `<p class="tiny">${weightDays.length ? "One day with entries" : "No entries in range"}</p>` })}</div><div class="panel-title spacer-top"><h3>Hydration entries</h3><span>${number(allWaterEntries.length)}</span></div>${waterByDay || `<div class="empty-state"><div><h3>No water entries</h3></div></div>`}<div class="panel-title spacer-top"><h3>Weight entries</h3><span>${number(allWeightEntries.length)}</span></div>${weightEntryRows(allWeightEntries, weightUnit)}</aside></div></div>`;
+}
+
+// =====================================================================
 // Today navigation — calendar + macro breakdown (brief items 1–6).
 // The calendar icon in Today's header is the only day navigation on
 // Today: it opens a house-themed month calendar whose dots come from
@@ -791,6 +1048,15 @@ function calendarGridDates(month) {
 const calendarView = { month: null, token: 0 };
 
 async function openCalendar(month) {
+    // A fresh open (dialog closed) starts picking from the committed
+    // state: the active range, if any, paints as the selection. Month
+    // stepping mid-pick keeps the in-progress anchor.
+    if (!dialog.open) {
+        state.rangeSelection = {
+            anchor: null,
+            range: state.todayRange ? { ...state.todayRange } : null,
+        };
+    }
     calendarView.month = month || calendarMonthOf(state.date);
     const token = ++calendarView.token;
     paintCalendar();
@@ -834,15 +1100,45 @@ function paintCalendar() {
             const classes = ["cal-day"];
             if (calendarMonthOf(date) !== month) classes.push("is-outside");
             if (date === todayDate) classes.push("is-today");
-            if (date === state.date) classes.push("is-selected");
+            if (
+                date === state.date &&
+                !state.rangeSelection.anchor &&
+                !state.rangeSelection.range
+            )
+                classes.push("is-selected");
+            const cellState = rangeCellState(state.rangeSelection, date);
+            if (
+                cellState === "anchor" ||
+                cellState === "start" ||
+                cellState === "end"
+            )
+                classes.push("is-selected");
+            if (cellState === "in") classes.push("is-in-range");
             const dotted = summary?.has(date);
             return `<button type="button" class="${classes.join(" ")}" data-action="calendar-day" data-date="${date}" aria-label="${escapeHtml(formatDate(date, { weekday: true, year: true }))}"${date === todayDate ? ' aria-current="date"' : ""}><span class="cal-day-num">${Number(date.slice(8, 10))}</span><span class="${dotted ? "cal-dot" : "cal-dot-space"}" aria-hidden="true"></span></button>`;
         })
         .join("");
+    const selection = state.rangeSelection;
+    const rangeStatus = selection.anchor
+        ? `<div class="cal-range-row"><span>Start ${escapeHtml(formatDate(selection.anchor))} — tap an end day, or the same day for a single day.</span></div>`
+        : selection.range
+          ? `<div class="cal-range-row"><span>${escapeHtml(formatRangeLabel(selection.range.start, selection.range.end))}</span><button type="button" class="button button-quiet button-small" data-action="calendar-clear-range">Clear range</button></div>`
+          : "";
     openDialog(
         "Calendar",
-        `<div class="cal-nav"><button type="button" class="cal-chevron" data-action="calendar-prev-month" aria-label="Previous month">‹</button><span class="cal-nav-label">${escapeHtml(title)}</span><button type="button" class="cal-chevron" data-action="calendar-next-month" aria-label="Next month">›</button></div><div class="cal-week" aria-hidden="true">${["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((day) => `<span>${day}</span>`).join("")}</div><div class="cal-grid">${cells}</div><button type="button" class="cal-history-row" data-action="calendar-history"><span>Search history</span><span aria-hidden="true">›</span></button>`,
+        `<div class="cal-nav"><button type="button" class="cal-chevron" data-action="calendar-prev-month" aria-label="Previous month">‹</button><span class="cal-nav-label">${escapeHtml(title)}</span><button type="button" class="cal-chevron" data-action="calendar-next-month" aria-label="Next month">›</button></div><div class="cal-week" aria-hidden="true">${["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((day) => `<span>${day}</span>`).join("")}</div><div class="cal-grid">${cells}</div>${rangeStatus}<button type="button" class="cal-history-row" data-action="calendar-history"><span>Search history</span><span aria-hidden="true">›</span></button>`,
     );
+}
+
+function formatRangeLabel(start, end) {
+    const format = (date) =>
+        new Intl.DateTimeFormat("en-US", {
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+            timeZone: "UTC",
+        }).format(new Date(`${date}T12:00:00Z`));
+    return `${format(start)} – ${format(end)}`;
 }
 
 const MACRO_BREAKDOWN = {
@@ -6269,8 +6565,12 @@ async function handleAction(button) {
             "date-week-next",
             "date-today",
         ].includes(action)
-    )
+    ) {
+        // Stepping to a single day anywhere leaves range mode.
+        state.todayRange = null;
+        state.rangeSelection = emptyRangeSelection();
         return renderRoute();
+    }
     // Today navigation (brief items 1–3, 5): the calendar is Today's
     // only day-stepping UI; picking a day re-renders Today on it via
     // the same state.date plumbing the removed buttons used.
@@ -6280,10 +6580,40 @@ async function handleAction(button) {
     if (action === "calendar-next-month")
         return openCalendar(shiftMonth(calendarView.month, 1));
     if (action === "calendar-day") {
-        state.date = button.dataset.date;
+        // Hotel-style picking (range-selection.js): a first tap
+        // anchors and the calendar stays open; a second tap on a
+        // later day commits the range; the same day again is a
+        // single day; an earlier day restarts the anchor.
+        const { selection, outcome } = applyRangeTap(
+            state.rangeSelection,
+            button.dataset.date,
+        );
+        state.rangeSelection = selection;
+        if (outcome === "anchor" || outcome === "restart") {
+            paintCalendar();
+            return;
+        }
         if (dialog.open) closeAppDialog();
+        if (outcome === "single") {
+            state.todayRange = null;
+            state.date = button.dataset.date;
+        } else {
+            state.todayRange = selection.range;
+            state.date = selection.range.start;
+        }
         return renderRoute();
     }
+    if (action === "calendar-clear-range") {
+        state.todayRange = null;
+        state.rangeSelection = emptyRangeSelection();
+        if (dialog.open) closeAppDialog();
+        state.date = dateInTimezone(
+            state.bootstrap?.profile?.timezone || "UTC",
+        );
+        return renderRoute();
+    }
+    if (action === "open-range-breakdown")
+        return openRangeMacroBreakdown(button.dataset.macro);
     if (action === "calendar-history") {
         if (dialog.open) closeAppDialog();
         return navigate("/app/log");
