@@ -203,6 +203,21 @@ function createMunchBetterAuth() {
                 // Implicit sign-in linking is a separate path and keeps
                 // its verified-email gates (defaults unchanged).
                 allowDifferentEmails: true,
+                // Cross-provider collision law (Michael, 2026-11-12):
+                // a provider identity arriving at SIGN-IN time whose
+                // verified email matches an existing account must NEVER
+                // link silently. With implicit linking disabled, Better
+                // Auth refuses the sign-in with its account_not_linked
+                // outcome instead of merging: the web callback redirects
+                // to /connect/link-conflict and the native id-token path
+                // fails 401 OAUTH_LINK_ERROR, and both surfaces turn
+                // that into an explicit prompt — sign in with the
+                // original method, then confirm adding this one (see
+                // link-prompt.ts). No duplicate account is created
+                // either: the collision path errors before any insert.
+                // Explicit session-bound linking above is unaffected —
+                // Better Auth's link branch never consults this flag.
+                disableImplicitLinking: true,
             },
         },
         ...((config.googleWebClientId && config.googleClientSecret) ||

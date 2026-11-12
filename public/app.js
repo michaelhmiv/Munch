@@ -48,6 +48,7 @@ installPhotoCapture();
 
 const state = {
     bootstrap: null,
+    linkPromptChecked: false,
     route: "today",
     date: null,
     mealHistoryDays: 1,
@@ -4787,6 +4788,38 @@ async function startNewChat() {
     renderChatView();
 }
 
+let linkPromptInFlight = false;
+
+/**
+ * Cross-provider collision prompt (2026-11-12): a sign-in refused
+ * because the provider's email belongs to this account under a
+ * different method leaves a short-lived pending-link cookie. Once the
+ * user is signed in with their original method, ask — once per page
+ * load, over whatever route they landed on — whether to add that
+ * provider to this same account (Amendment I link; declining leaves
+ * the account untouched).
+ */
+async function maybeShowLinkPrompt() {
+    if (state.linkPromptChecked || linkPromptInFlight) return;
+    linkPromptInFlight = true;
+    try {
+        const { prompt } = await api("/api/app/sign-in-methods/link-prompt");
+        state.linkPromptChecked = true;
+        if (!prompt?.provider) return;
+        const label = prompt.label || prompt.provider;
+        openDialog(
+            `Add ${label} sign-in?`,
+            `<p>We found an account with this email — earlier you tried to sign in with ${escapeHtml(label)}, and this account uses a different method. Add ${escapeHtml(label)} as another way to sign in to this same account? Your meals, plans, and Premium stay exactly as they are.</p>`,
+            `<div class="auth-actions"><button class="button button-primary" type="button" data-action="link-prompt-confirm" data-provider="${escapeHtml(prompt.provider)}" data-provider-label="${escapeHtml(label)}">Add ${escapeHtml(label)}</button><button class="button button-secondary" type="button" data-action="link-prompt-dismiss">Not now</button></div>`,
+        );
+    } catch {
+        // A failed prompt check must never block the app; the cookie
+        // expires on its own and Settings linking remains available.
+    } finally {
+        linkPromptInFlight = false;
+    }
+}
+
 async function renderRoute() {
     // T8: the Insights destination retired — its route lands on Trends.
     if (location.pathname === "/app/insights") {
@@ -4811,6 +4844,8 @@ async function renderRoute() {
                 state.bootstrap.profile?.timezone || "UTC",
             );
         }
+        // Collision prompt check: after the session is known-good, once.
+        void maybeShowLinkPrompt();
         // Feature toggles (T6): both navs render from the account's
         // flags every route render, so a toggle saved anywhere —
         // including another device — is honored on the next render.
@@ -6886,6 +6921,58 @@ async function handleAction(button) {
     if (action === "close-dialog") {
         closeAppDialog();
         return;
+    }
+    if (action === "link-prompt-dismiss") {
+        await api("/api/app/sign-in-methods/link-prompt/dismiss", {
+            method: "POST",
+            body: "{}",
+            keepPrevious: true,
+        }).catch(() => {});
+        closeAppDialog();
+        return;
+    }
+    if (action === "link-prompt-confirm") {
+        const provider = button.dataset.provider || "";
+        const label = button.dataset.providerLabel || provider;
+        button.disabled = true;
+        try {
+            const result = await api(
+                `/api/app/sign-in-methods/${encodeURIComponent(provider)}/link`,
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        callbackURL: "/app",
+                        errorCallbackURL: "/app",
+                    }),
+                    keepPrevious: true,
+                },
+            );
+            // The prompt is answered either way; clear it so it does not
+            // re-offer after the provider round-trip returns here.
+            await api("/api/app/sign-in-methods/link-prompt/dismiss", {
+                method: "POST",
+                body: "{}",
+                keepPrevious: true,
+            }).catch(() => {});
+            if (result?.url) {
+                // Web link: hand off to the provider's consent screen.
+                location.href = result.url;
+                return;
+            }
+            closeAppDialog();
+            toast(`${label} linked to this account.`);
+            return;
+        } catch (error) {
+            toast(
+                error instanceof Error
+                    ? error.message
+                    : `Linking ${label} failed.`,
+                "error",
+            );
+            return;
+        } finally {
+            button.disabled = false;
+        }
     }
     if (action === "toggle-metric-detail") {
         // UX fix wave F2: expand/collapse the totals card's inline

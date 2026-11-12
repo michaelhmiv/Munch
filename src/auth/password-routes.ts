@@ -1,6 +1,7 @@
 import { Hono, type Context } from "hono";
 import { getBetterAuthRuntimeConfig } from "./config.js";
 import { safeLocalRedirectPath } from "../accounts/redirect.js";
+import { linkConflictErrorCallbackURL } from "./link-prompt.js";
 import {
     googleSignInButtonHtml,
     googleWebSignInConfigured,
@@ -113,7 +114,7 @@ function passwordPage(input: {
     // Same configured-gated Google control as the connect shell's sign-in
     // page: this page is the other surface a web user signs in from.
     const googleBlock = input.googleConfigured
-        ? `<div class="auth-social">${googleSignInButtonHtml({ callbackURL: input.returnTo, errorCallbackURL: "/connect/error", oauthQuery: input.oauthQuery || undefined })}${socialProviderScript()}</div><p class="auth-divider" aria-hidden="true"><span>or</span></p>`
+        ? `<div class="auth-social">${googleSignInButtonHtml({ callbackURL: input.returnTo, errorCallbackURL: linkConflictErrorCallbackURL("google"), oauthQuery: input.oauthQuery || undefined })}${socialProviderScript()}</div><p class="auth-divider" aria-hidden="true"><span>or</span></p>`
         : "";
     const signup = input.publicSignup
         ? `<section class="auth-panel"><h2>Create an account</h2><p>Use a username, email, and password. We will verify your email before the first password sign-in.</p><form id="password-sign-up" class="auth-form"><label class="field" for="name"><span>Name</span><input id="name" name="name" autocomplete="name" required maxlength="120"></label><label class="field" for="signup-email"><span>Email address</span><input id="signup-email" name="email" type="email" autocomplete="email" required maxlength="320"></label><label class="field" for="username"><span>Username</span><input id="username" name="username" autocomplete="username" required minlength="3" maxlength="40" pattern="[A-Za-z0-9_.]+"></label><label class="field" for="signup-password"><span>Password</span><input id="signup-password" name="password" type="password" autocomplete="new-password" required minlength="16" maxlength="128"></label><button class="button button-secondary" type="submit">Create account</button></form></section>`

@@ -10,7 +10,14 @@ import {
     SIGNED_IN_HOME_PATH,
     safeMagicLinkReturnPath,
 } from "./magic-link-url.js";
+import {
+    ACCOUNT_NOT_LINKED_ERROR,
+    buildLinkPromptCookie,
+    linkConflictCopy,
+    linkConflictErrorCallbackURL,
+} from "./link-prompt.js";
 import { describeOAuthScope } from "./oauth-scopes.js";
+import { isSignInProviderId } from "./sign-in-methods.js";
 import {
     appleSignInButtonHtml,
     appleSignInConfigured,
@@ -195,14 +202,14 @@ export function signInPageHtml(input: {
         input.googleConfigured
             ? googleSignInButtonHtml({
                   callbackURL: returnTo,
-                  errorCallbackURL: "/connect/error",
+                  errorCallbackURL: linkConflictErrorCallbackURL("google"),
                   oauthQuery,
               })
             : "",
         input.appleConfigured
             ? appleSignInButtonHtml({
                   callbackURL: returnTo,
-                  errorCallbackURL: "/connect/error",
+                  errorCallbackURL: linkConflictErrorCallbackURL("apple"),
                   oauthQuery,
               })
             : "",
@@ -436,6 +443,47 @@ export function createBetterAuthConnectRouter(): Hono {
                 "Authorize Munch",
                 `<h1>Connect ${escapeHtml(clientName)}</h1><div class="consent-account"><span>Connected Munch account</span><strong>${escapeHtml(session.user.email)}</strong></div><p>ChatGPT is requesting the permissions listed below. It does not receive unrelated ChatGPT conversations.</p><p>MCP access is part of Munch Premium, which is active on this account.</p><ul class="consent-scope-list">${scopeItems}</ul><form class="consent-actions" method="post" action="/connect/consent"><input type="hidden" name="client_id" value="${escapeHtml(clientId)}"><input type="hidden" name="scope" value="${escapeHtml(scope)}"><input type="hidden" name="oauth_query" value="${escapeHtml(oauthQuery)}"><input type="hidden" name="csrf_token" value="${escapeHtml(csrfToken)}"><button class="button button-primary" type="submit" name="decision" value="approve">Approve connection</button><button class="button button-quiet" type="submit" name="decision" value="deny">Deny</button></form><p class="auth-footnote">You can revoke this connection later from your Munch account.</p>`,
                 "Review permissions",
+            ),
+        );
+    });
+
+    // Cross-provider collision landing (cross-provider collision law,
+    // 2026-11-12): the provider callback redirects here with
+    // error=account_not_linked when the provider's verified email
+    // belongs to an account that signs in a different way. Explain,
+    // record the attempted provider in the pending-link cookie (the
+    // app shell turns it into the confirm-to-link dialog after the
+    // user signs in with their original method), and never dead-end.
+    // Any other error keeps the generic connection-problem page.
+    connect.get("/connect/link-conflict", (c) => {
+        const providerParam = c.req.query("provider") ?? "";
+        const provider = isSignInProviderId(providerParam)
+            ? providerParam
+            : null;
+        if (c.req.query("error") !== ACCOUNT_NOT_LINKED_ERROR || !provider) {
+            return privateHtml(
+                c,
+                shell(
+                    "Connection problem",
+                    `<h1>This connection could not be completed.</h1><p>The sign-in or authorization request may have expired. Return to your AI app and choose Connect again.</p><div class="auth-actions"><a class="button button-primary" href="/connect/sign-in">Try signing in again</a></div>`,
+                    "Connection unavailable",
+                ),
+            );
+        }
+        const copy = linkConflictCopy(provider);
+        c.header(
+            "Set-Cookie",
+            buildLinkPromptCookie(
+                provider,
+                getBetterAuthRuntimeConfig().production,
+            ),
+        );
+        return privateHtml(
+            c,
+            shell(
+                "Account found",
+                `<h1>${escapeHtml(copy.heading)}</h1>${copy.paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("")}<div class="auth-actions"><a class="button button-primary" href="/connect/sign-in">${escapeHtml(copy.primaryLabel)}</a></div><p class="auth-footnote">${escapeHtml(copy.footnote)}</p>`,
+                "Sign-in",
             ),
         );
     });

@@ -289,6 +289,15 @@ export async function signInWithGoogle() {
     );
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
+        // Cross-provider collision (2026-11-12): the Google identity's
+        // email belongs to an existing account that signs in another
+        // way. Never the raw "account not linked" — tell the user the
+        // one path that works: original method first, then link.
+        if (payload?.code === "OAUTH_LINK_ERROR") {
+            throw new Error(
+                "This email already has a Munch account with a different sign-in method. Sign in with that method first (for example, your email link or Apple), then add Google in Settings, under Sign-in methods.",
+            );
+        }
         throw new Error(
             payload?.message || payload?.error || "Google sign-in failed",
         );
