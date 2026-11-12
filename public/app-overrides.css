@@ -6347,16 +6347,27 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 /* The sheet header carries the Range toggle next to Close; its on
-   state is direction C's filled primary (design authority §4). */
+   state is direction C's filled primary (design authority §4), its
+   off state the direction-C secondary it also carries as a class
+   (transparent fill, rule border, ink text). The pressed selector
+   outranks .button-secondary (and its :hover) on specificity so the
+   on state can never fall back to the outline secondary — the
+   QC-gate F1 failure on PR #277's first captures. */
 .sheet-actions {
     display: flex;
     align-items: center;
     gap: 8px;
 }
 
-.range-toggle[aria-pressed="true"] {
+.button-secondary.range-toggle[aria-pressed="true"] {
     background: #176b3a;
     border-color: #176b3a;
+    color: #fffdf7;
+}
+
+.button-secondary.range-toggle[aria-pressed="true"]:hover {
+    background: #0b3d24;
+    border-color: #0b3d24;
     color: #fffdf7;
 }
 

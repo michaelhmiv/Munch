@@ -431,6 +431,17 @@ test("calendar range re-bases Today: totals over the span, meals grouped by day,
     const caloriesTile = page.locator('.macro-tile[data-macro="calories"]');
     await expect(caloriesTile).toContainText("1,600");
     await expect(caloriesTile).toContainText("avg 533");
+    // QC-gate F2: the average divides by the 3 LOGGED days, not the
+    // 4 calendar days, and the tile discloses that basis in itself
+    // (÷4 would read 400 — the undisclosed line read as wrong). The
+    // exact average-line grammar is pinned in the unit tests; here
+    // the tile must carry the disclosure (and, with the reviewer's
+    // goals set by the wider suite, the signed delta form).
+    await expect(caloriesTile).toContainText("per logged day");
+    // The micro tiles disclose on the same rule.
+    await page.locator('[data-action="toggle-micros"]').click();
+    await expect(page.locator("#today-micros")).toContainText("per logged day");
+    await page.locator('[data-action="toggle-micros"]').click();
     // No on-target line: one day of the four is unlogged.
     await expect(caloriesTile).not.toContainText("On target");
 
@@ -449,6 +460,20 @@ test("calendar range re-bases Today: totals over the span, meals grouped by day,
         /is-range-end/,
     );
     await expect(dialog.locator(".cal-range-row")).toContainText("4 days");
+    // QC-gate F1: with a committed range painted, range mode is
+    // active in the sheet, so the header toggle reads ON — pressed,
+    // filled with direction C's primary green — not the transparent
+    // outline secondary. And the note row carries no duplicate
+    // "Clear range" (clearing lives in the range bar's ✕ Clear).
+    await expect(rangeToggle).toHaveAttribute("aria-pressed", "true");
+    await expect
+        .poll(() =>
+            rangeToggle.evaluate((el) => getComputedStyle(el).backgroundColor),
+        )
+        .toBe("rgb(23, 107, 58)");
+    await expect(
+        dialog.locator('[data-action="calendar-clear-range"]'),
+    ).toHaveCount(0);
     await page.screenshot({
         path: `${CAPTURE_DIR}/calendar-range-390.png`,
     });
@@ -485,13 +510,16 @@ test("calendar range re-bases Today: totals over the span, meals grouped by day,
     await expect(dialog).toBeHidden();
     await expect(page.locator(".range-bar")).toContainText("2 days");
     await expect(caloriesTile).toContainText("On target · 2 of 2 days");
+    // Fully logged span: logged days ARE the calendar days, so the
+    // average line keeps the undisclosed form (QC-gate F2 choice).
+    await expect(caloriesTile).not.toContainText("per logged day");
     await page.screenshot({
         path: `${CAPTURE_DIR}/range-on-target-390.png`,
     });
 
-    // Clear returns to the single-day view of today. (Scoped to the
-    // range bar: the closed calendar sheet keeps its own Clear range
-    // button in the dialog DOM.)
+    // Clear returns to the single-day view of today. The range bar's
+    // ✕ Clear is the only clear-range action in the app (QC-gate F1
+    // removed the calendar note row's duplicate).
     await page
         .locator('.range-bar [data-action="calendar-clear-range"]')
         .click();
@@ -708,6 +736,15 @@ test("long range nests month → week → day, and every level reconciles", asyn
     await expect(dialog).toBeHidden();
     await expect(page.locator(".range-bar")).toContainText("41 days");
 
+    // QC-gate F3, frame (a): the hierarchy from the TOP of the
+    // surface — heading, range bar, tiles, and the collapsed month
+    // rows in frame. (The previous capture was mid-scroll, with the
+    // top of the surface out of frame.)
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+    await expect(page.locator(".today-view .page-heading h2")).toBeInViewport();
+    await expect(page.locator(".range-bar")).toBeInViewport();
+    await page.screenshot({ path: `${CAPTURE_DIR}/hierarchy-390.png` });
+
     // Months start collapsed; open the last month, then its last
     // week, then the seeded end day — each level in place.
     const monthRows = page.locator('[data-action="toggle-range-month"]');
@@ -729,8 +766,36 @@ test("long range nests month → week → day, and every level reconciles", asyn
     );
     await expect(endRow).toBeVisible();
     await endRow.click();
-    await expect(page.locator(`#range-day-detail-${end}`)).toContainText(
-        "Hierarchy seed beta",
-    );
-    await page.screenshot({ path: `${CAPTURE_DIR}/hierarchy-390.png` });
+    const endDetail = page.locator(`#range-day-detail-${end}`);
+    await expect(endDetail).toContainText("Hierarchy seed beta");
+    // QC-gate F3, frame (b): scroll so the expanded day's meals sit
+    // FULLY above the bottom nav (the previous capture let the nav
+    // occlude them) — align the detail's bottom edge to just above
+    // the nav, keeping the day row and its nesting in frame — and
+    // prove it geometrically before shooting.
+    await endDetail.evaluate((el) => {
+        const nav = document.querySelector(".mobile-bottom-nav");
+        if (!nav) return;
+        const detailRect = el.getBoundingClientRect();
+        const navRect = nav.getBoundingClientRect();
+        // Instant, not the page's smooth scroll: the geometry proof
+        // below must measure the settled position.
+        window.scrollBy({
+            top: detailRect.bottom - navRect.top + 6,
+            behavior: "instant",
+        });
+    });
+    const navBox = await page.locator(".mobile-bottom-nav").boundingBox();
+    expect(navBox, "bottom nav has a box").not.toBeNull();
+    await expect
+        .poll(async () => {
+            const box = await endDetail.boundingBox();
+            return box ? box.y + box.height : Number.POSITIVE_INFINITY;
+        })
+        .toBeLessThanOrEqual(navBox!.y + 1);
+    const detailBox = await endDetail.boundingBox();
+    expect(detailBox!.y).toBeGreaterThanOrEqual(0);
+    await page.screenshot({
+        path: `${CAPTURE_DIR}/hierarchy-expanded-390.png`,
+    });
 });

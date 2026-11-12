@@ -38,6 +38,7 @@ import {
     applyRangeTap,
     eachDateInRange,
     emptyRangeSelection,
+    rangeAverageBasis,
     rangeAverageLine,
     rangeCellState,
 } from "./range-selection.js";
@@ -756,7 +757,9 @@ async function renderToday() {
 //   where no goal exists; then "On target · X of N days", shown only
 //   when every day in the range is logged (a mixed range's tiles
 //   instead carry their Logged · Planned split). Averages divide by
-//   logged days (the server aggregate's convention). Tiles open a
+//   logged days (the server aggregate's convention); when logged
+//   days < calendar days the average line discloses that basis in
+//   the tile ("· per logged day", QC-gate F2). Tiles open a
 //   per-day breakdown sheet, like the single-day tiles.
 // - Micronutrients: the same treatment — totals with per-day
 //   averages, a ±/day where a target is set, plain where none is.
@@ -833,7 +836,13 @@ function rangeMacroTilesMarkup(aggregate, goals, plannedOnly) {
             ];
         } else if (plannedOnly) {
             metaLines = [
-                rangeAverageLine(macro.dailyAverage, null, unit, digits),
+                rangeAverageLine(
+                    macro.dailyAverage,
+                    null,
+                    unit,
+                    digits,
+                    rangeAverageBasis(aggregate, true),
+                ),
             ];
         } else {
             metaLines = [
@@ -842,6 +851,7 @@ function rangeMacroTilesMarkup(aggregate, goals, plannedOnly) {
                     macro.averageDelta,
                     unit,
                     digits,
+                    rangeAverageBasis(aggregate),
                 ),
             ];
             if (macro.daysOnTarget != null && rangeFullyLogged(aggregate)) {
@@ -976,6 +986,7 @@ function rangeMicrosMarkup(aggregate, plannedOnly = false) {
                   null,
                   unit,
                   digits,
+                  rangeAverageBasis(aggregate, true),
               )
             : mixed && plannedField
               ? `Logged ${number(micro.total, digits)} · Planned ${number(plannedValue, digits)}`
@@ -984,6 +995,7 @@ function rangeMicrosMarkup(aggregate, plannedOnly = false) {
                     micro.averageDelta,
                     unit,
                     digits,
+                    rangeAverageBasis(aggregate),
                 );
         return `<div class="macro-micro-row"><span>${label}</span><span class="micro-val">${number(total, digits)}${unit}<span class="micro-avg">${escapeHtml(averageLine)}</span></span></div>`;
     });
@@ -1300,19 +1312,28 @@ function paintCalendar() {
     // The note row under the grid (rendering frames 1–2): in single
     // mode it states the tap contract; while picking it states the
     // anchor; with a range committed it names the span and its day
-    // count. The Range toggle itself lives in the sheet header.
+    // count — and nothing else: clearing a committed range lives
+    // only in the Today range bar's ✕ Clear (the approved frame
+    // carries no second clear action here; QC-gate F1). The Range
+    // toggle itself lives in the sheet header.
     const rangeStatus = calendarView.picking
         ? selection.anchor
             ? `<div class="cal-range-row cal-range-note"><span><b>Start ${escapeHtml(formatShortDate(selection.anchor))}</b> — tap an end day, or the same day for a single day</span><button type="button" class="button button-quiet button-small" data-action="calendar-range-cancel">Cancel</button></div>`
             : `<div class="cal-range-row cal-range-note"><span>Tap a start day, then an end day</span><button type="button" class="button button-quiet button-small" data-action="calendar-range-cancel">Cancel</button></div>`
         : selection.range
-          ? `<div class="cal-range-row cal-range-note"><span><b>${escapeHtml(formatRangeLabel(selection.range.start, selection.range.end))}</b> · ${number(eachDateInRange(selection.range.start, selection.range.end).length)} days</span><button type="button" class="button button-quiet button-small" data-action="calendar-clear-range">Clear range</button></div>`
+          ? `<div class="cal-range-row cal-range-note"><span><b>${escapeHtml(formatRangeLabel(selection.range.start, selection.range.end))}</b> · ${number(eachDateInRange(selection.range.start, selection.range.end).length)} days</span></div>`
           : `<div class="cal-range-row cal-range-note"><span><b>${escapeHtml(formatShortDate(state.date))}</b> — tap a day to jump Today to it</span></div>`;
+    // The toggle reads ON whenever range mode is active in this
+    // sheet — while picking AND when a committed range is painted
+    // (reopening the calendar on a range-mode Today must not show
+    // the toggle as off; QC-gate F1). aria-pressed="true" is the
+    // styling hook: direction C's filled primary (app-overrides.css).
+    const rangeTogglePressed = calendarView.picking || Boolean(selection.range);
     openDialog(
         "Calendar",
         `<div class="cal-nav"><button type="button" class="cal-chevron" data-action="calendar-prev-month" aria-label="Previous month">‹</button><span class="cal-nav-label">${escapeHtml(title)}</span><button type="button" class="cal-chevron" data-action="calendar-next-month" aria-label="Next month">›</button></div><div class="cal-week" aria-hidden="true">${["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((day) => `<span>${day}</span>`).join("")}</div><div class="cal-grid">${cells}</div>${rangeStatus}<button type="button" class="cal-history-row" data-action="calendar-history"><span>Search history</span><span aria-hidden="true">›</span></button>`,
         "",
-        `<button class="button button-secondary range-toggle" type="button" data-action="calendar-range-mode" aria-pressed="${calendarView.picking ? "true" : "false"}">Range</button>`,
+        `<button class="button button-secondary range-toggle" type="button" data-action="calendar-range-mode" aria-pressed="${rangeTogglePressed ? "true" : "false"}">Range</button>`,
     );
 }
 
@@ -6824,9 +6845,11 @@ async function handleAction(button) {
     if (action === "calendar-next-month")
         return openCalendar(shiftMonth(calendarView.month, 1));
     if (action === "calendar-range-mode") {
-        // The header Range toggle: on enters picking (a plain tap
-        // keeps its single-day meaning until then); on again while
-        // picking cancels back to the committed state.
+        // The header Range toggle: off (no range, not picking) enters
+        // picking (a plain tap keeps its single-day meaning until
+        // then); pressed while a committed range is shown enters
+        // re-picking of a fresh span; pressed again while picking
+        // cancels back to the committed state.
         if (calendarView.picking) {
             calendarView.picking = false;
             state.rangeSelection = {
