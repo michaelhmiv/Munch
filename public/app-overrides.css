@@ -71,6 +71,14 @@ dialog .auth-card {
     padding: 10px 12px;
 }
 
+/* Duplicate dialog quick-pick day: the chosen day carries the primary
+   green (design authority: green is the active/selected state). */
+.duplicate-day-choices .button.is-selected {
+    background: #176b3a;
+    border-color: #176b3a;
+    color: #fffdf7;
+}
+
 .app-content .meal-card + .meal-card {
     border-top: 1px solid var(--ink-100);
 }

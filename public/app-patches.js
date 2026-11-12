@@ -426,12 +426,7 @@ document.addEventListener(
         const action = button.dataset.action;
         if (
             !action ||
-            ![
-                "edit-meal",
-                "duplicate-meal",
-                "add-water",
-                "add-weight",
-            ].includes(action)
+            !["edit-meal", "add-water", "add-weight"].includes(action)
         ) {
             return;
         }
@@ -444,27 +439,6 @@ document.addEventListener(
                 await showMealEditor(button.dataset.id || "");
             } catch (error) {
                 patchToast(error.message || "Could not load meal", "error");
-            }
-            return;
-        }
-
-        if (action === "duplicate-meal") {
-            const id = button.dataset.id || "";
-            try {
-                await patchApi(
-                    `/api/app/meals/${encodeURIComponent(id)}/copy`,
-                    {
-                        method: "POST",
-                        body: "{}",
-                    },
-                );
-                patchToast("Meal duplicated with its original food sources.");
-                refreshCurrentView();
-            } catch (error) {
-                patchToast(
-                    error.message || "Could not duplicate meal",
-                    "error",
-                );
             }
             return;
         }

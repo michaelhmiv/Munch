@@ -936,9 +936,26 @@ test("UX wave F1: Duplicate works in the packaged bundle", async ({ page }) => {
 
     await card.getByRole("button", { name: "Duplicate" }).click();
 
-    await expect(page.locator("#toast-region")).toContainText(
-        "Meal duplicated with its original food sources.",
+    // The button opens the duplicate dialog (day + meal-type choices;
+    // the day defaults to tomorrow, the type to the meal's own) — the
+    // flow that replaced the old instant-copy patch stub. The stub's
+    // capture-phase interceptor in app-patches.js used to swallow this
+    // click (stopImmediatePropagation) and POST the copy immediately;
+    // it no longer claims the action, so the dialog must open here
+    // exactly as on the website. The fixture profile is UTC, so the
+    // app's "tomorrow" is the UTC date of (now + 1 day).
+    const dialog = page.locator("#app-dialog");
+    await expect(dialog).toBeVisible();
+    const tomorrowUtc = new Date(Date.now() + 86_400_000)
+        .toISOString()
+        .slice(0, 10);
+    await expect(dialog.locator('[name="target_date"]')).toHaveValue(
+        tomorrowUtc,
     );
+    await expect(dialog.locator('[name="meal_type"]')).toHaveValue("lunch");
+    await dialog.getByRole("button", { name: "Duplicate meal" }).click();
+
+    await expect(page.locator("#toast-region")).toContainText("Duplicated to");
     expect(
         apiRequests.some(
             (entry) =>
