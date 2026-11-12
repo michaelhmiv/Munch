@@ -129,6 +129,32 @@ test("just logging strips the app to its spine; pantry data survives the round t
         });
         expect(recipe.status(), "seed recipe").toBe(200);
 
+        // Refined Line (Nov 11): the active tab (Today, here) carries
+        // the gold-dot indicator and aria-current; inactive tabs
+        // carry no dot.
+        const activeTab = page.locator(".mobile-bottom-nav a.is-active");
+        await expect(activeTab).toHaveCount(1);
+        await expect(activeTab).toHaveAttribute("data-route", "today");
+        await expect(activeTab).toHaveAttribute("aria-current", "page");
+        const dotStyle = await activeTab.evaluate((el) => {
+            const style = getComputedStyle(el, "::after");
+            return {
+                content: style.content,
+                backgroundColor: style.backgroundColor,
+                width: style.width,
+                height: style.height,
+            };
+        });
+        expect(dotStyle.content).not.toBe("none");
+        expect(dotStyle.backgroundColor).toBe("rgb(138, 109, 59)");
+        expect(dotStyle.width).toBe("4px");
+        expect(dotStyle.height).toBe("4px");
+        const inactiveDot = await page
+            .locator(".mobile-bottom-nav a:not(.is-active)")
+            .first()
+            .evaluate((el) => getComputedStyle(el, "::after").content);
+        expect(inactiveDot).toBe("none");
+
         // All-on: the six-destination nav and the Features page with
         // every switch on.
         await page.goto("/app/settings/features");
