@@ -396,7 +396,10 @@ function chatEntryRow(surface, label, subline) {
 }
 
 function setLoading(label = "Loading your Munch workspace…") {
-    content.innerHTML = `<div class="loading-state"><div><div class="skeleton" style="width:180px;height:18px"></div><div class="skeleton spacer-top" style="width:min(70vw,360px);height:54px"></div><p class="spacer-top">${escapeHtml(label)}</p></div></div>`;
+    // Motion pass (design-authority-addendum-motion rule 2): in-view
+    // loading is the held skeleton layout only — the label stays as a
+    // screen-reader status, never as visible text on the surface.
+    content.innerHTML = `<div class="loading-state"><div><div class="skeleton" style="width:180px;height:18px"></div><div class="skeleton spacer-top" style="width:min(70vw,360px);height:54px"></div><p class="sr-only" role="status">${escapeHtml(label)}</p></div></div>`;
 }
 
 function errorState(error) {
@@ -2593,7 +2596,7 @@ async function createGuidedDraftFromForm(form, mode, candidateItems) {
         keepPrevious: true,
     });
     state.guided.scope = selectedScope;
-    dialog.close();
+    closeAppDialog();
     await renderGuidedDraftReview(result.draft);
 }
 
@@ -3860,6 +3863,37 @@ function openDialog(title, body, actions = "") {
     if (!dialog.open) dialog.showModal();
 }
 
+// Motion pass (design-authority-addendum-motion rule 3): dialog exits
+// animate on the shared tokens instead of snapping shut. The real
+// close is deferred one --motion-fast beat so the fade can run; the
+// dialog stays modal until it fires, and a second close request (or
+// reduced motion) closes immediately. Every app.js close path routes
+// through here — the "close" event still fires on the real close.
+let dialogCloseTimer = null;
+function closeAppDialog() {
+    if (!dialog.open) return;
+    if (
+        dialog.classList.contains("is-closing") ||
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+        window.clearTimeout(dialogCloseTimer);
+        dialog.classList.remove("is-closing");
+        dialog.close();
+        return;
+    }
+    dialog.classList.add("is-closing");
+    dialogCloseTimer = window.setTimeout(() => {
+        dialog.classList.remove("is-closing");
+        if (dialog.open) dialog.close();
+    }, 130);
+}
+
+dialog.addEventListener("cancel", (event) => {
+    // Esc takes the same animated exit as every other close path.
+    event.preventDefault();
+    closeAppDialog();
+});
+
 dialog.addEventListener("close", stopRecipeImportProgress);
 new MutationObserver(syncAndroidAdPlacement).observe(dialog, {
     attributes: true,
@@ -4852,7 +4886,7 @@ async function openMealDraft(id) {
     mealDraftReview.suppressSnapshot = true;
     openDialog(
         "Review meal draft",
-        `<div id="meal-draft-review"><p class="tiny">Loading draft…</p></div>`,
+        `<div id="meal-draft-review"><div class="skeleton" style="width:min(70vw,320px);height:54px"></div><p class="sr-only" role="status">Loading draft…</p></div>`,
     );
     const data = await api(`/api/app/meal-drafts/${encodeURIComponent(id)}`, {
         keepPrevious: true,
@@ -5332,7 +5366,7 @@ async function handleAction(button) {
     if (!action) return;
     if (await handleAccountAction(button, accountContext())) return;
     if (action === "close-dialog") {
-        dialog.close();
+        closeAppDialog();
         return;
     }
     if (action === "toggle-metric-detail") {
@@ -5600,7 +5634,7 @@ async function handleAction(button) {
             }),
             keepPrevious: true,
         });
-        dialog.close();
+        closeAppDialog();
         state.guided.draft = null;
         toast("Plan draft cancelled.");
         return;
@@ -5655,7 +5689,7 @@ async function handleAction(button) {
                 keepPrevious: true,
             },
         );
-        dialog.close();
+        closeAppDialog();
         toast(
             `${number(result.addedCount)} grocery item${result.addedCount === 1 ? "" : "s"} added.`,
         );
@@ -5732,7 +5766,7 @@ async function handleAction(button) {
             },
         );
         state.guided.latestSwap = null;
-        dialog.close();
+        closeAppDialog();
         toast("Previous recipe restored.");
         return renderPlan();
     }
@@ -5795,7 +5829,7 @@ async function handleAction(button) {
         return;
     }
     if (action === "close-import-report") {
-        dialog.close();
+        closeAppDialog();
         await renderRoute();
         return;
     }
@@ -5826,11 +5860,11 @@ async function handleAction(button) {
         return openCalendar(shiftMonth(calendarView.month, 1));
     if (action === "calendar-day") {
         state.date = button.dataset.date;
-        if (dialog.open) dialog.close();
+        if (dialog.open) closeAppDialog();
         return renderRoute();
     }
     if (action === "calendar-history") {
-        if (dialog.open) dialog.close();
+        if (dialog.open) closeAppDialog();
         return navigate("/app/log");
     }
     if (action === "open-macro-breakdown")
@@ -5955,7 +5989,7 @@ async function handleAction(button) {
             keepPrevious: true,
         });
         toast("Cook deleted.");
-        if (dialog.open) dialog.close();
+        if (dialog.open) closeAppDialog();
         await renderRoute();
         return;
     }
@@ -6241,7 +6275,7 @@ async function handleAction(button) {
                 keepPrevious: true,
             },
         );
-        dialog.close();
+        closeAppDialog();
         toast("Meal confirmed and logged.");
         await renderRoute();
         return result;
@@ -6293,7 +6327,7 @@ async function handleAction(button) {
                 keepPrevious: true,
             },
         );
-        dialog.close();
+        closeAppDialog();
         toast("Meal draft abandoned.");
         await renderRoute();
         return;
@@ -6392,7 +6426,7 @@ async function handleAction(button) {
             return;
         }
         cards.push({ shape, data: dataKey, size: point.defaultSize });
-        dialog.close();
+        closeAppDialog();
         return saveTrendsLayout(cards);
     }
     if (action === "trends-donut-mode") {
@@ -6411,7 +6445,7 @@ async function handleAction(button) {
         return openTrendsContributors(button.dataset.metric);
     if (action === "trends-open-day") {
         state.date = button.dataset.date;
-        if (dialog.open) dialog.close();
+        if (dialog.open) closeAppDialog();
         return navigate("/app");
     }
     if (action === "create-recipe") return openRecipeCreate();
@@ -6545,7 +6579,7 @@ async function handleAction(button) {
             }),
             keepPrevious: true,
         });
-        if (dialog.open) dialog.close();
+        if (dialog.open) closeAppDialog();
         toast("Recipe archived.");
         return renderRoute();
     }
@@ -6662,7 +6696,7 @@ async function handleAction(button) {
             method: "DELETE",
             keepPrevious: true,
         });
-        if (dialog.open) dialog.close();
+        if (dialog.open) closeAppDialog();
         toast("Water entry deleted.");
         return renderRoute();
     }
@@ -6672,7 +6706,7 @@ async function handleAction(button) {
             method: "DELETE",
             keepPrevious: true,
         });
-        if (dialog.open) dialog.close();
+        if (dialog.open) closeAppDialog();
         toast("Weight entry deleted.");
         return renderRoute();
     }
@@ -7135,7 +7169,7 @@ async function saveGuidancePreferences(form) {
             }),
             keepPrevious: true,
         });
-        dialog.close();
+        closeAppDialog();
         state.guided.context = null;
         toast(
             `Guidance preferences saved (version ${result.preferences.version}).`,
@@ -7481,7 +7515,7 @@ document.addEventListener("submit", async (event) => {
                     ? "Cook created; one or more photos need retry."
                     : "Cook created.",
             );
-            dialog.close();
+            closeAppDialog();
             await renderRoute();
             return;
         }
@@ -7968,7 +8002,7 @@ document.addEventListener("submit", async (event) => {
             );
             toast("Grocery item updated.");
         }
-        if (dialog.open) dialog.close();
+        if (dialog.open) closeAppDialog();
         await renderRoute();
     } catch (error) {
         toast(error.message || "Save failed", "error");
