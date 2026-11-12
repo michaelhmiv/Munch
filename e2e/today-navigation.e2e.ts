@@ -52,6 +52,29 @@ async function seedMeal(
     expect(response.status(), `seed meal ${description}`).toBe(200);
 }
 
+async function setDailyCalorieTarget(page: Page, dailyCalories: number) {
+    // The real goals surface (PUT /api/app/goals, the same call the
+    // settings goals form makes): confirm is required, and every
+    // other target is sent blank so this journey's rendering depends
+    // on exactly this one target and nothing an earlier suite left.
+    const response = await page.request.put("/api/app/goals", {
+        headers: { origin: new URL(page.url()).origin },
+        data: {
+            confirm: true,
+            idempotency_key: `today-nav-range-e2e-goals-${dailyCalories}`,
+            daily_calories: dailyCalories,
+            daily_protein_g: null,
+            daily_carbs_g: null,
+            daily_fat_g: null,
+            daily_fiber_g: null,
+            daily_sugar_g: null,
+            daily_alcohol_g: null,
+            daily_water_ml: null,
+        },
+    });
+    expect(response.status(), "PUT /api/app/goals").toBe(200);
+}
+
 function shiftDay(date: string, days: number): string {
     const value = new Date(`${date}T12:00:00Z`);
     value.setUTCDate(value.getUTCDate() + days);
@@ -356,6 +379,13 @@ test("calendar range re-bases Today: totals over the span, meals grouped by day,
     await page.setViewportSize({ width: 390, height: 844 });
     await signIn(page);
 
+    // This journey sets its own calorie target: the on-target line
+    // asserted below exists only when a daily target is set, and no
+    // other suite member sets one for the reviewer account. 2,000
+    // kcal is a ceiling every seeded day sits under (500 / 400 /
+    // 700), so the fully logged two-day span reads 2 of 2 on target.
+    await setDailyCalorieTarget(page, 2000);
+
     // Four-day span, three days seeded (the second project run
     // re-seeds the same idempotency keys, so every assertion below
     // must already hold with all three meals in place).
@@ -435,8 +465,9 @@ test("calendar range re-bases Today: totals over the span, meals grouped by day,
     // 4 calendar days, and the tile discloses that basis in itself
     // (÷4 would read 400 — the undisclosed line read as wrong). The
     // exact average-line grammar is pinned in the unit tests; here
-    // the tile must carry the disclosure (and, with the reviewer's
-    // goals set by the wider suite, the signed delta form).
+    // the tile must carry the disclosure (and, with the calorie
+    // target this journey set in its own setup above, the signed
+    // delta form).
     await expect(caloriesTile).toContainText("per logged day");
     // The micro tiles disclose on the same rule.
     await page.locator('[data-action="toggle-micros"]').click();
