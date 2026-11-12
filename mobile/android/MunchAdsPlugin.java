@@ -2,6 +2,7 @@ package business.munch.app;
 
 import android.app.Activity;
 import android.graphics.Color;
+import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -12,6 +13,7 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.google.ads.mediation.admob.AdMobAdapter;
 import com.google.android.gms.ads.AdRequest;
 import com.google.android.gms.ads.AdSize;
 import com.google.android.gms.ads.AdView;
@@ -177,7 +179,19 @@ public class MunchAdsPlugin extends Plugin {
             );
             bannerView = adView;
             frame.addView(adView, layout);
-            adView.loadAd(new AdRequest.Builder().build());
+            // Privacy ruling (Michael, Nov 11): non-personalized ads
+            // ONLY. The "npa" extra tells AdMob to serve contextual
+            // ads and never to build the request on the device's
+            // advertising/interest profile. Munch accepts the lower
+            // revenue deliberately — the public promise is that ads
+            // in this app do not track you.
+            Bundle nonPersonalizedExtras = new Bundle();
+            nonPersonalizedExtras.putString("npa", "1");
+            adView.loadAd(
+                new AdRequest.Builder()
+                    .addNetworkExtrasBundle(AdMobAdapter.class, nonPersonalizedExtras)
+                    .build()
+            );
         });
     }
 
