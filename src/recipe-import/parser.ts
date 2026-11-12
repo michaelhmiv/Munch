@@ -5,7 +5,7 @@ import type {
     RecipeImportWarning,
 } from "./types.js";
 
-export const RECIPE_IMPORT_PARSER_VERSION = "1.1.0";
+export const RECIPE_IMPORT_PARSER_VERSION = "1.2.0";
 
 const UNICODE_FRACTIONS: Record<string, string> = {
     "¼": "1/4",
@@ -291,6 +291,57 @@ function normalizeUnit(value: string): string {
     return aliases[value.toLowerCase()] ?? value.toLowerCase();
 }
 
+const WEIGHT_GROUP_UNITS =
+    "kilograms?|milligrams?|milliliters?|millilitres?|grams?|ounces?|pounds?|liters?|litres?|kg|mg|ml|oz|lbs?|g|l";
+// The number pattern must stay wrapped in a non-capturing group: it is
+// interpolated into larger patterns, where its bare alternation would
+// otherwise split the host pattern into top-level alternatives.
+const WEIGHT_GROUP_NUMBER = "(?:(?:\\d+\\s+)?\\d+/\\d+|\\d+(?:\\.\\d+)?)";
+// A parenthesized group whose entire content is a weight (optionally a
+// dual-expression pair such as "450g / 1 lb" or "250g / 2 cups",
+// optionally hedged with "about"). Preparation notes like
+// "(finely chopped)" deliberately do not match.
+const PAREN_WEIGHT_PATTERN = new RegExp(
+    `^\\s*(?:about\\s+|approx\\.?\\s+|~\\s*)?(${WEIGHT_GROUP_NUMBER})\\s*-?\\s*(${WEIGHT_GROUP_UNITS})` +
+        `(?:\\s*(?:\\/|,|\\bor\\b)\\s*(?:about\\s+)?${WEIGHT_GROUP_NUMBER}\\s*-?\\s*(?:${WEIGHT_GROUP_UNITS}|cups?|tablespoons?|tbsp|teaspoons?|tsp))?\\s*$`,
+    "i",
+);
+
+interface ParenWeight {
+    quantity: number;
+    unit: string;
+}
+
+function parseParenWeight(content: string): ParenWeight | undefined {
+    const match = PAREN_WEIGHT_PATTERN.exec(content);
+    if (!match) return undefined;
+    const quantity = fractionValue(match[1]!);
+    if (quantity === undefined || quantity <= 0) return undefined;
+    return { quantity, unit: normalizeUnit(match[2]!) };
+}
+
+function extractLeadingParenWeight(
+    text: string,
+): { weight: ParenWeight; rest: string } | undefined {
+    const match = /^\(([^()]*)\)\s*/.exec(text);
+    if (!match) return undefined;
+    const weight = parseParenWeight(match[1]!);
+    if (!weight) return undefined;
+    return { weight, rest: text.slice(match[0].length).trim() };
+}
+
+function extractTrailingParenWeight(
+    text: string,
+): { weight: ParenWeight; rest: string } | undefined {
+    const match = /\(([^()]*)\)\s*(,[\s\S]*)?$/.exec(text);
+    if (!match || match.index === undefined) return undefined;
+    const weight = parseParenWeight(match[1]!);
+    if (!weight) return undefined;
+    const before = text.slice(0, match.index).trim();
+    const tail = match[2] ?? "";
+    return { weight, rest: `${before}${tail}`.trim() };
+}
+
 export function parseIngredientText(rawValue: string): {
     ingredient: ParsedRecipeIngredient;
     warnings: RecipeImportWarning[];
@@ -305,11 +356,56 @@ export function parseIngredientText(rawValue: string): {
         .trim();
     const parsed = parseQuantityPrefix(withoutOptional);
     let remainder = parsed.remainder;
+    let quantity = parsed.quantity;
     let unit: string | undefined;
+    // A parenthesized weight is the ingredient's amount, a package size,
+    // or the alternate unit system's expression of the same amount —
+    // never part of the food name. Left in the name it poisons the
+    // provider search text and the line falls back to a model estimate,
+    // so it is always removed from the name. When the line carries no
+    // other quantity/unit, the weight IS the amount and is adopted for
+    // portion math; otherwise the parsed quantity/unit wins and the
+    // group is dropped as redundant expression.
+    const adoptWeight = (weight: ParenWeight) => {
+        if (quantity === undefined && unit === undefined) {
+            quantity = weight.quantity;
+            unit = weight.unit;
+        }
+    };
+    // A weight group directly ahead of a container/unit word is that
+    // container's package size ("(14 oz) can coconut milk"), not the
+    // amount of food: it is stripped from the name but never adopted.
+    const adoptLeadingWeight = (extracted: {
+        weight: ParenWeight;
+        rest: string;
+    }) => {
+        const nextWord = /^([a-zA-Z]+)\b/.exec(extracted.rest);
+        if (!nextWord || !COMMON_UNITS.has(nextWord[1]!.toLowerCase())) {
+            adoptWeight(extracted.weight);
+        }
+    };
+    const leadingWeight = extractLeadingParenWeight(remainder);
+    if (leadingWeight) {
+        adoptLeadingWeight(leadingWeight);
+        remainder = leadingWeight.rest;
+    }
     const unitMatch = /^([a-zA-Z]+)\b/.exec(remainder);
     if (unitMatch && COMMON_UNITS.has(unitMatch[1]!.toLowerCase())) {
         unit = normalizeUnit(unitMatch[1]!);
         remainder = remainder.slice(unitMatch[0].length).trim();
+    }
+    // A weight group can also sit between the parsed quantity/unit and
+    // the name ("500g (1 lb) ground beef") or trail the name
+    // ("chicken breast (284g)"); both get the same treatment.
+    const afterUnitWeight = extractLeadingParenWeight(remainder);
+    if (afterUnitWeight) {
+        adoptLeadingWeight(afterUnitWeight);
+        remainder = afterUnitWeight.rest;
+    }
+    const trailingWeight = extractTrailingParenWeight(remainder);
+    if (trailingWeight) {
+        adoptWeight(trailingWeight.weight);
+        remainder = trailingWeight.rest;
     }
     if (parsed.range) {
         warnings.push(
@@ -319,7 +415,7 @@ export function parseIngredientText(rawValue: string): {
             ),
         );
     }
-    if (parsed.quantity === undefined && !/\bto taste\b/i.test(rawText)) {
+    if (quantity === undefined && !/\bto taste\b/i.test(rawText)) {
         warnings.push(
             warning(
                 "quantity_unparsed",
@@ -332,7 +428,7 @@ export function parseIngredientText(rawValue: string): {
         ingredient: {
             rawText,
             name,
-            quantity: parsed.quantity,
+            quantity,
             unit,
             optional: optional || undefined,
         },
@@ -557,7 +653,12 @@ function itemPropValues(html: string, property: string): string[] {
 
 function parseMicrodata(html: string): ParsedRecipe | null {
     if (!/itemtype=["'][^"']*schema\.org\/Recipe/i.test(html)) return null;
-    const ingredients = itemPropValues(html, "recipeIngredient");
+    // schema.org originally named this property "ingredients"; the
+    // surviving legacy microdata in the wild (e.g. BBC Food) still
+    // uses that name, so it is accepted as an alias.
+    const current = itemPropValues(html, "recipeIngredient");
+    const ingredients =
+        current.length > 0 ? current : itemPropValues(html, "ingredients");
     if (ingredients.length === 0) return null;
     const recipe: Record<string, unknown> = {
         name:

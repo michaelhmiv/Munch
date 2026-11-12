@@ -179,6 +179,29 @@ describe("recipe import parser", () => {
         });
     });
 
+    test("falls back to legacy microdata that uses the original ingredients property name", () => {
+        const parsed = parseRecipeHtml(`
+            <article itemscope itemtype="http://schema.org/Recipe">
+              <h1 itemprop="name">Chicken casserole</h1>
+              <span itemprop="recipeYield">Serves 4</span>
+              <ul>
+                <li itemprop="ingredients">55g/2oz butter</li>
+                <li itemprop="ingredients">(284g) chicken breast</li>
+              </ul>
+              <div itemprop="recipeInstructions">Cook everything.</div>
+            </article>
+        `);
+        expect(parsed.strategy).toBe("microdata");
+        expect(parsed.name).toBe("Chicken casserole");
+        expect(parsed.servings).toBe(4);
+        expect(parsed.ingredients).toHaveLength(2);
+        expect(parsed.ingredients[1]).toMatchObject({
+            name: "chicken breast",
+            quantity: 284,
+            unit: "g",
+        });
+    });
+
     test("falls back to WP Recipe Maker cards while preserving source facts", () => {
         const parsed = parseRecipeHtml(`
             <html><head>
@@ -254,6 +277,228 @@ describe("recipe import parser", () => {
             optional: true,
         });
         expect(result.warnings).toHaveLength(0);
+    });
+});
+
+describe("recipe import parser parenthesized weights", () => {
+    test("adopts a leading parenthesized weight as the quantity and keeps it out of the name", () => {
+        const result = parseIngredientText("(284g) chicken breast");
+        expect(result.ingredient).toMatchObject({
+            rawText: "(284g) chicken breast",
+            name: "chicken breast",
+            quantity: 284,
+            unit: "g",
+        });
+        expect(result.warnings.map((entry) => entry.code)).not.toContain(
+            "quantity_unparsed",
+        );
+    });
+
+    test("adopts a trailing parenthesized weight the same way", () => {
+        const result = parseIngredientText("chicken breast (284g)");
+        expect(result.ingredient).toMatchObject({
+            name: "chicken breast",
+            quantity: 284,
+            unit: "g",
+        });
+    });
+
+    test("keeps unparenthesized metric leads on the existing quantity path", () => {
+        for (const line of ["284g chicken breast", "284 g chicken breast"]) {
+            expect(parseIngredientText(line).ingredient).toMatchObject({
+                name: "chicken breast",
+                quantity: 284,
+                unit: "g",
+            });
+        }
+    });
+
+    test("strips a package size after a parsed count so the line parses like the bare line", () => {
+        const result = parseIngredientText("2 (14 oz) cans diced tomatoes");
+        expect(result.ingredient).toMatchObject({
+            name: "cans diced tomatoes",
+            quantity: 2,
+        });
+        expect(result.ingredient.unit).toBeUndefined();
+        expect(result.ingredient.name).not.toContain("14 oz");
+    });
+
+    test("strips a package size ahead of a container unit so the unit still parses", () => {
+        const result = parseIngredientText("1 (400g) can chopped tomatoes");
+        expect(result.ingredient).toMatchObject({
+            name: "chopped tomatoes",
+            quantity: 1,
+            unit: "can",
+        });
+    });
+
+    test("strips hyphenated package sizes written with spelled-out units", () => {
+        const result = parseIngredientText("1 (14-ounce) can tomato sauce");
+        expect(result.ingredient).toMatchObject({
+            name: "tomato sauce",
+            quantity: 1,
+            unit: "can",
+        });
+    });
+
+    test("treats a leading weight ahead of a container word as package size, not the amount", () => {
+        const result = parseIngredientText("(14 oz) can coconut milk");
+        expect(result.ingredient).toMatchObject({
+            name: "coconut milk",
+            unit: "can",
+        });
+        expect(result.ingredient.quantity).toBeUndefined();
+    });
+
+    test("strips the alternate-unit group after a parsed quantity in both directions", () => {
+        expect(
+            parseIngredientText("500g (1 lb) ground beef").ingredient,
+        ).toMatchObject({
+            name: "ground beef",
+            quantity: 500,
+            unit: "g",
+        });
+        expect(
+            parseIngredientText("1 lb (450g) ground beef").ingredient,
+        ).toMatchObject({
+            name: "ground beef",
+            quantity: 1,
+            unit: "lb",
+        });
+    });
+
+    test("adopts the first weight of a dual-expression group", () => {
+        expect(
+            parseIngredientText("(450g / 1 lb) ground beef").ingredient,
+        ).toMatchObject({
+            name: "ground beef",
+            quantity: 450,
+            unit: "g",
+        });
+        expect(
+            parseIngredientText("flour (250g / 2 cups)").ingredient,
+        ).toMatchObject({
+            name: "flour",
+            quantity: 250,
+            unit: "g",
+        });
+    });
+
+    test("never lets a trailing weight override a parsed quantity or unit", () => {
+        expect(
+            parseIngredientText("2 chicken breasts (about 500g)").ingredient,
+        ).toMatchObject({
+            name: "chicken breasts",
+            quantity: 2,
+        });
+        expect(
+            parseIngredientText("2 tbsp olive oil (30ml)").ingredient,
+        ).toMatchObject({
+            name: "olive oil",
+            quantity: 2,
+            unit: "tbsp",
+        });
+        expect(
+            parseIngredientText("1 cup flour (120g), sifted").ingredient,
+        ).toMatchObject({
+            name: "flour, sifted",
+            quantity: 1,
+            unit: "cup",
+        });
+    });
+
+    test("adopts fractional and hedged weights", () => {
+        expect(
+            parseIngredientText("(1/2 lb) butter, softened").ingredient,
+        ).toMatchObject({
+            name: "butter, softened",
+            quantity: 0.5,
+            unit: "lb",
+        });
+        expect(
+            parseIngredientText("(about 500g) minced beef").ingredient,
+        ).toMatchObject({
+            name: "minced beef",
+            quantity: 500,
+            unit: "g",
+        });
+    });
+
+    test("leaves lines without a weight group byte-identical", () => {
+        const onion = parseIngredientText("1 onion, finely chopped");
+        expect(onion.ingredient.name).toBe("onion, finely chopped");
+        expect(onion.ingredient.quantity).toBe(1);
+        expect(parseIngredientText("cheese (grated)").ingredient.name).toBe(
+            "cheese (grated)",
+        );
+        expect(
+            parseIngredientText("ground beef (80% lean)").ingredient.name,
+        ).toBe("ground beef (80% lean)");
+        expect(parseIngredientText("1 lemon (juiced)").ingredient.name).toBe(
+            "lemon (juiced)",
+        );
+    });
+
+    test("grounds a leading-weight ingredient through search instead of a model estimate", async () => {
+        const chicken: FoodCandidate = {
+            provider: "usda",
+            providerFoodId: "300",
+            name: "chicken breast",
+            dataKind: "generic",
+            portions: [
+                {
+                    id: "100g",
+                    amount: 100,
+                    unit: "g",
+                    label: "100 g",
+                    gramWeight: 100,
+                    nutrients: {
+                        calories: 165,
+                        protein_g: 31,
+                        carbs_g: 0,
+                        fat_g: 3.6,
+                    },
+                },
+            ],
+            attribution: {
+                label: "USDA FoodData Central",
+                url: "https://fdc.nal.usda.gov/food/300",
+            },
+            confidence: 0.96,
+        };
+        const searches: string[] = [];
+        const draft = await previewRecipeUrl("https://example.com/recipe", {
+            fetchPage: async (url) => ({
+                submittedUrl: url,
+                finalUrl: url,
+                html: `
+                    <script type="application/ld+json">
+                    {"@type":"Recipe","name":"Simple Chicken","recipeYield":"2 servings","recipeIngredient":["(284g) chicken breast"],"recipeInstructions":"Cook."}
+                    </script>
+                `,
+            }),
+            foodSearch: {
+                search: async (query) => {
+                    searches.push(query);
+                    return { candidates: [chicken], failures: [] };
+                },
+            },
+        });
+        expect(searches.length).toBeGreaterThan(0);
+        for (const query of searches) {
+            expect(query).not.toContain("284");
+            expect(query).not.toContain("(");
+        }
+        expect(draft.recipe.ingredients[0]).toMatchObject({
+            name: "chicken breast",
+            quantity: 284,
+            unit: "g",
+            gram_weight: 284,
+            source_type: "usda",
+            provider_food_id: "300",
+            nutrients: { calories: 468.6 },
+        });
+        expect(draft.ingredient_review[0]?.resolution).toBe("matched");
     });
 });
 
