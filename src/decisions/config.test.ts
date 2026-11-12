@@ -69,7 +69,10 @@ describe("decisionsConfig model chain", () => {
         ]);
         expect(config!.models[0]).toBe("typesafe/jev-1.14");
         expect(config!.models[1]).toBe("perplexity/pplx-decider-v1.2");
-        expect(config!.models[2]).toBe("liquid/d1-ultra");
+        // liquid/d1-ultra was removed from the default chain on
+        // Nov 11 (retention/training terms; Michael's ruling).
+        expect(config!.models).toHaveLength(2);
+        expect(config!.models).not.toContain("liquid/d1-ultra");
     });
 
     test("env overrides primary + fallbacks; blanks and dupes dropped", () => {
