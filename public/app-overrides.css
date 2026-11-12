@@ -6032,6 +6032,27 @@ dialog .guided-grocery-row input[type="checkbox"] {
     height: 6px;
 }
 
+/* Forward view (cohesion program): a future day is labeled Planned —
+   its macros are a projection from the plan, never actuals — and the
+   projection note under the tiles states what was counted. */
+.day-kind-chip {
+    align-self: center;
+    margin-left: 10px;
+    padding: 3px 10px;
+    border: 1px solid #8a7c63;
+    border-radius: 999px;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #176b3a;
+}
+
+.planned-note {
+    margin: 8px 0 2px;
+    font-size: 13px;
+    color: #5d5344;
+}
+
 .cal-history-row {
     font: inherit;
     width: 100%;
