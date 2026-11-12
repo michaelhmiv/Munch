@@ -25,7 +25,7 @@ for (const required of [
     "swift-package-manager-google-mobile-ads.git",
     "swift-package-manager-google-user-messaging-platform.git",
     "productName = GoogleMobileAds;",
-    "productName = UserMessagingPlatform;",
+    "productName = GoogleUserMessagingPlatform;",
 ]) {
     if (!project.includes(required)) {
         throw new Error(`iOS project is missing ads wiring: ${required}`);

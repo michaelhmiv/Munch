@@ -216,7 +216,7 @@ describe("iOS ad units — test in non-store builds, real only behind the flag i
             "https://github.com/googleads/swift-package-manager-google-user-messaging-platform.git",
         );
         expect(project).toContain("productName = GoogleMobileAds;");
-        expect(project).toContain("productName = UserMessagingPlatform;");
+        expect(project).toContain("productName = GoogleUserMessagingPlatform;");
         expect(project).toContain("version = 13.11.0;");
     });
 
