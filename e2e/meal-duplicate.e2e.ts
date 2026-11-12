@@ -202,6 +202,12 @@ test("duplicate sends a meal to another day, exactly as logged, original and pan
         await card.locator('button[data-action="duplicate-meal"]').click();
         await expect(dialog).toBeVisible();
         await dialog.locator('[name="target_date"]').fill(pastDate);
+        // A hand-picked date that is neither quick-pick leaves both
+        // quick-picks unselected — the highlight never claims a day the
+        // field does not hold.
+        await expect(
+            dialog.locator('[data-action="duplicate-day-choice"].is-selected'),
+        ).toHaveCount(0);
         await expect(dialog.locator('[name="meal_type"]')).toHaveValue(
             "dinner",
         );

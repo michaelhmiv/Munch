@@ -6971,6 +6971,20 @@ function markDraftFieldDirty(target) {
 document.addEventListener("change", async (event) => {
     markDraftFieldDirty(event.target);
     const target = event.target;
+    if (target?.matches?.('#duplicate-meal-form [name="target_date"]')) {
+        // Keep the quick-pick selected state truthful when the date is
+        // typed or picked directly: a choice is highlighted only when
+        // the field actually holds its date.
+        const form = target.closest("form");
+        form?.querySelectorAll('[data-action="duplicate-day-choice"]').forEach(
+            (peer) =>
+                peer.classList.toggle(
+                    "is-selected",
+                    peer.dataset.date === target.value,
+                ),
+        );
+        return;
+    }
     if (target?.matches?.(".cook-mode-check")) {
         // Recipe experience R2: a checklist toggle persists the full
         // checked arrays for that kind on the dish, server-side.
