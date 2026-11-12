@@ -7,7 +7,9 @@ import {
     linkConflictErrorCallbackURL,
     linkPromptDialogCopy,
     LINK_PROMPT_COOKIE_NAME,
+    LINK_PROMPT_NATIVE_HEADER,
     parseLinkPromptCookie,
+    parseLinkPromptProvider,
     signInProviderLabel,
 } from "./link-prompt.js";
 
@@ -40,6 +42,21 @@ describe("cross-provider link prompt", () => {
         expect(parseLinkPromptCookie(`${LINK_PROMPT_COOKIE_NAME}=`)).toBeNull();
         expect(parseLinkPromptCookie(undefined)).toBeNull();
         expect(parseLinkPromptCookie("session=abc")).toBeNull();
+    });
+
+    test("the native prompt header names a validated provider only", () => {
+        // The packaged app records the attempted provider on-device at
+        // collision time and presents it under this header after the
+        // original-method sign-in; anything that is not a real social
+        // provider id is no prompt at all.
+        expect(LINK_PROMPT_NATIVE_HEADER).toBe("x-munch-link-prompt-provider");
+        expect(parseLinkPromptProvider("google")).toBe("google");
+        expect(parseLinkPromptProvider(" apple ")).toBe("apple");
+        expect(parseLinkPromptProvider("email")).toBeNull();
+        expect(parseLinkPromptProvider("facebook")).toBeNull();
+        expect(parseLinkPromptProvider("")).toBeNull();
+        expect(parseLinkPromptProvider(undefined)).toBeNull();
+        expect(parseLinkPromptProvider(null)).toBeNull();
     });
 
     test("clearing the cookie expires it immediately", () => {

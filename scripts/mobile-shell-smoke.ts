@@ -191,6 +191,49 @@ requireText(
 );
 requireText(plugin, "setPendingAuth", "Encrypted pending magic-link state");
 requireText(plugin, "clearPendingAuth", "Encrypted pending magic-link state");
+// Native prompt-to-link (2026-11-12): a refused cross-provider sign-in
+// records the attempted provider in the encrypted pending-link-prompt
+// slot (the packaged equivalent of the web's link-prompt cookie, which
+// the bearer transport cannot carry); the shell presents it after the
+// original-method sign-in and confirms with a fresh native ID token.
+requireText(plugin, "getPendingLinkPrompt", "Encrypted pending link prompt");
+requireText(plugin, "setPendingLinkPrompt", "Encrypted pending link prompt");
+requireText(plugin, "clearPendingLinkPrompt", "Encrypted pending link prompt");
+requireText(
+    runtime,
+    "recordPendingLinkPrompt",
+    "Native collision prompt recording",
+);
+requireText(
+    runtime,
+    "pendingNativeLinkPrompt",
+    "Native pending link prompt read",
+);
+requireText(
+    runtime,
+    "nativeProviderIdToken",
+    "Native link ID-token acquisition",
+);
+requireText(
+    runtime,
+    "LINK_PROMPT_NATIVE_HEADER",
+    "Native link prompt header contract",
+);
+requireText(
+    appApi,
+    "pendingNativeLinkPrompt",
+    "Web link-prompt defaults (no on-device record)",
+);
+requireText(
+    appJs,
+    "pendingNativeLinkPrompt",
+    "Shell prompt check presents the native record",
+);
+requireText(
+    appJs,
+    "nativeProviderIdToken",
+    "Shell prompt confirm uses the native link path",
+);
 requireText(
     googleSignInPlugin,
     "CredentialManager",

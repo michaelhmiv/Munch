@@ -1,7 +1,11 @@
 import {
+    clearPendingNativeLinkPrompt,
     installOfflineBanner,
     isConnectivityError,
     isOffline,
+    LINK_PROMPT_NATIVE_HEADER,
+    nativeProviderIdToken,
+    pendingNativeLinkPrompt,
     requestJson,
 } from "./app-api.js";
 import {
@@ -4793,19 +4797,43 @@ let linkPromptInFlight = false;
 /**
  * Cross-provider collision prompt (2026-11-12): a sign-in refused
  * because the provider's email belongs to this account under a
- * different method leaves a short-lived pending-link cookie. Once the
- * user is signed in with their original method, ask — once per page
- * load, over whatever route they landed on — whether to add that
- * provider to this same account (Amendment I link; declining leaves
- * the account untouched).
+ * different method leaves a short-lived pending-link record — a
+ * server cookie on the web, an on-device secure-store record in the
+ * packaged app, whose bearer transport cannot carry the cookie.
+ * Once the user is signed in with their original method, ask — once
+ * per page load, over whatever route they landed on — whether to add
+ * that provider to this same account (Amendment I link; declining
+ * leaves the account untouched).
  */
 async function maybeShowLinkPrompt() {
     if (state.linkPromptChecked || linkPromptInFlight) return;
     linkPromptInFlight = true;
     try {
-        const { prompt } = await api("/api/app/sign-in-methods/link-prompt");
+        // Packaged app: the pending provider was recorded on-device at
+        // collision time (the web's cookie cannot reach its bearer
+        // transport), so present it as the native prompt header. Web:
+        // pendingNativeLinkPrompt() is null and the cookie alone
+        // drives the same endpoint, unchanged.
+        const nativeProvider = await pendingNativeLinkPrompt();
+        const { prompt } = await api("/api/app/sign-in-methods/link-prompt", {
+            keepPrevious: true,
+            ...(nativeProvider
+                ? {
+                      headers: {
+                          [LINK_PROMPT_NATIVE_HEADER]: nativeProvider,
+                      },
+                  }
+                : {}),
+        });
         state.linkPromptChecked = true;
-        if (!prompt?.provider) return;
+        if (!prompt?.provider) {
+            // No prompt for the recorded attempt (already linked,
+            // expired server-side, or not this account's collision):
+            // the on-device record is stale — drop it so it cannot
+            // re-offer on a later launch.
+            if (nativeProvider) await clearPendingNativeLinkPrompt();
+            return;
+        }
         const label = prompt.label || prompt.provider;
         openDialog(
             `Add ${label} sign-in?`,
@@ -6928,6 +6956,10 @@ async function handleAction(button) {
             body: "{}",
             keepPrevious: true,
         }).catch(() => {});
+        // Packaged app: the on-device record is the pending prompt —
+        // clearing it is what makes "Not now" final there (web: no-op,
+        // the dismiss above cleared the cookie).
+        await clearPendingNativeLinkPrompt();
         closeAppDialog();
         return;
     }
@@ -6936,6 +6968,11 @@ async function handleAction(button) {
         const label = button.dataset.providerLabel || provider;
         button.disabled = true;
         try {
+            // Packaged app: link in place with a fresh native ID token
+            // (the Amendment I link's native path) — a web consent
+            // redirect cannot complete against its bearer session.
+            // Web: nativeProviderIdToken() is null, unchanged flow.
+            const idToken = await nativeProviderIdToken(provider);
             const result = await api(
                 `/api/app/sign-in-methods/${encodeURIComponent(provider)}/link`,
                 {
@@ -6943,6 +6980,7 @@ async function handleAction(button) {
                     body: JSON.stringify({
                         callbackURL: "/app",
                         errorCallbackURL: "/app",
+                        ...(idToken ? { idToken } : {}),
                     }),
                     keepPrevious: true,
                 },
@@ -6954,6 +6992,7 @@ async function handleAction(button) {
                 body: "{}",
                 keepPrevious: true,
             }).catch(() => {});
+            await clearPendingNativeLinkPrompt();
             if (result?.url) {
                 // Web link: hand off to the provider's consent screen.
                 location.href = result.url;

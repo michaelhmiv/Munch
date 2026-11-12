@@ -12,6 +12,7 @@ import {
     installOfflineBanner,
     isConnectivityError,
     isOffline,
+    LINK_PROMPT_NATIVE_HEADER,
     requestJson,
     resolveMunchApiUrl,
     setMunchPlatformAdapter,
@@ -73,6 +74,77 @@ async function replaceStoredToken(token) {
     }
 }
 
+// Cross-provider collision prompt — native pending record (2026-11-12).
+// The web records the attempted provider in the server-set
+// munch_link_prompt cookie, but this runtime's transport is bearer
+// tokens with credentials omitted from a packaged origin, so that
+// cookie can never reach the packaged app's session-bound requests.
+// The record therefore lives in the native secure store instead
+// (MunchSecureSession's encrypted pending-link-prompt slot), with the
+// same semantics as the cookie: the attempted provider's id, a
+// 30-minute TTL, cleared the moment the prompt is answered. It is not
+// a credential and proves nothing — after the original-method
+// sign-in, the app shell presents it to GET
+// /api/app/sign-in-methods/link-prompt as the
+// LINK_PROMPT_NATIVE_HEADER hint, and the server still offers the
+// prompt only when that provider is genuinely unlinked for the
+// signed-in account; confirming runs the session-bound Amendment I
+// link with a fresh native ID token (nativeProviderIdToken below).
+const LINK_PROMPT_PROVIDER_IDS = ["google", "apple"];
+const LINK_PROMPT_TTL_MS = 30 * 60 * 1000;
+
+async function recordPendingLinkPrompt(provider) {
+    if (!LINK_PROMPT_PROVIDER_IDS.includes(provider)) return;
+    try {
+        await MunchSecureSession.setPendingLinkPrompt({
+            value: JSON.stringify({ provider, recordedAt: Date.now() }),
+        });
+    } catch {
+        // A missing native store (iOS has no MunchSecureSession plugin
+        // yet) or a storage failure loses only the automatic prompt:
+        // the collision error still names the original-method path,
+        // and Settings linking remains available after sign-in.
+    }
+}
+
+export async function pendingNativeLinkPrompt() {
+    let raw;
+    try {
+        const stored = await MunchSecureSession.getPendingLinkPrompt();
+        raw = stored?.value;
+    } catch {
+        return null;
+    }
+    if (typeof raw !== "string" || !raw) return null;
+    let record;
+    try {
+        record = JSON.parse(raw);
+    } catch {
+        record = null;
+    }
+    const provider = record?.provider;
+    const recordedAt = record?.recordedAt;
+    if (
+        !LINK_PROMPT_PROVIDER_IDS.includes(provider) ||
+        typeof recordedAt !== "number" ||
+        recordedAt > Date.now() ||
+        Date.now() - recordedAt > LINK_PROMPT_TTL_MS
+    ) {
+        await clearPendingNativeLinkPrompt();
+        return null;
+    }
+    return provider;
+}
+
+export async function clearPendingNativeLinkPrompt() {
+    try {
+        await MunchSecureSession.clearPendingLinkPrompt();
+    } catch {
+        // Best-effort: an expired or answered record the plugin cannot
+        // clear is still bounded by the TTL check on every read.
+    }
+}
+
 export function installedReturnRoute(value) {
     return installedAppRoute(value) || "/app";
 }
@@ -119,6 +191,7 @@ export {
     installOfflineBanner,
     isConnectivityError,
     isOffline,
+    LINK_PROMPT_NATIVE_HEADER,
     requestJson,
     resolveMunchApiUrl,
 };
@@ -260,7 +333,7 @@ async function googleSignInConfig() {
     return payload;
 }
 
-export async function signInWithGoogle() {
+async function requestGoogleIdToken() {
     const config = await googleSignInConfig();
     const nonce = randomBase64Url();
     const credential = await MunchGoogleSignIn.signIn({
@@ -270,6 +343,25 @@ export async function signInWithGoogle() {
     if (typeof credential?.idToken !== "string" || !credential.idToken) {
         throw new Error("Google did not return a sign-in token");
     }
+    return { idToken: credential.idToken, nonce };
+}
+
+/**
+ * Fresh provider ID token for the packaged app's session-bound link
+ * (the prompt's confirm leg and any other native link): on Android,
+ * Google linking completes in place with a native token — the web
+ * consent redirect the shared shell falls back to cannot complete
+ * against a bearer session. Providers with no native bridge on this
+ * platform return null and keep that fallback.
+ */
+export async function nativeProviderIdToken(provider) {
+    if (provider !== "google") return null;
+    const { idToken } = await requestGoogleIdToken();
+    return idToken;
+}
+
+export async function signInWithGoogle() {
+    const { idToken, nonce } = await requestGoogleIdToken();
 
     const response = await fetch(
         new URL("/api/auth/sign-in/social", API_BASE_URL),
@@ -282,7 +374,7 @@ export async function signInWithGoogle() {
             },
             body: JSON.stringify({
                 provider: "google",
-                idToken: { token: credential.idToken, nonce },
+                idToken: { token: idToken, nonce },
                 callbackURL: "/app",
             }),
         },
@@ -291,11 +383,15 @@ export async function signInWithGoogle() {
     if (!response.ok) {
         // Cross-provider collision (2026-11-12): the Google identity's
         // email belongs to an existing account that signs in another
-        // way. Never the raw "account not linked" — tell the user the
-        // one path that works: original method first, then link.
+        // way. Never the raw "account not linked" — record the attempt
+        // as a pending link prompt (the native equivalent of the web's
+        // link-conflict cookie), so once the user is in with their
+        // original method the app shell asks whether to add Google to
+        // that same account, at sign-in, not buried in Settings.
         if (payload?.code === "OAUTH_LINK_ERROR") {
+            await recordPendingLinkPrompt("google");
             throw new Error(
-                "This email already has a Munch account with a different sign-in method. Sign in with that method first (for example, your email link or Apple), then add Google in Settings, under Sign-in methods.",
+                "This email already has a Munch account with a different sign-in method. Sign in with that method first (for example, your email link or Apple) — once you're in, we'll ask whether you'd like to add Google as another way to sign in to the same account.",
             );
         }
         throw new Error(
@@ -470,6 +566,9 @@ export async function signOutInstalledSession() {
         }
     } finally {
         await clearStoredToken();
+        // A pending link prompt belongs to the collision that recorded
+        // it, not to whoever signs in next on this device.
+        await clearPendingNativeLinkPrompt();
     }
 }
 

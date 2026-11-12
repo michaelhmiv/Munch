@@ -16,6 +16,14 @@
  *     entitlement (account-level) intact;
  *   - declining leaves the account exactly as it was — the colliding
  *     provider stays refused, never a forked account;
+ *   - the NATIVE packaged path (flow N) reaches the same prompt
+ *     without the cookie its bearer transport cannot carry: the
+ *     runtime records the attempted provider on-device at the 401 and
+ *     presents it to the same link-prompt endpoint as the native
+ *     header after the original-method sign-in; dismiss + record
+ *     cleared re-offers nothing, a fresh collision re-records, and
+ *     confirming through the id-token link lands in the same
+ *     Premium account;
  *   - Apple Hide My Email cannot match by email by construction: an
  *     unlinked relay identity creates its own account at sign-in
  *     (documented), while linking the relay identity FIRST (signed in
@@ -102,6 +110,8 @@ const { createBetterAuthConnectRouter } =
     await import("../src/auth/connect-routes.js");
 const { createSignInMethodsRouter } =
     await import("../src/auth/sign-in-methods-routes.js");
+const { LINK_PROMPT_NATIVE_HEADER } =
+    await import("../src/auth/link-prompt.js");
 const { grantPremiumOverride } = await import("../src/billing/override.js");
 const { resolveMunchCapabilitiesSafe } =
     await import("../src/billing/capabilities.js");
@@ -528,6 +538,131 @@ try {
         "flow D: email link must land in the provider-created account",
     );
     console.log("flow D (google->email-link): ok");
+
+    // ---- Flow N: the native packaged path (Android) — Apple-created
+    //      account, Google collides natively, prompt at sign-in via the
+    //      on-device record presented as the native header, decline,
+    //      re-collide, confirm, Premium. The packaged transport is
+    //      bearer + credentials omitted, so no cookie ever participates:
+    //      every prompt read below is cookie-free, exactly as the
+    //      runtime's requests are.
+    const emailN = `collision-n-${run}@example.test`;
+    const appleN = { id: `a-sub-n-${run}`, email: emailN, name: "Flow N" };
+    const googleN = {
+        id: `g-sub-n-${run}`,
+        email: emailN,
+        name: "Flow N",
+    };
+    const n1 = await postSocial("apple", appleN);
+    assert(n1.status === 200, "flow N: Apple sign-in must succeed");
+    const userN = String((n1.body.user as { id: string }).id);
+    createdUserIds.push(userN);
+    await grantPremiumOverride({
+        userId: userN,
+        expiresAt: new Date(Date.now() + 30 * 86_400_000),
+        source: "support",
+        reason: "collision smoke native premium fixture",
+    });
+    const n2 = await postSocial("google", googleN);
+    assert(
+        n2.status === 401 && n2.body.code === "OAUTH_LINK_ERROR",
+        "flow N: native colliding Google sign-in must be refused (this 401 is where the runtime records the pending prompt on-device)",
+    );
+    assert(
+        (await userCount(emailN)) === 1 &&
+            JSON.stringify(await accountProviders(userN)) === '["apple"]',
+        "flow N: native collision must not duplicate or silently link",
+    );
+    // Sign in with the original method (native bearer session).
+    const n3 = await postSocial("apple", appleN);
+    assert(n3.status === 200, "flow N: original method must sign in");
+    async function nativePrompt(
+        hint?: string,
+    ): Promise<{ provider: string } | null> {
+        const headers = sessionHeaders(n3.body);
+        if (hint !== undefined) headers.set(LINK_PROMPT_NATIVE_HEADER, hint);
+        const response = await call("/api/app/sign-in-methods/link-prompt", {
+            headers,
+        });
+        assert(response.status === 200, "flow N: prompt read must succeed");
+        const body = (await response.json()) as {
+            prompt: { provider: string } | null;
+        };
+        return body.prompt;
+    }
+    assert(
+        (await nativePrompt()) === null,
+        "flow N: without the on-device record there is no prompt (the cookie path is unavailable to the packaged app)",
+    );
+    assert(
+        (await nativePrompt("email")) === null &&
+            (await nativePrompt("not-a-provider")) === null,
+        "flow N: an invalid native hint must never produce a prompt",
+    );
+    assert(
+        (await nativePrompt("google"))?.provider === "google",
+        "flow N: the recorded Google attempt must be offered after original-method sign-in",
+    );
+    // Decline: the runtime calls dismiss and clears its on-device
+    // record in the same action, so nothing is presented again.
+    const nDismiss = await call(
+        "/api/app/sign-in-methods/link-prompt/dismiss",
+        { method: "POST", headers: sessionHeaders(n3.body), json: {} },
+    );
+    assert(nDismiss.status === 200, "flow N: native dismiss must succeed");
+    assert(
+        (await nativePrompt()) === null,
+        "flow N: declined + record cleared must not re-offer",
+    );
+    // The declined provider stays refused — and that refusal is
+    // itself a fresh collision, which re-records the prompt on-device
+    // (only a NEW attempt may offer it again, never the dismissed one).
+    const n4 = await postSocial("google", googleN);
+    assert(
+        n4.status === 401 &&
+            JSON.stringify(await accountProviders(userN)) === '["apple"]',
+        "flow N: declined provider must stay refused, account untouched",
+    );
+    assert(
+        (await nativePrompt("google"))?.provider === "google",
+        "flow N: a fresh collision must offer the prompt again",
+    );
+    const nLink = await linkViaSession(
+        sessionHeaders(n3.body),
+        "google",
+        googleN,
+    );
+    assert(
+        nLink.status === 200,
+        "flow N: confirm via the native id-token link must succeed",
+    );
+    assert(
+        (await nativePrompt("google")) === null,
+        "flow N: a stale on-device record must not resurrect the prompt once linked",
+    );
+    const nMethods = await methodsViaSession(sessionHeaders(n3.body));
+    assert(
+        nMethods.find((m) => m.id === "google")?.state === "linked",
+        "flow N: Google must read linked after confirmation",
+    );
+    const n5 = await postSocial("google", googleN);
+    assert(
+        n5.status === 200 &&
+            String((n5.body.user as { id: string }).id) === userN &&
+            (await userCount(emailN)) === 1,
+        "flow N: Google sign-in must land in the same single account after linking",
+    );
+    const nCaps = (await resolveMunchCapabilitiesSafe(userN)) as unknown as {
+        tier?: string;
+        capabilities?: { tier?: string };
+    };
+    assert(
+        (nCaps.tier ?? nCaps.capabilities?.tier) === "premium",
+        "flow N: Premium entitlement must be intact in the linked account",
+    );
+    console.log(
+        "flow N (apple->google native, prompt/decline/re-offer/confirm, premium): ok",
+    );
 
     // ---- Hide My Email: link-first lands home; sign-in-first forks;
     //      an identity owned by the fork refuses to link (409).

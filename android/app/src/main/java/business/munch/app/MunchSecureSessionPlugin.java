@@ -26,8 +26,10 @@ public class MunchSecureSessionPlugin extends Plugin {
     private static final String PREFS_NAME = "munch_secure_session";
     private static final String PREF_TOKEN = "session_token";
     private static final String PREF_PENDING_AUTH = "pending_auth";
+    private static final String PREF_PENDING_LINK_PROMPT = "pending_link_prompt";
     private static final int MAX_TOKEN_LENGTH = 16384;
     private static final int MAX_PENDING_AUTH_LENGTH = 4096;
+    private static final int MAX_PENDING_LINK_PROMPT_LENGTH = 512;
     private static final int GCM_TAG_BITS = 128;
     private static final int IV_BYTES = 12;
 
@@ -96,6 +98,52 @@ public class MunchSecureSessionPlugin extends Plugin {
     @PluginMethod
     public void clearPendingAuth(PluginCall call) {
         preferences().edit().remove(PREF_PENDING_AUTH).apply();
+        call.resolve();
+    }
+
+    // Cross-provider collision prompt (2026-11-12): when a native
+    // sign-in is refused because the provider's email belongs to an
+    // account that signs in another way, the runtime records the
+    // attempted provider here — the packaged app's equivalent of the
+    // web's munch_link_prompt cookie, which its bearer transport
+    // (credentials omitted, packaged origin) cannot carry. The record
+    // is a provider id plus a timestamp in the same Keystore-encrypted
+    // store as the session; it is not a credential and grants nothing:
+    // after the original-method sign-in the shell presents it to the
+    // session-bound link-prompt endpoint, which decides whether to
+    // offer the link, and confirming still runs the session-bound
+    // link with a fresh provider token.
+    @PluginMethod
+    public void getPendingLinkPrompt(PluginCall call) {
+        try {
+            String encrypted = preferences().getString(PREF_PENDING_LINK_PROMPT, null);
+            JSObject result = new JSObject();
+            result.put("value", encrypted == null ? "" : decrypt(encrypted));
+            call.resolve(result);
+        } catch (Exception error) {
+            preferences().edit().remove(PREF_PENDING_LINK_PROMPT).apply();
+            call.reject("Unable to read the pending Munch link prompt", error);
+        }
+    }
+
+    @PluginMethod
+    public void setPendingLinkPrompt(PluginCall call) {
+        String value = call.getString("value");
+        if (value == null || value.isBlank() || value.length() > MAX_PENDING_LINK_PROMPT_LENGTH) {
+            call.reject("A valid pending Munch link prompt is required");
+            return;
+        }
+        try {
+            preferences().edit().putString(PREF_PENDING_LINK_PROMPT, encrypt(value)).apply();
+            call.resolve();
+        } catch (Exception error) {
+            call.reject("Unable to store the pending Munch link prompt", error);
+        }
+    }
+
+    @PluginMethod
+    public void clearPendingLinkPrompt(PluginCall call) {
+        preferences().edit().remove(PREF_PENDING_LINK_PROMPT).apply();
         call.resolve();
     }
 

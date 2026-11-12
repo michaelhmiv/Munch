@@ -18,8 +18,20 @@ import {
  *     explains the situation and records a short-lived pending-link
  *     cookie naming the provider that was attempted.
  *   - Native id-token sign-in: the request fails 401 with code
- *     OAUTH_LINK_ERROR; the packaged app translates it into the same
- *     guidance in plain language (mobile/runtime.js).
+ *     OAUTH_LINK_ERROR. The packaged app cannot take the cookie path:
+ *     its transport sends bearer tokens with `credentials: "omit"`
+ *     from a packaged origin (https://localhost), so an HttpOnly
+ *     cookie on the API origin is neither set nor sent for it.
+ *     Instead mobile/runtime.js records the attempted provider in the
+ *     native secure store (the MunchSecureSession plugin's encrypted
+ *     pending-link-prompt slot, same 30-minute TTL), and after the
+ *     original-method sign-in the app shell presents that record to
+ *     the SAME session-bound endpoints as the native prompt header
+ *     below. The server still gates the prompt on the signed-in
+ *     account's real method state, and confirming still runs the
+ *     session-bound link — the header is only a hint naming which
+ *     provider to offer, never proof of anything and never a link
+ *     by itself.
  *
  * The user then signs in with their ORIGINAL method — the only proof
  * of account ownership that requires no new trust — and the app shell
@@ -36,6 +48,12 @@ export const ACCOUNT_NOT_LINKED_ERROR = "account_not_linked";
 export const LINK_PROMPT_COOKIE_NAME = "munch_link_prompt";
 export const LINK_PROMPT_TTL_SECONDS = 30 * 60;
 export const LINK_CONFLICT_PATH = "/connect/link-conflict";
+/**
+ * Header the packaged app uses to present the pending provider it
+ * recorded on-device at collision time (see above). Web clients never
+ * send it; their pending provider arrives as the cookie instead.
+ */
+export const LINK_PROMPT_NATIVE_HEADER = "x-munch-link-prompt-provider";
 
 const PROVIDER_LABELS: Record<SignInProviderId, string> = {
     google: "Google",
@@ -68,6 +86,15 @@ export function buildClearLinkPromptCookie(production: boolean): string {
     return `${LINK_PROMPT_COOKIE_NAME}=; Max-Age=0; ${cookieAttributes(production)}`;
 }
 
+/** Validate a bare pending-provider value (cookie value or native header). */
+export function parseLinkPromptProvider(
+    value: string | undefined | null,
+): SignInProviderId | null {
+    if (!value) return null;
+    const trimmed = value.trim();
+    return isSignInProviderId(trimmed) ? trimmed : null;
+}
+
 export function parseLinkPromptCookie(
     cookieHeader: string | undefined,
 ): SignInProviderId | null {
@@ -75,8 +102,7 @@ export function parseLinkPromptCookie(
     for (const part of cookieHeader.split(";")) {
         const [name, ...rest] = part.trim().split("=");
         if (name !== LINK_PROMPT_COOKIE_NAME) continue;
-        const value = rest.join("=").trim();
-        return isSignInProviderId(value) ? value : null;
+        return parseLinkPromptProvider(rest.join("="));
     }
     return null;
 }
