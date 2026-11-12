@@ -666,6 +666,10 @@ function fixtureMealDetail(meal: Record<string, unknown>) {
             description: meal.description,
             mealType: "lunch",
             loggedAt: "2026-11-10T17:00:00.000Z",
+            // The real API's meal detail is snake_case; the duplicate
+            // dialog (app.js) reads these fields for its defaults.
+            meal_type: "lunch",
+            logged_at: "2026-11-10T17:00:00.000Z",
             notes: "",
             calories: 700,
             proteinG: 40,
@@ -936,9 +940,21 @@ test("UX wave F1: Duplicate works in the packaged bundle", async ({ page }) => {
 
     await card.getByRole("button", { name: "Duplicate" }).click();
 
-    await expect(page.locator("#toast-region")).toContainText(
-        "Meal duplicated with its original food sources.",
+    // The button opens the duplicate dialog (day + meal-type choices,
+    // defaulting to the meal's own) — the flow that replaced the old
+    // instant-copy patch stub. The stub's capture-phase interceptor in
+    // app-patches.js used to swallow this click (stopImmediatePropagation)
+    // and POST the copy immediately; it no longer claims the action, so
+    // the dialog must open here exactly as on the website.
+    const dialog = page.locator("#app-dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('[name="target_date"]')).toHaveValue(
+        "2026-11-10",
     );
+    await expect(dialog.locator('[name="meal_type"]')).toHaveValue("lunch");
+    await dialog.getByRole("button", { name: "Duplicate meal" }).click();
+
+    await expect(page.locator("#toast-region")).toContainText("Duplicated to");
     expect(
         apiRequests.some(
             (entry) =>
