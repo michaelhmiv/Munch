@@ -1,6 +1,7 @@
 package business.munch.app;
 
 import android.app.Activity;
+import android.content.pm.ApplicationInfo;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -24,10 +25,15 @@ import com.google.android.ump.UserMessagingPlatform;
 
 @CapacitorPlugin(name = "MunchAds")
 public class MunchAdsPlugin extends Plugin {
+    // Google's sample banner unit — used only by the ADS DEMO override in
+    // debuggable builds, never in a store build.
+    private static final String TEST_BANNER_AD_UNIT_ID = "ca-app-pub-3940256099942544/9214589741";
+
     private ConsentInformation consentInformation;
     private boolean consentRefreshComplete = false;
     private boolean consentFormActive = false;
     private boolean bannerRequested = false;
+    private boolean demoActive = false;
     private boolean adsInitialized = false;
     private AdView bannerView;
     private View webView;
@@ -76,8 +82,17 @@ public class MunchAdsPlugin extends Plugin {
         // or a bootstrap that never carried it — makes no ad load
         // attempt at all.
         boolean adsEnabled = Boolean.TRUE.equals(call.getBoolean("adsEnabled", false));
-        String adUnitId = getContext().getString(R.string.munch_admob_banner_unit_id);
-        bannerRequested = visible && adsEnabled && !adFree && adUnitId != null && !adUnitId.isBlank();
+        // ADS DEMO (test builds only, Michael, 2026-11-12): the web layer
+        // forwards demoTestAds when the packaged bundle was built with
+        // MUNCH_ADS_DEMO_TEST_BUILD=1. It is honored ONLY in debuggable
+        // (non-store) builds and only ever loads Google's sample TEST
+        // unit below, so a Play release build ignores the flag entirely.
+        boolean demoRequested = Boolean.TRUE.equals(call.getBoolean("demoTestAds", false));
+        demoActive = demoRequested && isDebuggableBuild();
+        String adUnitId = demoActive
+            ? TEST_BANNER_AD_UNIT_ID
+            : getContext().getString(R.string.munch_admob_banner_unit_id);
+        bannerRequested = visible && (demoActive || (adsEnabled && !adFree)) && adUnitId != null && !adUnitId.isBlank();
 
         if (!bannerRequested) {
             runOnUiThread(this::hideBanner);
@@ -87,6 +102,10 @@ public class MunchAdsPlugin extends Plugin {
 
         call.resolve();
         if (consentRefreshComplete) runOnUiThread(this::showConsentThenBanner);
+    }
+
+    private boolean isDebuggableBuild() {
+        return (getContext().getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
     }
 
     @PluginMethod
@@ -156,7 +175,9 @@ public class MunchAdsPlugin extends Plugin {
 
             AdView adView = new AdView(activity);
             adView.setAdSize(AdSize.BANNER);
-            adView.setAdUnitId(getContext().getString(R.string.munch_admob_banner_unit_id));
+            adView.setAdUnitId(demoActive
+                ? TEST_BANNER_AD_UNIT_ID
+                : getContext().getString(R.string.munch_admob_banner_unit_id));
             adView.setBackgroundColor(Color.WHITE);
             int width = AdSize.BANNER.getWidthInPixels(activity);
             bannerHeightPx = AdSize.BANNER.getHeightInPixels(activity);

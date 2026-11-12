@@ -116,4 +116,22 @@ if (!runtime.includes("takePhoto")) {
     throw new Error("Installed-client runtime lost native camera integration");
 }
 
+// ADS DEMO (test distributions only): MUNCH_ADS_DEMO_TEST_BUILD=1 bakes a
+// marker into the packaged runtime so the app can ask the native ads
+// plugins to show Google TEST banners even for a Premium account
+// (Michael, 2026-11-12 — he needs to SEE the banner's fit before launch).
+// The marker exists only in this packaged bundle — the website never
+// carries it — and each native plugin honors it only in non-store
+// distributions (iOS: DEBUG build or sandbox receipt; Android:
+// debuggable build), so a store build can never surface it.
+if (process.env.MUNCH_ADS_DEMO_TEST_BUILD === "1") {
+    await writeFile(
+        join(output, "mobile-runtime.js"),
+        `${runtime}\nwindow.__MUNCH_ADS_DEMO_TEST_BUILD__ = true;\n`,
+    );
+    console.log(
+        "ADS DEMO marker baked into the packaged runtime (MUNCH_ADS_DEMO_TEST_BUILD=1)",
+    );
+}
+
 console.log("Built local mobile bundle in .mobile-web");

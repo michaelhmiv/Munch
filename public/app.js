@@ -353,12 +353,22 @@ async function api(path, options = {}) {
 
 function syncAndroidAdPlacement() {
     if (typeof window.MunchAds?.setBannerVisible !== "function") return;
-    const adFree = state.bootstrap?.androidEntitlements?.adFree;
+    // ADS DEMO (test distributions only): the packaged runtime carries
+    // window.__MUNCH_ADS_DEMO_TEST_BUILD__ when the bundle was built with
+    // MUNCH_ADS_DEMO_TEST_BUILD=1 (Michael, 2026-11-12). The demo state
+    // overrides the flag + Premium gates here so the slot renders, but
+    // the native plugins honor it only in non-store distributions and
+    // only ever load Google TEST units under it — a store build ignores
+    // the flag even if a marked bundle were promoted to the store.
+    const demoTestBuild = window.__MUNCH_ADS_DEMO_TEST_BUILD__ === true;
+    const adFree = demoTestBuild
+        ? false
+        : state.bootstrap?.androidEntitlements?.adFree;
     // ADS-FOUNDATION: bootstrap.ads.enabled is the server-driven remote
     // flag (MUNCH_ADS_ENABLED, DEFAULT OFF). It is forwarded to the
     // native plugin, which fail-closes on anything but an explicit
     // true — so a stale or flag-less bootstrap makes no ad load attempt.
-    const adsEnabled = state.bootstrap?.ads?.enabled;
+    const adsEnabled = demoTestBuild ? true : state.bootstrap?.ads?.enabled;
     const visible = shouldShowAndroidBanner({
         route: state.route,
         pathname: location.pathname,
@@ -370,6 +380,7 @@ function syncAndroidAdPlacement() {
         visible,
         adFree: adFree !== false,
         adsEnabled: adsEnabled === true,
+        demoTestAds: demoTestBuild,
     }).catch(() => {});
 }
 
@@ -380,10 +391,13 @@ function syncAndroidAdPlacement() {
 // website (no native ad surface), this returns an empty string and the
 // slot renders nothing at all — no element, no reserved space.
 function todayAdSlotMarkup() {
+    const demoTestBuild = window.__MUNCH_ADS_DEMO_TEST_BUILD__ === true;
     const show = shouldRenderTodayAdSlot({
         route: state.route,
-        adsEnabled: state.bootstrap?.ads?.enabled,
-        adFree: state.bootstrap?.androidEntitlements?.adFree,
+        adsEnabled: demoTestBuild ? true : state.bootstrap?.ads?.enabled,
+        adFree: demoTestBuild
+            ? false
+            : state.bootstrap?.androidEntitlements?.adFree,
         nativeAdsAvailable:
             typeof window.MunchAds?.setBannerVisible === "function",
     });
