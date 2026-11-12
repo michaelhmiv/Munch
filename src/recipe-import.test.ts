@@ -179,6 +179,29 @@ describe("recipe import parser", () => {
         });
     });
 
+    test("falls back to legacy microdata that uses the original ingredients property name", () => {
+        const parsed = parseRecipeHtml(`
+            <article itemscope itemtype="http://schema.org/Recipe">
+              <h1 itemprop="name">Chicken casserole</h1>
+              <span itemprop="recipeYield">Serves 4</span>
+              <ul>
+                <li itemprop="ingredients">55g/2oz butter</li>
+                <li itemprop="ingredients">(284g) chicken breast</li>
+              </ul>
+              <div itemprop="recipeInstructions">Cook everything.</div>
+            </article>
+        `);
+        expect(parsed.strategy).toBe("microdata");
+        expect(parsed.name).toBe("Chicken casserole");
+        expect(parsed.servings).toBe(4);
+        expect(parsed.ingredients).toHaveLength(2);
+        expect(parsed.ingredients[1]).toMatchObject({
+            name: "chicken breast",
+            quantity: 284,
+            unit: "g",
+        });
+    });
+
     test("falls back to WP Recipe Maker cards while preserving source facts", () => {
         const parsed = parseRecipeHtml(`
             <html><head>
@@ -304,6 +327,15 @@ describe("recipe import parser parenthesized weights", () => {
         const result = parseIngredientText("1 (400g) can chopped tomatoes");
         expect(result.ingredient).toMatchObject({
             name: "chopped tomatoes",
+            quantity: 1,
+            unit: "can",
+        });
+    });
+
+    test("strips hyphenated package sizes written with spelled-out units", () => {
+        const result = parseIngredientText("1 (14-ounce) can tomato sauce");
+        expect(result.ingredient).toMatchObject({
+            name: "tomato sauce",
             quantity: 1,
             unit: "can",
         });

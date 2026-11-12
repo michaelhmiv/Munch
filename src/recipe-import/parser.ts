@@ -302,8 +302,8 @@ const WEIGHT_GROUP_NUMBER = "(?:(?:\\d+\\s+)?\\d+/\\d+|\\d+(?:\\.\\d+)?)";
 // optionally hedged with "about"). Preparation notes like
 // "(finely chopped)" deliberately do not match.
 const PAREN_WEIGHT_PATTERN = new RegExp(
-    `^\\s*(?:about\\s+|approx\\.?\\s+|~\\s*)?(${WEIGHT_GROUP_NUMBER})\\s*(${WEIGHT_GROUP_UNITS})` +
-        `(?:\\s*(?:\\/|,|\\bor\\b)\\s*(?:about\\s+)?${WEIGHT_GROUP_NUMBER}\\s*(?:${WEIGHT_GROUP_UNITS}|cups?|tablespoons?|tbsp|teaspoons?|tsp))?\\s*$`,
+    `^\\s*(?:about\\s+|approx\\.?\\s+|~\\s*)?(${WEIGHT_GROUP_NUMBER})\\s*-?\\s*(${WEIGHT_GROUP_UNITS})` +
+        `(?:\\s*(?:\\/|,|\\bor\\b)\\s*(?:about\\s+)?${WEIGHT_GROUP_NUMBER}\\s*-?\\s*(?:${WEIGHT_GROUP_UNITS}|cups?|tablespoons?|tbsp|teaspoons?|tsp))?\\s*$`,
     "i",
 );
 
@@ -653,7 +653,12 @@ function itemPropValues(html: string, property: string): string[] {
 
 function parseMicrodata(html: string): ParsedRecipe | null {
     if (!/itemtype=["'][^"']*schema\.org\/Recipe/i.test(html)) return null;
-    const ingredients = itemPropValues(html, "recipeIngredient");
+    // schema.org originally named this property "ingredients"; the
+    // surviving legacy microdata in the wild (e.g. BBC Food) still
+    // uses that name, so it is accepted as an alias.
+    const current = itemPropValues(html, "recipeIngredient");
+    const ingredients =
+        current.length > 0 ? current : itemPropValues(html, "ingredients");
     if (ingredients.length === 0) return null;
     const recipe: Record<string, unknown> = {
         name:
