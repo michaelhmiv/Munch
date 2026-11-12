@@ -15,9 +15,13 @@ function read(path: string): string {
 // membership, bridge registration, and cross-platform contract parity
 // with the Android plugins the shared runtime was written against.
 describe("iOS native bridge contract", () => {
-    const secureSessionSwift = read("mobile/ios/MunchSecureSessionPlugin.swift");
+    const secureSessionSwift = read(
+        "mobile/ios/MunchSecureSessionPlugin.swift",
+    );
     const appleSignInSwift = read("mobile/ios/MunchAppleSignInPlugin.swift");
-    const bridgeViewController = read("mobile/ios/MunchBridgeViewController.swift");
+    const bridgeViewController = read(
+        "mobile/ios/MunchBridgeViewController.swift",
+    );
     const secureSessionJava = read(
         "mobile/android/MunchSecureSessionPlugin.java",
     );
@@ -29,7 +33,9 @@ describe("iOS native bridge contract", () => {
             "MunchAppleSignInPlugin.swift",
             "MunchBridgeViewController.swift",
         ]) {
-            expect(read(`ios/App/App/${file}`)).toBe(read(`mobile/ios/${file}`));
+            expect(read(`ios/App/App/${file}`)).toBe(
+                read(`mobile/ios/${file}`),
+            );
         }
         expect(read("scripts/configure-mobile-ios.ts")).toContain(
             "MunchSecureSessionPlugin.swift",
