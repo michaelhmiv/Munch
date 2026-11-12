@@ -439,6 +439,7 @@ function errorState(error) {
 function setActiveRoute(route) {
     const moreRoutes = new Set([
         "more",
+        "goals",
         "household",
         "trends",
         "foods",
@@ -4062,6 +4063,7 @@ async function renderRoute() {
             groceries: renderGroceries,
             chat: renderChat,
             more: () => renderAccountRoute("more", accountContext()),
+            goals: () => renderAccountRoute("goals", accountContext()),
             household: () => renderAccountRoute("household", accountContext()),
             settings: () => renderAccountRoute("settings", accountContext()),
             "settings-profile": () =>
