@@ -79,11 +79,11 @@ public class MunchAdsPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func setBannerVisible(_ call: CAPPluginCall) {
-        let visible = call.getBool("visible", false) ?? false
+        let visible = call.getBool("visible", false)
         // Fail closed when entitlement state is absent, exactly as Android.
-        let adFree = call.getBool("adFree", true) ?? true
-        let adsEnabled = call.getBool("adsEnabled", false) ?? false
-        let demoTestAds = call.getBool("demoTestAds", false) ?? false
+        let adFree = call.getBool("adFree", true)
+        let adsEnabled = call.getBool("adsEnabled", false)
+        let demoTestAds = call.getBool("demoTestAds", false)
         // Demo override (Michael, 2026-11-12): a test build may show the
         // TEST banner even for a Premium (adFree) account so he can judge
         // the slot. Honored only in non-store distributions — a production
@@ -110,7 +110,9 @@ public class MunchAdsPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         DispatchQueue.main.async {
-            ConsentInformation.shared.presentPrivacyOptionsForm(from: viewController) {
+            // UMP 3.x: the privacy options form is presented by ConsentForm
+            // (it was an instance method on ConsentInformation in 2.x).
+            ConsentForm.presentPrivacyOptionsForm(from: viewController) {
                 [weak self] error in
                 guard let self = self else {
                     call.resolve(["available": error == nil])
