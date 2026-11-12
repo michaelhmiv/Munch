@@ -152,8 +152,11 @@ describe("cross-surface nutrition parity", () => {
         // three Settings/Household/Data rows the S0 pass had declared
         // website-only (mcp.connection.revoke, household.manage,
         // account.export) were proven to live inside the packaged SPA.
+        // A third exception joined later by design, not drift:
+        // nutrition.dailyGuidance lost its only packaged surface when
+        // the Next Up card was removed (plan-brain brief, Part 2).
         expect(appComplete.length).toBeGreaterThanOrEqual(
-            CAPABILITY_MANIFEST.length - 2,
+            CAPABILITY_MANIFEST.length - 3,
         );
     });
 
@@ -192,7 +195,14 @@ describe("cross-surface nutrition parity", () => {
             (capability) => capability.ios.coverage === "partial",
         ).map((capability) => capability.id);
         expect(iosMissing.sort()).toEqual(
-            ["billing.checkout", "billing.portal"].sort(),
+            [
+                "billing.checkout",
+                "billing.portal",
+                // By design, not drift: the Next Up removal
+                // (plan-brain brief, Part 2) retired the bundle's
+                // only daily-guidance surface on every channel.
+                "nutrition.dailyGuidance",
+            ].sort(),
         );
         expect(iosPartial.sort()).toEqual(
             ["account.export", "meal.photoLog", "nutrition.export"].sort(),
@@ -204,7 +214,7 @@ describe("cross-surface nutrition parity", () => {
             CAPABILITY_MANIFEST.length - iosMissing.length - iosPartial.length,
         );
         expect(iosComplete.length).toBeGreaterThanOrEqual(
-            CAPABILITY_MANIFEST.length - 5,
+            CAPABILITY_MANIFEST.length - 6,
         );
     });
 

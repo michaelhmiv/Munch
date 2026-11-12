@@ -272,17 +272,18 @@ export const CAPABILITY_MANIFEST = [
         // fronted this capability on Today (guidance rework D1–D7)
         // was removed with its compose path and action routes
         // (plan-brain brief, Part 2): no standing AI suggestion
-        // section remains on Today.
+        // section remains on Today, on any channel.
         id: "nutrition.dailyGuidance",
         mcp: complete(["get_daily_guidance"]),
         web: complete(["GET /api/app/guidance/today"]),
-        app: complete(["GET /api/app/guidance/today"]),
-        ios: complete(["GET /api/app/guidance/today"]),
+        app: missing(),
+        ios: missing(),
         iosBasis:
-            "Shared bundle: iOS packages the same .mobile-web artifact as Android (same build script, cap sync ios) and reaches the same routes over the bearer transport; this outcome has no platform-specific native dependency.",
+            "No packaged-app surface by design, exactly as on Android: the bundle's only daily-guidance surface was the Next Up card on Today, removed in the Next Up removal (plan-brain brief, Part 2). The read model remains reachable through MCP and the web route.",
         iosGap: null,
         iosTargetPr: null,
-        intentionalChannelException: null,
+        intentionalChannelException:
+            "Daily guidance is intentionally not surfaced in the packaged app: Today carries no standing suggestion card after the Next Up removal, and the synthesis job moved to the Plan brain conversation. The read model stays available through MCP (get_daily_guidance) and the web route for API consumers.",
         gap: null,
         targetPr: null,
     },
