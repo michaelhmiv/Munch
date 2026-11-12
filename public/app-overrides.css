@@ -1220,13 +1220,14 @@ dialog.is-closing::backdrop {
     animation: munch-fade-out var(--motion-fast) var(--motion-ease) forwards;
 }
 
-.button {
-    transition:
-        background-color var(--motion-fast) var(--motion-ease),
-        border-color var(--motion-fast) var(--motion-ease),
-        color var(--motion-fast) var(--motion-ease);
-}
-
+/* Deliberately NO transition on .button state colors: a button
+   parked under the cursor at a fractional scroll boundary can
+   flip-flop :hover, and a color transition then runs perpetually
+   (measured in the packaged-bundle e2e: five never-ending
+   transitions on the meal-draft abandon-confirm button, whose box
+   oscillated 1px and never read as stable). Hover/press colors
+   snap, exactly as they did before the motion pass; the press
+   settle below is transform-only and gesture-scoped. */
 .button:active {
     transform: translateY(1px);
 }

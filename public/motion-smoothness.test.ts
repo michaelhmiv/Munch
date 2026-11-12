@@ -169,6 +169,18 @@ describe("transitions (addendum rule 3)", () => {
         expect(overrides).toContain("dialog.is-closing::backdrop");
     });
 
+    test("buttons carry no color transition (hover flip-flop guard)", () => {
+        // Measured in the packaged-bundle e2e: a .button color
+        // transition on a button parked under the cursor at a
+        // fractional scroll boundary restarts perpetually and its
+        // box oscillates 1px, so automated clicks never read it as
+        // stable. The press settle is transform-only.
+        expect(overrides).not.toContain(
+            "border-color var(--motion-fast) var(--motion-ease)",
+        );
+        expect(overrides).toContain(".button:active");
+    });
+
     test("every dialog close routes through closeAppDialog", () => {
         expect(appJs).toContain("function closeAppDialog()");
         // The only dialog.close() calls left are the helper's own two
@@ -176,5 +188,12 @@ describe("transitions (addendum rule 3)", () => {
         const bare = appJs.match(/dialog\.close\(\)/g) || [];
         expect(bare.length).toBe(2);
         expect(appJs).toContain('dialog.addEventListener("cancel"');
+        // openDialog cancels a pending deferred close (close-then-
+        // reopen flows must not lose the replacement dialog to the
+        // timer): the clear appears in both openDialog and the
+        // helper's immediate path.
+        const clears =
+            appJs.match(/window\.clearTimeout\(dialogCloseTimer\)/g) || [];
+        expect(clears.length).toBe(2);
     });
 });

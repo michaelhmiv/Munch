@@ -3859,6 +3859,12 @@ function findMeal(id) {
 }
 
 function openDialog(title, body, actions = "") {
+    // A new dialog supersedes a pending animated close: several flows
+    // close one dialog and immediately open the next (guided draft
+    // submit -> edit form), and the deferred close must not fire into
+    // the replacement content.
+    window.clearTimeout(dialogCloseTimer);
+    dialog.classList.remove("is-closing");
     dialog.innerHTML = `<div class="auth-card" style="min-width:min(92vw,520px);max-height:85vh;overflow:auto"><div class="panel-title"><h2 style="font-size:1.6rem">${escapeHtml(title)}</h2><button class="button button-quiet button-small dialog-close" type="button" data-action="close-dialog" aria-label="Close">Close</button></div>${body}${actions}</div>`;
     if (!dialog.open) dialog.showModal();
 }
