@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { createSmokeUser } from "./support/smoke-user.js";
+import { createSmokeIdentity, createSmokeUser } from "./support/smoke-user.js";
 
 const {
     addMealDraftQuestion,
@@ -586,6 +586,214 @@ const photoMeal = await getStructuredMeal(userA, photoAdd.confirmedMealId!);
 if (!photoMeal || photoMeal.calories !== 137 || photoMeal.items.length !== 2) {
     throw new Error(
         `Confirmed photo-add draft logged wrong totals: ${photoMeal?.calories}`,
+    );
+}
+
+// --- Photo-draft answer route regression (2026-11-12) ---------------
+// Production failure (draft 26907262-644c-4fb2-b4ef-c96eae561fd5,
+// question photo_portion_0): answering a photo draft's item-linked
+// portion question through the app route returned 400 twice and the
+// dinner could not be logged. The repository's prior-reconciliation
+// precondition — written for MODEL callers — is unsatisfiable for
+// pipeline-created drafts: items are inserted before their questions,
+// so an item's updated_at can never be later than its question's
+// created_at. The app route is exercised over real HTTP here, exactly
+// as the packaged client calls it (bearer session, answer-only body).
+const { createAppRouter } = await import("../src/app/routes.js");
+const { createMealPhotoDraft } = await import("../src/meal-photo/pipeline.js");
+const routeIdentity = await createSmokeIdentity("draft-route");
+const routeBearer = `smoke-${crypto.randomUUID()}`;
+{
+    const { SQL } = await import("bun");
+    const sql = new SQL({ url: process.env.DATABASE_URL!, max: 1 });
+    await sql`
+        insert into munch.auth_sessions (id, user_id, token, expires_at)
+        values (
+            ${crypto.randomUUID()}, ${routeIdentity.userId},
+            ${routeBearer}, now() + interval '1 hour'
+        )
+    `;
+    await sql.close();
+}
+const appRouter = createAppRouter();
+async function answerQuestionViaRoute(
+    draftId: string,
+    questionId: string,
+    expectedVersion: number,
+    answer: string,
+): Promise<Response> {
+    return appRouter.request(
+        `https://munch.example/api/app/meal-drafts/${draftId}/questions/${questionId}/answer`,
+        {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${routeBearer}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                expected_version: expectedVersion,
+                answer,
+            }),
+        },
+    );
+}
+const lasagnaVision = {
+    items: [
+        {
+            name: "lasagna",
+            cooking_method: "baked",
+            quantity: 1.5,
+            unit: "cup",
+            portion_confidence: 0.6,
+            assumptions: ["Estimated portion from bowl size"],
+        },
+    ],
+};
+const noCandidates = async () => ({ candidates: [], failures: [] });
+const lasagnaEstimate = async () =>
+    new Map([
+        [
+            "item:0",
+            {
+                nutrients: {
+                    calories: 600,
+                    protein_g: 28,
+                    carbs_g: 48,
+                    fat_g: 26,
+                },
+            },
+        ],
+    ]);
+
+// (a) Ordinary portion question: the answer-only POST must succeed,
+// and the pipeline's one-transaction persistence must land the same
+// draft shape the sequential writes produced.
+const photoResult = await createMealPhotoDraft({
+    userId: routeIdentity.userId,
+    vision: lasagnaVision,
+    mealType: "dinner",
+    groundingDeps: { search: noCandidates, estimateNutrients: lasagnaEstimate },
+});
+if (
+    photoResult.draft.items.length !== 1 ||
+    photoResult.draft.questions.length !== 1 ||
+    photoResult.draft.status !== "awaiting_answers" ||
+    photoResult.draft.version !== 1
+) {
+    throw new Error(
+        `Bulk photo draft persistence landed the wrong shape: ${JSON.stringify(photoResult.draft)}`,
+    );
+}
+const photoPortionQuestion = photoResult.draft.questions[0]!;
+if (
+    photoPortionQuestion.questionKey !== "photo_portion_0" ||
+    photoPortionQuestion.itemId !== photoResult.draft.items[0]!.id
+) {
+    throw new Error("Photo portion question was not item-linked as expected");
+}
+const answerResponse = await answerQuestionViaRoute(
+    photoResult.draft.id,
+    photoPortionQuestion.id,
+    photoResult.draft.version,
+    "About 1.5 cups — that's right.",
+);
+if (answerResponse.status !== 200) {
+    throw new Error(
+        `Photo portion answer via the app route failed: ${answerResponse.status} ${await answerResponse.text()}`,
+    );
+}
+const answeredBody = (await answerResponse.json()) as {
+    draft: { questions: Array<{ status: string }> };
+};
+if (answeredBody.draft.questions[0]?.status !== "answered") {
+    throw new Error("App-route answer did not close the portion question");
+}
+
+// (b) The model-surface default still refuses answer-only closure:
+// the same repository call WITHOUT the app route's opt-out must keep
+// requiring prior item reconciliation.
+const modelDraft = await createMealPhotoDraft({
+    userId: routeIdentity.userId,
+    vision: lasagnaVision,
+    mealType: "dinner",
+    groundingDeps: { search: noCandidates, estimateNutrients: lasagnaEstimate },
+});
+let modelRefusal = "";
+try {
+    await answerMealDraftQuestion({
+        userId: routeIdentity.userId,
+        draftId: modelDraft.draft.id,
+        expectedVersion: modelDraft.draft.version,
+        questionId: modelDraft.draft.questions[0]!.id,
+        answer: "About 1.5 cups.",
+    });
+} catch (error) {
+    modelRefusal = String(error);
+}
+if (!modelRefusal.includes("requires reconciling")) {
+    throw new Error(
+        `Model-surface answer-only closure was not refused: ${modelRefusal}`,
+    );
+}
+
+// (c) A BLOCKING question (no nutrition values) still cannot be
+// closed by answer text alone — even through the app route — but the
+// refusal must say what to do; once the item carries values (the
+// editor save), the same answer succeeds.
+const blockedResult = await createMealPhotoDraft({
+    userId: routeIdentity.userId,
+    vision: lasagnaVision,
+    mealType: "dinner",
+    groundingDeps: {
+        search: noCandidates,
+        estimateNutrients: async () => new Map(),
+    },
+});
+const photoBlockingQuestion = blockedResult.draft.questions[0]!;
+if (photoBlockingQuestion.questionKey !== "photo_estimate_missing_0") {
+    throw new Error("Estimate-missing draft did not raise a blocking question");
+}
+const blockedResponse = await answerQuestionViaRoute(
+    blockedResult.draft.id,
+    photoBlockingQuestion.id,
+    blockedResult.draft.version,
+    "I don't know its nutrition.",
+);
+if (blockedResponse.status !== 400) {
+    throw new Error(
+        `Blocking question was closed by answer text alone: ${blockedResponse.status}`,
+    );
+}
+const blockedBody = (await blockedResponse.json()) as { message?: string };
+if (!blockedBody.message?.includes("needs nutrition")) {
+    throw new Error(
+        `Blocking refusal did not explain the fix: ${JSON.stringify(blockedBody)}`,
+    );
+}
+let blockedDraft = await getMealDraft(
+    routeIdentity.userId,
+    blockedResult.draft.id,
+);
+blockedDraft = await upsertMealDraftItem({
+    userId: routeIdentity.userId,
+    draftId: blockedResult.draft.id,
+    expectedVersion: blockedDraft!.version,
+    position: 0,
+    item: {
+        ...blockedDraft!.items[0]!.item,
+        nutrients: { calories: 600, protein_g: 28, carbs_g: 48, fat_g: 26 },
+        sourceType: "user_supplied",
+    },
+});
+const resolvedResponse = await answerQuestionViaRoute(
+    blockedResult.draft.id,
+    photoBlockingQuestion.id,
+    blockedDraft.version,
+    "Confirmed the lasagna nutrition from the recipe card.",
+);
+if (resolvedResponse.status !== 200) {
+    throw new Error(
+        `Blocking answer after supplying nutrition failed: ${resolvedResponse.status} ${await resolvedResponse.text()}`,
     );
 }
 

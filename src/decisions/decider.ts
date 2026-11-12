@@ -130,22 +130,36 @@ export async function chooseCandidatesViaDecisions(
     config: DecisionsConfig,
     dependencies: DecisionsDeciderDependencies = {},
 ): Promise<Map<string, MealPhotoCandidateChoice>> {
-    const result = new Map<string, MealPhotoCandidateChoice>();
+    const chunks: MealPhotoCandidateChoiceRequest[][] = [];
     for (
         let offset = 0;
         offset < requests.length;
         offset += MAX_QUESTIONS_PER_CALL
     ) {
-        const chunk = requests.slice(offset, offset + MAX_QUESTIONS_PER_CALL);
-        const call = await callDecisionsWithFallback(config, {
-            seat: "decider",
-            timeoutMs: config.deciderTimeoutMs,
-            includeImageHeader: false,
-            fetcher: dependencies.fetcher,
-            state: buildDeciderState(chunk),
-            questions: buildDeciderQuestions(chunk),
-        });
-        for (const [key, choice] of mapDeciderAnswers(chunk, call.answers)) {
+        chunks.push(requests.slice(offset, offset + MAX_QUESTIONS_PER_CALL));
+    }
+    // Chunks are independent calls (photo-latency fix, 2026-11-12):
+    // they used to run sequentially, so a photo with more than
+    // MAX_QUESTIONS_PER_CALL ambiguous items paid one full model
+    // round trip per chunk inside draft_build. They now run
+    // concurrently and merge in chunk order — the same requests,
+    // the same mapping, the same result.
+    const chunkResults = await Promise.all(
+        chunks.map(async (chunk) => {
+            const call = await callDecisionsWithFallback(config, {
+                seat: "decider",
+                timeoutMs: config.deciderTimeoutMs,
+                includeImageHeader: false,
+                fetcher: dependencies.fetcher,
+                state: buildDeciderState(chunk),
+                questions: buildDeciderQuestions(chunk),
+            });
+            return mapDeciderAnswers(chunk, call.answers);
+        }),
+    );
+    const result = new Map<string, MealPhotoCandidateChoice>();
+    for (const chunkResult of chunkResults) {
+        for (const [key, choice] of chunkResult) {
             result.set(key, choice);
         }
     }

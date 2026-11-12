@@ -251,6 +251,25 @@ export function clientPrepareMsLogField(value: unknown): string {
     return ` client_prepare_ms=${parsed}`;
 }
 
+/**
+ * What the app router's onError records for a failed request. Until
+ * 2026-11-12 the log line carried only `{ name: error.name }` — for a
+ * plain Error that is the literal string "Error", so a production
+ * 400 (the photo-draft answer failure) was undiagnosable from the
+ * logs that were supposed to explain it. The message is the server's
+ * own generated text (validation and state-machine messages), capped
+ * so a pathological message cannot flood the log.
+ */
+export function appRouteErrorLogFields(error: unknown): {
+    name: string;
+    message: string;
+} {
+    if (error instanceof Error) {
+        return { name: error.name, message: error.message.slice(0, 300) };
+    }
+    return { name: "NonError", message: String(error).slice(0, 300) };
+}
+
 function privateJson(c: Context, data: unknown) {
     return c.json(data, 200, {
         "Cache-Control": "no-store, private",
@@ -1519,6 +1538,12 @@ export function createAppRouter(): Hono {
                 expectedVersion: draftExpectedVersion(body),
                 questionId: c.req.param("questionId")!,
                 answer: body.answer,
+                // Human surface: the app's answer contract is
+                // answer-only (see answerMealDraftQuestion). The
+                // prior-reconciliation precondition belongs to the
+                // model-facing draft tools, not to the person
+                // answering their own meal's question.
+                requireItemReconciliation: false,
             });
             return privateJson(c, {
                 draft: serializeMealDraftForApp(draft),
@@ -3532,13 +3557,13 @@ export function createAppRouter(): Hono {
     );
 
     app.onError((error, c) => {
-        console.error("App route failed", { name: error.name });
+        console.error("App route failed", appRouteErrorLogFields(error));
         const recipeImportError =
             error instanceof RecipeImportError ? error : null;
         const knownMessage =
             error instanceof Error &&
             (recipeImportError !== null ||
-                /^(Invalid|Connection not found|Date range|Weight|Water|Target weight|Meal item|Meal |Meal$|Meal not found|Food |Nutrition|Add at least|A meal|Structured meal|A structured meal|Draft |Grocery |Import |Recipe import|Recipe capability|Cook|Dish|Cook event|Cook photo|Source cook|Recipe saved)/.test(
+                /^(Invalid|Connection not found|Date range|Weight|Water|Target weight|Meal item|Meal |Meal$|Meal not found|Meal draft|Answering|Food |Nutrition|Add at least|A meal|Structured meal|A structured meal|Draft |Grocery |Import |Recipe import|Recipe capability|Cook|Dish|Cook event|Cook photo|Source cook|Recipe saved)/.test(
                     error.message,
                 ))
                 ? error.message

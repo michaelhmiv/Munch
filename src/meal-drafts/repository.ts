@@ -226,7 +226,43 @@ async function refreshStatus(
     `;
 }
 
-export async function createMealDraft(input: {
+function validateDraftQuestionInput(
+    questionKey: string,
+    prompt: string,
+    impactScore?: number,
+): { key: string; prompt: string; score: number } {
+    const key = questionKey.trim();
+    const trimmedPrompt = prompt.trim();
+    const score = impactScore ?? 50;
+    if (
+        !key ||
+        key.length > 200 ||
+        !trimmedPrompt ||
+        trimmedPrompt.length > 1_000
+    ) {
+        throw new Error("Draft question key or prompt is invalid");
+    }
+    if (!Number.isInteger(score) || score < 0 || score > 100) {
+        throw new Error("Draft question impact score must be 0 to 100");
+    }
+    return { key, prompt: trimmedPrompt, score };
+}
+
+/**
+ * Create a draft together with its items and questions in ONE
+ * transaction (photo-latency fix, 2026-11-12). The meal-photo
+ * pipeline used to persist through createMealDraft +
+ * upsertMealDraftItem × N + addMealDraftQuestion × M — every call a
+ * separate transaction that re-loaded the whole draft (items +
+ * questions) and bumped the version, so persistence cost grew
+ * quadratically with meal size inside the draft_build phase. The
+ * resulting draft is identical in content and status; only the
+ * version counter differs (it stays at the insert default instead
+ * of counting every intermediate write — the version is an opaque
+ * concurrency token, and every consumer reads it from the draft
+ * this returns).
+ */
+export async function createMealDraftWithItemsAndQuestions(input: {
     userId: string;
     sourceMode: MealDraftSourceMode;
     mealType?: MealDraft["mealType"];
@@ -234,6 +270,14 @@ export async function createMealDraft(input: {
     loggedAt?: string;
     notes?: string;
     expiresInHours?: number;
+    items: StructuredMealItemInput[];
+    questions: Array<{
+        questionKey: string;
+        prompt: string;
+        impactScore?: number;
+        /** Position of the draft item the question belongs to. */
+        itemPosition?: number;
+    }>;
 }): Promise<MealDraft> {
     const expiresInHours = Math.max(
         1,
@@ -242,6 +286,28 @@ export async function createMealDraft(input: {
     const loggedAt = input.loggedAt ? new Date(input.loggedAt) : null;
     if (loggedAt && !Number.isFinite(loggedAt.getTime())) {
         throw new Error("Draft loggedAt is invalid");
+    }
+    const items = input.items.map(validateDraftItem);
+    const questions = input.questions.map((question) => ({
+        ...validateDraftQuestionInput(
+            question.questionKey,
+            question.prompt,
+            question.impactScore,
+        ),
+        itemPosition: question.itemPosition,
+    }));
+    for (const question of questions) {
+        if (
+            question.itemPosition !== undefined &&
+            (!Number.isInteger(question.itemPosition) ||
+                question.itemPosition < 0 ||
+                question.itemPosition >= items.length)
+        ) {
+            throw new Error("Draft question item position is invalid");
+        }
+    }
+    if (items.length > 100) {
+        throw new Error("Draft item position must be an integer from 0 to 99");
     }
     return withUserDatabase(input.userId, async (tx) => {
         const rows = await tx<Array<{ id: string }>>`
@@ -264,9 +330,52 @@ export async function createMealDraft(input: {
             )
             returning id
         `;
-        const draft = await loadDraft(tx, rows[0]!.id);
+        const draftId = rows[0]!.id;
+        const itemIds: string[] = [];
+        for (const [position, item] of items.entries()) {
+            const itemRows = await tx<Array<{ id: string }>>`
+                insert into munch.meal_draft_items (
+                    draft_id, user_id, position, item_payload
+                ) values (
+                    ${draftId}, ${input.userId}, ${position},
+                    ${item}::jsonb
+                )
+                returning id
+            `;
+            itemIds.push(itemRows[0]!.id);
+        }
+        for (const question of questions) {
+            await tx`
+                insert into munch.meal_draft_questions (
+                    draft_id, user_id, item_id, question_key, prompt,
+                    impact_score
+                ) values (
+                    ${draftId}, ${input.userId},
+                    ${question.itemPosition !== undefined ? itemIds[question.itemPosition]! : null},
+                    ${question.key}, ${question.prompt}, ${question.score}
+                )
+            `;
+        }
+        await refreshStatus(tx, draftId);
+        const draft = await loadDraft(tx, draftId);
         if (!draft) throw new Error("Created draft could not be loaded");
         return draft;
+    });
+}
+
+export async function createMealDraft(input: {
+    userId: string;
+    sourceMode: MealDraftSourceMode;
+    mealType?: MealDraft["mealType"];
+    description?: string;
+    loggedAt?: string;
+    notes?: string;
+    expiresInHours?: number;
+}): Promise<MealDraft> {
+    return createMealDraftWithItemsAndQuestions({
+        ...input,
+        items: [],
+        questions: [],
     });
 }
 
@@ -408,15 +517,11 @@ export async function addMealDraftQuestion(input: {
     impactScore?: number;
     itemId?: string;
 }): Promise<MealDraft> {
-    const key = input.questionKey.trim();
-    const prompt = input.prompt.trim();
-    const score = input.impactScore ?? 50;
-    if (!key || key.length > 200 || !prompt || prompt.length > 1_000) {
-        throw new Error("Draft question key or prompt is invalid");
-    }
-    if (!Number.isInteger(score) || score < 0 || score > 100) {
-        throw new Error("Draft question impact score must be 0 to 100");
-    }
+    const { key, prompt, score } = validateDraftQuestionInput(
+        input.questionKey,
+        input.prompt,
+        input.impactScore,
+    );
     return withUserDatabase(input.userId, async (tx) => {
         const draft = await loadDraft(tx, input.draftId, true);
         if (!draft) throw new Error("Meal draft not found");
@@ -486,6 +591,28 @@ export async function answerMealDraftQuestion(input: {
     expectedVersion: number;
     questionId: string;
     answer: string;
+    /**
+     * Surface contract (photo-draft answer fix, 2026-11-12): the
+     * prior-reconciliation precondition exists for MODEL callers
+     * (the MCP draft tool and the atomic review path), which can —
+     * and must — reconcile the canonical item in the same flow
+     * before closing a material question. The human app route's
+     * contract is answer-only by design (`{expected_version, answer}`
+     * is all the packaged client has ever sent): the person answering
+     * is looking at the canonical item in the same review screen and
+     * their answer is itself the resolution. Applying the model
+     * precondition there made EVERY item-linked photo question
+     * unanswerable — a pipeline-created item is inserted before its
+     * question, so its updated_at can never be later than the
+     * question's created_at (production draft
+     * 26907262-644c-4fb2-b4ef-c96eae561fd5, question photo_portion_0:
+     * two 400s, dinner unloggable). Model callers keep the default
+     * (true); only the app route passes false. One guard survives on
+     * every surface: a BLOCKING question (item with no nutrition
+     * values) can never be closed by answer text alone — the item
+     * must carry values first, or be removed (blocking.ts).
+     */
+    requireItemReconciliation?: boolean;
 }): Promise<MealDraft> {
     const answer = input.answer.trim();
     if (!answer || answer.length > 2_000) {
@@ -502,11 +629,30 @@ export async function answerMealDraftQuestion(input: {
                 candidate.status === "open",
         );
         if (!question) throw new Error("Open draft question not found");
-        await assertDraftQuestionPreviouslyReconciledAtDatabasePrecision(
-            tx,
-            input.draftId,
-            question,
-        );
+        if (input.requireItemReconciliation !== false) {
+            await assertDraftQuestionPreviouslyReconciledAtDatabasePrecision(
+                tx,
+                input.draftId,
+                question,
+            );
+        } else if (
+            question.itemId &&
+            question.questionKey.startsWith(BLOCKING_DRAFT_QUESTION_KEY_PREFIX)
+        ) {
+            const record = draft.items.find(
+                (candidate) => candidate.id === question.itemId,
+            );
+            const hasValues =
+                record !== undefined &&
+                Object.values(record.item.nutrients ?? {}).some(
+                    (value) => value !== undefined,
+                );
+            if (!hasValues) {
+                throw new Error(
+                    `Meal draft question needs nutrition for ${record?.item.name ?? "this item"} before it can be answered — enter the item's nutrition in the food editor, or remove the item from the draft.`,
+                );
+            }
+        }
         const rows = await tx<Array<{ id: string }>>`
             update munch.meal_draft_questions
             set status = 'answered', answer = ${answer}, answered_at = now()
