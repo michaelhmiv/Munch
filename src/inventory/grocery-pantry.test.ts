@@ -90,6 +90,17 @@ describe("grocery → pantry presence match", () => {
         expect(match?.pantry_item_id).toBe("item-3");
     });
 
+    test("a receipt-style brand-prefixed name matches a plain list name at the deterministic layer", () => {
+        // The owner's case: the receipt stocked "HT Whole Milk", the
+        // list just says "milk". Normalization + containment in the
+        // shared matcher settles it (measured score 0.82) — no model
+        // decision is involved anywhere in this module.
+        const match = pantryMatchForGroceryItem({ name: "milk" }, [
+            pantryItem({ id: "item-9", name: "HT Whole Milk" }),
+        ]);
+        expect(match?.pantry_item_id).toBe("item-9");
+    });
+
     test("attachPantryMatches annotates every item, matched or not", () => {
         const items = attachPantryMatches(
             [{ name: "Milk" }, { name: "Eggs" }],
