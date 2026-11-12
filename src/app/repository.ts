@@ -67,7 +67,7 @@ import {
     projectPlannedDay,
     projectPlannedRange,
 } from "../planned-projection.js";
-import { aggregateTodayRange } from "../today-range.js";
+import { aggregateTodayRange, buildRangeHierarchy } from "../today-range.js";
 import {
     buildTrendsCard,
     buildTrendsDays,
@@ -595,21 +595,24 @@ export async function getTodayRangeWorkspace(
             plannedProjection: projections.get(date) ?? null,
         };
     });
+    const aggregateInput = days.map((day) => ({
+        date: day.date,
+        relation: day.relation,
+        meals: day.meals,
+        planned: day.plannedProjection,
+        waterMl: day.water.totalMl,
+    }));
     return {
         start: startDate,
         end: endDate,
         timezone,
         goals,
         days,
-        aggregate: aggregateTodayRange(
-            days.map((day) => ({
-                date: day.date,
-                relation: day.relation,
-                meals: day.meals,
-                planned: day.plannedProjection,
-            })),
-            goals,
-        ),
+        aggregate: aggregateTodayRange(aggregateInput, goals),
+        // Month → Week → Day nesting for ranges over 7 days (the
+        // range UI consumes it once its look is cleared); sums
+        // reconcile at every level by construction.
+        hierarchy: buildRangeHierarchy(aggregateInput),
     };
 }
 
