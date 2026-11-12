@@ -50,6 +50,7 @@ on:
       - "package.json"
       - "bun.lock"
       - "scripts/build-mobile-web.ts"
+      - "scripts/configure-mobile-ios.ts"
       - "scripts/asc-probe.py"
       - "scripts/asc-setup.py"
       - "scripts/ios-smoke/**"
@@ -70,6 +71,7 @@ on:
       - "package.json"
       - "bun.lock"
       - "scripts/build-mobile-web.ts"
+      - "scripts/configure-mobile-ios.ts"
       - "scripts/asc-probe.py"
       - "scripts/asc-setup.py"
       - "scripts/ios-smoke/**"
@@ -92,6 +94,11 @@ on:
           - asc-setup
           - app-store-ipa
         default: simulator
+      ads_demo_test_build:
+        description: ADS DEMO — bake the test-build marker into the bundle so the TestFlight build shows Google TEST ads even for Premium accounts (Michael, 2026-11-12). Non-store builds only; never set for a store submission.
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -125,6 +132,8 @@ jobs:
         run: bun run mobile:web
       - name: Synchronize Capacitor iOS project
         run: npx cap sync ios
+      - name: Configure iOS native shell (ads plugin + AdMob wiring)
+        run: bun scripts/configure-mobile-ios.ts
       - name: Verify native project is reproducible
         run: git diff --exit-code -- ios package.json bun.lock
       - name: Resolve Swift packages
@@ -179,6 +188,8 @@ jobs:
           cp scripts/ios-smoke/stub-runtime.js .mobile-web/mobile-runtime.js
       - name: Synchronize Capacitor iOS project
         run: npx cap sync ios
+      - name: Configure iOS native shell (ads plugin + AdMob wiring)
+        run: bun scripts/configure-mobile-ios.ts
       - name: Verify the fixture runtime is what got packaged
         run: |
           set -euo pipefail
@@ -371,9 +382,13 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Build local mobile web bundle
+        env:
+          MUNCH_ADS_DEMO_TEST_BUILD: ${{ inputs.ads_demo_test_build && '1' || '' }}
         run: bun run mobile:web
       - name: Synchronize Capacitor iOS project
         run: npx cap sync ios
+      - name: Configure iOS native shell (ads plugin + AdMob wiring)
+        run: bun scripts/configure-mobile-ios.ts
 
       - name: Generate signing material with the App Store Connect API
         env:

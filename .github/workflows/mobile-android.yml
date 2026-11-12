@@ -6,6 +6,12 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      ads_demo_test_build:
+        description: ADS DEMO — bake the test-build marker into the bundle so the Firebase build shows Google TEST ads even for Premium accounts (Michael, 2026-11-12). The plugin honors it in debuggable builds only; never set for a store submission.
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -41,6 +47,8 @@ jobs:
       - name: Verify installed-app architecture
         run: bun scripts/mobile-shell-smoke.ts
       - name: Build local mobile web bundle
+        env:
+          MUNCH_ADS_DEMO_TEST_BUILD: ${{ inputs.ads_demo_test_build && '1' || '' }}
         run: bun run mobile:web
       - name: Synchronize Capacitor Android project
         run: |

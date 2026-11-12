@@ -623,8 +623,18 @@ requireText(
 );
 requireText(
     adsPlugin,
-    "visible && adsEnabled && !adFree",
-    "Native ads plugin: no ad load when the flag is off or the account is Premium/ad-free",
+    "visible && (demoActive || (adsEnabled && !adFree))",
+    "Native ads plugin: no ad load when the flag is off or the account is Premium/ad-free (ADS DEMO override excepted)",
+);
+requireText(
+    adsPlugin,
+    "demoActive = demoRequested && isDebuggableBuild()",
+    "Native ads plugin: ADS DEMO override is honored in debuggable builds only",
+);
+requireText(
+    adsPlugin,
+    "ApplicationInfo.FLAG_DEBUGGABLE",
+    "Native ads plugin: ADS DEMO gate reads the build's debuggable flag",
 );
 
 console.log("Installed Android architecture smoke checks passed.");

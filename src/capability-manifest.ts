@@ -1888,14 +1888,6 @@ export const IOS_CHANNEL_NATIVE_GAPS = [
         closestProxy:
             "Server-side rail-neutral subscription model already accepts the apple_app_store provider (migration 0029 family); no in-app purchase can be exercised until the plugin lands.",
     },
-    {
-        id: "ios.native.ads",
-        summary:
-            "No iOS counterpart of the Android MunchAds plugin (AdMob + UMP) exists and the Munch iOS app does not exist in AdMob yet. Ads are not a capability outcome — no manifest row carries advertising — so no row verdict changes; the single Today slot stays dark on iOS until this lands.",
-        owner: "IOS-ADS (Amendment H ads parity)",
-        closestProxy:
-            "The shared bundle's ad slot is flag-gated and Premium-hidden on every platform; iOS renders it dark because the native bridge is absent and the remote flag is off.",
-    },
 ] as const;
 
 export type CapabilityId = (typeof CAPABILITY_MANIFEST)[number]["id"];
