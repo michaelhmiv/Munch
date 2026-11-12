@@ -8,7 +8,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let windowScene = scene as? UIWindowScene else { return }
 
         window = UIWindow(windowScene: windowScene)
-        window?.rootViewController = CAPBridgeViewController()
+        // MunchBridgeViewController registers the first-party plugins
+        // (MunchSecureSession, MunchAppleSignIn) with the bridge; a
+        // plain CAPBridgeViewController would never discover them.
+        window?.rootViewController = MunchBridgeViewController()
         window?.makeKeyAndVisible()
 
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)

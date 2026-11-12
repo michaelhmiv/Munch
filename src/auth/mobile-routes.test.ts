@@ -13,7 +13,10 @@ const envKeys = [
     "MUNCH_GOOGLE_IOS_CLIENT_ID",
     "MUNCH_GOOGLE_CLIENT_SECRET",
     "MUNCH_ANDROID_APP_LINK_SHA256_FINGERPRINTS",
+    "MUNCH_APPLE_SERVICES_ID",
+    "MUNCH_APPLE_KEY_ID",
     "MUNCH_APPLE_TEAM_ID",
+    "MUNCH_APPLE_PRIVATE_KEY",
 ] as const;
 
 async function withAuthEnvironment(run: () => Promise<void>) {
@@ -161,6 +164,45 @@ describe("mobile auth routes", () => {
                 webClientId: "web-client-id.apps.googleusercontent.com",
             });
             expect(body).not.toContain("server-only-secret");
+        });
+    });
+
+    test("keeps Apple sign-in unconfigured until the full Apple credential set exists", async () => {
+        await withAuthEnvironment(async () => {
+            delete process.env.MUNCH_APPLE_SERVICES_ID;
+            delete process.env.MUNCH_APPLE_KEY_ID;
+            delete process.env.MUNCH_APPLE_TEAM_ID;
+            delete process.env.MUNCH_APPLE_PRIVATE_KEY;
+
+            const response = await createMobileAuthRouter().request(
+                "/mobile/auth/apple-config",
+            );
+            expect(response.status).toBe(200);
+            expect(await response.json()).toEqual({ configured: false });
+            expect(response.headers.get("cache-control")).toBe(
+                "no-store, private",
+            );
+        });
+    });
+
+    test("reports Apple sign-in configured only with the full set, and never leaks the key", async () => {
+        await withAuthEnvironment(async () => {
+            process.env.MUNCH_APPLE_SERVICES_ID = "business.munch.signin";
+            process.env.MUNCH_APPLE_KEY_ID = "ABC123KEYID";
+            process.env.MUNCH_APPLE_TEAM_ID = "ABC1234567";
+            process.env.MUNCH_APPLE_PRIVATE_KEY = "server-only-apple-key";
+
+            const response = await createMobileAuthRouter().request(
+                "/mobile/auth/apple-config",
+            );
+            expect(response.status).toBe(200);
+            const body = await response.text();
+            // The native flow needs no client identifier handed out —
+            // ASAuthorization runs against the app's bundle ID — so the
+            // shape stays a single boolean and carries no secret.
+            expect(JSON.parse(body)).toEqual({ configured: true });
+            expect(body).not.toContain("server-only-apple-key");
+            expect(body).not.toContain("business.munch.signin");
         });
     });
 

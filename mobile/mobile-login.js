@@ -1,13 +1,16 @@
 import {
     installedReturnRoute,
+    isAppleSignInAvailable,
     isGoogleSignInAvailable,
     requestMobileMagicLink,
+    signInWithApple,
     signInWithGoogle,
 } from "./mobile-runtime.js";
 
 const form = document.getElementById("mobile-login-form");
 const status = document.getElementById("mobile-login-status");
 const submit = form?.querySelector("button[type='submit']");
+const appleButton = document.getElementById("apple-sign-in");
 const googleButton = document.getElementById("google-sign-in");
 const returnRoute = installedReturnRoute(
     new URLSearchParams(location.search).get("return_to"),
@@ -68,6 +71,24 @@ googleButton?.addEventListener("click", async () => {
         googleButton.disabled = false;
     }
 });
+
+appleButton?.addEventListener("click", async () => {
+    appleButton.disabled = true;
+    setStatus("Signing in with Apple…");
+    try {
+        await signInWithApple();
+        location.replace(
+            `/index.html?route=${encodeURIComponent(returnRoute)}`,
+        );
+    } catch (error) {
+        setStatus(error?.message || "Apple sign-in failed", true);
+        appleButton.disabled = false;
+    }
+});
+
+if (appleButton) {
+    appleButton.hidden = !(await isAppleSignInAvailable());
+}
 
 if (googleButton) {
     googleButton.hidden = !(await isGoogleSignInAvailable());

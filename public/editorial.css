@@ -1121,6 +1121,10 @@ code {
     color: #fff;
 }
 
+.button-apple[hidden] {
+    display: none;
+}
+
 .button-apple svg {
     flex: none;
 }

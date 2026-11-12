@@ -6,7 +6,7 @@ import {
     CapacitorBarcodeScannerTypeHintALLOption,
 } from "@capacitor/barcode-scanner";
 import { Camera } from "@capacitor/camera";
-import { registerPlugin } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import {
     getMunchPlatformKind,
     installOfflineBanner,
@@ -29,6 +29,7 @@ const FOREGROUND_SESSION_RECHECK_MS = 5 * 60 * 1000;
 const MunchSecureSession = registerPlugin("MunchSecureSession");
 const MunchPlayBilling = registerPlugin("MunchPlayBilling");
 const MunchGoogleSignIn = registerPlugin("MunchGoogleSignIn");
+const MunchAppleSignIn = registerPlugin("MunchAppleSignIn");
 const MunchAds = registerPlugin("MunchAds");
 window.MunchAds = Object.freeze({
     setBannerVisible(options) {
@@ -304,6 +305,83 @@ export async function signInWithGoogle() {
 export async function isGoogleSignInAvailable() {
     try {
         await googleSignInConfig();
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+async function appleSignInConfig() {
+    let response;
+    try {
+        response = await fetch(
+            new URL("/mobile/auth/apple-config", API_BASE_URL),
+            {
+                method: "GET",
+                credentials: "omit",
+                headers: { Accept: "application/json" },
+            },
+        );
+    } catch {
+        throw new Error(CONNECTIVITY_MESSAGE);
+    }
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.configured) {
+        throw new Error("Apple sign-in is not configured yet");
+    }
+    return payload;
+}
+
+export async function signInWithApple() {
+    await appleSignInConfig();
+    const nonce = randomBase64Url();
+    // The native plugin puts the SHA-256 hex of this nonce on the
+    // ASAuthorization request; the raw nonce travels in the idToken
+    // body, and the server's Apple verifier accepts the token's nonce
+    // claim when it matches either form (see MunchAppleSignInPlugin).
+    const credential = await MunchAppleSignIn.signIn({ nonce });
+    if (typeof credential?.idToken !== "string" || !credential.idToken) {
+        throw new Error("Apple did not return a sign-in token");
+    }
+
+    const response = await fetch(
+        new URL("/api/auth/sign-in/social", API_BASE_URL),
+        {
+            method: "POST",
+            credentials: "omit",
+            headers: {
+                Accept: "application/json",
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                provider: "apple",
+                idToken: { token: credential.idToken, nonce },
+                callbackURL: "/app",
+            }),
+        },
+    );
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(
+            payload?.message || payload?.error || "Apple sign-in failed",
+        );
+    }
+    const token = response.headers.get("set-auth-token");
+    if (!token) {
+        throw new Error("Munch did not return an installed-app session token");
+    }
+    await MunchSecureSession.setToken({ token });
+    await MunchSecureSession.clearPendingAuth();
+    return payload;
+}
+
+export async function isAppleSignInAvailable() {
+    // The native ASAuthorization flow exists only in the packaged iOS
+    // app; on Android the plugin is absent and this must read as
+    // unavailable without even consulting the server config.
+    try {
+        if (Capacitor.getPlatform() !== "ios") return false;
+        await appleSignInConfig();
         return true;
     } catch {
         return false;
