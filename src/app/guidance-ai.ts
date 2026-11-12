@@ -171,6 +171,10 @@ export async function generateGuidanceProposals(
         max_tokens: config.maxTokens,
         response_format: { type: "json_object" },
         plugins: [{ id: "response-healing" }],
+        // Privacy control (audit Nov 11): route only to provider
+        // endpoints that do not collect or train on request data —
+        // this request carries user preferences and history context.
+        provider: { data_collection: "deny" },
         // Same reasoning-mandatory alignment as next-up-ai: Ember
         // without this param can spend its token budget reasoning
         // and return empty content.

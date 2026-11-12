@@ -115,6 +115,9 @@ describe("ai-fixture: next-up composition (recorded response)", () => {
         );
         expect(composition?.source).toBe("model");
         expect(requestBody?.reasoning).toEqual({ effort: "minimal" });
+        expect(requestBody?.provider).toEqual({
+            data_collection: "deny",
+        });
     });
 
     test("reasoning-only response (empty content) resolves null", async () => {
