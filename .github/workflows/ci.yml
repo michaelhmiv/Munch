@@ -150,8 +150,6 @@ jobs:
         run: bun scripts/feature-modules-smoke.ts
       - name: Exercise goals intake persistence, context assembly, and RLS
         run: bun scripts/goals-intake-smoke.ts
-      - name: Exercise Next up cache, goal-prompt dismissal, Log it drafts, and RLS
-        run: bun scripts/next-up-smoke.ts
       - name: Exercise recipe heal revisions, cook-mode progress persistence, and grocery merge provenance
         run: bun scripts/recipe-experience-smoke.ts
       - name: Exercise persistent food catalog ingestion, cache locality, freshness, and idempotency
@@ -269,14 +267,6 @@ jobs:
           path: test-results/grocery-captures/
           if-no-files-found: ignore
           retention-days: 14
-      - name: Upload packaged Next up captures
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: munch-mobile-next-up-captures
-          path: test-results/mobile-next-up-captures/
-          if-no-files-found: ignore
-          retention-days: 14
       - name: Provision isolated reviewer account and run browser journeys
         run: |
           REVIEWER_EMAIL="e2e-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT@example.test"
@@ -318,15 +308,6 @@ jobs:
           name: munch-feature-toggles-captures
           path: |
             test-results/feature-toggles-captures/
-          if-no-files-found: ignore
-          retention-days: 14
-      - name: Upload Next up captures
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: munch-next-up-captures
-          path: |
-            test-results/next-up-captures/
           if-no-files-found: ignore
           retention-days: 14
       - name: Upload recipe experience captures

@@ -199,9 +199,9 @@ final class MunchSmokeTests: XCTestCase {
             waitForText("Add water", timeout: 60),
             "Today never rendered its water action (\(step))"
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             anyElement(containingText: "Next up").exists,
-            "Today is missing its Next up guidance section (\(step))"
+            "Today still renders the Next up guidance section removed in the Next Up removal (\(step))"
         )
         XCTAssertTrue(
             buttons(containing: "Add meal").firstMatch.exists,
