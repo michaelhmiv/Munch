@@ -1,5 +1,5 @@
 import { withUserDatabase } from "../platform/database.js";
-import { zonedDayStartUtc, zonedNextDayStartUtc } from "../tz.js";
+import { dateInTz, zonedDayStartUtc, zonedNextDayStartUtc } from "../tz.js";
 import {
     deriveIdempotencyKey,
     isoTimestamp,
@@ -97,6 +97,21 @@ async function waterBetween(
             order by logged_at asc
         `;
         return rows.map(mapWater);
+    });
+}
+
+export async function getEarliestWaterDate(
+    userId: string,
+    tz = "UTC",
+): Promise<string | null> {
+    return withUserDatabase(userId, async (tx) => {
+        const rows = await tx<Array<{ first_at: Date | string | null }>>`
+            select min(logged_at) as first_at
+            from munch.water_logs
+            where user_id = ${userId}
+        `;
+        const first = rows[0]?.first_at;
+        return first ? dateInTz(isoTimestamp(first), tz) : null;
     });
 }
 

@@ -11,7 +11,7 @@ import { getWeeklyGuidance } from "../src/guidance-repository.js";
 // returned HTTP 500, api() threw, and the whole view fell to "That
 // view could not be loaded." This harness also pins the Trends
 // surface contract: the Digest carries the narratives + check-in +
-// the "Explain my week" chat entry (T8), and chart reference lines
+// the "Explain my week" brain entry (T8), and chart reference lines
 // carry their values as on-chart labels (T13).
 
 const appSource = readFileSync(new URL("./app.js", import.meta.url), "utf8");
@@ -23,6 +23,9 @@ const shiftDateSource = appSource.match(
 )![0];
 const chatEntryRowSource = appSource.match(
     /function chatEntryRow\(surface, label, subline\) \{[\s\S]*?\n\}/,
+)![0];
+const brainLinkSource = appSource.match(
+    /const BRAIN_ICON_SVG[\s\S]*?function brainChatLink\(surface, label\) \{[\s\S]*?\n\}/,
 )![0];
 
 const barDays = [
@@ -99,13 +102,19 @@ const checkinFixture = {
     observations: ["Protein landed under target on most logged days."],
 };
 
+const RANGE_KEYS: Record<number, string> = {
+    7: "week",
+    30: "month",
+    90: "quarter",
+};
+
 async function runRenderTrends(trendsRangeDays: number) {
     const calls: string[] = [];
     const content = { innerHTML: "" };
     const context = {
         state: {
             date: "2026-11-09",
-            trendsRangeDays,
+            trendsRangeKey: RANGE_KEYS[trendsRangeDays] ?? "month",
             trendsEditing: false,
             trendsData: null,
             trendsCheckin: null,
@@ -131,7 +140,7 @@ async function runRenderTrends(trendsRangeDays: number) {
         dialog: { open: false, close: () => {} },
     };
     await runInNewContext(
-        `${shiftDateSource}\n${chatEntryRowSource}\n${trendsBlockSource}\nrenderTrends();`,
+        `${shiftDateSource}\n${chatEntryRowSource}\n${brainLinkSource}\n${trendsBlockSource}\nrenderTrends();`,
         context,
     );
     return { calls, html: content.innerHTML };
@@ -168,11 +177,15 @@ describe("Trends workspace + Digest check-in window", () => {
             end: "2026-11-09",
             days: 7,
         });
-        // The Digest card carries the check-in and the chat seed (T8).
+        // The Digest card carries the check-in and the chat seed (T8):
+        // the brain glyph in the card head, labeled for assistive tech,
+        // and no "Pinned" tag anywhere on the surface.
         expect(html).toContain("The week in words");
         expect(html).toContain("Weekly check-in");
         expect(html).toContain("Explain my week");
-        expect(html).toContain('data-testid="chat-entry-insights"');
+        expect(html).toContain('data-testid="brain-entry-insights"');
+        expect(html).not.toContain("Pinned");
+        expect(html).not.toContain("trends-pin");
         // Verdict headline, not a bare number (T6).
         expect(html).toContain("in range 6 of 7 days");
         // T13: the target band is labeled on the chart with its values,

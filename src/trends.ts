@@ -1,6 +1,6 @@
 import { dayCarries, type DailyBucket } from "./insights.js";
 import type { NutritionGoals, WeightEntry } from "./storage.js";
-import { dateInTz, hourInTz } from "./tz.js";
+import { dateInTz, hourInTz, shiftLocalDate } from "./tz.js";
 import { fromGrams, type WeightUnit } from "./units.js";
 
 /**
@@ -560,6 +560,72 @@ export function plotMaxFor(values: number[], referenceHigh = 0): number {
 
 /** Average over the days that carry a nutrient (partial) or over logged
  * days (headline nutrients) — the T7 coverage rule. */
+export interface TrendsBarPoint {
+    date: string;
+    value: number | null;
+    hasLog: boolean;
+    /** Set on aggregated points: the days this point summarizes. */
+    bucket?: "week" | "month";
+    endDate?: string;
+    days?: TrendsBarPoint[];
+}
+
+function mondayOf(date: string): string {
+    const day = new Date(`${date}T12:00:00Z`);
+    const dow = (day.getUTCDay() + 6) % 7;
+    return shiftLocalDate(date, -dow);
+}
+
+/**
+ * Aggregate a per-day bar series into week or month summaries for long
+ * ranges (a 90-day chart of daily bars is noise; the same span as
+ * weekly averages reads). A bucket's value is the mean of its counted
+ * days — logged days for always-present nutrients, data-carrying days
+ * for partial ones, mirroring coveredAverage — and each bucket carries
+ * its day-level points so the client can drill back down to days.
+ */
+export function bucketizeBarSeries(
+    series: TrendsBarPoint[],
+    granularity: "week" | "month",
+    partial: boolean,
+): TrendsBarPoint[] {
+    const groups = new Map<string, TrendsBarPoint[]>();
+    for (const point of series) {
+        const key =
+            granularity === "month"
+                ? point.date.slice(0, 7)
+                : mondayOf(point.date);
+        const group = groups.get(key);
+        if (group) group.push(point);
+        else groups.set(key, [point]);
+    }
+    const out: TrendsBarPoint[] = [];
+    for (const [key, days] of groups) {
+        const counted = days.filter((day) =>
+            partial ? day.value != null : day.hasLog,
+        );
+        const value =
+            counted.length > 0
+                ? roundTo(
+                      counted.reduce((sum, day) => sum + (day.value ?? 0), 0) /
+                          counted.length,
+                      1,
+                  )
+                : null;
+        out.push({
+            // The point's date is the first day actually inside the
+            // bucket (a range can start mid-week or mid-month).
+            date: days[0]!.date,
+            value,
+            hasLog: days.some((day) => day.hasLog),
+            bucket: granularity,
+            endDate: days[days.length - 1]!.date,
+            days,
+        });
+    }
+    return out;
+}
+
 export function coveredAverage(
     days: TrendsDay[],
     key: string,
@@ -677,8 +743,18 @@ export interface TrendsCardContext {
     weightUnit: WeightUnit;
     goals: NutritionGoals | null;
     rangeDays: number;
+    /**
+     * Display label for calendar-shaped ranges (Year to date, All time)
+     * where a day count is the wrong noun; day-count ranges leave it
+     * unset and rangeNoun(rangeDays) speaks.
+     */
+    rangeLabel?: string;
     timezone: string;
     alcoholTrackingEnabled: boolean;
+}
+
+function rangeLabelFor(ctx: TrendsCardContext): string {
+    return ctx.rangeLabel ?? rangeNoun(ctx.rangeDays);
 }
 
 function rangeNoun(rangeDays: number): string {
@@ -724,7 +800,7 @@ function barCard(
     ctx: TrendsCardContext,
 ): TrendsCardPayload {
     const nutrient = TRENDS_NUTRIENT_BY_KEY.get(ref.data)!;
-    const subtitle = rangeNoun(ctx.rangeDays);
+    const subtitle = rangeLabelFor(ctx);
     if (nutrient.key === "alcohol_g" && !ctx.alcoholTrackingEnabled) {
         return emptyPayload(
             ref,
@@ -834,19 +910,29 @@ function barCard(
             strong: `Averaging ${formatValue(avg ?? 0, unit)} a day`,
         };
     }
-    const series = ctx.days.map((d) => ({
+    const series: TrendsBarPoint[] = ctx.days.map((d) => ({
         date: d.date,
         value: d.values[nutrient.key] ?? null,
         hasLog: d.hasLog,
     }));
+    // Long ranges read as period summaries, not daily noise: past a
+    // month the bars become weekly averages, and past a season monthly
+    // ones. Each summary point carries its days for drill-down. The
+    // 7-day rolling line is a per-day device and does not survive
+    // aggregation.
+    const bucketGranularity =
+        ctx.rangeDays > 120 ? "month" : ctx.rangeDays > 31 ? "week" : null;
     payload.chart = {
         kind: "bars",
         metric: nutrient.key,
         unit,
-        days: series,
+        days: bucketGranularity
+            ? bucketizeBarSeries(series, bucketGranularity, nutrient.partial)
+            : series,
+        bucket: bucketGranularity,
         reference: referencePayload,
         rolling:
-            nutrient.key === "calories"
+            !bucketGranularity && nutrient.key === "calories"
                 ? rollingAverage(
                       series.map((d) => ({
                           date: d.date,
@@ -864,7 +950,7 @@ function weightCard(
     ref: TrendsCardRef,
     ctx: TrendsCardContext,
 ): TrendsCardPayload {
-    const subtitle = rangeNoun(ctx.rangeDays);
+    const subtitle = rangeLabelFor(ctx);
     // One value per day: the mean of that day's weigh-ins.
     const byDate = new Map<string, { total: number; count: number }>();
     for (const entry of ctx.weightEntries) {
@@ -937,7 +1023,7 @@ function lineCard(
 ): TrendsCardPayload {
     if (ref.data === "weight") return weightCard(ref, ctx);
     const nutrient = TRENDS_NUTRIENT_BY_KEY.get(ref.data)!;
-    const subtitle = `${rangeNoun(ctx.rangeDays)} · 7-day average`;
+    const subtitle = `${rangeLabelFor(ctx)} · 7-day average`;
     const { avg, carriedDays } = coveredAverage(
         ctx.days,
         nutrient.key,
@@ -1001,7 +1087,7 @@ function consistencyCard(
     ref: TrendsCardRef,
     ctx: TrendsCardContext,
 ): TrendsCardPayload {
-    const subtitle = rangeNoun(ctx.rangeDays);
+    const subtitle = rangeLabelFor(ctx);
     const isWeighIns = ref.data === "weigh_ins";
     const title = isWeighIns ? "Weigh-ins" : "Logging";
     const weightDates = new Set(
@@ -1090,7 +1176,7 @@ function macroSplitCard(
     ref: TrendsCardRef,
     ctx: TrendsCardContext,
 ): TrendsCardPayload {
-    const subtitle = `${rangeNoun(ctx.rangeDays)} · share of calories`;
+    const subtitle = `${rangeLabelFor(ctx)} · share of calories`;
     const totals = macroTotals(ctx.days);
     const parts = MACRO_SEGMENTS.map((s) => totals.get(s.key) ?? 0);
     const totalKcal = parts.reduce((sum, v) => sum + v, 0);
@@ -1172,7 +1258,7 @@ function mealTypeSplitCard(
     ref: TrendsCardRef,
     ctx: TrendsCardContext,
 ): TrendsCardPayload {
-    const subtitle = `${rangeNoun(ctx.rangeDays)} · share of calories`;
+    const subtitle = `${rangeLabelFor(ctx)} · share of calories`;
     const order = ["breakfast", "lunch", "dinner", "snack"];
     const totals = new Map<string, number>();
     for (const bucket of ctx.buckets) {
@@ -1223,7 +1309,7 @@ function weekdayCard(
     ref: TrendsCardRef,
     ctx: TrendsCardContext,
 ): TrendsCardPayload {
-    const subtitle = `${rangeNoun(ctx.rangeDays)} · average calories`;
+    const subtitle = `${rangeLabelFor(ctx)} · average calories`;
     const logged = ctx.days.filter((d) => d.hasLog);
     if (logged.length < 2) {
         return emptyPayload(
@@ -1318,7 +1404,7 @@ function eatingWindowCard(
     ref: TrendsCardRef,
     ctx: TrendsCardContext,
 ): TrendsCardPayload {
-    const subtitle = `${rangeNoun(ctx.rangeDays)} · first to last meal`;
+    const subtitle = `${rangeLabelFor(ctx)} · first to last meal`;
     const rows: { date: string; first: number; last: number }[] = [];
     for (const bucket of ctx.buckets) {
         if (bucket.meals.length === 0) continue;
@@ -1373,7 +1459,7 @@ function mealRhythmCard(
     ref: TrendsCardRef,
     ctx: TrendsCardContext,
 ): TrendsCardPayload {
-    const subtitle = `${rangeNoun(ctx.rangeDays)} · days each meal shows up`;
+    const subtitle = `${rangeLabelFor(ctx)} · days each meal shows up`;
     const logged = ctx.buckets.filter((b) => b.meals.length > 0);
     if (logged.length === 0) {
         return emptyPayload(

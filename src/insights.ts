@@ -317,6 +317,282 @@ function formatStatLine(
     return parts.join("\n");
 }
 
+// ---------------------------------------------------------------- week in words
+//
+// The Digest lede: plain language that ADDS interpretation instead of
+// restating the cards below it. Every claim is measured against the
+// user's own nutrition targets (and nothing else prescribes anything —
+// the no-prescription law: factors around user-stated goals only, never
+// advice, never a suggested change). A target sentence names which days
+// missed and, when one honest trait covers the misses, what those days
+// had in common (weekend, a late dinner, no breakfast, a big lunch).
+// Structural sentences (weekend split, late-dinner split) appear only
+// when the measured gap is material. A week too sparse to read says so
+// plainly instead of narrating its own numbers back.
+
+const WEEK_COUNT_WORDS = [
+    "zero",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+];
+
+function weekCountWord(count: number): string {
+    return WEEK_COUNT_WORDS[count] ?? String(count);
+}
+
+function weekDayName(date: string): string {
+    return new Intl.DateTimeFormat("en-US", {
+        weekday: "long",
+        timeZone: "UTC",
+    }).format(new Date(`${date}T12:00:00Z`));
+}
+
+interface WeekTargetSpec {
+    label: string;
+    /** Phrasing for a floor target ("hit your target"). */
+    floorVerb: string;
+    /** Phrasing for a ceiling target ("stayed under your limit"). */
+    pass: (bucket: DailyBucket) => boolean | null;
+    /**
+     * Days the target can honestly be judged on: logged days for
+     * always-present nutrients, data-carrying days for partial ones.
+     */
+    countedDays: (bucket: DailyBucket) => boolean;
+    /** How the counted days are named in the sentence. */
+    scope: "logged" | "data";
+}
+
+function weekIsWeekend(bucket: DailyBucket): boolean {
+    const day = new Date(`${bucket.date}T12:00:00Z`).getUTCDay();
+    return day === 0 || day === 6;
+}
+
+function weekHasLateDinner(bucket: DailyBucket, tz: string): boolean {
+    return bucket.meals.some((meal) => {
+        if ((meal.meal_type ?? "").toLowerCase() !== "dinner") return false;
+        const hour = hourInTz(meal.logged_at, tz);
+        return hour >= 20 || hour < 4;
+    });
+}
+
+function weekHasBigLunch(bucket: DailyBucket): boolean {
+    return bucket.meals.some(
+        (meal) =>
+            (meal.meal_type ?? "").toLowerCase() === "lunch" &&
+            (meal.calories ?? 0) >= 900,
+    );
+}
+
+/** What the missed days had in common, or null when nothing honest fits. */
+function weekMissTrait(
+    misses: DailyBucket[],
+    counted: DailyBucket[],
+    tz: string,
+): string | null {
+    if (misses.length < 2) return null;
+    const traits: Array<{ test: (b: DailyBucket) => boolean; phrase: string }> =
+        [
+            { test: (b) => weekIsWeekend(b), phrase: "weekend days" },
+            {
+                test: (b) => weekHasLateDinner(b, tz),
+                phrase: "late-dinner days",
+            },
+            {
+                test: (b) => !b.mealTypes.has("breakfast"),
+                phrase: "days without breakfast",
+            },
+            {
+                test: (b) => weekHasBigLunch(b),
+                phrase: "days with a 900+ kcal lunch",
+            },
+        ];
+    for (const trait of traits) {
+        const covered = misses.filter(trait.test).length;
+        if (covered === 0) continue;
+        const baseRate = counted.filter(trait.test).length / counted.length;
+        if (covered === misses.length && baseRate < 1) {
+            return misses.length === 2
+                ? `both misses were ${trait.phrase}`
+                : `all ${weekCountWord(misses.length)} misses were ${trait.phrase}`;
+        }
+        if (
+            covered / misses.length >= 2 / 3 &&
+            baseRate < covered / misses.length
+        ) {
+            return `most of the misses were ${trait.phrase}`;
+        }
+    }
+    return null;
+}
+
+export function computeWeekInWords(
+    buckets: DailyBucket[],
+    goals: NutritionGoals | null,
+    tz: string = "UTC",
+): string {
+    const logged = buckets.filter(
+        (bucket) => bucket.meals.length > 0 || bucket.waterMl > 0,
+    );
+    if (logged.length === 0) {
+        return "Nothing logged in the last seven days, so there is no week to read yet. Log a few days and the patterns will show up here.";
+    }
+    if (logged.length <= 2) {
+        return `Only ${weekCountWord(logged.length)} ${logged.length === 1 ? "day" : "days"} logged in the last seven days — too little to read a pattern from.`;
+    }
+
+    const sentences: string[] = [];
+    if (goals) {
+        const specs: WeekTargetSpec[] = [];
+        if (goals.daily_protein_g != null && goals.daily_protein_g > 0) {
+            const target = goals.daily_protein_g;
+            specs.push({
+                label: "Protein",
+                floorVerb: "hit your target",
+                pass: (b) => b.protein_g >= target,
+                countedDays: (b) => b.meals.length > 0,
+                scope: "logged",
+            });
+        }
+        if (goals.daily_calories != null && goals.daily_calories > 0) {
+            const target = goals.daily_calories;
+            specs.push({
+                label: "Calories",
+                floorVerb: "landed in your target range",
+                pass: (b) =>
+                    b.calories >= target * 0.95 && b.calories <= target * 1.05,
+                countedDays: (b) => b.meals.length > 0,
+                scope: "logged",
+            });
+        }
+        if (goals.daily_water_ml != null && goals.daily_water_ml > 0) {
+            const target = goals.daily_water_ml;
+            specs.push({
+                label: "Water",
+                floorVerb: "hit your target",
+                pass: (b) => b.waterMl >= target,
+                countedDays: (b) => b.meals.length > 0 || b.waterMl > 0,
+                scope: "data",
+            });
+        }
+        if (goals.daily_fiber_g != null && goals.daily_fiber_g > 0) {
+            const target = goals.daily_fiber_g;
+            specs.push({
+                label: "Fiber",
+                floorVerb: "hit your target",
+                pass: (b) => (b.meals.length > 0 ? b.fiber_g >= target : null),
+                countedDays: (b) => b.meals.length > 0,
+                scope: "logged",
+            });
+        }
+        if (goals.daily_sugar_g != null && goals.daily_sugar_g > 0) {
+            const target = goals.daily_sugar_g;
+            const carrying = (b: DailyBucket) =>
+                b.meals.some((meal) => meal.sugar_g != null) ||
+                (b.meals.length > 0 && b.sugar_g > 0);
+            specs.push({
+                label: "Sugar",
+                floorVerb: "stayed under your limit",
+                pass: (b) => (carrying(b) ? b.sugar_g <= target : null),
+                countedDays: carrying,
+                scope: "data",
+            });
+        }
+
+        for (const spec of specs) {
+            if (sentences.length >= 2) break;
+            const counted = buckets.filter(spec.countedDays);
+            if (counted.length < 4) continue;
+            const judged = counted
+                .map((bucket) => ({ bucket, pass: spec.pass(bucket) }))
+                .filter(
+                    (entry): entry is { bucket: DailyBucket; pass: boolean } =>
+                        entry.pass != null,
+                );
+            if (judged.length < 4) continue;
+            const misses = judged
+                .filter((entry) => !entry.pass)
+                .map((entry) => entry.bucket);
+            const hits = judged.length - misses.length;
+            const countedWord = weekCountWord(judged.length);
+            const scopeNoun =
+                spec.scope === "data" ? "days with data" : "days you logged";
+            if (misses.length === 0) {
+                sentences.push(
+                    `${spec.label} ${spec.floorVerb} on all ${countedWord} ${scopeNoun} this week.`,
+                );
+            } else if (hits === 0) {
+                sentences.push(
+                    spec.floorVerb.includes("under")
+                        ? `${spec.label} went over your limit on all ${countedWord} days with data this week.`
+                        : `${spec.label} didn't reach your target on any of the ${countedWord} days you logged this week.`,
+                );
+            } else {
+                let sentence = `${spec.label} ${spec.floorVerb} on ${weekCountWord(hits)} of the ${countedWord} ${scopeNoun}`;
+                if (misses.length === 1) {
+                    sentence += `; the miss was on ${weekDayName(misses[0]!.date)}`;
+                } else {
+                    const trait = weekMissTrait(
+                        misses,
+                        judged.map((e) => e.bucket),
+                        tz,
+                    );
+                    if (trait) sentence += `; ${trait}`;
+                }
+                sentences.push(`${sentence}.`);
+            }
+        }
+    }
+
+    if (sentences.length < 3) {
+        const weekend = logged.filter(weekIsWeekend);
+        const weekday = logged.filter((bucket) => !weekIsWeekend(bucket));
+        if (weekend.length >= 2 && weekday.length >= 2) {
+            const weekendAvg =
+                weekend.reduce((sum, b) => sum + b.calories, 0) /
+                weekend.length;
+            const weekdayAvg =
+                weekday.reduce((sum, b) => sum + b.calories, 0) /
+                weekday.length;
+            const gap = weekendAvg - weekdayAvg;
+            if (Math.abs(gap) >= 150 && Math.abs(gap) >= weekdayAvg * 0.08) {
+                sentences.push(
+                    `Weekend days ran ${gap > 0 ? "higher" : "lower"} — ${Math.round(weekendAvg).toLocaleString("en-US")} kcal a day against ${Math.round(weekdayAvg).toLocaleString("en-US")} kcal on weekdays.`,
+                );
+            }
+        }
+    }
+
+    if (sentences.length < 3) {
+        const late = logged.filter((bucket) => weekHasLateDinner(bucket, tz));
+        const early = logged.filter(
+            (bucket) =>
+                bucket.mealTypes.has("dinner") &&
+                !weekHasLateDinner(bucket, tz),
+        );
+        if (late.length >= 2 && early.length >= 2) {
+            const lateAvg =
+                late.reduce((sum, b) => sum + b.calories, 0) / late.length;
+            const earlyAvg =
+                early.reduce((sum, b) => sum + b.calories, 0) / early.length;
+            if (Math.abs(lateAvg - earlyAvg) >= 150) {
+                sentences.push(
+                    `Days with a dinner at or after 8pm averaged ${Math.round(lateAvg).toLocaleString("en-US")} kcal; days with an earlier dinner averaged ${Math.round(earlyAvg).toLocaleString("en-US")} kcal.`,
+                );
+            }
+        }
+    }
+
+    if (sentences.length === 0) {
+        return `You logged ${weekCountWord(logged.length)} of the last seven days. No pattern stood out this week — the days were too alike, or too few targets are set, to read more into them.`;
+    }
+    return sentences.join(" ");
+}
+
 export function computeTrends(
     buckets: DailyBucket[],
     goals: NutritionGoals | null,

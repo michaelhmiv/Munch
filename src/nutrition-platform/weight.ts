@@ -1,6 +1,6 @@
 import { decodeEscapeSequences } from "../normalize.js";
 import { withUserDatabase } from "../platform/database.js";
-import { zonedDayStartUtc, zonedNextDayStartUtc } from "../tz.js";
+import { dateInTz, zonedDayStartUtc, zonedNextDayStartUtc } from "../tz.js";
 import {
     deriveIdempotencyKey,
     isoTimestamp,
@@ -98,6 +98,21 @@ async function weightBetween(
             order by logged_at asc
         `;
         return rows.map(mapWeight);
+    });
+}
+
+export async function getEarliestWeightDate(
+    userId: string,
+    tz = "UTC",
+): Promise<string | null> {
+    return withUserDatabase(userId, async (tx) => {
+        const rows = await tx<Array<{ first_at: Date | string | null }>>`
+            select min(logged_at) as first_at
+            from munch.weight_logs
+            where user_id = ${userId}
+        `;
+        const first = rows[0]?.first_at;
+        return first ? dateInTz(isoTimestamp(first), tz) : null;
     });
 }
 

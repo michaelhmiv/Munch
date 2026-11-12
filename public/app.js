@@ -43,7 +43,7 @@ const state = {
     date: null,
     mealHistoryDays: 1,
     mealHistoryQuery: "",
-    trendsRangeDays: 30,
+    trendsRangeKey: "month",
     trendsEditing: false,
     trendsData: null,
     trendsCheckin: null,
@@ -393,6 +393,17 @@ function todayAdSlotMarkup() {
 // itself renders the honest gate for Free accounts.
 function chatEntryRow(surface, label, subline) {
     return `<a class="entry-row" href="/app/chat?surface=${surface}" data-testid="chat-entry-${surface}"><span class="entry-row-text"><span class="entry-row-label">${label}</span><span class="entry-row-sub">${subline}</span></span><span class="entry-row-arrow" aria-hidden="true">→</span></a>`;
+}
+
+// The brain glyph (design-authority addendum): ONE icon with ONE
+// meaning app-wide — "talk to the assistant about this." It lives in a
+// surface's header area, never as a floating button, never badged,
+// filled, or gold; the accessible label carries the words because the
+// glyph alone does not teach itself.
+const BRAIN_ICON_SVG = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4.2C10.3 2.9 7.2 3.5 6.4 6 4.9 6.9 4.3 9 5.1 10.7 4.3 12.5 5 14.9 6.6 15.5 7.1 18 9.9 19 12 17.9"/><path d="M12 4.2c1.7-1.3 4.8-0.7 5.6 1.8 1.5 0.9 2.1 3 1.3 4.7 0.8 1.8 0.1 4.2-1.5 4.8-0.5 2.5-3.3 3.5-5.4 2.4"/><path d="M12 4.2v13.7"/><path d="M6.9 8.6c1-0.5 2.1-0.2 2.8 0.6"/><path d="M7.2 13c0.9 0.5 2 0.4 2.8-0.2"/><path d="M17.1 8.6c-1-0.5-2.1-0.2-2.8 0.6"/><path d="M16.8 13c-0.9 0.5-2 0.4-2.8-0.2"/></svg>`;
+
+function brainChatLink(surface, label) {
+    return `<a class="brain-link" href="/app/chat?surface=${surface}" data-testid="brain-entry-${surface}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">${BRAIN_ICON_SVG}</a>`;
 }
 
 function setLoading(label = "Loading your Munch workspace…") {
@@ -908,7 +919,7 @@ function openMacroBreakdown(key) {
         .join("");
     openDialog(
         config.label,
-        `<p class="macro-sheet-total"><b>${format(dayTotal)}</b>${target ? ` of ${format(target)} target` : ""} today</p>${groups || `<p class="tiny">No meals logged for this day.</p>`}`,
+        `<div class="macro-sheet-head"><p class="macro-sheet-total"><b>${format(dayTotal)}</b>${target ? ` of ${format(target)} target` : ""} today</p>${brainChatLink("today", `Ask the assistant about today's ${config.label.toLowerCase()}`)}</div>${groups || `<p class="tiny">No meals logged for this day.</p>`}`,
         `<div class="macro-sheet-foot"><span>Day total</span><b>${format(dayTotal)}</b></div>`,
     );
 }
@@ -1032,12 +1043,46 @@ async function openSavedFoodCandidate(key) {
 // with collision-aware on-chart labels (T13/T14) and wires the global
 // range, edit mode, the two-step catalog, and drill-down sheets (T11).
 
-const TRENDS_RANGE_LABELS = { 7: "Week", 30: "Month", 90: "3 Mo" };
+// Five ranges: three day-count windows plus two calendar shapes the
+// server resolves (YTD from January 1, All time from the account's
+// first entry). `days` is null for the calendar shapes.
+const TRENDS_RANGES = [
+    { key: "week", label: "Week", days: 7 },
+    { key: "month", label: "Month", days: 30 },
+    { key: "quarter", label: "3 Mo", days: 90 },
+    { key: "ytd", label: "YTD", days: null },
+    { key: "all", label: "All time", days: null },
+];
 
-function trendsRange() {
-    return [7, 30, 90].includes(state.trendsRangeDays)
-        ? state.trendsRangeDays
-        : 30;
+const TRENDS_RANGE_TITLES = {
+    week: "Last 7 days",
+    month: "Last 30 days",
+    quarter: "Last 3 months",
+    ytd: "Year to date",
+    all: "All time",
+};
+
+function trendsRangeKey() {
+    return TRENDS_RANGES.some((range) => range.key === state.trendsRangeKey)
+        ? state.trendsRangeKey
+        : "month";
+}
+
+function trendsRangeDays() {
+    return (
+        TRENDS_RANGES.find((range) => range.key === trendsRangeKey())?.days ??
+        null
+    );
+}
+
+/** The /api/app/trends path for the selected range ending at `end`. */
+function trendsRequestPath(end) {
+    const key = trendsRangeKey();
+    if (key === "ytd" || key === "all") {
+        return `/api/app/trends?range=${key}&end=${encodeURIComponent(end)}`;
+    }
+    const days = trendsRangeDays() ?? 30;
+    return `/api/app/trends?start=${encodeURIComponent(shiftDate(end, -(days - 1)))}&end=${encodeURIComponent(end)}`;
 }
 
 function trendsCardKey(card) {
@@ -1106,6 +1151,13 @@ function trendsReferenceLabel(reference, yTop, obstacles, width, height) {
     return `<text data-chart-label x="${placed.x}" y="${placed.y}" text-anchor="${placed.anchor}" class="trends-ref-label">${escapeHtml(reference.label)}</text>`;
 }
 
+function trendsMonthLabel(date) {
+    return new Intl.DateTimeFormat("en-US", {
+        month: "short",
+        timeZone: "UTC",
+    }).format(new Date(`${date}T12:00:00Z`));
+}
+
 function trendsDayLabel(date, rangeDays) {
     if (rangeDays <= 7)
         return "SMTWTFS"[new Date(`${date}T12:00:00Z`).getUTCDay()];
@@ -1153,15 +1205,19 @@ function trendsBarChart(card) {
             };
             obstacles.push(rect);
             bars.push(
-                `<rect data-bar-date="${day.date}" x="${trendsRound2(rect.x)}" y="${trendsRound2(rect.y)}" width="${trendsRound2(barW)}" height="${trendsRound2(h)}" rx="2.5" class="trends-bar" />`,
+                `<rect data-bar-date="${day.date}"${day.bucket ? ` data-bucket="${day.bucket}"` : ""} x="${trendsRound2(rect.x)}" y="${trendsRound2(rect.y)}" width="${trendsRound2(barW)}" height="${trendsRound2(h)}" rx="2.5" class="trends-bar" />`,
             );
         } else if (day.value != null) {
             bars.push(
                 `<rect x="${trendsRound2(Number(cx) - barW / 2)}" y="${baseY - 1.5}" width="${trendsRound2(barW)}" height="1.5" class="trends-tick" />`,
             );
         }
+        // Bucketed points drill into their bucket's day list first;
+        // day points drill straight into the day sheet.
         hits.push(
-            `<rect class="trends-hit" data-action="trends-drill-day" data-date="${day.date}" data-metric="${escapeHtml(chart.metric)}" x="${trendsRound2(slot * i)}" y="${top}" width="${trendsRound2(slot)}" height="${plotH}" fill="transparent"><title>${escapeHtml(day.date)}</title></rect>`,
+            day.bucket
+                ? `<rect class="trends-hit" data-action="trends-drill-bucket" data-cardkey="${escapeHtml(trendsCardKey(card))}" data-start="${day.date}" x="${trendsRound2(slot * i)}" y="${top}" width="${trendsRound2(slot)}" height="${plotH}" fill="transparent"><title>${escapeHtml(day.date)} – ${escapeHtml(day.endDate || day.date)}</title></rect>`
+                : `<rect class="trends-hit" data-action="trends-drill-day" data-date="${day.date}" data-metric="${escapeHtml(chart.metric)}" x="${trendsRound2(slot * i)}" y="${top}" width="${trendsRound2(slot)}" height="${plotH}" fill="transparent"><title>${escapeHtml(day.date)}</title></rect>`,
         );
     });
     let rollingSvg = "";
@@ -1207,13 +1263,20 @@ function trendsBarChart(card) {
         }
     }
     const rangeDays = state.trendsData?.rangeDays || 30;
+    const bucketed = Boolean(chart.bucket);
     const dayLabels = days
         .map((day, i) => {
-            const show =
-                days.length <= 31 ||
-                i % 7 === 0 ||
-                Number(day.date.slice(8, 10)) === 1;
-            return `<span>${show ? escapeHtml(trendsDayLabel(day.date, rangeDays)) : ""}</span>`;
+            const show = bucketed
+                ? days.length <= 14 || i % 2 === 0
+                : days.length <= 31 ||
+                  i % 7 === 0 ||
+                  Number(day.date.slice(8, 10)) === 1;
+            const label = bucketed
+                ? chart.bucket === "month"
+                    ? trendsMonthLabel(day.date)
+                    : trendsDayLabel(day.date, 90)
+                : trendsDayLabel(day.date, rangeDays);
+            return `<span>${show ? escapeHtml(label) : ""}</span>`;
         })
         .join("");
     return `<div class="trends-chart"><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${escapeHtml(card.title)} chart">${referenceBg}${bars.join("")}${rollingSvg}${hits.join("")}${referenceLabel}</svg><div class="trends-daylabels" aria-hidden="true">${dayLabels}</div></div>`;
@@ -1514,20 +1577,15 @@ function trendsCardMarkup(card, index) {
 function trendsDigestMarkup(data) {
     const digest = data.digest;
     const checkin = state.trendsCheckin;
-    return `<section class="panel trends-card trends-digest" data-card-key="digest"><div class="trends-card-head"><div><h3>The week in words</h3><p class="trends-sub">Digest</p></div><span class="trends-pin">Pinned</span></div><p class="trends-digest-lede">${escapeHtml(digest.weekly)}</p><details class="trends-more"><summary>Trend analysis</summary><p>${escapeHtml(digest.trends || "No data in range.")}</p></details><details class="trends-more"><summary>Meal patterns</summary><p>${escapeHtml(digest.patterns || "No data in range.")}</p></details>${checkin ? `<div class="trends-checkin"><h4>Weekly check-in</h4><p>${number(checkin.coverage_percent)}% coverage · ${number(checkin.nutrition_target_coverage_days)} of ${number(checkin.calendar_days)} days with recorded nutrition.</p>${checkin.observations?.length ? `<ul>${checkin.observations.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}</div>` : ""}${chatEntryRow("insights", "Explain my week", "Opens with this check-in attached")}</section>`;
+    return `<section class="panel trends-card trends-digest" data-card-key="digest"><div class="trends-card-head"><div><h3>The week in words</h3><p class="trends-sub">Digest</p></div>${brainChatLink("insights", "Explain my week — ask the assistant about this week")}</div><p class="trends-digest-lede">${escapeHtml(digest.weekly)}</p><details class="trends-more"><summary>Trend analysis</summary><p>${escapeHtml(digest.trends || "No data in range.")}</p></details><details class="trends-more"><summary>Meal patterns</summary><p>${escapeHtml(digest.patterns || "No data in range.")}</p></details>${checkin ? `<div class="trends-checkin"><h4>Weekly check-in</h4><p>${number(checkin.coverage_percent)}% coverage · ${number(checkin.nutrition_target_coverage_days)} of ${number(checkin.calendar_days)} days with recorded nutrition.</p>${checkin.observations?.length ? `<ul>${checkin.observations.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}</div>` : ""}</section>`;
 }
 
 function paintTrends() {
     const data = state.trendsData;
     if (!data) return;
-    const days = trendsRange();
+    const rangeKey = trendsRangeKey();
     const editing = state.trendsEditing;
-    const rangeLabel =
-        days === 7
-            ? "Last 7 days"
-            : days === 30
-              ? "Last 30 days"
-              : "Last 3 months";
+    const rangeLabel = TRENDS_RANGE_TITLES[rangeKey];
     let cardsHtml = "";
     if (!data.cards.length) {
         cardsHtml = `<section class="panel trends-card"><div class="trends-empty"><strong>Your dashboard is empty</strong><p>Add a chart below and it will live here — your pick of shapes and data, in your order.</p></div></section>`;
@@ -1551,15 +1609,13 @@ function paintTrends() {
         flushPair();
         cardsHtml = parts.join("");
     }
-    content.innerHTML = `<div class="operate-view trends-view"><div class="page-heading"><div><h2>Trends</h2><p>${rangeLabel} · ${escapeHtml(formatDate(data.startDate))} – ${escapeHtml(formatDate(data.endDate))}</p></div><div class="auth-actions"><button class="button ${editing ? "button-primary" : "button-secondary"} button-small" type="button" data-action="trends-edit-toggle">${editing ? "Done" : "Edit"}</button></div></div><div class="trends-pills" role="group" aria-label="Trends range">${[7, 30, 90].map((d) => `<button type="button" class="trends-pill${d === days ? " is-on" : ""}" data-action="trends-range" data-days="${d}" aria-pressed="${d === days}">${TRENDS_RANGE_LABELS[d]}</button>`).join("")}</div>${cardsHtml}${trendsDigestMarkup(data)}<button class="trends-add" type="button" data-action="trends-add">+ Add a chart</button></div>`;
+    content.innerHTML = `<div class="operate-view trends-view"><div class="page-heading"><div><h2>Trends</h2><p>${rangeLabel} · ${escapeHtml(formatDate(data.startDate))} – ${escapeHtml(formatDate(data.endDate))}</p></div><div class="trends-controls"><div class="trends-pills" role="group" aria-label="Trends range">${TRENDS_RANGES.map((range) => `<button type="button" class="trends-pill${range.key === rangeKey ? " is-on" : ""}" data-action="trends-range" data-range="${range.key}"${range.days ? ` data-days="${range.days}"` : ""} aria-pressed="${range.key === rangeKey}">${range.label}</button>`).join("")}</div><button class="button ${editing ? "button-primary" : "button-secondary"} button-small" type="button" data-action="trends-edit-toggle">${editing ? "Done" : "Edit"}</button></div></div>${cardsHtml}${trendsDigestMarkup(data)}<button class="trends-add" type="button" data-action="trends-add">+ Add a chart</button></div>`;
 }
 
 async function renderTrends() {
     setLoading("Loading your trends…");
     const end = state.date;
-    const days = trendsRange();
-    const start = shiftDate(end, -(days - 1));
-    const data = await api(`/api/app/trends?start=${start}&end=${end}`);
+    const data = await api(trendsRequestPath(end));
     // The weekly check-in inside the Digest is a seven-day panel, so
     // window its request to the most recent seven days — the check-in
     // endpoint only accepts one to seven days (the PR #184 bug class).
@@ -1574,9 +1630,7 @@ async function renderTrends() {
 
 async function refreshTrendsWorkspace() {
     const end = state.date;
-    const days = trendsRange();
-    const start = shiftDate(end, -(days - 1));
-    state.trendsData = await api(`/api/app/trends?start=${start}&end=${end}`);
+    state.trendsData = await api(trendsRequestPath(end));
     paintTrends();
 }
 
@@ -1664,8 +1718,31 @@ async function openTrendsDaySheet(date, metric) {
     }
     openDialog(
         `${formatDate(date, { year: true })} — ${detail.kind === "weight" ? "Weight" : escapeHtml(detail.label)}`,
-        body,
-        `<div class="auth-actions"><button class="button button-primary" type="button" data-action="trends-open-day" data-date="${escapeHtml(date)}">Open that day's log</button></div>`,
+        `<div class="trends-sheet">${body}</div>`,
+        `<div class="auth-actions trends-sheet-actions"><button class="button button-primary" type="button" data-action="trends-open-day" data-date="${escapeHtml(date)}">Open that day's log</button></div>`,
+    );
+}
+
+/** A tapped summary bar (week or month) opens its days; each day row
+ * then drills into the day sheet above. */
+function openTrendsBucketSheet(cardKey, start) {
+    const card = (state.trendsData?.cards || []).find(
+        (item) => trendsCardKey(item) === cardKey,
+    );
+    const bucket = card?.chart?.days?.find(
+        (day) => day.date === start && day.bucket,
+    );
+    if (!bucket) return;
+    const unit = card.chart.unit;
+    const rows = (bucket.days || [])
+        .map(
+            (day) =>
+                `<button type="button" class="trends-sheet-row trends-food-row" data-action="trends-drill-day" data-date="${escapeHtml(day.date)}" data-metric="${escapeHtml(card.chart.metric)}"><span><strong>${escapeHtml(formatDate(day.date, { year: true }))}</strong></span><b>${day.value == null ? "—" : `${number(day.value)} ${escapeHtml(unit)}`}</b></button>`,
+        )
+        .join("");
+    openDialog(
+        `${formatDate(bucket.date, { year: true })} – ${formatDate(bucket.endDate || bucket.date, { year: true })}`,
+        `<div class="trends-sheet"><p class="trends-sheet-total">${escapeHtml(card.title)}: <strong>${bucket.value == null ? "—" : `${number(bucket.value)} ${escapeHtml(unit)}`}</strong> a day across the days logged in this ${bucket.bucket}</p>${rows}</div>`,
     );
 }
 
@@ -1683,8 +1760,7 @@ async function openTrendsContributors(metric) {
         .join("");
     openDialog(
         `Where your ${result.label.toLowerCase()} came from`,
-        rows ||
-            `<p class="tiny">No itemized foods carry this measure in the period.</p>`,
+        `<div class="trends-sheet">${rows || `<p class="tiny">No itemized foods carry this measure in the period.</p>`}</div>`,
     );
 }
 
@@ -1702,8 +1778,7 @@ function openTrendsWeekdaySheet(cardKey, dow) {
         .join("");
     openDialog(
         `Recent ${day.label}s`,
-        rows ||
-            `<p class="tiny">No logged ${day.label}s in this period yet.</p>`,
+        `<div class="trends-sheet">${rows || `<p class="tiny">No logged ${day.label}s in this period yet.</p>`}</div>`,
     );
 }
 // TRENDS-END
@@ -6342,9 +6417,9 @@ async function handleAction(button) {
     }
     if (action === "open-trends") return navigate("/app/trends");
     if (action === "trends-range") {
-        const days = Number(button.dataset.days);
-        if (![7, 30, 90].includes(days)) return;
-        state.trendsRangeDays = days;
+        const key = button.dataset.range;
+        if (!TRENDS_RANGES.some((range) => range.key === key)) return;
+        state.trendsRangeKey = key;
         return renderTrends();
     }
     if (action === "trends-edit-toggle") {
@@ -6402,6 +6477,11 @@ async function handleAction(button) {
     }
     if (action === "trends-drill-day")
         return openTrendsDaySheet(button.dataset.date, button.dataset.metric);
+    if (action === "trends-drill-bucket")
+        return openTrendsBucketSheet(
+            button.dataset.cardkey,
+            button.dataset.start,
+        );
     if (action === "trends-drill-weekday")
         return openTrendsWeekdaySheet(
             button.dataset.cardkey,

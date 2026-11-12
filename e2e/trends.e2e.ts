@@ -295,7 +295,7 @@ function sparseWorkspace(start: string, end: string) {
     };
 }
 
-test("sparse dashboard: empty states are honest, Digest is pinned, first screen composes at 390x844", async ({
+test("sparse dashboard: empty states are honest, Digest carries the brain entry, first screen composes at 390x844", async ({
     page,
 }) => {
     test.setTimeout(120_000);
@@ -311,12 +311,19 @@ test("sparse dashboard: empty states are honest, Digest is pinned, first screen 
     // the seeded test below runs unmocked against the real API.
     await page.route(/\/api\/app\/trends\?/, async (route) => {
         const url = new URL(route.request().url());
-        await route.fulfill({
-            json: sparseWorkspace(
-                url.searchParams.get("start")!,
-                url.searchParams.get("end")!,
-            ),
-        });
+        const end = url.searchParams.get("end")!;
+        // Calendar-shaped ranges arrive without a start (the server
+        // resolves it); synthesize the window the real server would.
+        let start = url.searchParams.get("start");
+        if (!start) {
+            start =
+                url.searchParams.get("range") === "ytd"
+                    ? `${end.slice(0, 4)}-01-01`
+                    : new Date(Date.parse(end) - 200 * 86_400_000)
+                          .toISOString()
+                          .slice(0, 10);
+        }
+        await route.fulfill({ json: sparseWorkspace(start, end) });
     });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/app/trends");
@@ -338,10 +345,16 @@ test("sparse dashboard: empty states are honest, Digest is pinned, first screen 
     await expect(
         page.locator('.trends-card[data-card-key="line:weight"] .trends-empty'),
     ).toContainText("3 or more days");
-    // The Digest is pinned last and unremovable in edit mode.
+    // The Digest sits last and is unremovable in edit mode. The
+    // "Pinned" tag is gone; the brain glyph in the card head is the
+    // Explain-my-week entry now (design-authority addendum).
     const digest = page.locator('.trends-card[data-card-key="digest"]');
     await expect(digest).toContainText("The week in words");
-    await expect(digest).toContainText("Pinned");
+    await expect(digest).not.toContainText("Pinned");
+    const brain = digest.getByTestId("brain-entry-insights");
+    await expect(brain).toBeVisible();
+    await expect(brain).toHaveAttribute("aria-label", /Explain my week/);
+    await expect(brain).toHaveAttribute("href", "/app/chat?surface=insights");
     // Acceptance: the first card is on the first screen, no scrolling.
     const box = await calories.boundingBox();
     expect(box).not.toBeNull();
@@ -356,6 +369,30 @@ test("sparse dashboard: empty states are honest, Digest is pinned, first screen 
     await page.screenshot({
         path: `${CAPTURE_DIR}/default-month-390.png`,
     });
+
+    // All five ranges render; Edit rides the same row as the switch.
+    for (const key of ["week", "month", "quarter", "ytd", "all"]) {
+        await expect(
+            page.locator(`[data-action="trends-range"][data-range="${key}"]`),
+        ).toHaveCount(1);
+    }
+    const controlsBox = await page.locator(".trends-controls").boundingBox();
+    const editBox = await page
+        .locator('[data-action="trends-edit-toggle"]')
+        .boundingBox();
+    expect(controlsBox).not.toBeNull();
+    expect(editBox).not.toBeNull();
+    expect(Math.abs(editBox!.y - controlsBox!.y)).toBeLessThan(48);
+    await page
+        .locator('[data-action="trends-range"][data-range="ytd"]')
+        .click();
+    await expect(page.locator("#app-content")).toContainText("Year to date");
+    await page
+        .locator('[data-action="trends-range"][data-range="all"]')
+        .click();
+    await expect(page.locator("#app-content")).toContainText("All time");
+    await page.locator('[data-action="trends-range"][data-days="30"]').click();
+    await expect(page.locator("#app-content")).toContainText("Last 30 days");
 
     // Edit mode + catalog captures.
     await page.locator('[data-action="trends-edit-toggle"]').click();
@@ -474,6 +511,59 @@ test("seeded account: verdicts render, drill sums match the bar, custom dashboar
     await expect(page.locator("#app-content")).toContainText(
         "Seed burger night",
     );
+
+    // Long ranges bucket: at 3 Mo the calories bars are weekly
+    // summaries; tapping one opens its days, and a day row drills into
+    // the same day sheet the per-day chart opens.
+    await page.goto("/app/trends");
+    await page
+        .locator('[data-action="trends-range"][data-range="quarter"]')
+        .click();
+    await expect(page.locator("#app-content")).toContainText("Last 3 months");
+    const bucketIndex = await calories
+        .locator('[data-action="trends-drill-bucket"]')
+        .evaluateAll((hits, date) => {
+            const match = hits.findIndex((hit) => {
+                const [from, to] = (
+                    hit.querySelector("title")?.textContent ?? ""
+                )
+                    .split(" – ")
+                    .map((part) => part.trim());
+                return from && to && date >= from && date <= to;
+            });
+            return match;
+        }, d1);
+    expect(bucketIndex).toBeGreaterThanOrEqual(0);
+    await calories
+        .locator('[data-action="trends-drill-bucket"]')
+        .nth(bucketIndex)
+        .click();
+    await expect(dialog.locator(".trends-sheet")).toBeVisible();
+    await expect(dialog).toContainText("a day across the days logged");
+    await dialog
+        .locator(`[data-action="trends-drill-day"][data-date="${d1}"]`)
+        .click();
+    await expect(dialog).toContainText("Seed burger night");
+    await expect(dialog).toContainText("950");
+    await dialog.locator('[data-action="close-dialog"]').click();
+    await page.locator('[data-action="trends-range"][data-days="30"]').click();
+    await expect(page.locator("#app-content")).toContainText("Last 30 days");
+
+    // YTD resolves server-side; past ~four months in, its bars are
+    // monthly summaries (a January YTD is honestly a short daily
+    // range, so the bucket assertion is seasonal — the deterministic
+    // bucketing coverage lives in src/trends.test.ts).
+    await page
+        .locator('[data-action="trends-range"][data-range="ytd"]')
+        .click();
+    await expect(page.locator("#app-content")).toContainText("Year to date");
+    if (new Date().getUTCMonth() >= 4) {
+        await expect(
+            calories.locator('[data-action="trends-drill-bucket"]').first(),
+        ).toBeAttached();
+    }
+    await page.locator('[data-action="trends-range"][data-days="30"]').click();
+    await expect(page.locator("#app-content")).toContainText("Last 30 days");
 
     // Build the custom dashboard: remove Protein, compact Calories,
     // add Sodium (its FDA reference label is goal-independent), a

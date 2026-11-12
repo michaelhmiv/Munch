@@ -1821,16 +1821,22 @@ export function createAppRouter(): Hono {
     // Trends (T1–T14): the dashboard workspace, the per-account layout,
     // and the two drill-down reads (one day's contributors; a period's
     // top foods for a breakdown segment).
-    app.get("/api/app/trends", async (c) =>
-        privateJson(
+    app.get("/api/app/trends", async (c) => {
+        // Calendar-shaped ranges (range=ytd|all) resolve their start
+        // server-side, so `start` is only required for day-count ranges.
+        const range = c.req.query("range") ?? null;
+        return privateJson(
             c,
             await getTrendsWorkspace(
                 c.get("munchUserId"),
-                requiredQuery(c.req.query("start"), "start"),
+                range
+                    ? (c.req.query("start") ?? "")
+                    : requiredQuery(c.req.query("start"), "start"),
                 requiredQuery(c.req.query("end"), "end"),
+                { range },
             ),
-        ),
-    );
+        );
+    });
 
     app.get("/api/app/trends/layout", async (c) =>
         privateJson(c, {

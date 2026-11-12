@@ -126,6 +126,13 @@ describe("chat v2 entry seeds", () => {
         expect(seed.summary).toContain("9,100 kcal");
         expect(seed.summary).toContain("2 meals");
         expect(seed.starters).toContain("Explain my week");
+        // Interpretation only (no-prescription law): the seed never
+        // offers to suggest a change.
+        expect(seed.opener.toLowerCase()).not.toContain("suggest");
+        expect(seed.opener.toLowerCase()).not.toContain("change");
+        for (const starter of seed.starters) {
+            expect(starter.toLowerCase()).not.toContain("change");
+        }
     });
 
     test("feature toggles: a disabled module's surface has no seed (T3)", async () => {
