@@ -367,8 +367,9 @@ export function planDeterministicDrawdown(
 // AI reconciliation — the messy seam only. One batched Ember text call
 // on the production AI shape (mirrors src/meal-photo/vision.ts): the
 // model matches each unresolved ingredient to a pantry item ID from
-// the list it is given, states the used amount in the pantry item's
-// unit, and estimates the remainder category for approximate stock.
+// the list it is given and estimates the remainder category for
+// approximate stock. It never sets amounts: quantities stay
+// deterministic (see mergeAiDrawdownMatches).
 // ---------------------------------------------------------------------------
 
 const aiMatchSchema = z
@@ -712,19 +713,16 @@ export function mergeAiDrawdownMatches(
             unresolved.push(pending);
             continue;
         }
-        const aiQuantity =
-            match.quantity != null
-                ? convertInventoryQuantity(
-                      match.quantity,
-                      match.unit,
-                      item.unit,
-                  )
-                : null;
-        const reqQuantity =
+        // Quantities are deterministic by law: the requested amount,
+        // converted into the item's unit exactly as the deterministic
+        // pass converts it, is the only amount that may be drawn.
+        // The AI match reconciles WHICH item a requirement maps to
+        // (and judges the remainder for approximate stock) — the
+        // model's own quantity is never honoured.
+        const converted =
             req.quantity != null
                 ? convertInventoryQuantity(req.quantity, req.unit, item.unit)
                 : null;
-        const converted = aiQuantity ?? reqQuantity;
 
         if (item.quantity == null) {
             // Presence-only stock: "likely gone" depletes it; a known

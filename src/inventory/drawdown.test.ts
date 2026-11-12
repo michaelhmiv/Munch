@@ -469,6 +469,65 @@ describe("AI reconciliation", () => {
         });
     });
 
+    test("the requested quantity governs when the model states a smaller amount", () => {
+        const reqs = [{ name: "rice pilaf mix", quantity: 2, unit: "cup" }];
+        const plan = planDeterministicDrawdown(reqs, []);
+        expect(plan.unresolved).toHaveLength(1);
+        const ai = new Map<number, AiDrawdownMatch>([
+            [
+                0,
+                {
+                    inventoryItemId: RICE.id,
+                    quantity: 0.25,
+                    unit: "cup",
+                    remainder: null,
+                    confidence: 0.9,
+                },
+            ],
+        ]);
+        const merged = mergeAiDrawdownMatches(plan, reqs, [RICE], ai);
+        const { lines, operations } = finalizeDrawdownPlan(merged, reqs);
+        expect(operations).toHaveLength(1);
+        expect(operations[0]).toMatchObject({
+            action: "consume",
+            inventoryItemId: RICE.id,
+            quantity: 2,
+            unit: "cup",
+        });
+        expect(lines[0]).toMatchObject({
+            status: "applied",
+            used_quantity: 2,
+            via: "ai",
+        });
+    });
+
+    test("the requested quantity governs when the model states a larger amount", () => {
+        const reqs = [{ name: "rice pilaf mix", quantity: 1, unit: "cup" }];
+        const plan = planDeterministicDrawdown(reqs, []);
+        expect(plan.unresolved).toHaveLength(1);
+        const ai = new Map<number, AiDrawdownMatch>([
+            [
+                0,
+                {
+                    inventoryItemId: RICE.id,
+                    quantity: 99,
+                    unit: "cup",
+                    remainder: null,
+                    confidence: 0.9,
+                },
+            ],
+        ]);
+        const merged = mergeAiDrawdownMatches(plan, reqs, [RICE], ai);
+        const { operations } = finalizeDrawdownPlan(merged, reqs);
+        expect(operations).toHaveLength(1);
+        expect(operations[0]).toMatchObject({
+            action: "consume",
+            inventoryItemId: RICE.id,
+            quantity: 1,
+            unit: "cup",
+        });
+    });
+
     test("presence-only stock the AI calls likely gone is depleted", () => {
         const reqs = [{ name: "Salt", quantity: null, unit: null }];
         const plan = planDeterministicDrawdown(reqs, [SALT]);
