@@ -327,8 +327,8 @@ button.secondary {
     border-color: var(--rule);
 }
 button.secondary:hover {
-    background: var(--paper-card);
-    color: var(--green);
+    background: transparent;
+    color: var(--ink);
 }
 button:disabled {
     opacity: 0.5;

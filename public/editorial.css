@@ -273,8 +273,8 @@ code {
 }
 
 .btn.ghost:hover {
-    background: var(--paper-card);
-    color: var(--green);
+    background: transparent;
+    color: var(--ink);
 }
 
 .hero-actions {
@@ -1040,13 +1040,13 @@ code {
 
 .button-quiet {
     background: transparent;
-    border-color: var(--rule);
-    color: var(--ink);
+    border-color: transparent;
+    color: var(--ink-soft);
 }
 
 .button-quiet:hover {
-    background: var(--paper-card);
-    color: var(--green);
+    background: transparent;
+    color: var(--ink);
 }
 
 .auth-footnote {
