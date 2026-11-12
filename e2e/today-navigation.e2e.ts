@@ -495,11 +495,28 @@ test("mixed range keeps actuals and planned projections apart, each labeled", as
     const futureEntry = payload.days.find(
         (day: { date: string }) => day.date === futureDay,
     );
-    // The future day carries NO actuals — only its projection — and
-    // the aggregate keeps the 600 planned kcal out of actual totals.
+    // The future day carries NO actuals — only its projection. The
+    // aggregate keeps planned and actual apart: each aggregate total
+    // is exactly the sum of its own kind across the days (the
+    // reviewer seed may add planned meals of its own inside the
+    // window, so absolutes belong to the per-day assertions).
     expect(futureEntry.totals.calories).toBe(0);
     expect(futureEntry.plannedProjection.totals.calories).toBe(600);
-    expect(payload.aggregate.plannedTotals.calories).toBe(600);
+    const sumOf = (
+        pick: (day: {
+            totals: { calories: number };
+            plannedProjection: { totals: { calories: number } } | null;
+        }) => number,
+    ) => payload.days.reduce((sum: number, day: never) => sum + pick(day), 0);
+    expect(payload.aggregate.macros.calories.total).toBe(
+        sumOf((day) => day.totals.calories),
+    );
+    expect(payload.aggregate.plannedTotals.calories).toBe(
+        sumOf((day) => day.plannedProjection?.totals.calories ?? 0),
+    );
+    expect(payload.aggregate.plannedTotals.calories).toBeGreaterThanOrEqual(
+        600,
+    );
     const pastEntry = payload.days.find(
         (day: { date: string }) => day.date === pastDay,
     );
