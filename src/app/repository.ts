@@ -20,6 +20,7 @@ import {
     computeWeightTrend,
     computeWeeklyDigest,
 } from "../insights.js";
+import { attachPantryMatchesForScope } from "../inventory/grocery-pantry.js";
 import { getNutritionProvenanceAnalysis } from "../nutrition-provenance.js";
 import { withUserDatabase } from "../platform/database.js";
 import {
@@ -728,6 +729,27 @@ export async function getPlanningWorkspace(
                   })
                 : Promise.resolve({ groceryListId: null, items: [] }),
         ]);
+    // "Already have it": each grocery item carries a presence-only
+    // Pantry match (identity, never an amount) so the list can flag
+    // what is already in the Pantry. The Pantry module flag gates it
+    // inside attachPantryMatchesForScope — module off, no matches.
+    const [personalItems, householdItems] = await Promise.all([
+        attachPantryMatchesForScope({
+            userId,
+            scope: { type: "personal" },
+            items: personalGroceries.items,
+        }),
+        household
+            ? attachPantryMatchesForScope({
+                  userId,
+                  scope: {
+                      type: "household",
+                      householdId: household.householdId,
+                  },
+                  items: householdGroceries.items,
+              })
+            : Promise.resolve(householdGroceries.items),
+    ]);
     return {
         available: true,
         permissions: {
@@ -738,9 +760,15 @@ export async function getPlanningWorkspace(
         recipes,
         plannedMeals,
         groceries: [
-            { scope: "personal", ...personalGroceries },
+            { scope: "personal", ...personalGroceries, items: personalItems },
             ...(household
-                ? [{ scope: "household", ...householdGroceries }]
+                ? [
+                      {
+                          scope: "household",
+                          ...householdGroceries,
+                          items: householdItems,
+                      },
+                  ]
                 : []),
         ],
     };

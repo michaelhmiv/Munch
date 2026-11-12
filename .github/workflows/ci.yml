@@ -182,6 +182,8 @@ jobs:
         env:
           MUNCH_PANTRY_PLANNING_ENABLED: "true"
         run: bun scripts/pantry-planning-smoke.ts
+      - name: Exercise grocery Pantry presence badge, ran-out resolution, and module gate
+        run: bun scripts/grocery-pantry-badge-smoke.ts
       - name: Exercise complete account export and household privacy
         run: bun scripts/account-export-smoke.ts
       - name: Exercise meal draft state, confirmation, idempotency, and RLS
