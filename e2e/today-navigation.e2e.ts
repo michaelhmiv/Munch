@@ -457,6 +457,31 @@ test("calendar range re-bases Today: totals over the span, meals grouped by day,
     await expect(page.locator(`#range-day-detail-${end}`)).toBeHidden();
     await page.screenshot({ path: `${CAPTURE_DIR}/range-390.png` });
 
+    // The on-target line appears only when every day in the range
+    // is logged (frame 4's rule): seed the middle day and re-pick
+    // the fully logged two-day span start → middle.
+    await seedMeal(page, middle, "Range seed middle", "breakfast", [
+        {
+            name: "Range eggs",
+            nutrients: {
+                calories: 400,
+                protein_g: 130,
+                carbs_g: 10,
+                fat_g: 20,
+            },
+        },
+    ]);
+    await page.locator('[data-action="open-calendar"]').click();
+    await dialog.locator('[data-action="calendar-range-mode"]').click();
+    await dialog.locator(`.cal-day[data-date="${start}"]`).click();
+    await dialog.locator(`.cal-day[data-date="${middle}"]`).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.locator(".range-bar")).toContainText("2 days");
+    await expect(caloriesTile).toContainText("On target · 2 of 2 days");
+    await page.screenshot({
+        path: `${CAPTURE_DIR}/range-on-target-390.png`,
+    });
+
     // Clear returns to the single-day view of today. (Scoped to the
     // range bar: the closed calendar sheet keeps its own Clear range
     // button in the dialog DOM.)
