@@ -12,6 +12,7 @@ import {
     listHouseholdMembers,
     listPendingHouseholdInvitations,
 } from "../households/repository.js";
+import { attachPantryMatchesForScope } from "../inventory/grocery-pantry.js";
 import { requireSameOrigin } from "../accounts/csrf.js";
 import { requireWebSession } from "../accounts/session.js";
 import { getDirectSubscriptionSnapshot } from "../billing/subscription-sources.js";
@@ -2777,7 +2778,7 @@ export function createAppRouter(): Hono {
             ? body.items
             : [body.item === undefined ? body : body.item];
         const items = rawItems.map(groceryItemInputFromBody);
-        const grocery = await addGroceryItems({
+        const added = await addGroceryItems({
             userId: c.get("munchUserId"),
             scope,
             items: items.map((item) => ({
@@ -2785,6 +2786,21 @@ export function createAppRouter(): Hono {
                 idempotencyKey: item.idempotencyKey ?? crypto.randomUUID(),
             })),
         });
+        // The add response carries each added item's presence-only
+        // Pantry match so the client can ask "did you run out?" at
+        // the moment of the add — the one moment the user can resolve
+        // it. Identity only; no amounts cross this boundary.
+        const grocery = {
+            ...added,
+            items: await attachPantryMatchesForScope({
+                userId: c.get("munchUserId"),
+                scope,
+                items: added.items.map((item) => ({
+                    ...item,
+                    name: String(item.name),
+                })),
+            }),
+        };
         return privateJson(c, { grocery });
     });
 

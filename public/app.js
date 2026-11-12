@@ -55,6 +55,10 @@ const state = {
     calendarMonths: new Map(),
     todayDayData: null,
     shoppingMode: false,
+    // "Already have it": pantry items the run-out prompt has already
+    // covered this session ("scope:pantry_item_id") — asked once per
+    // list session, never nagged again.
+    pantryRunOutPrompted: new Set(),
     cookQuery: "",
     cookFilters: {
         dish: "",
@@ -2876,9 +2880,72 @@ function groceryItemGroup(item) {
     return "manual";
 }
 
+// "Already have it" (owner redesign, Nov 11): a presence-only Pantry
+// flag on list items. The server attaches `pantry_match` (identity
+// only — never an amount) when the item is listed in the Pantry; the
+// flag states that fact and nothing more. It is not a warning and
+// carries no verdict about buying more: whether the user ran out is
+// theirs to say, at the moment of the add (the run-out prompt below).
+function groceryPantryBadgeMarkup(item) {
+    if (!item.pantry_match) return "";
+    return `<span class="grocery-pantry-badge" data-pantry-item-id="${escapeHtml(item.pantry_match.pantry_item_id)}">In your pantry</span>`;
+}
+
+function pantryRunOutPromptKey(scope, pantryItemId) {
+    return `${scope}:${pantryItemId}`;
+}
+
+function shouldShowPantryRunOutPrompt(scope, item) {
+    return (
+        Boolean(item?.pantry_match) &&
+        !state.pantryRunOutPrompted.has(
+            pantryRunOutPromptKey(scope, item.pantry_match.pantry_item_id),
+        )
+    );
+}
+
+function groceryPantryPromptMarkup(item, scope) {
+    const pantryItemId = escapeHtml(item.pantry_match.pantry_item_id);
+    return `<div class="grocery-pantry-prompt"><p class="grocery-pantry-prompt-note">${escapeHtml(item.name)} is shown in the pantry — did you run out?</p><button class="button button-primary button-small" type="button" data-action="pantry-ran-out" data-scope="${scope}" data-pantry-item-id="${pantryItemId}">Ran out</button><button class="button button-secondary button-small" type="button" data-action="pantry-still-have">Still have it</button></div>`;
+}
+
+// The prompt rides directly under the just-added item's row, in the
+// surface's inline grammar (the remove/clear confirmations' shape,
+// without their danger styling — running out is not an error). It is
+// marked as asked BEFORE it renders, so no re-render or repeat add
+// in this session can surface it twice for the same Pantry item.
+function showPantryRunOutPrompt(scope, item) {
+    if (!shouldShowPantryRunOutPrompt(scope, item)) return;
+    const list = document.querySelector(
+        `[data-grocery-scope="${CSS.escape(scope)}"]`,
+    );
+    const row = list?.querySelector(
+        `[data-grocery-item-id="${CSS.escape(String(item.id))}"]`,
+    );
+    if (!row) return;
+    state.pantryRunOutPrompted.add(
+        pantryRunOutPromptKey(scope, item.pantry_match.pantry_item_id),
+    );
+    const template = document.createElement("template");
+    template.innerHTML = groceryPantryPromptMarkup(item, scope).trim();
+    const prompt = template.content.firstElementChild;
+    if (!prompt) return;
+    row.insertAdjacentElement("afterend", prompt);
+    prompt.querySelector('[data-action="pantry-ran-out"]')?.focus();
+}
+
+let pendingPantryRunOutPrompts = [];
+
+function showPendingPantryRunOutPrompts() {
+    const pending = pendingPantryRunOutPrompts;
+    pendingPantryRunOutPrompts = [];
+    for (const entry of pending)
+        showPantryRunOutPrompt(entry.scope, entry.item);
+}
+
 function groceryItemRowMarkup(item, scope, editable) {
     const detail = `${item.quantity == null ? "" : ` · ${number(item.quantity, 2)} ${escapeHtml(item.unit || "")}`}${item.note ? ` · ${escapeHtml(item.note)}` : ""}${item.added_by ? ` · Added by ${escapeHtml(item.added_by)}` : ""}`;
-    return `<article class="grocery-item-row ${item.purchased_at ? "is-purchased" : ""}" data-grocery-item-id="${escapeHtml(item.grocery_item_id)}" data-quantity="${escapeHtml(item.quantity ?? "")}" data-unit="${escapeHtml(item.unit || "")}" data-note="${escapeHtml(item.note || "")}"><label class="grocery-check"><input class="grocery-check-input" type="checkbox" data-action="toggle-grocery-purchased" data-id="${escapeHtml(item.grocery_item_id)}" data-version="${escapeHtml(item.version)}" data-scope="${scope}" ${item.purchased_at ? "checked" : ""} ${editable ? "" : "disabled"} aria-label="${escapeHtml(item.name)} purchased" /></label><div class="grocery-item-main" data-action="toggle-grocery-by-name"><strong>${escapeHtml(item.name)}</strong><span class="grocery-item-detail">${detail}</span></div>${editable ? `<div class="grocery-item-actions"><button class="button button-secondary button-small" type="button" data-action="edit-grocery" data-id="${escapeHtml(item.grocery_item_id)}" data-version="${escapeHtml(item.version)}" data-scope="${scope}">Edit</button><button class="button button-quiet button-small" type="button" data-action="remove-grocery" data-id="${escapeHtml(item.grocery_item_id)}" data-version="${escapeHtml(item.version)}" data-scope="${scope}">Remove</button></div>` : ""}</article>`;
+    return `<article class="grocery-item-row ${item.purchased_at ? "is-purchased" : ""}" data-grocery-item-id="${escapeHtml(item.grocery_item_id)}" data-quantity="${escapeHtml(item.quantity ?? "")}" data-unit="${escapeHtml(item.unit || "")}" data-note="${escapeHtml(item.note || "")}"><label class="grocery-check"><input class="grocery-check-input" type="checkbox" data-action="toggle-grocery-purchased" data-id="${escapeHtml(item.grocery_item_id)}" data-version="${escapeHtml(item.version)}" data-scope="${scope}" ${item.purchased_at ? "checked" : ""} ${editable ? "" : "disabled"} aria-label="${escapeHtml(item.name)} purchased" /></label><div class="grocery-item-main" data-action="toggle-grocery-by-name"><strong>${escapeHtml(item.name)}</strong><span class="grocery-item-detail">${detail}</span>${groceryPantryBadgeMarkup(item)}</div>${editable ? `<div class="grocery-item-actions"><button class="button button-secondary button-small" type="button" data-action="edit-grocery" data-id="${escapeHtml(item.grocery_item_id)}" data-version="${escapeHtml(item.version)}" data-scope="${scope}">Edit</button><button class="button button-quiet button-small" type="button" data-action="remove-grocery" data-id="${escapeHtml(item.grocery_item_id)}" data-version="${escapeHtml(item.version)}" data-scope="${scope}">Remove</button></div>` : ""}</article>`;
 }
 
 // S6 slice 6 — inline confirmations for the Groceries destructive
@@ -3069,7 +3136,7 @@ async function renderGroceries() {
             return `<section class="panel grocery-list" data-grocery-scope="${list.scope}"><div class="panel-title"><div><h3>${list.scope === "household" ? "Household list" : "Personal list"}</h3><span>${list.scope === "household" && data.permissions?.householdRole ? `${escapeHtml(data.permissions.householdRole)} · ` : ""}<span class="grocery-list-counts">${list.items.length} items · ${purchasedCount} checked</span></span></div><div class="auth-actions grocery-list-actions">${listAddButton}${editable && purchasedCount ? `<button class="button button-quiet button-small" type="button" data-action="clear-purchased" data-scope="${list.scope}" data-count="${purchasedCount}">Clear purchased</button>` : ""}</div></div>${list.items.length ? groupedItems : `<div class="empty-state"><div><h3>The list is empty</h3><p>Add an item manually or ask your AI assistant to record an explicit shopping need.</p>${editable ? `<div class="auth-actions spacer-top"><button class="button button-primary button-small" type="button" data-action="add-grocery" data-scope="${list.scope}">Add item</button></div>` : ""}</div></div>`}</section>`;
         })
         .join("");
-    content.innerHTML = `<div class="operate-view groceries-view"><div class="page-heading"><div><h2>Groceries</h2><p>Explicit lists only — nothing is inferred from your pantry.<span class="grocery-total-counts">${listSummary}</span></p>${state.shoppingMode ? `<p class="shopping-mode-caption">Bigger targets, distractions hidden — for checking off in the store</p>` : ""}</div><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="shopping-mode" aria-pressed="${state.shoppingMode ? "true" : "false"}">${state.shoppingMode ? "Exit shopping mode" : "Shopping mode"}</button></div></div>${lists || `<section class="panel"><div class="empty-state"><div><h3>No grocery lists</h3><p>Grocery lists are not available for this account.</p></div></div></section>`}</div>`;
+    content.innerHTML = `<div class="operate-view groceries-view"><div class="page-heading"><div><h2>Groceries</h2><p>Explicit lists only.<span class="grocery-total-counts">${listSummary}</span></p>${state.shoppingMode ? `<p class="shopping-mode-caption">Bigger targets, distractions hidden — for checking off in the store</p>` : ""}</div><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="shopping-mode" aria-pressed="${state.shoppingMode ? "true" : "false"}">${state.shoppingMode ? "Exit shopping mode" : "Shopping mode"}</button></div></div>${lists || `<section class="panel"><div class="empty-state"><div><h3>No grocery lists</h3><p>Grocery lists are not available for this account.</p></div></div></section>`}</div>`;
 }
 
 function cookCardActionsMarkup(cook) {
@@ -6874,6 +6941,42 @@ async function handleAction(button) {
         toast("Grocery item removed.");
         return renderRoute();
     }
+    if (action === "pantry-ran-out") {
+        // "Already have it": one tap settles it — the Pantry item is
+        // marked finished through the Pantry page's own reconcile
+        // call (consume_all), so it leaves the Pantry, and the item
+        // stays on this list. Badges for that Pantry item come off in
+        // place; no re-render and no second question.
+        button.disabled = true;
+        const pantryItemId = button.dataset.pantryItemId;
+        await api("/api/app/pantry/reconcile", {
+            method: "POST",
+            body: JSON.stringify({
+                scope: button.dataset.scope,
+                source_type: "correction",
+                idempotency_key: `web-grocery-ran-out:${crypto.randomUUID()}`,
+                operations: [
+                    { action: "consume_all", inventory_item_id: pantryItemId },
+                ],
+            }),
+            keepPrevious: true,
+        });
+        const prompt = button.closest(".grocery-pantry-prompt");
+        const view = prompt?.closest(".groceries-view") ?? document;
+        for (const badge of view.querySelectorAll(
+            `.grocery-pantry-badge[data-pantry-item-id="${CSS.escape(pantryItemId)}"]`,
+        )) {
+            badge.remove();
+        }
+        prompt?.remove();
+        return;
+    }
+    if (action === "pantry-still-have") {
+        // The Pantry stands as-is and the badge stays on the item as
+        // information; the prompt itself is done for this session.
+        button.closest(".grocery-pantry-prompt")?.remove();
+        return;
+    }
     if (action === "toggle-grocery-by-name") {
         // UX fix wave F11: tapping the item's name toggles purchase
         // exactly like its checkbox — routed through the checkbox's
@@ -8006,7 +8109,7 @@ document.addEventListener("submit", async (event) => {
             );
         }
         if (form.id === "grocery-add-form") {
-            await api("/api/app/groceries/items", {
+            const data = await api("/api/app/groceries/items", {
                 method: "POST",
                 body: JSON.stringify({
                     scope: form.dataset.scope,
@@ -8024,6 +8127,20 @@ document.addEventListener("submit", async (event) => {
                 keepPrevious: true,
             });
             toast("Grocery item added.");
+            // The add response names each added item's Pantry match;
+            // the run-out prompt is shown for them once the list has
+            // re-rendered (shared tail below), once per Pantry item
+            // per session.
+            pendingPantryRunOutPrompts = (data.grocery?.items ?? [])
+                .filter((entry) => entry.pantry_match)
+                .map((entry) => ({
+                    scope: form.dataset.scope,
+                    item: {
+                        id: entry.id,
+                        name: entry.name,
+                        pantry_match: entry.pantry_match,
+                    },
+                }));
         }
         if (form.id === "grocery-edit-form") {
             await api(
@@ -8050,7 +8167,9 @@ document.addEventListener("submit", async (event) => {
         }
         if (dialog.open) dialog.close();
         await renderRoute();
+        showPendingPantryRunOutPrompts();
     } catch (error) {
+        pendingPantryRunOutPrompts = [];
         toast(error.message || "Save failed", "error");
     } finally {
         submit.disabled = false;
