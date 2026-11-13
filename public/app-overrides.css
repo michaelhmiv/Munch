@@ -2380,22 +2380,6 @@ dialog .summary-card > small {
     margin-top: 5px;
 }
 
-/* Per-serving totals are one hairline rule (the mock's detail rule):
-   label left, serif-tabular values right. */
-.recipe-per-serving {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 12px;
-    padding: 6px 0;
-    border-bottom: 1px solid #d8cdb6;
-}
-
-.recipe-per-serving-values {
-    font-variant-numeric: tabular-nums;
-    text-align: right;
-}
-
 .recipe-detail h3 {
     font-family: Georgia, "Times New Roman", Times, serif;
     font-size: 16.5px;
@@ -2456,17 +2440,6 @@ dialog .summary-card > small {
     font-weight: 700;
 }
 
-/* The edit-revision disclosure is a full 44px tap row. */
-.recipe-edit-details > summary {
-    min-height: 44px;
-    display: flex;
-    align-items: center;
-    font-size: 13px;
-    font-weight: 700;
-    color: #176b3a;
-    cursor: pointer;
-}
-
 /* Inline archive confirmation (slice 1's pattern): the note takes a
    full row in danger ink; the confirm button is the danger action. */
 .recipe-archive-note {
@@ -2484,6 +2457,212 @@ dialog .summary-card > small {
 .recipe-archive-confirm:hover {
     background: #6e241a;
     border-color: #6e241a;
+}
+
+/* ---------- Recipe detail D2 (owner-approved 2026-11-13) ----------
+   Header utilities, the top action row, the nutrition label, the
+   Ingredients section head, and the in-place editor rows. Geometry
+   and values are the approved rendering's, on the house tokens;
+   buttons and fields inside .recipe-detail already carry the
+   Direction C anchor (31px drawn, ::after overlay, paper wells)
+   from the sections below — these rules add only what is new. */
+
+/* Edit / Archive share the header Close's treatment: one quiet
+   style — drawn 31px, serif 600 ink-soft, the ≥44px tap area on the
+   invisible ::after overlay. */
+.header-util {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 31px;
+    min-height: 31px;
+    padding: 6px 8px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: #4a4237;
+    font-family: Georgia, "Times New Roman", Times, serif;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.header-util::after {
+    content: "";
+    position: absolute;
+    inset: -7px -4px;
+}
+
+.header-util:hover {
+    color: #2b2620;
+}
+
+/* The detail's header: the title takes the room, the utility group
+   hugs the top, and the shared Close box takes the utilities'
+   padding so the three read as one style. */
+.recipe-detail-card .panel-title {
+    align-items: flex-start;
+}
+
+.recipe-detail-card .panel-title > h2 {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.recipe-detail-card .sheet-actions {
+    gap: 2px;
+    flex: none;
+}
+
+dialog:has(.recipe-detail) .recipe-detail-card .dialog-close {
+    padding: 6px 8px;
+}
+
+/* The action row sits at the top now, tight under the meta line
+   (it carried a spacer at the sheet's foot). */
+.recipe-detail .recipe-detail-actions {
+    margin: 0 0 14px;
+}
+
+/* D2's row is one line of short labels: the marketing sheet's
+   mobile rule stacks .auth-actions buttons full-width — the
+   detail's row (read and edit alike) opts back out, scoped to
+   this surface only. */
+.recipe-detail .recipe-detail-actions .button {
+    flex: 0 1 auto;
+}
+
+/* The nutrition label: Today's macro heading grammar. */
+.nutrition-label {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: #6e7462;
+    margin: 2px 0 7px;
+}
+
+.nutrition-empty {
+    border: 1px dashed #ded5c0;
+    border-radius: 10px;
+    background: #fffdf8;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+}
+
+.nutrition-empty .recipe-note {
+    margin: 0;
+}
+
+/* The detail's tiles are static (Today's are buttons): no pointer
+   affordance, and no 96px bar-carrying height. */
+.recipe-detail .macro-tile {
+    cursor: default;
+    min-height: 0;
+}
+
+/* The grocery action rides the Ingredients header, right-aligned.
+   Its own class: styles.css's .section-head is the marketing
+   measure and must not leak into the app sheet. */
+.recipe-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 14px 0 2px;
+}
+
+.recipe-section-head h3 {
+    margin: 0;
+}
+
+/* Edit in place: the meta line's servings field (the field anchor
+   above supplies its box) and the Editing flag. */
+.meta-input {
+    width: 58px;
+    text-align: center;
+}
+
+.editing-flag {
+    font-style: normal;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #176b3a;
+    border: 1px solid #176b3a;
+    border-radius: 999px;
+    padding: 2px 8px;
+}
+
+/* Editable ingredient rows: one flex line per ingredient; the
+   field anchor supplies the boxes, these set the widths only. */
+.edit-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 0;
+    border-bottom: 1px solid #d8cdb6;
+}
+
+.edit-row .f-name {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.edit-row .f-qty {
+    width: 62px;
+    flex: none;
+}
+
+.edit-row .f-unit {
+    width: 76px;
+    flex: none;
+}
+
+/* Remove is quiet-danger text with the overlay hit treatment —
+   the drawn text is small, the tap area is not. */
+.f-remove {
+    position: relative;
+    flex: none;
+    border: 0;
+    background: transparent;
+    color: #8c2f22;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 6px 4px;
+    min-height: 31px;
+    cursor: pointer;
+}
+
+.f-remove::after {
+    content: "";
+    position: absolute;
+    inset: -7px -4px;
+}
+
+.step-edit {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 7px 0;
+    border-bottom: 1px solid #d8cdb6;
+}
+
+.step-edit .recipe-step-number {
+    padding-top: 7px;
+}
+
+.step-edit textarea {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.add-row {
+    margin-top: 9px;
 }
 
 /* Every button inside a recipe-owned dialog reaches the 44px floor

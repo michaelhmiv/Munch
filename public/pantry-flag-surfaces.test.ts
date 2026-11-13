@@ -82,17 +82,13 @@ async function renderRecipeDetail(): Promise<string> {
         sourceLabels: { usda: "USDA" },
         sourceClasses: {},
         formatRecipeQuantity,
+        featureFlags: () => ({ cooks: true, plan: true, groceries: true }),
         api: async () => ({ recipe }),
         openDialog: (_title: string, html: string) => {
             body = html;
         },
         dialog: { querySelector: () => null },
-        recipeDetailActionsMarkup: () => "",
-        recipeFormMarkup: () => "",
         recipeComposer: { ingredients: [], options: { clear: () => {} } },
-        recipeIngredientFromRecord: (value: unknown) => value,
-        renderRecipeIngredients: () => {},
-        searchRecipeFoods: () => {},
     };
     runInNewContext(
         [
@@ -103,6 +99,15 @@ async function renderRecipeDetail(): Promise<string> {
             extract("recipeUnresolvedIngredients"),
             flagChunk(),
             "let recipeDetailActionsHtml = '';",
+            "let recipeDetailRecipe = null;",
+            "let recipeDetailSteps = [];",
+            extract("recipeDetailActionsMarkup"),
+            extract("recipeDetailHeaderActionsMarkup"),
+            extract("recipeIngredientRowMarkup"),
+            extract("recipeNutritionPanelMarkup"),
+            extract("recipeGroceriesButtonMarkup"),
+            extract("recipeDetailBodyMarkup"),
+            extract("renderRecipeDetail"),
             // The extractor's regex drops the `async` keyword that
             // precedes the function name in app.js — restore it, or
             // the body's awaits do not parse.
