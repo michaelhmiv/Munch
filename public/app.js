@@ -28,10 +28,6 @@ import {
 } from "./photo-capture.js";
 import { defaultMealType } from "./meal-slot.js";
 import {
-    draftConfirmDecision,
-    openDraftQuestionCount,
-} from "./meal-draft-confirm.js";
-import {
     ROUTE_FEATURE_MODULES,
     applyFeatureNav,
     moduleOffNotice,
@@ -125,7 +121,6 @@ const mealDraftReview = {
     // need to say must be said here, in the dialog itself.
     addTextWorking: false,
     actionNote: null,
-    confirmAcceptPending: false,
     // Photo-flow P4 (one coherent save model): unsaved edits are
     // tracked explicitly, survive re-renders via a DOM snapshot, and
     // are committed by the single Save changes action.
@@ -312,6 +307,21 @@ function formatTime(value, timezone) {
         minute: "2-digit",
         timeZone: timezone || state.bootstrap?.profile?.timezone || "UTC",
     }).format(new Date(value));
+}
+
+const MEAL_TYPE_OPTIONS = [
+    ["breakfast", "Breakfast"],
+    ["lunch", "Lunch"],
+    ["dinner", "Dinner"],
+    ["snack", "Snack"],
+];
+
+/** The four meal-type <option>s with `selected` on the given type. */
+function mealTypeOptionsHtml(selected) {
+    return MEAL_TYPE_OPTIONS.map(
+        ([value, label]) =>
+            `<option value="${value}"${value === selected ? " selected" : ""}>${label}</option>`,
+    ).join("");
 }
 
 function number(value, digits = 0) {
@@ -3369,14 +3379,18 @@ async function openRecipe(id) {
 function openRecipeLog(id, revisionId) {
     openDialog(
         "Log saved recipe",
-        `<form id="recipe-log-form" class="auth-form" data-id="${escapeHtml(id)}" data-revision="${escapeHtml(revisionId || "")}"><p>Use the saved ingredients and nutrition exactly as stored. Choose how much you ate.</p><label class="field"><span>Servings consumed</span><input name="servings_consumed" type="number" min="0.01" step="0.01" value="1" required /></label><label class="field"><span>Meal type</span><select name="meal_type"><option value="breakfast">Breakfast</option><option value="lunch" selected>Lunch</option><option value="dinner">Dinner</option><option value="snack">Snack</option></select></label><label class="field"><span>Notes</span><input name="notes" maxlength="4000" placeholder="Optional" /></label><button class="button button-primary" type="submit">Log meal</button></form>`,
+        `<form id="recipe-log-form" class="auth-form" data-id="${escapeHtml(id)}" data-revision="${escapeHtml(revisionId || "")}"><p>Use the saved ingredients and nutrition exactly as stored. Choose how much you ate.</p><label class="field"><span>Servings consumed</span><input name="servings_consumed" type="number" min="0.01" step="0.01" value="1" required /></label><label class="field"><span>Meal type</span><select name="meal_type">${mealTypeOptionsHtml(
+            defaultMealType(new Date(), state.bootstrap?.profile?.timezone),
+        )}</select></label><label class="field"><span>Notes</span><input name="notes" maxlength="4000" placeholder="Optional" /></label><button class="button button-primary" type="submit">Log meal</button></form>`,
     );
 }
 
 function openRecipePlan(id) {
     openDialog(
         "Add recipe to meal plan",
-        `<form id="recipe-plan-form" class="auth-form" data-id="${escapeHtml(id)}"><label class="field"><span>Date</span><input name="planned_date" type="date" value="${escapeHtml(state.date)}" required /></label><label class="field"><span>Meal slot</span><select name="meal_slot"><option value="breakfast">Breakfast</option><option value="lunch" selected>Lunch</option><option value="dinner">Dinner</option><option value="snack">Snack</option></select></label><label class="field"><span>Servings planned</span><input name="servings" type="number" min="0.01" step="0.01" value="1" required /></label><button class="button button-primary" type="submit">Add to plan</button></form>`,
+        `<form id="recipe-plan-form" class="auth-form" data-id="${escapeHtml(id)}"><label class="field"><span>Date</span><input name="planned_date" type="date" value="${escapeHtml(state.date)}" required /></label><label class="field"><span>Meal slot</span><select name="meal_slot">${mealTypeOptionsHtml(
+            defaultMealType(new Date(), state.bootstrap?.profile?.timezone),
+        )}</select></label><label class="field"><span>Servings planned</span><input name="servings" type="number" min="0.01" step="0.01" value="1" required /></label><button class="button button-primary" type="submit">Add to plan</button></form>`,
     );
 }
 
@@ -3502,7 +3516,12 @@ async function openGuidedPlanner() {
     const rows = weekDays(weekStart)
         .map(
             (date) =>
-                `<div class="meal-card guided-plan-row" data-guided-date="${date}"><div class="meal-card-head"><strong>${escapeHtml(formatDate(date, { weekday: true }))}</strong><label class="field"><span>Saved recipe</span><select class="input" name="recipe_choice">${recipeOptions}</select></label></div><div class="form-grid"><label class="field"><span>Meal slot</span><select class="input" name="meal_slot"><option value="breakfast">Breakfast</option><option value="lunch" selected>Lunch</option><option value="dinner">Dinner</option><option value="snack">Snack</option></select></label><label class="field"><span>Servings</span><input class="input" name="servings" type="number" min="0.25" max="50" step="0.25" value="${escapeHtml(context.preferences.servings || 1)}" /></label></div></div>`,
+                `<div class="meal-card guided-plan-row" data-guided-date="${date}"><div class="meal-card-head"><strong>${escapeHtml(formatDate(date, { weekday: true }))}</strong><label class="field"><span>Saved recipe</span><select class="input" name="recipe_choice">${recipeOptions}</select></label></div><div class="form-grid"><label class="field"><span>Meal slot</span><select class="input" name="meal_slot">${mealTypeOptionsHtml(
+                    defaultMealType(
+                        new Date(),
+                        state.bootstrap?.profile?.timezone,
+                    ),
+                )}</select></label><label class="field"><span>Servings</span><input class="input" name="servings" type="number" min="0.25" max="50" step="0.25" value="${escapeHtml(context.preferences.servings || 1)}" /></label></div></div>`,
         )
         .join("");
     const existingPlanNote = currentPlan.length
@@ -5788,103 +5807,14 @@ async function saveDraftChanges() {
 }
 
 /**
- * Confirm (log) the reviewed draft — the save the photo flow ends
- * in. Photo-flow audit (2026-11-12) rewrite of the old handler,
- * whose failure mode was the silent save: with questions open and
- * the assumptions checkbox unchecked it toasted and returned
- * BEFORE any request was sent, and the toast renders outside the
- * modal dialog (painted under its top layer), so the tap simply
- * died — production logged zero confirm requests for a draft the
- * user repeatedly tried to save. Now:
- *
- *   - unsaved edits commit first (unchanged P4 law);
- *   - the gate is a decision (meal-draft-confirm.js): open
- *     questions + no acceptance swaps the actions row IN PLACE for
- *     the explicit acceptance step — no request, and the user is
- *     told why, where they're looking;
- *   - any failure (save or confirm) is caught here and stated in
- *     the review via the action note; the draft and everything
- *     typed stay on screen. Nothing fails silently.
- */
-async function confirmMealDraftFromReview(button, { accepted }) {
-    if (!mealDraftReview.draft) return;
-    button.disabled = true;
-    try {
-        // Photo-flow P4: confirming is also a save — unsaved edits
-        // commit first, so the logged meal is the one on screen,
-        // never the stale server copy.
-        if (draftHasUnsavedChanges()) {
-            await saveDraftChanges();
-        }
-        const draft = mealDraftReview.draft;
-        const openCount = openDraftQuestionCount(draft);
-        const assumptionsAccepted =
-            accepted ||
-            Boolean(
-                document.querySelector("[data-draft-accept-assumptions]")
-                    ?.checked,
-            );
-        if (
-            draftConfirmDecision({
-                openQuestionCount: openCount,
-                accepted: assumptionsAccepted,
-            }) === "needs_acceptance"
-        ) {
-            mealDraftReview.confirmAcceptPending = true;
-            const actions = document.querySelector(".meal-draft-actions");
-            if (actions) {
-                actions.innerHTML = mealDraftActionsMarkup(
-                    draft.questions.filter(
-                        (question) => question.status === "open",
-                    ),
-                );
-                actions
-                    .querySelector('[data-action="confirm-meal-draft-accept"]')
-                    ?.focus();
-            }
-            return;
-        }
-        const result = await api(
-            `/api/app/meal-drafts/${encodeURIComponent(draft.id)}/confirm`,
-            {
-                method: "POST",
-                body: JSON.stringify({
-                    expected_version: draft.version,
-                    confirmed: true,
-                    accept_remaining_assumptions: assumptionsAccepted,
-                }),
-                keepPrevious: true,
-            },
-        );
-        mealDraftReview.confirmAcceptPending = false;
-        mealDraftReview.actionNote = null;
-        closeAppDialog();
-        toast("Meal confirmed and logged.");
-        await renderRoute();
-        return result;
-    } catch (error) {
-        mealDraftReview.actionNote =
-            error.message ||
-            "The meal couldn't be logged — your draft is unchanged. Try again.";
-        showDraftActionNoteInPlace();
-        if (button.isConnected) button.disabled = false;
-        return;
-    }
-}
-
-/**
- * The review's closing actions. Photo-flow audit (2026-11-12):
- * when questions are still open and the user has tapped confirm
- * without accepting, the row swaps IN PLACE for the explicit
- * acceptance step — the reason and the way forward, inside the
- * dialog, instead of a toast the modal paints over. Both render
- * paths (full review render, post-abandon-ask rebuild) use this
- * one helper so the two can never drift apart.
+ * The review's closing actions. With questions still open the
+ * primary button reads "Confirm and accept assumptions" — the
+ * labelled click IS the acceptance (photo-draft audit, 2026-11-12);
+ * the Questions section's checkbox is the other acceptance path.
+ * Both render paths (full review render, post-abandon-ask rebuild)
+ * use this one helper so the two can never drift apart.
  */
 function mealDraftActionsMarkup(openQuestions) {
-    if (mealDraftReview.confirmAcceptPending && openQuestions.length) {
-        return `<p class="meal-draft-action-note" role="alert">${openQuestions.length} question${openQuestions.length === 1 ? " is" : "s are"} still open. Logging now accepts the assumptions shown, as shown.</p><button class="button button-primary" type="button" data-action="confirm-meal-draft-accept">Log meal and accept assumptions</button><button class="button button-secondary" type="button" data-action="dismiss-confirm-accept">Keep reviewing</button>`;
-    }
     return `<button class="button button-primary" type="button" data-action="confirm-meal-draft">${openQuestions.length ? "Confirm and accept assumptions" : "Confirm and log meal"}</button><button class="button button-quiet" type="button" data-action="cancel-meal-draft">Abandon draft</button>`;
 }
 
@@ -6045,7 +5975,6 @@ async function openMealDraft(id) {
     mealDraftReview.addTextMessage = null;
     mealDraftReview.addTextWorking = false;
     mealDraftReview.actionNote = null;
-    mealDraftReview.confirmAcceptPending = false;
     mealDraftReview.dirtyItems.clear();
     mealDraftReview.detailsDirty = false;
     mealDraftReview.expandedItems.clear();
@@ -6599,7 +6528,9 @@ function openMealComposer() {
     mealComposer.yesterday = null;
     openDialog(
         "Add meal",
-        `<form id="meal-form" class="auth-form"><input type="hidden" name="logged_at" value="${escapeHtml(`${state.date}T12:00:00.000Z`)}" /><label class="field"><span>Meal name</span><input name="description" value="Meal" maxlength="500" required /></label><label class="field"><span>Meal type</span><select name="meal_type"><option value="breakfast">Breakfast</option><option value="lunch" selected>Lunch</option><option value="dinner">Dinner</option><option value="snack">Snack</option></select></label><section class="meal-composer-search"><div class="panel-title"><h3>Find foods</h3><span>Verified, saved, and recent</span></div><div id="meal-usuals" class="meal-usuals" hidden></div><div class="meal-composer-search-row"><input class="input" id="meal-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><input class="input" id="meal-food-barcode" inputmode="numeric" placeholder="Barcode" aria-label="Food barcode" /><button class="button button-secondary" type="button" data-action="lookup-food-barcode">Look up</button></div><div id="meal-food-results" class="meal-food-results"></div></section><section><div class="panel-title"><h3>Selected foods</h3><button class="button button-secondary button-small" type="button" data-action="add-manual-food">Add manual food</button></div><div id="meal-selected-items" class="meal-selected-items"></div></section><label class="field"><span>Notes</span><textarea name="notes" rows="2" maxlength="4000" placeholder="Optional"></textarea></label><button class="button button-primary" type="submit">Log meal</button></form>`,
+        `<form id="meal-form" class="auth-form"><input type="hidden" name="logged_at" value="${escapeHtml(`${state.date}T12:00:00.000Z`)}" /><label class="field"><span>Meal name</span><input name="description" value="Meal" maxlength="500" required /></label><label class="field"><span>Meal type</span><select name="meal_type">${mealTypeOptionsHtml(
+            defaultMealType(new Date(), state.bootstrap?.profile?.timezone),
+        )}</select></label><section class="meal-composer-search"><div class="panel-title"><h3>Find foods</h3><span>Verified, saved, and recent</span></div><div id="meal-usuals" class="meal-usuals" hidden></div><div class="meal-composer-search-row"><input class="input" id="meal-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><input class="input" id="meal-food-barcode" inputmode="numeric" placeholder="Barcode" aria-label="Food barcode" /><button class="button button-secondary" type="button" data-action="lookup-food-barcode">Look up</button></div><div id="meal-food-results" class="meal-food-results"></div></section><section><div class="panel-title"><h3>Selected foods</h3><button class="button button-secondary button-small" type="button" data-action="add-manual-food">Add manual food</button></div><div id="meal-selected-items" class="meal-selected-items"></div></section><label class="field"><span>Notes</span><textarea name="notes" rows="2" maxlength="4000" placeholder="Optional"></textarea></label><button class="button button-primary" type="submit">Log meal</button></form>`,
     );
     renderMealComposerItems();
     searchMealFoods("");
@@ -6609,7 +6540,9 @@ function openMealComposer() {
 function openMealDraftComposer() {
     openDialog(
         "Start meal draft",
-        `<form id="meal-draft-create-form" class="auth-form"><p class="tiny">Create a reviewable draft when the meal needs clarification or a nutrition check before it is logged.</p><input type="hidden" name="source_mode" value="text" /><input type="hidden" name="logged_at" value="${escapeHtml(`${state.date}T12:00:00.000Z`)}" /><label class="field"><span>What are you logging?</span><input name="description" maxlength="2000" placeholder="Chicken burrito, restaurant dinner…" required /></label><label class="field"><span>Meal type</span><select name="meal_type"><option value="breakfast">Breakfast</option><option value="lunch" selected>Lunch</option><option value="dinner">Dinner</option><option value="snack">Snack</option></select></label><label class="field"><span>Notes or context</span><textarea name="notes" rows="3" maxlength="4000" placeholder="Optional details, uncertainty, or corrections"></textarea></label><button class="button button-primary" type="submit">Start reviewable draft</button></form>`,
+        `<form id="meal-draft-create-form" class="auth-form"><p class="tiny">Create a reviewable draft when the meal needs clarification or a nutrition check before it is logged.</p><input type="hidden" name="source_mode" value="text" /><input type="hidden" name="logged_at" value="${escapeHtml(`${state.date}T12:00:00.000Z`)}" /><label class="field"><span>What are you logging?</span><input name="description" maxlength="2000" placeholder="Chicken burrito, restaurant dinner…" required /></label><label class="field"><span>Meal type</span><select name="meal_type">${mealTypeOptionsHtml(
+            defaultMealType(new Date(), state.bootstrap?.profile?.timezone),
+        )}</select></label><label class="field"><span>Notes or context</span><textarea name="notes" rows="3" maxlength="4000" placeholder="Optional details, uncertainty, or corrections"></textarea></label><button class="button button-primary" type="submit">Start reviewable draft</button></form>`,
     );
 }
 
@@ -6711,6 +6644,57 @@ function openWeightEditor(id) {
         "Edit weight",
         `<form id="edit-weight-form" class="auth-form" data-id="${escapeHtml(id)}"><label class="field"><span>Weight</span><input name="weight" type="number" min="1" step="0.1" value="${escapeHtml(value)}" required /></label><label class="field"><span>Unit</span><select name="unit" required><option value="lb" ${unit === "lb" ? "selected" : ""}>lb</option><option value="kg" ${unit === "kg" ? "selected" : ""}>kg</option></select></label><label class="field"><span>Notes</span><textarea name="notes" rows="2" maxlength="4000" placeholder="Optional">${escapeHtml(entry.notes || "")}</textarea></label><p class="tiny">Logged ${escapeHtml(formatTime(loggedAt))}${entry.loggedOn ? ` · ${escapeHtml(formatDate(entry.loggedOn, { year: true }))}` : ""}.</p><button class="button button-primary" type="submit">Save weight</button></form>`,
     );
+}
+
+/**
+ * Visible working state for an async action (photo-draft audit,
+ * 2026-11-12): a click the user cannot SEE working reads as a dead
+ * button — disable the control, swap its label for the work in
+ * progress, and restore both when the work settles. The restore is
+ * written for the failure path: on success most callers re-render,
+ * which replaces the button wholesale.
+ */
+function setButtonBusy(button, busy, busyLabel) {
+    if (!button) return;
+    if (busy) {
+        if (button.dataset.busyLabel === undefined) {
+            button.dataset.busyLabel = button.textContent ?? "";
+        }
+        button.disabled = true;
+        button.setAttribute("aria-busy", "true");
+        if (busyLabel) button.textContent = busyLabel;
+    } else {
+        button.disabled = false;
+        button.removeAttribute("aria-busy");
+        if (button.dataset.busyLabel !== undefined) {
+            button.textContent = button.dataset.busyLabel;
+            delete button.dataset.busyLabel;
+        }
+    }
+}
+
+/**
+ * The add-text section's standing status line — the result state
+ * that stays on screen after the work finishes (the toast alone is
+ * transient). Creates the line when the render did not include one
+ * (no message yet), so the WORKING state is visible from the first
+ * click, not only after the answer comes back.
+ */
+function setAddTextStatus(message) {
+    const section = document.querySelector(".meal-draft-add-text");
+    if (!section) return;
+    let line = section.querySelector(".meal-draft-add-text-message");
+    if (!message) {
+        if (line && !mealDraftReview.addTextMessage) line.remove();
+        return;
+    }
+    if (!line) {
+        line = document.createElement("p");
+        line.className = "tiny meal-draft-add-text-message";
+        line.setAttribute("role", "status");
+        section.appendChild(line);
+    }
+    line.textContent = message;
 }
 
 async function handleAction(button) {
@@ -7422,7 +7406,12 @@ async function handleAction(button) {
         return;
     }
     if (action === "select-draft-food-option") {
-        await selectDraftFoodOption(button.dataset.key);
+        setButtonBusy(button, true);
+        try {
+            await selectDraftFoodOption(button.dataset.key);
+        } finally {
+            setButtonBusy(button, false);
+        }
         return;
     }
     if (action === "lookup-draft-food-barcode") {
@@ -7445,20 +7434,14 @@ async function handleAction(button) {
             input?.focus();
             return;
         }
-        // Photo-flow audit (2026-11-12): the revision can chain
-        // several model calls server-side (seconds), and the only
-        // feedback used to be a silently disabled button. The
-        // working state is set in the DOM directly — a re-render
-        // here would discard the typed text if the request fails —
-        // and every outcome (applied, no-change, failure) lands on
-        // the status line inside the dialog.
-        mealDraftReview.addTextWorking = true;
-        mealDraftReview.addTextMessage = null;
-        button.disabled = true;
-        button.textContent = "Adding…";
-        button.setAttribute("aria-busy", "true");
-        input.disabled = true;
-        if (statusLine) statusLine.textContent = "Adding to draft…";
+        // Working state FIRST (photo-draft audit, 2026-11-12): the
+        // click must visibly land — busy button plus a standing
+        // status line — before the request goes out, and the result
+        // (addTextMessage, rendered into the section on success)
+        // stays on screen after. Previously the only signal was a
+        // silently disabled button and a transient toast.
+        setButtonBusy(button, true, "Adding…");
+        setAddTextStatus("Adding to draft…");
         try {
             const result = await api(
                 `/api/app/meal-drafts/${encodeURIComponent(draft.id)}/add-text`,
@@ -7486,16 +7469,15 @@ async function handleAction(button) {
                 error.message ||
                 "That couldn't be added — the draft is unchanged. Try again.";
             // No re-render: the typed text stays in the input so the
-            // user can retry without retyping.
-            if (button.isConnected) {
-                button.disabled = false;
-                button.textContent = "Add to draft";
-                button.removeAttribute("aria-busy");
-            }
-            if (input.isConnected) input.disabled = false;
+            // user can retry without retyping, and the failure lands
+            // on the status line inside the dialog (a toast would be
+            // painted under the modal). The busy state hands the
+            // button back in the finally below.
             if (statusLine?.isConnected) {
                 statusLine.textContent = mealDraftReview.addTextMessage;
             }
+        } finally {
+            setButtonBusy(button, false);
         }
         return;
     }
@@ -7552,7 +7534,7 @@ async function handleAction(button) {
         // Photo-flow P4: the ONE save action — dirty items and
         // details commit together, version-threaded.
         if (!mealDraftReview.draft) return;
-        button.disabled = true;
+        setButtonBusy(button, true, "Saving…");
         try {
             const saved = await saveDraftChanges();
             mealDraftReview.actionNote = null;
@@ -7570,6 +7552,10 @@ async function handleAction(button) {
                 "Your changes couldn't be saved — the draft is unchanged. Try again.";
             showDraftActionNoteInPlace();
         } finally {
+            // On failure nothing re-rendered, so the busy state is
+            // what hands the button back (previously a failed save
+            // left it disabled forever — a dead button).
+            setButtonBusy(button, false);
             refreshDraftSaveBar();
         }
         return;
@@ -7627,7 +7613,7 @@ async function handleAction(button) {
             showDraftActionNoteInPlace();
             return;
         }
-        button.disabled = true;
+        setButtonBusy(button, true, "Saving…");
         try {
             const result = await api(
                 `/api/app/meal-drafts/${encodeURIComponent(draft.id)}/questions/${encodeURIComponent(button.dataset.questionId)}/answer`,
@@ -7648,41 +7634,75 @@ async function handleAction(button) {
             // exactly what stranded Michael's draft on 2026-11-12 —
             // the 400s surfaced only as toasts under the modal. The
             // error now lands in the review itself, in place, with
-            // the typed answer untouched.
+            // the typed answer untouched; the busy state hands the
+            // button back in the finally below.
             mealDraftReview.actionNote =
                 error.message ||
                 "That answer couldn't be saved — the question is still open. Try again.";
             showDraftActionNoteInPlace();
-            if (button.isConnected) button.disabled = false;
+        } finally {
+            setButtonBusy(button, false);
         }
         return;
     }
     if (action === "confirm-meal-draft") {
-        return confirmMealDraftFromReview(button, { accepted: false });
-    }
-    if (action === "confirm-meal-draft-accept") {
-        // The in-place acceptance step's primary action: the user
-        // has now explicitly accepted the open assumptions.
-        mealDraftReview.confirmAcceptPending = false;
-        return confirmMealDraftFromReview(button, { accepted: true });
-    }
-    if (action === "dismiss-confirm-accept") {
-        // Back to reviewing: swap the actions row back in place —
-        // no re-render, so typed answers and edits survive.
-        mealDraftReview.confirmAcceptPending = false;
-        const draft = mealDraftReview.draft;
-        const actions = document.querySelector(".meal-draft-actions");
-        if (draft && actions) {
-            actions.innerHTML = mealDraftActionsMarkup(
-                draft.questions.filter(
-                    (question) => question.status === "open",
-                ),
+        if (!mealDraftReview.draft) return;
+        setButtonBusy(button, true, "Logging meal…");
+        try {
+            // Photo-flow P4: confirming is also a save — unsaved edits
+            // commit first, so the logged meal is the one on screen,
+            // never the stale server copy.
+            if (draftHasUnsavedChanges()) {
+                await saveDraftChanges();
+            }
+            const draft = mealDraftReview.draft;
+            const hasOpenQuestions = draft.questions.some(
+                (question) => question.status === "open",
             );
-            actions
-                .querySelector('[data-action="confirm-meal-draft"]')
-                ?.focus();
+            // Acceptance has TWO honest paths and this click is one
+            // of them: with questions open the button itself reads
+            // "Confirm and accept assumptions", so the click IS the
+            // acceptance it labels. The checkbox in the Questions
+            // section is the other path. (Photo-draft audit,
+            // 2026-11-12: previously the handler demanded the
+            // checkbox even when the labelled button was clicked —
+            // the click returned after a toast and NO request was
+            // sent, which reads exactly like "save doesn't save".)
+            const accepted =
+                Boolean(
+                    document.querySelector("[data-draft-accept-assumptions]")
+                        ?.checked,
+                ) || hasOpenQuestions;
+            const result = await api(
+                `/api/app/meal-drafts/${encodeURIComponent(draft.id)}/confirm`,
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        expected_version: draft.version,
+                        confirmed: true,
+                        accept_remaining_assumptions: accepted,
+                    }),
+                    keepPrevious: true,
+                },
+            );
+            mealDraftReview.actionNote = null;
+            closeAppDialog();
+            toast("Meal confirmed and logged.");
+            await renderRoute();
+            return result;
+        } catch (error) {
+            // Photo-flow audit (2026-11-12): any failure (save or
+            // confirm) is stated in the review itself, in place —
+            // a toast renders outside the modal dialog and is never
+            // seen. The draft and everything typed stay on screen.
+            mealDraftReview.actionNote =
+                error.message ||
+                "The meal couldn't be logged — your draft is unchanged. Try again.";
+            showDraftActionNoteInPlace();
+            return;
+        } finally {
+            setButtonBusy(button, false);
         }
-        return;
     }
     if (action === "cancel-meal-draft") {
         // S6 slice 1 defect fix: abandoning used to gate on the native

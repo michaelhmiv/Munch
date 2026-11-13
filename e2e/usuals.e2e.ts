@@ -151,8 +151,13 @@ test("usuals surface the habitual breakfast at its median portion, one-offs stay
     const form = page.locator("#meal-form");
     await expect(form).toBeVisible();
 
-    // Default slot is lunch: yesterday's lunch earns the copy
+    // The composer's slot now follows the local time of day (owner
+    // ruling, 2026-11-12) instead of a hardcoded lunch, so pick the
+    // lunch slot explicitly: yesterday's lunch earns the copy
     // affordance, and copying adds its items to the draft.
+    await page
+        .locator('#meal-form select[name="meal_type"]')
+        .selectOption("lunch");
     const yesterdayButton = page.getByRole("button", {
         name: "Same as yesterday",
     });

@@ -3393,13 +3393,15 @@ test("photo-flow P2: a preparation statement updates the draft in place", async 
     }
 });
 
-test("photo-flow audit: confirm with an open question asks in place, then logs on acceptance", async ({
+test("photo-flow audit: confirm with an open question logs on the labelled click", async ({
     page,
 }) => {
     // The silent-save reproduction (2026-11-12): a draft whose
     // question is still open. The old handler toasted and returned
     // before any request — and the toast is invisible under the
-    // modal — so the save simply never happened.
+    // modal — so the save simply never happened. The button reads
+    // "Confirm and accept assumptions", so the click IS the
+    // acceptance it labels: one tap sends the confirm, flagged.
     photoDraftVariant = "open-question";
     lastConfirmBody = null;
     try {
@@ -3415,25 +3417,7 @@ test("photo-flow audit: confirm with an open question asks in place, then logs o
             "Was the rice cooked with oil or butter?",
         );
 
-        // First tap: NO confirm request goes out, and the reason +
-        // the way forward appear in the dialog itself.
         await page.locator('[data-action="confirm-meal-draft"]').click();
-        await expect(
-            page.locator('[data-action="confirm-meal-draft-accept"]'),
-        ).toBeVisible();
-        await expect(page.locator(".meal-draft-actions")).toContainText(
-            "still open",
-        );
-        expect(
-            observedRequest(
-                "POST",
-                "/api/app/meal-drafts/fixture-photo-draft/confirm",
-            ),
-        ).toBe(false);
-        expect(lastConfirmBody).toBeNull();
-
-        // The explicit acceptance sends the confirm, flagged.
-        await page.locator('[data-action="confirm-meal-draft-accept"]').click();
         await expect(page.locator("#toast-region")).toContainText(
             "Meal confirmed and logged.",
         );
