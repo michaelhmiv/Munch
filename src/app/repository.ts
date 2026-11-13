@@ -69,7 +69,6 @@ import {
     projectPlannedRange,
 } from "../planned-projection.js";
 import { aggregateTodayRange, buildRangeHierarchy } from "../today-range.js";
-import { dayPartForHour, type NextUpDayPart } from "../guidance/next-up.js";
 import {
     buildTrendsCard,
     buildTrendsDays,
@@ -374,6 +373,20 @@ export async function getTodayWorkspace(
     };
 }
 
+/**
+ * Day part in the user's timezone, for the evening prompt rule
+ * below. Carried over verbatim from the removed Next Up module
+ * (src/guidance/next-up.ts, deleted with the standing Next Up
+ * section): morning before 11:00, midday until 17:00, evening after.
+ */
+export type DayPart = "morning" | "midday" | "evening";
+
+export function dayPartForHour(hour: number): DayPart {
+    if (hour < 11) return "morning";
+    if (hour < 17) return "midday";
+    return "evening";
+}
+
 export interface PlannedPromptMeal {
     planned_meal_id: string;
     recipe_id: string;
@@ -394,7 +407,7 @@ export interface PlannedPromptMeal {
  */
 export function selectPlannedPrompts(input: {
     isToday: boolean;
-    dayPart: NextUpDayPart | null;
+    dayPart: DayPart | null;
     plannedMeals: Array<{
         planned_meal_id: string;
         recipe_id: string;
