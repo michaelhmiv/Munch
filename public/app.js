@@ -1,7 +1,11 @@
 import {
+    clearPendingNativeLinkPrompt,
     installOfflineBanner,
     isConnectivityError,
     isOffline,
+    LINK_PROMPT_NATIVE_HEADER,
+    nativeProviderIdToken,
+    pendingNativeLinkPrompt,
     requestJson,
 } from "./app-api.js";
 import {
@@ -48,6 +52,7 @@ installPhotoCapture();
 
 const state = {
     bootstrap: null,
+    linkPromptChecked: false,
     route: "today",
     date: null,
     mealHistoryDays: 1,
@@ -4787,6 +4792,70 @@ async function startNewChat() {
     renderChatView();
 }
 
+let linkPromptInFlight = false;
+
+/**
+ * Cross-provider collision prompt (2026-11-12): a sign-in refused
+ * because the provider's email belongs to this account under a
+ * different method leaves a short-lived pending-link record — a
+ * server cookie on the web, an on-device secure-store record in the
+ * packaged app, whose bearer transport cannot carry the cookie.
+ * Once the user is signed in with their original method, ask — once
+ * per page load, over whatever route they landed on — whether to add
+ * that provider to this same account (Amendment I link; declining
+ * leaves the account untouched).
+ */
+async function maybeShowLinkPrompt() {
+    if (state.linkPromptChecked || linkPromptInFlight) return;
+    linkPromptInFlight = true;
+    try {
+        // Packaged app: the pending provider was recorded on-device at
+        // collision time (the web's cookie cannot reach its bearer
+        // transport), so present it as the native prompt header. Web:
+        // pendingNativeLinkPrompt() is null and the cookie alone
+        // drives the same endpoint, unchanged.
+        const nativeProvider = await pendingNativeLinkPrompt();
+        // This probe goes through requestJson, not api(): api() aborts
+        // the route's tracked in-flight request, and the native record
+        // check above resolves asynchronously — an api() call landing
+        // after the renderer started its load would abort that load
+        // and strand the route on its loading state. A background
+        // prompt probe must never disturb the route it floats over.
+        const { prompt } = await requestJson(
+            "/api/app/sign-in-methods/link-prompt",
+            {
+                ...(nativeProvider
+                    ? {
+                          headers: {
+                              [LINK_PROMPT_NATIVE_HEADER]: nativeProvider,
+                          },
+                      }
+                    : {}),
+            },
+        );
+        state.linkPromptChecked = true;
+        if (!prompt?.provider) {
+            // No prompt for the recorded attempt (already linked,
+            // expired server-side, or not this account's collision):
+            // the on-device record is stale — drop it so it cannot
+            // re-offer on a later launch.
+            if (nativeProvider) await clearPendingNativeLinkPrompt();
+            return;
+        }
+        const label = prompt.label || prompt.provider;
+        openDialog(
+            `Add ${label} sign-in?`,
+            `<p>We found an account with this email — earlier you tried to sign in with ${escapeHtml(label)}, and this account uses a different method. Add ${escapeHtml(label)} as another way to sign in to this same account? Your meals, plans, and Premium stay exactly as they are.</p>`,
+            `<div class="auth-actions"><button class="button button-primary" type="button" data-action="link-prompt-confirm" data-provider="${escapeHtml(prompt.provider)}" data-provider-label="${escapeHtml(label)}">Add ${escapeHtml(label)}</button><button class="button button-secondary" type="button" data-action="link-prompt-dismiss">Not now</button></div>`,
+        );
+    } catch {
+        // A failed prompt check must never block the app; the cookie
+        // expires on its own and Settings linking remains available.
+    } finally {
+        linkPromptInFlight = false;
+    }
+}
+
 async function renderRoute() {
     // T8: the Insights destination retired — its route lands on Trends.
     if (location.pathname === "/app/insights") {
@@ -4811,6 +4880,8 @@ async function renderRoute() {
                 state.bootstrap.profile?.timezone || "UTC",
             );
         }
+        // Collision prompt check: after the session is known-good, once.
+        void maybeShowLinkPrompt();
         // Feature toggles (T6): both navs render from the account's
         // flags every route render, so a toggle saved anywhere —
         // including another device — is honored on the next render.
@@ -6886,6 +6957,69 @@ async function handleAction(button) {
     if (action === "close-dialog") {
         closeAppDialog();
         return;
+    }
+    if (action === "link-prompt-dismiss") {
+        await api("/api/app/sign-in-methods/link-prompt/dismiss", {
+            method: "POST",
+            body: "{}",
+            keepPrevious: true,
+        }).catch(() => {});
+        // Packaged app: the on-device record is the pending prompt —
+        // clearing it is what makes "Not now" final there (web: no-op,
+        // the dismiss above cleared the cookie).
+        await clearPendingNativeLinkPrompt();
+        closeAppDialog();
+        return;
+    }
+    if (action === "link-prompt-confirm") {
+        const provider = button.dataset.provider || "";
+        const label = button.dataset.providerLabel || provider;
+        button.disabled = true;
+        try {
+            // Packaged app: link in place with a fresh native ID token
+            // (the Amendment I link's native path) — a web consent
+            // redirect cannot complete against its bearer session.
+            // Web: nativeProviderIdToken() is null, unchanged flow.
+            const idToken = await nativeProviderIdToken(provider);
+            const result = await api(
+                `/api/app/sign-in-methods/${encodeURIComponent(provider)}/link`,
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        callbackURL: "/app",
+                        errorCallbackURL: "/app",
+                        ...(idToken ? { idToken } : {}),
+                    }),
+                    keepPrevious: true,
+                },
+            );
+            // The prompt is answered either way; clear it so it does not
+            // re-offer after the provider round-trip returns here.
+            await api("/api/app/sign-in-methods/link-prompt/dismiss", {
+                method: "POST",
+                body: "{}",
+                keepPrevious: true,
+            }).catch(() => {});
+            await clearPendingNativeLinkPrompt();
+            if (result?.url) {
+                // Web link: hand off to the provider's consent screen.
+                location.href = result.url;
+                return;
+            }
+            closeAppDialog();
+            toast(`${label} linked to this account.`);
+            return;
+        } catch (error) {
+            toast(
+                error instanceof Error
+                    ? error.message
+                    : `Linking ${label} failed.`,
+                "error",
+            );
+            return;
+        } finally {
+            button.disabled = false;
+        }
     }
     if (action === "toggle-metric-detail") {
         // UX fix wave F2: expand/collapse the totals card's inline

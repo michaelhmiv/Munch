@@ -173,6 +173,21 @@ export async function signInWithGoogle() {
     throw new Error("Google sign-in is unavailable in the iOS smoke fixture");
 }
 
+// Link-prompt surface (2026-11-12): the fixture has no native secure
+// store and never records a collision, so — like the web defaults —
+// there is never a pending prompt and never a native ID token.
+export const LINK_PROMPT_NATIVE_HEADER = "x-munch-link-prompt-provider";
+
+export async function pendingNativeLinkPrompt() {
+    return null;
+}
+
+export async function clearPendingNativeLinkPrompt() {}
+
+export async function nativeProviderIdToken() {
+    return null;
+}
+
 export async function isGoogleSignInAvailable() {
     return false;
 }

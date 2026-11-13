@@ -136,6 +136,10 @@ jobs:
         env:
           NODE_ENV: test
         run: bun scripts/better-auth-sign-in-methods-smoke.ts
+      - name: Exercise cross-provider sign-in collisions, prompt-to-link, and entitlement carry
+        env:
+          NODE_ENV: test
+        run: bun scripts/better-auth-account-collision-smoke.ts
       - name: Exercise Better Auth connection listing and revocation
         run: bun scripts/better-auth-connections-smoke.ts
       - name: Provision and exercise marketplace reviewer account

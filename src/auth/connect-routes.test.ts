@@ -113,8 +113,10 @@ describe("Better Auth consent continuation", () => {
         expect(html).toContain("Continue with Google");
         expect(html).toContain('data-social-path="/api/auth/sign-in/social"');
         expect(html).toContain("&quot;callbackURL&quot;:&quot;/app&quot;");
+        // Collision law (2026-11-12): a refused sign-in lands on the
+        // per-provider link-conflict page, not the generic error page.
         expect(html).toContain(
-            "&quot;errorCallbackURL&quot;:&quot;/connect/error&quot;",
+            "&quot;errorCallbackURL&quot;:&quot;/connect/link-conflict?provider=google&quot;",
         );
         // The magic-link flow stays exactly as it was beside it.
         expect(html).toContain("Send sign-in link");
@@ -140,6 +142,9 @@ describe("Better Auth consent continuation", () => {
         expect(html).toContain("Continue with Apple");
         expect(html).toContain('class="button button-apple"');
         expect(html).toContain("&quot;provider&quot;:&quot;apple&quot;");
+        expect(html).toContain(
+            "&quot;errorCallbackURL&quot;:&quot;/connect/link-conflict?provider=apple&quot;",
+        );
         // Exactly two social controls, served by the one wiring script.
         expect(
             html.match(/data-social-sign-in data-social-path/g),

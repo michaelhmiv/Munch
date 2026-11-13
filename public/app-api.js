@@ -47,6 +47,36 @@ export function getMunchPlatformKind() {
     return platform.kind;
 }
 
+/**
+ * Cross-provider link prompt, native pending record (2026-11-12).
+ *
+ * On the web, a refused cross-provider sign-in leaves a short-lived
+ * server cookie (munch_link_prompt) and the app shell reads the
+ * pending prompt from the session-bound link-prompt endpoint — no
+ * client-side record exists, so these defaults answer "none".
+ *
+ * The packaged app cannot use that cookie (bearer transport with
+ * credentials omitted, from a packaged origin), so mobile/runtime.js
+ * overrides all three: it records the attempted provider in the
+ * native secure store at collision time, returns it here after the
+ * original-method sign-in (30-minute TTL, mirroring the cookie), and
+ * clears it when the prompt is answered or proves stale. The mobile
+ * build rewrites app.js's import of this module to the runtime, so
+ * the shell code is identical on both surfaces.
+ */
+/** Header the packaged app presents its on-device pending record under. */
+export const LINK_PROMPT_NATIVE_HEADER = "x-munch-link-prompt-provider";
+
+export async function pendingNativeLinkPrompt() {
+    return null;
+}
+
+export async function clearPendingNativeLinkPrompt() {}
+
+export async function nativeProviderIdToken() {
+    return null;
+}
+
 export function resolveMunchApiUrl(path) {
     if (typeof path !== "string" || !path.startsWith("/")) {
         throw new Error("Munch API path must be root-relative");

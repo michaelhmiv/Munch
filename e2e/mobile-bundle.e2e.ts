@@ -218,6 +218,14 @@ export async function chooseInstalledPhoto() {
 export async function chooseInstalledPhotos() {
     return [];
 }
+export const LINK_PROMPT_NATIVE_HEADER = "x-munch-link-prompt-provider";
+export async function pendingNativeLinkPrompt() {
+    return null;
+}
+export async function clearPendingNativeLinkPrompt() {}
+export async function nativeProviderIdToken() {
+    return null;
+}
 `;
 
 /**

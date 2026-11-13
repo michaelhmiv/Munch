@@ -4,6 +4,12 @@ import { requireWebSession } from "../accounts/session.js";
 import { getMunchBetterAuth } from "./auth.js";
 import { getBetterAuthRuntimeConfig } from "./config.js";
 import {
+    buildClearLinkPromptCookie,
+    LINK_PROMPT_NATIVE_HEADER,
+    parseLinkPromptCookie,
+    parseLinkPromptProvider,
+} from "./link-prompt.js";
+import {
     appleSignInConfigured,
     buildSocialProviderRequest,
     googleWebSignInConfigured,
@@ -86,6 +92,72 @@ export function createSignInMethodsRouter(): Hono {
         const methods = await listSignInMethods(c.get("munchUserId"), config);
         return privateJson(c, { methods });
     });
+
+    // Cross-provider collision prompt (2026-11-12): /connect/link-conflict
+    // recorded the provider a refused sign-in attempted in a short-lived
+    // cookie. Once the user is signed in with their original method, the
+    // app shell reads the pending prompt here and offers to add that
+    // provider to THIS account through the same Amendment I link above.
+    // The prompt is served only while the provider is still unlinked;
+    // once linked (or unconfigurable) the cookie is cleared with it.
+    //
+    // Native packaged clients cannot use the cookie (bearer transport,
+    // credentials omitted, packaged origin — see link-prompt.ts), so
+    // they present the provider they recorded in the native secure
+    // store at collision time as LINK_PROMPT_NATIVE_HEADER instead.
+    // The header is only a hint: this endpoint still serves the prompt
+    // solely when that provider is genuinely not_linked for the
+    // signed-in account, and confirming still requires the
+    // session-bound link below with the provider's own credential.
+    router.get(
+        "/api/app/sign-in-methods/link-prompt",
+        requireWebSession,
+        async (c) => {
+            const config = getBetterAuthRuntimeConfig();
+            const provider =
+                parseLinkPromptCookie(c.req.header("cookie")) ??
+                parseLinkPromptProvider(
+                    c.req.header(LINK_PROMPT_NATIVE_HEADER),
+                );
+            if (!provider) return privateJson(c, { prompt: null });
+            const methods = await listSignInMethods(
+                c.get("munchUserId"),
+                config,
+            );
+            const method = methods.find((entry) => entry.id === provider);
+            if (!method || method.state !== "not_linked") {
+                c.header(
+                    "Set-Cookie",
+                    buildClearLinkPromptCookie(config.production),
+                );
+                return privateJson(c, { prompt: null });
+            }
+            return privateJson(c, {
+                prompt: { provider, label: method.label },
+            });
+        },
+    );
+
+    // Declining the prompt is final for that collision: clear the cookie
+    // and leave the account exactly as it was (the provider stays
+    // unlinked, so a later sign-in attempt with it is refused the same
+    // way and points back at the original method — never a fork).
+    // Native clients clear their on-device record in the same action;
+    // with no record presented, this endpoint serves them no prompt
+    // again, exactly as the cleared cookie serves web clients none.
+    router.post(
+        "/api/app/sign-in-methods/link-prompt/dismiss",
+        requireWebSession,
+        requireSameOrigin,
+        async (c) => {
+            const config = getBetterAuthRuntimeConfig();
+            c.header(
+                "Set-Cookie",
+                buildClearLinkPromptCookie(config.production),
+            );
+            return privateJson(c, { dismissed: true });
+        },
+    );
 
     router.post(
         "/api/app/sign-in-methods/:provider/link",
