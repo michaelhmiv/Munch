@@ -176,6 +176,8 @@ jobs:
         run: bun scripts/household-lifecycle-smoke.ts
       - name: Exercise recipes, planning, groceries, idempotency, and RLS
         run: bun scripts/recipe-planning-smoke.ts
+      - name: Exercise Log as planned logging, dedupe, evening prompt, and module gate
+        run: bun scripts/log-as-planned-smoke.ts
       - name: Exercise guided nutrition, goal history, plan review, groceries, swaps, and RLS
         run: bun scripts/guided-nutrition-smoke.ts
       - name: Exercise Cooks persistence, media, timeline, RLS, and side-effect boundaries
@@ -278,7 +280,11 @@ jobs:
           REVIEWER_EMAIL="e2e-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT@example.test"
           REVIEWER_PASSWORD="$(openssl rand -hex 24)"
           MUNCH_REVIEWER_EMAIL="$REVIEWER_EMAIL" MUNCH_REVIEWER_PASSWORD="$REVIEWER_PASSWORD" bun scripts/provision-reviewer.ts
-          MUNCH_REVIEWER_EMAIL="$REVIEWER_EMAIL" MUNCH_REVIEWER_PASSWORD="$REVIEWER_PASSWORD" bun run test:e2e
+          LAP_DESKTOP_EMAIL="e2e-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-lap-desktop@example.test"
+          LAP_MOBILE_EMAIL="e2e-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-lap-mobile@example.test"
+          MUNCH_REVIEWER_EMAIL="$LAP_DESKTOP_EMAIL" MUNCH_REVIEWER_PASSWORD="$REVIEWER_PASSWORD" bun scripts/provision-reviewer.ts
+          MUNCH_REVIEWER_EMAIL="$LAP_MOBILE_EMAIL" MUNCH_REVIEWER_PASSWORD="$REVIEWER_PASSWORD" bun scripts/provision-reviewer.ts
+          MUNCH_REVIEWER_EMAIL="$REVIEWER_EMAIL" MUNCH_REVIEWER_PASSWORD="$REVIEWER_PASSWORD" MUNCH_REVIEWER_EMAIL_DESKTOP="$LAP_DESKTOP_EMAIL" MUNCH_REVIEWER_PASSWORD_DESKTOP="$REVIEWER_PASSWORD" MUNCH_REVIEWER_EMAIL_MOBILE="$LAP_MOBILE_EMAIL" MUNCH_REVIEWER_PASSWORD_MOBILE="$REVIEWER_PASSWORD" bun run test:e2e
       - name: Upload Trends captures
         if: always()
         uses: actions/upload-artifact@v4

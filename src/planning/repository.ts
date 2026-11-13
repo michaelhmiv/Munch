@@ -4,9 +4,14 @@ import {
     type RecipeNutritionResolutionDependencies,
 } from "../recipe-nutrition-resolution.js";
 import { withUserDatabase } from "../platform/database.js";
-import { insertStructuredMeal } from "../structured-meals/repository.js";
+import {
+    getStructuredMeal,
+    insertStructuredMeal,
+    insertStructuredMealInTransaction,
+} from "../structured-meals/repository.js";
 import { dateOnlyString } from "../tz.js";
 import type {
+    StructuredMealInput,
     StructuredMealInsertResult,
     StructuredMealItemInput,
 } from "../structured-meals/types.js";
@@ -1145,28 +1150,7 @@ export async function logRecipe(input: {
     );
     if (!recipe) throw new Error("Recipe was not found or is unavailable");
 
-    if (input.plannedMealId) {
-        const planned = await withUserDatabase(
-            input.userId,
-            async (tx) =>
-                tx<Array<{ id: string }>>`
-                select id
-                from munch.planned_meals
-                where id = ${input.plannedMealId}
-                  and recipe_id = ${recipe.id}
-                  and recipe_revision_id = ${recipe.revision_id}
-                  and deleted_at is null
-                limit 1
-            `,
-        );
-        if (!planned[0]) {
-            throw new Error(
-                "Planned meal is not linked to this recipe revision",
-            );
-        }
-    }
-
-    const inserted = await insertStructuredMeal(input.userId, {
+    const mealInput: StructuredMealInput = {
         description: `${recipe.name} (${formatQuantity(input.servingsConsumed)} serving${input.servingsConsumed === 1 ? "" : "s"})`,
         mealType: input.mealType,
         loggedAt: input.loggedAt,
@@ -1176,14 +1160,76 @@ export async function logRecipe(input: {
         sourceRecipeRevisionId: recipe.revision_id,
         sourcePlannedMealId: input.plannedMealId,
         items: recipeMealItems(recipe, input.servingsConsumed),
-    });
-    return {
-        meal: inserted.meal,
-        deduplicated: inserted.deduplicated,
+    };
+    const result = {
         recipeId: recipe.id,
         recipeRevisionId: recipe.revision_id,
         recipeRevisionNumber: recipe.revision_number,
         servingsConsumed: input.servingsConsumed,
+    };
+
+    if (!input.plannedMealId) {
+        const inserted = await insertStructuredMeal(input.userId, mealInput);
+        return {
+            meal: inserted.meal,
+            deduplicated: inserted.deduplicated,
+            ...result,
+        };
+    }
+
+    // Log as planned: a planned meal is logged once per user. The
+    // link check, the already-logged check, and the insert run in one
+    // transaction under an advisory lock keyed on the planned meal,
+    // so a second tap — same idempotency key or a fresh one — returns
+    // the existing log as deduplicated instead of a second meal. The
+    // partial unique index in migration 0044 backstops every other
+    // insert path.
+    const outcome = await withUserDatabase(input.userId, async (tx) => {
+        await tx`
+            select pg_advisory_xact_lock(
+                hashtext(${`log-recipe-planned:${input.userId}:${input.plannedMealId}`})
+            )
+        `;
+        const planned = await tx<Array<{ id: string }>>`
+            select id
+            from munch.planned_meals
+            where id = ${input.plannedMealId}
+              and recipe_id = ${recipe.id}
+              and recipe_revision_id = ${recipe.revision_id}
+              and deleted_at is null
+            limit 1
+        `;
+        if (!planned[0]) {
+            throw new Error(
+                "Planned meal is not linked to this recipe revision",
+            );
+        }
+        const existing = await tx<Array<{ id: string }>>`
+            select id
+            from munch.meals
+            where user_id = ${input.userId}
+              and source_planned_meal_id = ${input.plannedMealId}
+            limit 1
+        `;
+        if (existing[0]) {
+            return { mealId: String(existing[0].id), inserted: null };
+        }
+        const inserted = await insertStructuredMealInTransaction(
+            tx,
+            input.userId,
+            mealInput,
+        );
+        return { mealId: inserted.meal.id, inserted };
+    });
+    if (!outcome.inserted) {
+        const meal = await getStructuredMeal(input.userId, outcome.mealId);
+        if (!meal) throw new Error("Logged meal could not be reloaded");
+        return { meal, deduplicated: true, ...result };
+    }
+    return {
+        meal: outcome.inserted.meal,
+        deduplicated: outcome.inserted.deduplicated,
+        ...result,
     };
 }
 
@@ -1278,13 +1324,23 @@ export async function getMealPlan(input: {
                 revision.fat_g_per_serving,
                 revision.fiber_g_per_serving,
                 revision.sugar_g_per_serving,
-                revision.sodium_mg_per_serving
+                revision.sodium_mg_per_serving,
+                logged_meal.id as logged_meal_id,
+                logged_meal.logged_at as logged_meal_logged_at
             from munch.planned_meals planned
             join munch.recipes recipe on recipe.id = planned.recipe_id
             join munch.recipe_revisions revision on revision.id = planned.recipe_revision_id
             left join munch.household_memberships membership
               on membership.household_id = planned.household_id
              and membership.user_id = planned.created_by_user_id
+            left join lateral (
+                select id, logged_at
+                from munch.meals
+                where source_planned_meal_id = planned.id
+                  and user_id = ${input.userId}
+                order by logged_at asc
+                limit 1
+            ) logged_meal on true
             where planned.deleted_at is null
               and recipe.archived_at is null
               and planned.planned_date between ${input.startDate}::date and ${input.endDate}::date
@@ -1309,6 +1365,16 @@ export async function getMealPlan(input: {
                     : String(row.created_by_display_name),
             nutrition_per_serving: nutrientsFromRow(row, "_per_serving"),
             version: Number(row.version),
+            // Log as planned state: the acting user's log linked to
+            // this plan entry, when one exists. Derived from the meal
+            // itself — there is no separate status column to drift.
+            logged: row.logged_meal_id != null,
+            logged_meal_id:
+                row.logged_meal_id == null ? null : String(row.logged_meal_id),
+            logged_at:
+                row.logged_meal_logged_at == null
+                    ? null
+                    : new Date(String(row.logged_meal_logged_at)).toISOString(),
         }));
     });
 }

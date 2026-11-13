@@ -58,6 +58,7 @@ import {
 } from "../storage.js";
 import {
     dateInTz,
+    hourInTz,
     shiftLocalDate,
     todayInTz,
     zonedDayStartUtc,
@@ -338,9 +339,16 @@ export async function getTodayWorkspace(
                     : [];
             })(),
         ]);
+    const now = new Date();
+    const today = dateInTz(now, timezone);
+    const isToday = date === today;
+    const dayPart = isToday ? dayPartForHour(hourInTz(now, timezone)) : null;
     return {
         date,
         timezone,
+        today,
+        isToday,
+        dayPart,
         totals: sumNutrition(meals),
         meals: await attachItems(userId, meals),
         goals,
@@ -357,7 +365,70 @@ export async function getTodayWorkspace(
         // as before; a projection is plan-based and is labeled as such.
         plannedProjection:
             date > todayInTz(timezone) ? projectPlannedDay(plannedMeals) : null,
+        plannedPrompts: selectPlannedPrompts({
+            isToday,
+            dayPart,
+            plannedMeals,
+        }),
     };
+}
+
+/**
+ * Day part in the user's timezone, for the evening prompt rule
+ * below. Carried over verbatim from the removed Next Up module
+ * (src/guidance/next-up.ts, deleted with the standing Next Up
+ * section): morning before 11:00, midday until 17:00, evening after.
+ */
+export type DayPart = "morning" | "midday" | "evening";
+
+export function dayPartForHour(hour: number): DayPart {
+    if (hour < 11) return "morning";
+    if (hour < 17) return "midday";
+    return "evening";
+}
+
+export interface PlannedPromptMeal {
+    planned_meal_id: string;
+    recipe_id: string;
+    recipe_revision_id: string;
+    recipe_name: string;
+    meal_slot: string | null;
+    servings: number;
+}
+
+/**
+ * The evening prompt rule (Log as planned, connection option #1): a
+ * planned meal earns a Log it / Skip it / Swap row on Today only
+ * when the viewed day IS today in the user's timezone, the day part
+ * is evening, and the meal is still unlogged. Past days, future
+ * days, mornings, and logged meals never prompt. Pure — the rule is
+ * unit-testable without a database; the client only renders what
+ * this returns (plus its session-level skips).
+ */
+export function selectPlannedPrompts(input: {
+    isToday: boolean;
+    dayPart: DayPart | null;
+    plannedMeals: Array<{
+        planned_meal_id: string;
+        recipe_id: string;
+        recipe_revision_id: string;
+        recipe_name: string;
+        meal_slot: string | null;
+        servings: number;
+        logged: boolean;
+    }>;
+}): PlannedPromptMeal[] {
+    if (!input.isToday || input.dayPart !== "evening") return [];
+    return input.plannedMeals
+        .filter((meal) => !meal.logged)
+        .map((meal) => ({
+            planned_meal_id: meal.planned_meal_id,
+            recipe_id: meal.recipe_id,
+            recipe_revision_id: meal.recipe_revision_id,
+            recipe_name: meal.recipe_name,
+            meal_slot: meal.meal_slot,
+            servings: meal.servings,
+        }));
 }
 
 /**
