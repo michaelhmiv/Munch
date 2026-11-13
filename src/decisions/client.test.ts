@@ -19,6 +19,10 @@ function testConfig(overrides: Partial<DecisionsConfig> = {}): DecisionsConfig {
         deciderTimeoutMs: 50,
         gateEnabled: true,
         deciderEnabled: true,
+        pantryMatchEnabled: true,
+        pantryMatchTimeoutMs: 50,
+        drawdownReviewEnabled: true,
+        drawdownReviewTimeoutMs: 50,
         ...overrides,
     };
 }
