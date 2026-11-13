@@ -69,12 +69,11 @@ test("recipe log draws the pantry down by servings cooked, logs only servings ea
     const recipeName = `Drawdown Pilaf ${stamp}`;
 
     try {
+        // The Pantry module flag (PUT /api/app/features via setFeatures) is the
+        // only gate: #258 retired the legacy "Use Pantry" switch and
+        // deleted its PATCH /api/app/pantry/settings endpoint, so do
+        // not re-add a PATCH step here.
         await setFeatures(page, ALL_ON);
-        const pantryOn = await page.request.patch("/api/app/pantry/settings", {
-            headers: { origin: new URL(page.url()).origin },
-            data: { enabled: true },
-        });
-        expect(pantryOn.status(), "enable pantry workspace").toBe(200);
 
         const seeded = await page.request.post("/api/app/pantry/reconcile", {
             headers: { origin: new URL(page.url()).origin },
