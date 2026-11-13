@@ -3359,26 +3359,113 @@ function recipeUnresolvedIngredients(recipe) {
     );
 }
 
-// The detail action row, shared by openRecipe and the archive
-// dismiss path (which restores exactly what was rendered).
+// The detail action row (Option D2, owner-approved 2026-11-13):
+// the actions live at the TOP of the detail sheet, directly under
+// the meta line (audit item N4). Shared by renderRecipeDetail and
+// the archive dismiss path (which restores exactly what was
+// rendered).
 let recipeDetailActionsHtml = "";
+
+// The recipe the open detail sheet is showing, so the header
+// utilities (Edit / Archive) and the in-place editor can act on the
+// loaded record without a second fetch.
+let recipeDetailRecipe = null;
+
+// Edit-mode working copy of the instruction steps, kept outside the
+// composer (whose steps ride a single textarea) so step rows can be
+// added and removed one at a time.
+let recipeDetailSteps = [];
 
 function recipeDetailActionsMarkup(recipe) {
     const flags = featureFlags();
     const unresolved = recipeUnresolvedIngredients(recipe);
-    // Start cook is the primary action (brief R2) and is born
-    // flag-aware (toggles #241 rider): Cooks off, no button.
-    const startCook = flags.cooks
-        ? `<button class="button button-primary" type="button" data-action="start-recipe-cook" data-id="${escapeHtml(recipe.id)}">Start cook</button>`
-        : "";
+    // Calculate nutrition is the row's primary exactly when the
+    // recipe's nutrition is unavailable or incomplete — and it
+    // appears only then (D2). Otherwise Start cook is the primary
+    // (brief R2), born flag-aware (toggles #241 rider): Cooks off,
+    // no button.
     const calculate =
         unresolved.length > 0
-            ? `<button class="button button-secondary" type="button" data-action="calculate-recipe-nutrition" data-id="${escapeHtml(recipe.id)}">Calculate nutrition</button>`
+            ? `<button class="button button-primary" type="button" data-action="calculate-recipe-nutrition" data-id="${escapeHtml(recipe.id)}">Calculate nutrition</button>`
             : "";
-    const groceries = flags.groceries
-        ? `<button class="button button-secondary" type="button" data-action="recipe-groceries" data-id="${escapeHtml(recipe.id)}" data-name="${escapeHtml(recipe.name)}" data-servings="${escapeHtml(recipe.servings)}">Add to grocery list</button>`
+    const startCook = flags.cooks
+        ? `<button class="button ${unresolved.length > 0 ? "button-secondary" : "button-primary"}" type="button" data-action="start-recipe-cook" data-id="${escapeHtml(recipe.id)}">Start cook</button>`
         : "";
-    return `${startCook}<button class="button button-secondary" type="button" data-action="log-recipe" data-id="${escapeHtml(recipe.id)}" data-revision="${escapeHtml(recipe.revision_id)}">Log recipe</button>${flags.plan ? `<button class="button button-secondary" type="button" data-action="plan-recipe" data-id="${escapeHtml(recipe.id)}" data-revision="${escapeHtml(recipe.revision_id)}">Add to plan</button>` : ""}${groceries}${calculate}<button class="button button-secondary" type="button" data-action="archive-recipe" data-id="${escapeHtml(recipe.id)}" data-version="${escapeHtml(recipe.version)}" data-revision="${escapeHtml(recipe.revision_id)}">Archive</button>`;
+    return `${calculate}${startCook}<button class="button button-secondary" type="button" data-action="log-recipe" data-id="${escapeHtml(recipe.id)}" data-revision="${escapeHtml(recipe.revision_id)}">Log recipe</button>${flags.plan ? `<button class="button button-secondary" type="button" data-action="plan-recipe" data-id="${escapeHtml(recipe.id)}" data-revision="${escapeHtml(recipe.revision_id)}">+ Plan</button>` : ""}`;
+}
+
+// D2: Edit and Archive ride in the sheet header as utilities beside
+// Close, in one shared style (.header-util — the same drawn box and
+// ≥44px overlay hit area as the header's Close).
+function recipeDetailHeaderActionsMarkup(recipe) {
+    return `<button class="header-util" type="button" data-action="edit-recipe-detail">Edit</button><button class="header-util" type="button" data-action="archive-recipe" data-id="${escapeHtml(recipe.id)}" data-version="${escapeHtml(recipe.version)}" data-revision="${escapeHtml(recipe.revision_id)}">Archive</button>`;
+}
+
+function recipeIngredientRowMarkup(ingredient) {
+    const resolved = recipeIngredientResolved(ingredient);
+    return `<li class="recipe-ingredient-row"><span class="recipe-ingredient-main"><strong>${escapeHtml(ingredient.name)}</strong>${ingredient.quantity == null ? "" : ` — ${formatRecipeQuantity(ingredient.quantity, ingredient.unit) ?? number(ingredient.quantity, 3)} ${escapeHtml(ingredient.unit || "")}`} ${sourceBadge(ingredient.source_type)}${pantryFlagMarkup(ingredient.pantry_flag)}</span>${resolved ? `<strong class="recipe-ingredient-kcal">${number(ingredient.nutrients?.calories)} kcal</strong>` : `<span class="recipe-unresolved">Not resolved</span>`}</li>`;
+}
+
+// Per-serving nutrition as a label (approved detail rendering):
+// Today's macro-tile grammar — four static tiles and the
+// Micronutrients tap-to-expand — with recipe values (recipes track
+// only fiber, sugar and sodium past the macros; never the em dash
+// Today shows for untracked values). In edit mode the tiles stay as
+// the reference the edit recalculates on save.
+function recipeNutritionPanelMarkup(recipe, editing = false) {
+    if (recipe.nutrition_status === "unavailable") {
+        return `<p class="nutrition-label">Nutrition · per serving</p><div class="nutrition-empty"><p class="recipe-note">No per-serving nutrition yet — this recipe's ingredients were saved without nutrition sources. Calculate nutrition to fill it in from each ingredient's verified source.</p></div>`;
+    }
+    const perServing = recipe.nutrition_per_serving || {};
+    const target = editing ? "recalculates on save" : "per serving";
+    const tiles = `<div class="macro-grid"><div class="macro-tile"><span class="macro-tile-label">Calories</span><span class="macro-tile-value">${number(perServing.calories)}<small> kcal</small></span><span class="macro-tile-target">${target}</span></div><div class="macro-tile"><span class="macro-tile-label">Protein</span><span class="macro-tile-value">${number(perServing.protein_g, 1)}<small> g</small></span><span class="macro-tile-target">${target}</span></div><div class="macro-tile"><span class="macro-tile-label">Carbohydrates</span><span class="macro-tile-value">${number(perServing.carbs_g, 1)}<small> g</small></span><span class="macro-tile-target">${target}</span></div><div class="macro-tile"><span class="macro-tile-label">Fat</span><span class="macro-tile-value">${number(perServing.fat_g, 1)}<small> g</small></span><span class="macro-tile-target">${target}</span></div></div>`;
+    if (editing)
+        return `<p class="nutrition-label">Nutrition · per serving</p>${tiles}`;
+    const unresolved = recipeUnresolvedIngredients(recipe);
+    const note = unresolved.length
+        ? `Calculated from ${recipe.ingredients.length - unresolved.length} of ${recipe.ingredients.length} ingredients. The ${unresolved.length === 1 ? "ingredient" : "ingredients"} marked Not resolved ${unresolved.length === 1 ? "counts" : "count"} as nothing until matched.`
+        : "Per-serving nutrition is calculated from the ingredient source snapshots pinned to this revision.";
+    return `<p class="nutrition-label">Nutrition · per serving</p>${tiles}<button type="button" class="macro-expand" data-action="toggle-recipe-micros" aria-expanded="false"><span>Micronutrients</span><span class="macro-expand-chev" aria-hidden="true">▾</span></button><div class="macro-micros" hidden><div class="macro-micros-cols"><div><div class="macro-micro-col"><div class="macro-micro-row"><span>Fiber</span><span>${number(perServing.fiber_g, 1)} g</span></div><div class="macro-micro-row"><span>Sugar</span><span>${number(perServing.sugar_g, 1)} g</span></div></div></div><div><div class="macro-micro-col"><div class="macro-micro-row"><span>Sodium</span><span>${number(perServing.sodium_mg)} mg</span></div></div></div></div></div><p class="recipe-note">${note}</p>`;
+}
+
+// D2: the grocery action leaves the action row and rides at the
+// Ingredients section header, right-aligned — the add decision sits
+// with the list it adds from. Same action, same pantry-aware add.
+function recipeGroceriesButtonMarkup(recipe) {
+    if (!featureFlags().groceries) return "";
+    return `<button class="button button-secondary" type="button" data-action="recipe-groceries" data-id="${escapeHtml(recipe.id)}" data-name="${escapeHtml(recipe.name)}" data-servings="${escapeHtml(recipe.servings)}">+ Grocery list</button>`;
+}
+
+function recipeDetailBodyMarkup(recipe) {
+    const ingredients = recipe.ingredients
+        .map(recipeIngredientRowMarkup)
+        .join("");
+    const instructions =
+        recipe.instructions
+            .map(
+                (instruction, index) =>
+                    `<li><span class="recipe-step-number">${index + 1}.</span> ${escapeHtml(instruction)}</li>`,
+            )
+            .join("") || "<li>No instructions recorded.</li>";
+    return `<div class="recipe-detail"><p class="recipe-meta">${number(recipe.servings, 3)} servings · revision ${number(recipe.revision_number)} · ${escapeHtml(recipe.nutrition_status)} nutrition</p><div class="auth-actions recipe-detail-actions">${recipeDetailActionsHtml}</div>${recipeNutritionPanelMarkup(recipe)}<div class="recipe-section-head"><h3>Ingredients</h3>${recipeGroceriesButtonMarkup(recipe)}</div><ul class="food-items recipe-ingredients">${ingredients}</ul><h3 class="spacer-top">Instructions</h3><ol class="recipe-instructions">${instructions}</ol><p class="tiny spacer-top">Every ingredient includes the source snapshot used to calculate this revision. Editing creates a new revision; historical logs stay pinned.</p></div>`;
+}
+
+function renderRecipeDetail(recipe, editing = false) {
+    recipeDetailRecipe = recipe;
+    if (editing) {
+        openDialog(recipe.name, recipeDetailEditBodyMarkup(recipe));
+    } else {
+        recipeDetailActionsHtml = recipeDetailActionsMarkup(recipe);
+        openDialog(
+            recipe.name,
+            recipeDetailBodyMarkup(recipe),
+            "",
+            recipeDetailHeaderActionsMarkup(recipe),
+        );
+    }
+    // Scoped class for the D2 header treatment (title flexes, the
+    // Close box matches the Edit / Archive utilities exactly).
+    dialog.querySelector(".auth-card")?.classList.add("recipe-detail-card");
 }
 
 // The calculate response carries the recipe exactly as the server
@@ -3430,61 +3517,167 @@ function recipeHealSummary(result) {
     return "Nutrition calculated for every ingredient.";
 }
 
-// Brief R1: opening an unresolved recipe for editing performs the
+// Brief R1: entering edit on an unresolved recipe performs the
 // heal attempt once per revision, so the editor opens on calculated
 // numbers instead of blanks. The attempt is keyed by revision — a
 // healed recipe writes a new revision, and the key moves with it.
 const recipeHealAttempts = new Set();
 
-async function maybeAutoHealRecipe(recipe) {
-    const unresolved = recipeUnresolvedIngredients(recipe);
-    if (unresolved.length === 0) return;
-    const key = `${recipe.id}:${recipe.revision_id}`;
-    if (recipeHealAttempts.has(key)) return;
-    recipeHealAttempts.add(key);
-    try {
-        const result = await calculateRecipeNutrition(recipe.id);
-        toast(recipeHealSummary(result));
-        await openRecipe(recipe.id);
-        const details = dialog.querySelector(".recipe-edit-details");
-        if (details) details.open = true;
-    } catch (error) {
-        toast(
-            error.message || "Nutrition couldn't be calculated automatically.",
-            "error",
-        );
+async function enterRecipeDetailEdit() {
+    let recipe = recipeDetailRecipe;
+    if (!recipe) return;
+    if (recipeUnresolvedIngredients(recipe).length > 0) {
+        const key = `${recipe.id}:${recipe.revision_id}`;
+        if (!recipeHealAttempts.has(key)) {
+            recipeHealAttempts.add(key);
+            try {
+                const result = await calculateRecipeNutrition(recipe.id);
+                toast(recipeHealSummary(result));
+                await openRecipe(recipe.id);
+                recipe = recipeDetailRecipe;
+            } catch (error) {
+                toast(
+                    error.message ||
+                        "Nutrition couldn't be calculated automatically.",
+                    "error",
+                );
+            }
+        }
     }
-}
-
-async function openRecipe(id) {
-    const data = await api(`/api/app/recipes/${encodeURIComponent(id)}`);
-    const recipe = data.recipe;
-    const unresolved = recipeUnresolvedIngredients(recipe);
-    const ingredients = recipe.ingredients
-        .map((ingredient) => {
-            const resolved = recipeIngredientResolved(ingredient);
-            return `<li class="recipe-ingredient-row"><span class="recipe-ingredient-main"><strong>${escapeHtml(ingredient.name)}</strong>${ingredient.quantity == null ? "" : ` — ${formatRecipeQuantity(ingredient.quantity, ingredient.unit) ?? number(ingredient.quantity, 3)} ${escapeHtml(ingredient.unit || "")}`} ${sourceBadge(ingredient.source_type)}${pantryFlagMarkup(ingredient.pantry_flag)}</span>${resolved ? `<strong class="recipe-ingredient-kcal">${number(ingredient.nutrients?.calories)} kcal</strong>` : `<span class="recipe-unresolved">Not resolved</span>`}</li>`;
-        })
-        .join("");
-    const perServing =
-        recipe.nutrition_status === "unavailable"
-            ? `<p class="recipe-note">No per-serving nutrition yet — this recipe's ingredients were saved without nutrition sources. Calculate nutrition to fill it in from each ingredient's verified source.</p>`
-            : `<div class="recipe-per-serving"><span><strong>Per serving</strong></span><strong class="recipe-per-serving-values">${number(recipe.nutrition_per_serving?.calories)} kcal · P ${number(recipe.nutrition_per_serving?.protein_g, 1)}g · C ${number(recipe.nutrition_per_serving?.carbs_g, 1)}g · F ${number(recipe.nutrition_per_serving?.fat_g, 1)}g</strong></div><p class="recipe-note">${unresolved.length ? `Calculated from ${recipe.ingredients.length - unresolved.length} of ${recipe.ingredients.length} ingredients. The ${unresolved.length === 1 ? "ingredient" : "ingredients"} marked Not resolved ${unresolved.length === 1 ? "counts" : "count"} as nothing until matched.` : "Per-serving nutrition is calculated from the ingredient source snapshots pinned to this revision."}</p>`;
-    recipeDetailActionsHtml = recipeDetailActionsMarkup(recipe);
-    openDialog(
-        recipe.name,
-        `<div class="recipe-detail"><p class="recipe-meta">${number(recipe.servings, 3)} servings · revision ${number(recipe.revision_number)} · ${escapeHtml(recipe.nutrition_status)} nutrition</p>${perServing}<h3 class="spacer-top">Ingredients</h3><ul class="food-items recipe-ingredients">${ingredients}</ul><h3 class="spacer-top">Instructions</h3><ol class="recipe-instructions">${recipe.instructions.map((instruction, index) => `<li><span class="recipe-step-number">${index + 1}.</span> ${escapeHtml(instruction)}</li>`).join("") || "<li>No instructions recorded.</li>"}</ol><p class="tiny spacer-top">Every ingredient includes the source snapshot used to calculate this revision. Editing creates a new revision; historical logs stay pinned.</p><div class="auth-actions spacer-top recipe-detail-actions">${recipeDetailActionsHtml}</div><details class="spacer-top recipe-edit-details"><summary>Edit recipe revision</summary>${recipeFormMarkup("edit", recipe)}</details></div>`,
-    );
-    const editDetails = dialog.querySelector(".recipe-edit-details");
-    editDetails?.addEventListener("toggle", () => {
-        if (editDetails.open) void maybeAutoHealRecipe(recipe);
-    });
+    if (!recipe) return;
     recipeComposer.ingredients = recipe.ingredients.map(
         recipeIngredientFromRecord,
     );
     recipeComposer.options.clear();
-    renderRecipeIngredients();
-    searchRecipeFoods("");
+    recipeDetailSteps = [...(recipe.instructions || [])];
+    renderRecipeDetail(recipe, true);
+}
+
+// Edit in place (approved detail rendering): the SAME sheet's lists
+// become editable in their rows — no second form, no food search.
+// Save and Cancel ride at the top, where the read actions were.
+function recipeDetailEditBodyMarkup(recipe) {
+    return `<div class="recipe-detail"><form id="recipe-detail-edit-form" data-id="${escapeHtml(recipe.id)}" data-version="${escapeHtml(recipe.version)}"><p class="recipe-meta"><span class="editing-flag">Editing</span> · <input class="meta-input" name="servings" type="number" min="0.01" step="0.01" value="${escapeHtml(recipe.servings)}" required aria-label="Servings"> servings · saving creates revision ${number(recipe.revision_number + 1)}</p><div class="auth-actions recipe-detail-actions"><button class="button button-primary" type="submit">Save new revision</button><button class="button button-secondary" type="button" data-action="cancel-recipe-detail-edit">Cancel</button></div>${recipeNutritionPanelMarkup(recipe, true)}<h3>Ingredients</h3><div id="recipe-detail-ingredients">${recipeDetailIngredientEditRowsMarkup()}</div><div class="add-row"><button class="button button-secondary" type="button" data-action="add-recipe-detail-ingredient">Add ingredient</button></div><h3>Instructions</h3><div id="recipe-detail-steps">${recipeDetailStepEditRowsMarkup()}</div><div class="add-row"><button class="button button-secondary" type="button" data-action="add-recipe-detail-step">Add step</button></div><p class="tiny spacer-top">Editing creates a new revision; historical logs stay pinned to the revision they used.</p></form></div>`;
+}
+
+function recipeDetailIngredientEditRowsMarkup() {
+    return recipeComposer.ingredients
+        .map(
+            (ingredient, index) =>
+                `<div class="edit-row" data-recipe-detail-ingredient-index="${index}"><input class="f-name" data-detail-field="name" value="${escapeHtml(ingredient.name)}" maxlength="300" required aria-label="Ingredient name"><input class="f-qty" data-detail-field="quantity" type="number" min="0" step="any" value="${ingredient.quantity ?? ""}" aria-label="Quantity"><input class="f-unit" data-detail-field="unit" value="${escapeHtml(ingredient.unit || "")}" maxlength="80" aria-label="Unit"><button class="f-remove" type="button" data-action="remove-recipe-detail-ingredient" data-index="${index}">Remove</button></div>`,
+        )
+        .join("");
+}
+
+function recipeDetailStepEditRowsMarkup() {
+    return recipeDetailSteps
+        .map((step, index) => {
+            const rows = Math.min(4, Math.max(1, Math.ceil(step.length / 38)));
+            return `<div class="step-edit" data-recipe-detail-step-index="${index}"><span class="recipe-step-number">${index + 1}.</span><textarea data-detail-step rows="${rows}" aria-label="Step ${index + 1}">${escapeHtml(step)}</textarea><button class="f-remove" type="button" data-action="remove-recipe-detail-step" data-index="${index}">Remove</button></div>`;
+        })
+        .join("");
+}
+
+// The in-place editor syncs ONLY the fields its rows expose (name /
+// quantity / unit, and the step texts): preparation, gram weight,
+// nutrients, provider and the source snapshot ride untouched in the
+// composer state seeded from the loaded record. The shared
+// syncRecipeComposerFromDom must NOT run for this surface — it
+// reads preparation / gram-weight / nutrient inputs this editor
+// deliberately doesn't render, and would wipe them.
+function syncRecipeDetailEditFromDom() {
+    const ingredientsRoot = document.getElementById(
+        "recipe-detail-ingredients",
+    );
+    if (ingredientsRoot) {
+        ingredientsRoot
+            .querySelectorAll("[data-recipe-detail-ingredient-index]")
+            .forEach((row) => {
+                const ingredient =
+                    recipeComposer.ingredients[
+                        Number(row.dataset.recipeDetailIngredientIndex)
+                    ];
+                if (!ingredient) return;
+                const field = (name) =>
+                    row.querySelector(`[data-detail-field="${name}"]`);
+                ingredient.name = field("name")?.value || "";
+                const quantity = field("quantity")?.value;
+                ingredient.quantity =
+                    quantity === "" || quantity == null
+                        ? undefined
+                        : Number(quantity);
+                ingredient.unit = field("unit")?.value || "";
+            });
+    }
+    const stepsRoot = document.getElementById("recipe-detail-steps");
+    if (stepsRoot) {
+        recipeDetailSteps = [
+            ...stepsRoot.querySelectorAll("[data-detail-step]"),
+        ].map((area) => area.value);
+    }
+}
+
+function renderRecipeDetailEditLists() {
+    const ingredients = document.getElementById("recipe-detail-ingredients");
+    if (ingredients)
+        ingredients.innerHTML = recipeDetailIngredientEditRowsMarkup();
+    const steps = document.getElementById("recipe-detail-steps");
+    if (steps) steps.innerHTML = recipeDetailStepEditRowsMarkup();
+}
+
+// The save payload for the in-place editor: the record's own fields
+// the editor doesn't expose (name, description, times, source) ride
+// from the loaded recipe; only servings, the ingredient rows and
+// the steps come from the edit itself.
+function recipeDetailPayload(values) {
+    syncRecipeDetailEditFromDom();
+    const recipe = recipeDetailRecipe || {};
+    const rawSource = recipe.source || {};
+    return {
+        name: recipe.name,
+        servings: Number(values.servings),
+        description: recipe.description || undefined,
+        instructions: recipeDetailSteps
+            .map((step) => step.trim())
+            .filter(Boolean),
+        preparation_minutes: recipe.preparation_minutes ?? undefined,
+        cooking_minutes: recipe.cooking_minutes ?? undefined,
+        source_type:
+            rawSource.type ||
+            recipe.source_type ||
+            rawSource.source_type ||
+            "user_entered",
+        source_title:
+            rawSource.title ||
+            recipe.source_title ||
+            rawSource.source_title ||
+            undefined,
+        source_url:
+            rawSource.url ||
+            recipe.source_url ||
+            rawSource.source_url ||
+            undefined,
+        ingredients: recipeComposer.ingredients.map((ingredient) => ({
+            name: ingredient.name,
+            quantity: ingredient.quantity,
+            unit: ingredient.unit || undefined,
+            preparation: ingredient.preparation || undefined,
+            optional: ingredient.optional || undefined,
+            gram_weight: ingredient.gramWeight,
+            nutrients: ingredient.nutrients,
+            provider: ingredient.provider,
+            provider_food_id: ingredient.providerFoodId,
+            source_type: ingredient.sourceType || "user_supplied",
+            source_url: ingredient.sourceUrl,
+            confidence: ingredient.confidence,
+            source_snapshot: ingredient.sourceSnapshot,
+        })),
+    };
+}
+
+async function openRecipe(id) {
+    const data = await api(`/api/app/recipes/${encodeURIComponent(id)}`);
+    renderRecipeDetail(data.recipe, false);
 }
 
 // Log as planned (connection option #1): one tap on a meal planned
@@ -9071,6 +9264,69 @@ async function handleAction(button) {
         }
         return;
     }
+    if (action === "edit-recipe-detail") {
+        // D2 header utility: switch the open sheet to edit-in-place
+        // (with the brief R1 heal attempt first when unresolved).
+        await enterRecipeDetailEdit();
+        return;
+    }
+    if (action === "toggle-recipe-micros") {
+        // The recipe panel's own expand (Today's is id-scoped to
+        // #today-micros); same grammar, recipe scope.
+        const panel = button.parentElement?.querySelector(".macro-micros");
+        if (!panel) return;
+        const open = panel.hidden;
+        panel.hidden = !open;
+        button.setAttribute("aria-expanded", String(open));
+        const chevron = button.querySelector(".macro-expand-chev");
+        if (chevron) chevron.textContent = open ? "▴" : "▾";
+        return;
+    }
+    if (action === "cancel-recipe-detail-edit") {
+        // Discard the edit state: re-seed from the loaded record and
+        // return the sheet to its read rendering.
+        const recipe = recipeDetailRecipe;
+        if (!recipe) return;
+        recipeComposer.ingredients = recipe.ingredients.map(
+            recipeIngredientFromRecord,
+        );
+        recipeComposer.options.clear();
+        renderRecipeDetail(recipe, false);
+        return;
+    }
+    if (action === "add-recipe-detail-ingredient") {
+        syncRecipeDetailEditFromDom();
+        recipeComposer.ingredients.push({
+            name: "",
+            quantity: 1,
+            unit: "",
+            preparation: "",
+            optional: false,
+            nutrients: {},
+            sourceType: "user_supplied",
+            sourceSnapshot: { entered_by_user: true },
+        });
+        renderRecipeDetailEditLists();
+        return;
+    }
+    if (action === "remove-recipe-detail-ingredient") {
+        syncRecipeDetailEditFromDom();
+        recipeComposer.ingredients.splice(Number(button.dataset.index), 1);
+        renderRecipeDetailEditLists();
+        return;
+    }
+    if (action === "add-recipe-detail-step") {
+        syncRecipeDetailEditFromDom();
+        recipeDetailSteps.push("");
+        renderRecipeDetailEditLists();
+        return;
+    }
+    if (action === "remove-recipe-detail-step") {
+        syncRecipeDetailEditFromDom();
+        recipeDetailSteps.splice(Number(button.dataset.index), 1);
+        renderRecipeDetailEditLists();
+        return;
+    }
     if (action === "archive-recipe") {
         // S6 slice 4: archiving is this surface's destructive action, so
         // it follows slice 1's inline-confirmation pattern instead of
@@ -9079,7 +9335,9 @@ async function handleAction(button) {
         // browsers, WebViews without a JS-dialog handler). The first
         // click swaps the detail action row in place to a themed
         // confirmation; only the confirm click sends the DELETE.
-        const actions = button.closest(".recipe-detail-actions");
+        // D2: Archive itself rides in the sheet header now — the
+        // confirmation still replaces the (top) action row.
+        const actions = dialog.querySelector(".recipe-detail-actions");
         if (!actions) return;
         actions.innerHTML = `<p class="recipe-archive-note" role="alert">Archive this recipe? Historical meal logs will be preserved.</p><button class="button button-primary recipe-archive-confirm" type="button" data-action="confirm-archive-recipe" data-id="${escapeHtml(button.dataset.id)}" data-version="${escapeHtml(button.dataset.version)}">Yes, archive recipe</button><button class="button button-secondary" type="button" data-action="dismiss-archive-recipe" data-id="${escapeHtml(button.dataset.id)}" data-version="${escapeHtml(button.dataset.version)}" data-revision="${escapeHtml(button.dataset.revision || "")}">Keep recipe</button>`;
         actions
@@ -9095,7 +9353,9 @@ async function handleAction(button) {
         const actions = button.closest(".recipe-detail-actions");
         if (!actions) return;
         actions.innerHTML = recipeDetailActionsHtml;
-        actions.querySelector('[data-action="archive-recipe"]')?.focus();
+        // D2: the Archive utility lives in the sheet header, not in
+        // the row being restored.
+        dialog.querySelector('[data-action="archive-recipe"]')?.focus();
         return;
     }
     if (action === "confirm-archive-recipe") {
@@ -10096,6 +10356,7 @@ document.addEventListener("submit", async (event) => {
             "goals-form",
             "recipe-create-form",
             "recipe-edit-form",
+            "recipe-detail-edit-form",
             "recipe-log-form",
             "planned-log-form",
             "recipe-plan-form",
@@ -10572,6 +10833,32 @@ document.addEventListener("submit", async (event) => {
                         expected_version: Number(form.dataset.version),
                         idempotency_key: crypto.randomUUID(),
                         recipe: recipePayloadFromForm(values),
+                    }),
+                    keepPrevious: true,
+                },
+            );
+            toast("Recipe updated with a new revision.");
+        }
+        if (form.id === "recipe-detail-edit-form") {
+            // Edit in place: the payload is built from the loaded
+            // record plus the rows' exposed fields only (never the
+            // shared composer sync — see recipeDetailPayload).
+            const payload = recipeDetailPayload(values);
+            if (!payload.instructions.length) {
+                toast(
+                    "Add at least one instruction step before saving.",
+                    "error",
+                );
+                return;
+            }
+            await api(
+                `/api/app/recipes/${encodeURIComponent(form.dataset.id)}`,
+                {
+                    method: "PATCH",
+                    body: JSON.stringify({
+                        expected_version: Number(form.dataset.version),
+                        idempotency_key: crypto.randomUUID(),
+                        recipe: payload,
                     }),
                     keepPrevious: true,
                 },
