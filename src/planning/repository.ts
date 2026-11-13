@@ -1,6 +1,7 @@
 import type { DatabaseTransaction } from "../platform/database.js";
 import {
-    resolvePlanningRecipeNutrition,
+    logRecipeNutritionResolution,
+    resolvePlanningRecipeNutritionWithReport,
     type RecipeNutritionResolutionDependencies,
 } from "../recipe-nutrition-resolution.js";
 import { withUserDatabase } from "../platform/database.js";
@@ -513,8 +514,14 @@ export async function saveRecipe(input: {
     scope: PlanningScope;
     recipe: RecipeInput;
     idempotencyKey?: string;
+    resolutionDependencies?: RecipeNutritionResolutionDependencies;
 }): Promise<SavedRecipeResult> {
-    const resolvedRecipe = await resolvePlanningRecipeNutrition(input.recipe);
+    const { recipe: resolvedRecipe, resolution } =
+        await resolvePlanningRecipeNutritionWithReport(
+            input.recipe,
+            input.resolutionDependencies,
+        );
+    logRecipeNutritionResolution("save_recipe", resolution);
     validateRecipe(resolvedRecipe);
     return withUserDatabase(input.userId, (tx) =>
         saveRecipeInTransaction(tx, { ...input, recipe: resolvedRecipe }),
@@ -812,10 +819,12 @@ export async function updateRecipe(input: {
     if (!input.idempotencyKey.trim()) {
         throw new Error("Recipe update idempotency key is required");
     }
-    const resolvedRecipe = await resolvePlanningRecipeNutrition(
-        input.recipe,
-        input.resolutionDependencies,
-    );
+    const { recipe: resolvedRecipe, resolution } =
+        await resolvePlanningRecipeNutritionWithReport(
+            input.recipe,
+            input.resolutionDependencies,
+        );
+    logRecipeNutritionResolution("update_recipe", resolution);
     validateRecipe(resolvedRecipe);
 
     return withUserDatabase(input.userId, async (tx) => {
@@ -1822,8 +1831,14 @@ export async function saveRecipeAndPlan(input: {
     note?: string;
     groceryItems: GroceryItemInput[];
     idempotencyKey: string;
+    resolutionDependencies?: RecipeNutritionResolutionDependencies;
 }) {
-    const resolvedRecipe = await resolvePlanningRecipeNutrition(input.recipe);
+    const { recipe: resolvedRecipe, resolution } =
+        await resolvePlanningRecipeNutritionWithReport(
+            input.recipe,
+            input.resolutionDependencies,
+        );
+    logRecipeNutritionResolution("save_recipe_and_plan", resolution);
     validateRecipe(resolvedRecipe);
     return withUserDatabase(input.userId, async (tx) => {
         const recipe = await saveRecipeInTransaction(tx, {

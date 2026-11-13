@@ -1,6 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import type { FoodCandidate } from "./food-providers/types.js";
 import {
+    logRecipeNutritionResolution,
+    resolvePlanningRecipeNutrition,
     resolveRecipeNutrition,
     type RecipeNutritionPayload,
 } from "./recipe-nutrition-resolution.js";
@@ -387,5 +389,171 @@ describe("recipe nutrition resolution", () => {
         );
         expect(result.unresolved).toBe(1);
         expect(result.recipe.ingredients[0]?.nutrients).toBeUndefined();
+    });
+
+    test("resolves import-shaped typed lines through the planning save-path entry", async () => {
+        // The shape an import/manual save actually carries: plain
+        // typed ingredient lines, sourceType user_supplied, no
+        // nutrients. The save paths call
+        // resolvePlanningRecipeNutrition; common ingredients must
+        // come back resolved, not silently stored unresolved.
+        const resolved = await resolvePlanningRecipeNutrition(
+            {
+                name: "Simple Typed Recipe",
+                servings: 2,
+                ingredients: [
+                    {
+                        name: "Butter",
+                        quantity: 0.5,
+                        unit: "cup",
+                        sourceType: "user_supplied",
+                    },
+                    {
+                        name: "Onion",
+                        quantity: 1,
+                        unit: "cup",
+                        preparation: "chopped",
+                        sourceType: "user_supplied",
+                    },
+                    { name: "Salt", sourceType: "user_supplied" },
+                ],
+            },
+            {
+                foodSearch: {
+                    async search(query: string) {
+                        return {
+                            candidates: fixtures[query.toLowerCase()] ?? [],
+                            failures: [],
+                        };
+                    },
+                },
+            },
+        );
+        expect(resolved.ingredients[0]?.sourceType).toBe("usda");
+        expect(resolved.ingredients[0]?.nutrients?.calories).toBeGreaterThan(0);
+        expect(resolved.ingredients[1]?.sourceType).toBe("usda");
+        expect(resolved.ingredients[1]?.nutrients?.calories).toBeGreaterThan(0);
+        expect(resolved.ingredients[2]?.sourceType).toBe("model_estimate");
+        expect(resolved.ingredients[2]?.nutrients?.calories).toBe(0);
+    });
+
+    test("wholesale provider failure is reported as provider errors, not silent no-matches", async () => {
+        const result = await resolveRecipeNutrition(
+            {
+                name: "Outage Recipe",
+                servings: 1,
+                ingredients: [
+                    {
+                        name: "Butter",
+                        quantity: 0.5,
+                        unit: "cup",
+                        source_type: "user_supplied",
+                    },
+                    { name: "Salt", source_type: "user_supplied" },
+                ],
+            },
+            {
+                foodSearch: {
+                    async search(): Promise<never> {
+                        throw new Error("food_provider circuit_open");
+                    },
+                },
+            },
+        );
+        // The butter could not be checked at all: it stays
+        // unresolved, but the failure is accounted separately so a
+        // save path can surface/retry it. The salt never reaches
+        // the provider (unmeasured low-impact) and still resolves.
+        expect(result.unresolved).toBe(1);
+        expect(result.unresolvedPositions).toEqual([0]);
+        expect(result.providerErrorPositions).toEqual([0]);
+        expect(result.lowImpactEstimates).toBe(1);
+        expect(
+            (
+                result.recipe.ingredients[0]?.source_snapshot
+                    ?.automatic_nutrition as { reason?: string } | undefined
+            )?.reason,
+        ).toBe("provider_resolution_error");
+    });
+
+    test("provider errors are separated from genuine no-match unresolved ingredients", async () => {
+        const result = await resolveRecipeNutrition(
+            {
+                name: "Mixed Recipe",
+                servings: 1,
+                ingredients: [
+                    {
+                        name: "Butter",
+                        quantity: 0.5,
+                        unit: "cup",
+                        source_type: "user_supplied",
+                    },
+                    {
+                        name: "Onion",
+                        quantity: 1,
+                        unit: "cup",
+                        source_type: "user_supplied",
+                    },
+                ],
+            },
+            {
+                foodSearch: {
+                    async search(query: string) {
+                        if (query.toLowerCase() === "butter") {
+                            throw new Error("food_provider circuit_open");
+                        }
+                        return { candidates: [], failures: [] };
+                    },
+                },
+            },
+        );
+        expect(result.unresolved).toBe(2);
+        expect(result.unresolvedPositions).toEqual([0, 1]);
+        expect(result.providerErrorPositions).toEqual([0]);
+        expect(
+            (
+                result.recipe.ingredients[1]?.source_snapshot
+                    ?.automatic_nutrition as { reason?: string } | undefined
+            )?.reason,
+        ).toBe("no_defensible_provider_match");
+    });
+
+    test("the save-path log warns only when the provider failed", async () => {
+        const info = spyOn(console, "info").mockImplementation(() => {});
+        const warn = spyOn(console, "warn").mockImplementation(() => {});
+        try {
+            const base = {
+                recipe: potPie,
+                providerMatches: 8,
+                lowImpactEstimates: 2,
+                unresolved: 0,
+                estimatedPositions: [0, 1],
+                unresolvedPositions: [] as number[],
+                providerErrorPositions: [] as number[],
+            };
+            logRecipeNutritionResolution("save_recipe", base);
+            expect(info).toHaveBeenCalledTimes(1);
+            expect(String(info.mock.calls[0]?.[0])).toContain(
+                "provider_errors=0",
+            );
+            expect(warn).not.toHaveBeenCalled();
+
+            logRecipeNutritionResolution("save_recipe", {
+                ...base,
+                unresolved: 2,
+                unresolvedPositions: [1, 3],
+                providerErrorPositions: [1, 3],
+            });
+            expect(warn).toHaveBeenCalledTimes(1);
+            expect(String(warn.mock.calls[0]?.[0])).toContain(
+                "provider_failure",
+            );
+            expect(String(warn.mock.calls[0]?.[0])).toContain(
+                "unresolved_due_to_provider_error=2",
+            );
+        } finally {
+            info.mockRestore();
+            warn.mockRestore();
+        }
     });
 });
