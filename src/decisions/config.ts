@@ -38,6 +38,10 @@ export interface DecisionsConfig {
     deciderTimeoutMs: number;
     gateEnabled: boolean;
     deciderEnabled: boolean;
+    /** B1 receipt correlation seat (additive; optional so existing
+     * config literals in sibling seats' tests stay valid — absent
+     * means the seat is off). */
+    receiptEnabled?: boolean;
 }
 
 type FlagState = "on" | "off" | "unset";
@@ -118,6 +122,10 @@ export function decisionsConfig(
             master,
             flagState(env.MUNCH_JEV_DECIDER_ENABLED),
         ),
+        receiptEnabled: seatEnabled(
+            master,
+            flagState(env.MUNCH_JEV_RECEIPT_ENABLED),
+        ),
     };
 }
 
@@ -132,6 +140,11 @@ export function decisionsConfig(
  */
 export interface DecisionModelThresholds {
     gateFoodMin: number;
+    /** B1: minimum Jev pick probability at or above which a receipt
+     * line's correlation pick is attached to the line. Calibrated
+     * per model from the B1 eval (see receipt.ts header); optional
+     * so threshold rows added for other seats stay valid. */
+    receiptPickMin?: number;
 }
 
 export const DECISION_MODEL_THRESHOLDS: Record<
@@ -142,15 +155,15 @@ export const DECISION_MODEL_THRESHOLDS: Record<
     // 0.98; headline negatives median 0.01 with two warm outliers that
     // still pass by design (a menu at 0.38, the receipt fixture at 0.60
     // — it routes to the receipt flow). 0 false rejects at 0.10.
-    "typesafe/jev-1.14": { gateFoodMin: 0.1 },
+    "typesafe/jev-1.14": { gateFoodMin: 0.1, receiptPickMin: 0.5 },
     // Bake-off: positives min 0.90 / median 0.99; negatives ALL ≤ 0.011
     // — the widest separation of the three, so 0.10 transfers with the
     // most headroom. 0/30 false rejects, 8/8 negatives rejected.
-    "perplexity/pplx-decider-v1.2": { gateFoodMin: 0.1 },
+    "perplexity/pplx-decider-v1.2": { gateFoodMin: 0.1, receiptPickMin: 0.5 },
     // Bake-off: positives min 0.84 / median 0.99; hottest negative 0.071
     // — 0.10 sits above it, but with the thinnest margin of the three;
     // watch the production logs before ever lowering this.
-    "liquid/d1-ultra": { gateFoodMin: 0.1 },
+    "liquid/d1-ultra": { gateFoodMin: 0.1, receiptPickMin: 0.5 },
 };
 
 /** The brief's standard gate threshold for any unlisted slug. */
@@ -159,5 +172,15 @@ export const DEFAULT_GATE_FOOD_MIN = 0.1;
 export function gateFoodThresholdForModel(model: string): number {
     return (
         DECISION_MODEL_THRESHOLDS[model]?.gateFoodMin ?? DEFAULT_GATE_FOOD_MIN
+    );
+}
+
+/** The standard receipt-pick threshold for any unlisted slug. */
+export const DEFAULT_RECEIPT_PICK_MIN = 0.5;
+
+export function receiptPickThresholdForModel(model: string): number {
+    return (
+        DECISION_MODEL_THRESHOLDS[model]?.receiptPickMin ??
+        DEFAULT_RECEIPT_PICK_MIN
     );
 }

@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { inventoryVisionConfig, previewInventoryImage } from "./vision.js";
+import type { DecisionsConfig } from "../decisions/config.js";
+import type { FoodCandidate } from "../food-providers/types.js";
 
 const config = {
     apiKey: "test",
@@ -465,5 +467,194 @@ describe("fallback drill: receipt ScaleDown labels-only fallback", () => {
                 MUNCH_RECEIPT_FALLBACK_MODEL: "",
             })?.receiptFallbackModel,
         ).toBeNull();
+    });
+});
+
+describe("B1 receipt correlation wiring (seat in vision preview)", () => {
+    const decisionsOn: DecisionsConfig = {
+        apiKey: "test-key",
+        apiUrl: "https://decisions.test/api",
+        models: ["typesafe/jev-1.14"],
+        gateTimeoutMs: 50,
+        deciderTimeoutMs: 50,
+        gateEnabled: false,
+        deciderEnabled: false,
+        receiptEnabled: true,
+    };
+
+    function extractionResponse() {
+        return new Response(
+            JSON.stringify({
+                choices: [
+                    {
+                        message: {
+                            content: JSON.stringify({
+                                lines: [
+                                    {
+                                        raw_label: "MLK GL 1GAL",
+                                        name: "Milk, 1 gallon",
+                                        quantity: 1,
+                                        unit: "gallon",
+                                        is_food: true,
+                                        confidence: 0.99,
+                                        location: "fridge",
+                                    },
+                                    {
+                                        raw_label: "EGGS 12CT",
+                                        name: "Eggs, 12 count",
+                                        quantity: 400,
+                                        unit: "count",
+                                        is_food: true,
+                                        confidence: 0.97,
+                                        location: "fridge",
+                                    },
+                                ],
+                                notes: [],
+                            }),
+                        },
+                    },
+                ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+        );
+    }
+
+    function candidate(providerFoodId: string, name: string): FoodCandidate {
+        return {
+            provider: "usda",
+            providerFoodId,
+            name,
+            dataKind: "generic",
+            portions: [],
+            attribution: { label: "USDA" },
+            confidence: 0.9,
+        };
+    }
+
+    const receiptSearch = async (query: string) => ({
+        candidates: [
+            candidate(
+                query.includes("Milk") ? "111" : "333",
+                query.includes("Milk") ? "Milk, whole" : "Eggs, large",
+            ),
+        ],
+    });
+
+    function decisionsOk() {
+        return new Response(
+            JSON.stringify({
+                answers: {
+                    q0: {
+                        type: "choice",
+                        choice: "c0",
+                        probabilities: { c0: 0.92, none: 0.08 },
+                    },
+                    p0: { type: "noul", noul: 0.95 },
+                    q1: {
+                        type: "choice",
+                        choice: "c0",
+                        probabilities: { c0: 0.9, none: 0.1 },
+                    },
+                    // 400 eggs is implausible: low plausibility must
+                    // pull this line into review despite the good pick.
+                    p1: { type: "noul", noul: 0.3 },
+                },
+                usage: { cost: 0.00003 },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+        );
+    }
+
+    const receiptInput = {
+        mode: "receipt" as const,
+        mimeType: "image/jpeg",
+        bytes: new Uint8Array([1]),
+    };
+
+    test("seat ON: Jev pick probability replaces extraction confidence as the review trigger; a confident pick attaches its provider identity", async () => {
+        const preview = await previewInventoryImage(receiptInput, config, {
+            fetcher: async () => extractionResponse(),
+            decisionsConfig: decisionsOn,
+            decisionsFetcher: async () => decisionsOk(),
+            receiptSearch,
+        });
+        expect(preview.lines[0]?.confidence).toBe(0.92);
+        expect(preview.lines[0]?.food_provider).toBe("usda");
+        expect(preview.lines[0]?.provider_food_id).toBe("111");
+        // Plausibility discount: min(pick 0.90, plausibility 0.30).
+        expect(preview.lines[1]?.confidence).toBe(0.3);
+        expect(preview.lines[1]?.provider_food_id).toBe("333");
+    });
+
+    test("seat OFF: no searches, no Decisions calls, preview byte-identical to extraction", async () => {
+        let searches = 0;
+        let decisionsCalls = 0;
+        const preview = await previewInventoryImage(receiptInput, config, {
+            fetcher: async () => extractionResponse(),
+            decisionsConfig: { ...decisionsOn, receiptEnabled: false },
+            decisionsFetcher: async () => {
+                decisionsCalls += 1;
+                throw new Error("must not be called");
+            },
+            receiptSearch: async () => {
+                searches += 1;
+                throw new Error("must not be called");
+            },
+        });
+        expect(searches).toBe(0);
+        expect(decisionsCalls).toBe(0);
+        expect(preview.lines[0]?.confidence).toBe(0.99);
+        expect(preview.lines[0]?.provider_food_id).toBeUndefined();
+    });
+
+    test("DRILL — Decisions chain down: preview falls back to extraction exactly (fail-open)", async () => {
+        const preview = await previewInventoryImage(receiptInput, config, {
+            fetcher: async () => extractionResponse(),
+            decisionsConfig: decisionsOn,
+            decisionsFetcher: async () =>
+                new Response(JSON.stringify({ error: { message: "down" } }), {
+                    status: 500,
+                }),
+            receiptSearch,
+        });
+        expect(preview.lines[0]?.confidence).toBe(0.99);
+        expect(preview.lines[1]?.confidence).toBe(0.97);
+        expect(preview.lines[0]?.provider_food_id).toBeUndefined();
+    });
+
+    test("DRILL — search down for every line: preview unchanged, no Decisions call", async () => {
+        let decisionsCalls = 0;
+        const preview = await previewInventoryImage(receiptInput, config, {
+            fetcher: async () => extractionResponse(),
+            decisionsConfig: decisionsOn,
+            decisionsFetcher: async () => {
+                decisionsCalls += 1;
+                return decisionsOk();
+            },
+            receiptSearch: async () => {
+                throw new Error("search down");
+            },
+        });
+        expect(decisionsCalls).toBe(0);
+        expect(preview.lines[0]?.confidence).toBe(0.99);
+    });
+
+    test("pantry-photo mode never correlates, even with the seat on", async () => {
+        let searches = 0;
+        const preview = await previewInventoryImage(
+            { ...receiptInput, mode: "pantry_photo" as const },
+            config,
+            {
+                fetcher: async () => extractionResponse(),
+                decisionsConfig: decisionsOn,
+                decisionsFetcher: async () => decisionsOk(),
+                receiptSearch: async () => {
+                    searches += 1;
+                    return { candidates: [] };
+                },
+            },
+        );
+        expect(searches).toBe(0);
+        expect(preview.lines[0]?.confidence).toBe(0.99);
     });
 });

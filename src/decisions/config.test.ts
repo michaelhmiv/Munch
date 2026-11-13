@@ -2,9 +2,11 @@ import { describe, expect, test } from "bun:test";
 import {
     decisionsConfig,
     gateFoodThresholdForModel,
+    receiptPickThresholdForModel,
     DEFAULT_DECIDER_FALLBACK_MODELS,
     DEFAULT_DECIDER_MODEL,
     DEFAULT_GATE_FOOD_MIN,
+    DEFAULT_RECEIPT_PICK_MIN,
 } from "./config.js";
 
 const KEY = { OPENROUTER_API_KEY: "test-key" };
@@ -114,6 +116,52 @@ describe("decisionsConfig timeouts (brief defaults 1500 / 2000)", () => {
             MUNCH_JEV_GATE_TIMEOUT_MS: "5",
         });
         expect(floored!.gateTimeoutMs).toBe(100);
+    });
+});
+
+describe("decisionsConfig B1 receipt flag (MUNCH_JEV_RECEIPT_ENABLED)", () => {
+    test("defaults: master unset -> receipt seat OFF", () => {
+        expect(decisionsConfig({ ...KEY })!.receiptEnabled).toBe(false);
+    });
+
+    test("master on enables the receipt seat", () => {
+        const config = decisionsConfig({ ...KEY, MUNCH_JEV_ENABLED: "true" });
+        expect(config!.receiptEnabled).toBe(true);
+    });
+
+    test("the receipt seat enables independently of the master", () => {
+        const config = decisionsConfig({
+            ...KEY,
+            MUNCH_JEV_RECEIPT_ENABLED: "true",
+        });
+        expect(config!.receiptEnabled).toBe(true);
+        expect(config!.gateEnabled).toBe(false);
+        expect(config!.deciderEnabled).toBe(false);
+    });
+
+    test("an explicit receipt off wins over the master (per-seat kill)", () => {
+        const config = decisionsConfig({
+            ...KEY,
+            MUNCH_JEV_ENABLED: "true",
+            MUNCH_JEV_RECEIPT_ENABLED: "false",
+        });
+        expect(config!.receiptEnabled).toBe(false);
+        expect(config!.gateEnabled).toBe(true);
+    });
+});
+
+describe("per-model receipt pick thresholds (calibrated, never borrowed)", () => {
+    test("every designated model carries a measured receipt threshold", () => {
+        expect(receiptPickThresholdForModel("typesafe/jev-1.14")).toBe(0.5);
+        expect(
+            receiptPickThresholdForModel("perplexity/pplx-decider-v1.2"),
+        ).toBe(0.5);
+    });
+
+    test("an unlisted slug falls back to the standard threshold", () => {
+        expect(receiptPickThresholdForModel("example/unknown-1")).toBe(
+            DEFAULT_RECEIPT_PICK_MIN,
+        );
     });
 });
 

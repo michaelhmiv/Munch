@@ -4,6 +4,14 @@ import {
     providerErrorDetail,
     websiteAiModel,
 } from "../website-ai-config.js";
+import { decisionsConfig, type DecisionsConfig } from "../decisions/config.js";
+import type { DecisionsFetcher } from "../decisions/client.js";
+import {
+    correlateReceiptLines,
+    type ReceiptCorrelationRequest,
+} from "../decisions/receipt.js";
+import { encodeFoodCandidateId } from "../food-providers/service.js";
+import type { FoodCandidate } from "../food-providers/types.js";
 
 const locationSchema = z.preprocess(
     (value) => {
@@ -67,6 +75,22 @@ const previewSchema = z
     .strict();
 
 export type InventoryVisionPreview = z.infer<typeof previewSchema>;
+
+/** A preview line after B1 receipt correlation: the extraction
+ * fields, plus the provider identity of Jev's confirmed pick when
+ * the seat ran and attached one. Absent fields = the seat did not
+ * run or made no confident pick (today's by-name behaviour). */
+export type InventoryVisionPreviewLine =
+    InventoryVisionPreview["lines"][number] & {
+        food_provider?: string | null;
+        provider_food_id?: string | null;
+    };
+
+export type CorrelatedInventoryVisionPreview = Omit<
+    InventoryVisionPreview,
+    "lines"
+> & { lines: InventoryVisionPreviewLine[] };
+
 export type InventoryVisionMode = "receipt" | "pantry_photo";
 
 /**
@@ -155,6 +179,14 @@ export interface InventoryVisionDependencies {
         input: RequestInfo | URL,
         init?: RequestInit,
     ) => Promise<Response>;
+    /** B1 receipt-correlation seams (tests/drills). Production uses
+     * the Decisions client chain and the shared food-search service. */
+    decisionsFetcher?: DecisionsFetcher;
+    decisionsConfig?: DecisionsConfig | null;
+    receiptSearch?: (
+        query: string,
+        limit: number,
+    ) => Promise<{ candidates: FoodCandidate[] }>;
 }
 
 function boundedInteger(
@@ -282,7 +314,7 @@ export async function previewInventoryImage(
     },
     config = inventoryVisionConfig(),
     dependencies: InventoryVisionDependencies = {},
-): Promise<InventoryVisionPreview> {
+): Promise<CorrelatedInventoryVisionPreview> {
     if (!config) throw new Error("Pantry vision is not configured");
     // Request validation stays ahead of the fallback: a malformed
     // image is not a provider outage and must never engage ScaleDown.
@@ -296,7 +328,13 @@ export async function previewInventoryImage(
         throw new Error("Pantry image must be between 1 byte and 8 MB");
     }
     try {
-        return await previewViaChatModel(input, config, dependencies);
+        const preview = await previewViaChatModel(input, config, dependencies);
+        // B1 receipt correlation runs on the primary extraction
+        // only. The labels-only ScaleDown fallback keeps its
+        // degraded contract — every line in review, confidence 0 —
+        // untouched by the seat.
+        if (input.mode !== "receipt") return preview;
+        return await correlateReceiptPreview(preview, dependencies);
     } catch (chatError) {
         const fallbackModel = config.receiptFallbackModel?.trim();
         if (input.mode !== "receipt" || !fallbackModel) throw chatError;
@@ -320,6 +358,109 @@ export async function previewInventoryImage(
             throw chatError;
         }
     }
+}
+
+/**
+ * B1 receipt correlation (audit §2 seat B1; brief seat S3): for
+ * each food line, the production food search builds the candidate
+ * shortlist and the Decisions seat (src/decisions/receipt.ts)
+ * picks from it. Jev's pick probability REPLACES the extraction
+ * self-confidence on the line — the value the review UI and the
+ * reconcile path already use as the review trigger — discounted by
+ * the plausibility probability when that answer is low, so a line
+ * whose quantity/unit Jev finds implausible also lands in review.
+ * A confident pick attaches its provider identity to the line.
+ *
+ * FAIL-OPEN: seat off / unconfigured / chain down / search down
+ * all return the preview exactly as extraction produced it. Every
+ * line already lands in human review either way.
+ */
+const RECEIPT_CORRELATION_SHORTLIST_LIMIT = 8;
+
+async function correlateReceiptPreview(
+    preview: InventoryVisionPreview,
+    dependencies: InventoryVisionDependencies,
+): Promise<CorrelatedInventoryVisionPreview> {
+    // Seat gate FIRST: with B1 off or unconfigured the preview is
+    // byte-identical to extraction — no searches, no model calls.
+    const resolvedDecisionsConfig =
+        dependencies.decisionsConfig !== undefined
+            ? dependencies.decisionsConfig
+            : decisionsConfig();
+    if (!resolvedDecisionsConfig?.receiptEnabled) return preview;
+    const foodIndexes = preview.lines
+        .map((line, index) => (line.is_food ? index : -1))
+        .filter((index) => index >= 0);
+    if (foodIndexes.length === 0) return preview;
+    const search =
+        dependencies.receiptSearch ??
+        (async (query: string, limit: number) => {
+            const { getFoodSearchService } =
+                await import("../food-providers/service.js");
+            return getFoodSearchService().search(query, limit);
+        });
+    const searches = await Promise.all(
+        foodIndexes.map(async (index) => {
+            const line = preview.lines[index]!;
+            try {
+                const result = await search(
+                    line.name,
+                    RECEIPT_CORRELATION_SHORTLIST_LIMIT,
+                );
+                return { index, candidates: result.candidates };
+            } catch {
+                // A failed search leaves this line uncorrelated —
+                // the seat fails open per line, never blocks the
+                // preview on a provider outage.
+                return { index, candidates: [] as FoodCandidate[] };
+            }
+        }),
+    );
+    const requests: ReceiptCorrelationRequest[] = searches
+        .filter(({ candidates }) => candidates.length > 0)
+        .map(({ index, candidates }) => {
+            const line = preview.lines[index]!;
+            return {
+                key: `line:${index}`,
+                rawLabel: line.raw_label,
+                itemName: line.name,
+                quantity: line.quantity,
+                unit: line.unit,
+                candidates: candidates.map((candidate) => ({
+                    candidateId: encodeFoodCandidateId(candidate),
+                    name: candidate.name,
+                    brand: candidate.brand ?? null,
+                    provider: candidate.provider,
+                    providerFoodId: candidate.providerFoodId,
+                })),
+            };
+        });
+    if (requests.length === 0) return preview;
+    const correlations = await correlateReceiptLines(requests, {
+        fetcher: dependencies.decisionsFetcher,
+        config: resolvedDecisionsConfig,
+    });
+    if (!correlations) return preview;
+    const lines: InventoryVisionPreviewLine[] = preview.lines.map(
+        (line, index) => {
+            const correlation = correlations.get(`line:${index}`);
+            if (!correlation) return line;
+            const effective =
+                correlation.plausibilityProbability != null
+                    ? Math.min(
+                          correlation.pickProbability,
+                          correlation.plausibilityProbability,
+                      )
+                    : correlation.pickProbability;
+            return {
+                ...line,
+                confidence: Math.min(1, Math.max(0, effective)),
+                food_provider: correlation.provider,
+                provider_food_id: correlation.providerFoodId,
+            };
+        },
+    );
+    return { ...preview, lines };
 }
 
 async function previewViaChatModel(

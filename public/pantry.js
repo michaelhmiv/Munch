@@ -515,6 +515,16 @@ applyReviewEl.addEventListener("click", async () => {
                 name: line.name,
                 quantity: line.quantity,
                 unit: line.unit,
+                // B1 receipt correlation: when the Jev seat ran, the
+                // line's confidence is its pick probability (the
+                // review trigger) and a confident pick carries its
+                // provider identity into the reconcile.
+                ...(line.food_provider
+                    ? { food_provider: line.food_provider }
+                    : {}),
+                ...(line.provider_food_id
+                    ? { provider_food_id: line.provider_food_id }
+                    : {}),
                 confidence: line.confidence,
                 is_food: line.is_food,
                 confirmed: checked.has(index),
