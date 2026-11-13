@@ -244,3 +244,47 @@ describe("callDecisionsWithFallback chain discipline", () => {
         expect(calls[0]!.headers["TypeSafe-Danger-Zone-Images"]).toBe("true");
     });
 });
+
+describe("per-seat model order override (options.models)", () => {
+    test("an explicit models list replaces the config chain order for that call", async () => {
+        const calls: RecordedCall[] = [];
+        const fetcher = scriptedFetcher([() => okAnswers({})], calls);
+        const result = await callDecisionsWithFallback(testConfig(), {
+            ...baseOptions,
+            models: ["perplexity/pplx-decider-v1.2", "typesafe/jev-1.14"],
+            fetcher,
+        });
+        expect(calls.map((call) => call.model)).toEqual([
+            "perplexity/pplx-decider-v1.2",
+        ]);
+        expect(result.model).toBe("perplexity/pplx-decider-v1.2");
+    });
+
+    test("fallback walks the override order, not the config order", async () => {
+        const calls: RecordedCall[] = [];
+        const fetcher = scriptedFetcher(
+            [() => httpError(404, "No endpoints found"), () => okAnswers({})],
+            calls,
+        );
+        const result = await callDecisionsWithFallback(testConfig(), {
+            ...baseOptions,
+            models: ["perplexity/pplx-decider-v1.2", "typesafe/jev-1.14"],
+            fetcher,
+        });
+        expect(calls.map((call) => call.model)).toEqual([
+            "perplexity/pplx-decider-v1.2",
+            "typesafe/jev-1.14",
+        ]);
+        expect(result.model).toBe("typesafe/jev-1.14");
+    });
+
+    test("without an override the config chain order stands (every other seat)", async () => {
+        const calls: RecordedCall[] = [];
+        const fetcher = scriptedFetcher([() => okAnswers({})], calls);
+        await callDecisionsWithFallback(testConfig(), {
+            ...baseOptions,
+            fetcher,
+        });
+        expect(calls[0]!.model).toBe("typesafe/jev-1.14");
+    });
+});

@@ -15,6 +15,8 @@ import {
     DEFAULT_GATE_FOOD_MIN,
     DEFAULT_OUTLIER_MISTAKE_MIN,
     DEFAULT_SHORTFALL_CONTRADICTION_MIN,
+    PLAUSIBILITY_LEAD_MODEL,
+    plausibilityModelOrder,
 } from "./config.js";
 
 const KEY = { OPENROUTER_API_KEY: "test-key" };
@@ -412,5 +414,47 @@ describe("decisionsConfig A1 plausibility seat flag", () => {
             decisionsConfig({ ...KEY, MUNCH_JEV_PLAUSIBILITY_TIMEOUT_MS: "5" })!
                 .plausibilityTimeoutMs,
         ).toBe(100);
+    });
+});
+
+describe("A1 plausibility lane order (Perplexity-led; Michael, 2026-11-13)", () => {
+    test("the lead model is the bake-off winner", () => {
+        expect(PLAUSIBILITY_LEAD_MODEL).toBe("perplexity/pplx-decider-v1.2");
+    });
+
+    test("decisionsConfig derives the lane: lead first, shared chain otherwise untouched", () => {
+        const config = decisionsConfig({ ...KEY });
+        expect(config!.models).toEqual([
+            "typesafe/jev-1.14",
+            "perplexity/pplx-decider-v1.2",
+        ]);
+        expect(config!.plausibilityModels).toEqual([
+            "perplexity/pplx-decider-v1.2",
+            "typesafe/jev-1.14",
+        ]);
+    });
+
+    test("the lane keeps the rest of the configured chain in order", () => {
+        const config = decisionsConfig({
+            ...KEY,
+            MUNCH_DECIDER_FALLBACK_MODELS:
+                "perplexity/pplx-decider-v1.2, example/third-1",
+        });
+        expect(config!.plausibilityModels).toEqual([
+            "perplexity/pplx-decider-v1.2",
+            "typesafe/jev-1.14",
+            "example/third-1",
+        ]);
+    });
+
+    test("a chain without the lead keeps its configured order", () => {
+        expect(
+            plausibilityModelOrder(["typesafe/jev-1.14", "example/other-1"]),
+        ).toEqual(["typesafe/jev-1.14", "example/other-1"]);
+        const config = decisionsConfig({
+            ...KEY,
+            MUNCH_DECIDER_FALLBACK_MODELS: "",
+        });
+        expect(config!.plausibilityModels).toEqual(["typesafe/jev-1.14"]);
     });
 });

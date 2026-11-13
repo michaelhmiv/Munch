@@ -9,7 +9,10 @@
  * (e.g. 404 "No endpoints found" — the inception/mercury-decide shape
  * from the bake-off) moves to the next model immediately. When the whole
  * chain is exhausted the caller falls back to today's behaviour — the
- * client itself never invents a selection.
+ * client itself never invents a selection. The ONE sanctioned
+ * deviation from `config.models` is a per-seat lane passed as
+ * `options.models` (the plausibility seat's Perplexity-led order,
+ * Michael's ruling 2026-11-13); the walk discipline is identical.
  *
  * Wire shape (productionized from the harness adapter on PR #235 and
  * the gate probe on scripts/photo-jev-probe.ts — same body, same
@@ -44,6 +47,12 @@ export interface DecisionsCallOptions {
     /** True for image-bearing requests (S1 gate). */
     includeImageHeader: boolean;
     fetcher?: DecisionsFetcher;
+    /** Per-seat lane override: when present, the chain walks THIS
+     * order instead of `config.models`. Only the plausibility seat
+     * passes one (its Perplexity-led lane, config.ts
+     * `plausibilityModelOrder`); every other seat omits it and
+     * keeps the shared chain order. */
+    models?: string[];
 }
 
 export interface DecisionsCallResult {
@@ -162,7 +171,7 @@ export async function callDecisionsWithFallback(
     const fetcher = options.fetcher ?? fetch;
     const startedAt = Date.now();
     const attempts: DecisionsAttempt[] = [];
-    const models = config.models;
+    const models = options.models ?? config.models;
     for (let modelIndex = 0; modelIndex < models.length; modelIndex += 1) {
         const model = models[modelIndex]!;
         const isLastModel = modelIndex === models.length - 1;

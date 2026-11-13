@@ -23,9 +23,18 @@
  * an ingredient is `confirmed_implausible` only when the answering
  * model's p(implausible) meets ITS OWN calibrated threshold
  * (config.ts, never borrowed across models).
+ *
+ * LANE (Michael's ruling, 2026-11-13): this seat is Perplexity-led.
+ * `perplexity/pplx-decider-v1.2` answers first; Jev is engaged only
+ * when Perplexity is unavailable (the bake-off: Perplexity
+ * separated perfectly on both fixture sets with zero false
+ * accusations; Jev false-accused honey and a correctly resolved
+ * milk). The lane rides the call as a per-seat `models` override,
+ * so every other Decisions seat keeps the shared Jev-led chain.
  */
 import { callDecisionsWithFallback, type DecisionsFetcher } from "./client.js";
 import {
+    plausibilityModelOrder,
     plausibilityThresholdForModel,
     type DecisionsConfig,
 } from "./config.js";
@@ -229,6 +238,9 @@ export async function reviewRecipePlausibility(
                     : buildPlausibilityState(chunk);
             const result = await callDecisionsWithFallback(config, {
                 seat: "plausibility",
+                models:
+                    config.plausibilityModels ??
+                    plausibilityModelOrder(config.models),
                 state,
                 questions: buildPlausibilityQuestions(chunk),
                 timeoutMs: config.plausibilityTimeoutMs,
