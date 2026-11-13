@@ -1182,7 +1182,7 @@ export async function logRecipe(input: {
     // transaction under an advisory lock keyed on the planned meal,
     // so a second tap — same idempotency key or a fresh one — returns
     // the existing log as deduplicated instead of a second meal. The
-    // partial unique index in migration 0043 backstops every other
+    // partial unique index in migration 0044 backstops every other
     // insert path.
     const outcome = await withUserDatabase(input.userId, async (tx) => {
         await tx`
