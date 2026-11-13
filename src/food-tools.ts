@@ -53,6 +53,14 @@ const candidateSummarySchema = z.object({
             fat_g: z.number().nullable(),
         })
         .nullable(),
+    portions: z.array(
+        z.object({
+            id: z.string(),
+            label: z.string(),
+            gram_weight: z.number().nullable(),
+            calories: z.number().nullable(),
+        }),
+    ),
 });
 
 const providerFailureSchema = z.object({

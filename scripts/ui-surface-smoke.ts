@@ -299,7 +299,8 @@ for (const route of [
 for (const behavior of [
     'data-action="add-meal"',
     'data-action="select-meal-option"',
-    'data-action="lookup-food-barcode"',
+    'data-action="scan-food-barcode"',
+    'data-action="open-composer-breakdown"',
     "mealComposerPayload",
     'api("/api/app/meals"',
     "meal-draft-create-form",
@@ -374,6 +375,40 @@ if (!appRouterSource.includes("serializeMealDraftForApp")) {
 }
 if (appSource.includes("Continue this draft in ChatGPT")) {
     throw new Error("Pending drafts still redirect users to ChatGPT");
+}
+
+// Composer wave C1–C6 (approved 2026-11-11): the meal composer has
+// no typed barcode field and no Look up button (the scanner icon
+// replaced them), no leading Meal name field, and Find foods
+// precedes the added-foods list in the template — which is DOM
+// order, since the dialog renders the template verbatim. The meal
+// draft editor's own barcode field is a different surface and is
+// not covered by these pins.
+for (const retired of [
+    'id="meal-food-barcode"',
+    'data-action="lookup-food-barcode"',
+    "<span>Meal name</span>",
+]) {
+    if (appSource.includes(retired)) {
+        throw new Error(
+            `Meal composer still carries retired markup: ${retired}`,
+        );
+    }
+}
+const composerStart = appSource.indexOf("function openMealComposer");
+const composerChunk = appSource.slice(composerStart, composerStart + 4200);
+const findFoodsAt = composerChunk.indexOf("<h3>Find foods</h3>");
+const selectedAt = composerChunk.indexOf('id="meal-selected-items"');
+const stripAt = composerChunk.indexOf('class="meal-composer-strip"');
+if (findFoodsAt < 0 || selectedAt < 0 || findFoodsAt > selectedAt) {
+    throw new Error(
+        "Meal composer order regressed: Find foods must precede the added-foods list",
+    );
+}
+if (stripAt < 0 || stripAt > findFoodsAt) {
+    throw new Error(
+        "Meal composer order regressed: the totals strip must pin above Find foods",
+    );
 }
 
 const mealPatchSource = await Bun.file("public/app-patches.js").text();

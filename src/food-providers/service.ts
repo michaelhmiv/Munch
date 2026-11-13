@@ -11,7 +11,12 @@ import {
     FoodProviderRegistry,
     type AggregatedFoodSearchResult,
 } from "./registry.js";
-import { naturalPortion, per100gPortion } from "./portions.js";
+import {
+    deduplicatePortions,
+    naturalPortion,
+    per100gPortion,
+    sortPortionsNaturalFirst,
+} from "./portions.js";
 import { rankCandidates } from "./ranking.js";
 import type { FoodCandidate, FoodProviderName } from "./types.js";
 import { UsdaFoodDataCentralProvider } from "./usda.js";
@@ -33,6 +38,16 @@ export interface FoodCandidateSummary {
         carbs_g: number | null;
         fat_g: number | null;
     } | null;
+    // Composer wave C3 (approved 2026-11-11): result rows list every
+    // portion/unit the food can be logged in, not just the headline —
+    // the full set, deduplicated, in the same natural-first order the
+    // portion picker uses.
+    portions: {
+        id: string;
+        label: string;
+        gram_weight: number | null;
+        calories: number | null;
+    }[];
 }
 
 const PROVIDER_SEARCH_TIMEOUT_MS = 2_500;
@@ -92,6 +107,14 @@ export function summarizeFoodCandidate(
                   fat_g: portion.nutrients.fat_g ?? null,
               }
             : null,
+        portions: deduplicatePortions(
+            sortPortionsNaturalFirst(candidate.portions),
+        ).map((entry) => ({
+            id: entry.id,
+            label: entry.label,
+            gram_weight: entry.gramWeight ?? null,
+            calories: entry.nutrients.calories ?? null,
+        })),
     };
 }
 

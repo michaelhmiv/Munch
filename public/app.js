@@ -6770,6 +6770,7 @@ function renderMealComposerItems() {
     if (!root) return;
     if (mealComposer.items.length === 0) {
         root.innerHTML = `<div class="empty-state"><div><strong>No foods selected yet.</strong><p>Search for a food, choose a recent item, or add a manual food.</p></div></div>`;
+        updateMealComposerStrip();
         return;
     }
     root.innerHTML = mealComposer.items
@@ -6782,6 +6783,138 @@ function renderMealComposerItems() {
             return `<article class="meal-composer-item" data-composer-index="${index}"><div class="meal-composer-item-head"><div><strong>${item.kind === "recent" ? escapeHtml(item.name) : "Manual food"}</strong><small>${sourceBadge(item.sourceType || "user_supplied")} ${item.kind === "recent" ? (item.fromUsuals ? "From your usuals" : "From recent meal history") : "Enter the nutrition used"}</small></div><button class="button button-quiet button-small" type="button" data-action="remove-meal-item" data-index="${index}">Remove</button></div><div class="meal-composer-grid"><label class="field"><span>Name</span><input data-composer-field="name" value="${escapeHtml(item.name || "")}" required /></label><label class="field"><span>Portion</span><input data-composer-field="portion_label" value="${escapeHtml(item.portionLabel || "")}" placeholder="1 bowl, 1 slice…" /></label><label class="field"><span>Quantity</span><input data-composer-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity || 1)}" /></label></div><div class="meal-composer-nutrients">${["calories", "protein_g", "carbs_g", "fat_g", "fiber_g", "sugar_g", "sodium_mg"].map((key) => `<label class="field"><span>${escapeHtml(key.replaceAll("_g", " (g)").replace("sodium_mg", "sodium (mg)"))}</span><input data-composer-field="${key}" type="number" min="0" step="0.1" value="${escapeHtml(nutrients[key] ?? "")}" /></label>`).join("")}</div></article>`;
         })
         .join("");
+    updateMealComposerStrip();
+}
+
+// Composer wave C6 (approved 2026-11-11): the strip pinned at the
+// top of the composer carries the meal's running totals, with the
+// meal's contribution delta against the day in gold. The math
+// mirrors the submit path exactly — a food item contributes its
+// selected portion's nutrients × quantity (the server scales
+// supplied items by quantity only; a custom portion's gram weight
+// is recorded, not rescaled), a recent/manual item its stored
+// nutrients × quantity.
+function mealComposerItemMacros(item) {
+    const quantity = item.quantity || 1;
+    const nutrients =
+        item.kind === "food"
+            ? foodPortion(item.food, item.portionId)?.nutrients || {}
+            : item.nutrients || {};
+    return {
+        calories: (nutrients.calories || 0) * quantity,
+        protein_g: (nutrients.protein_g || 0) * quantity,
+        carbs_g: (nutrients.carbs_g || 0) * quantity,
+        fat_g: (nutrients.fat_g || 0) * quantity,
+    };
+}
+
+function mealComposerTotals() {
+    const totals = { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 };
+    for (const item of mealComposer.items) {
+        const macros = mealComposerItemMacros(item);
+        for (const key of Object.keys(totals)) totals[key] += macros[key];
+    }
+    return totals;
+}
+
+// The day the strip delta is measured against: the single-day Today
+// stash, only while the composer is composing for that same view
+// (range mode and other routes leave the delta as the meal's own
+// contribution, which is always true).
+function mealComposerDayTotals() {
+    if (state.route !== "today" || state.todayRange) return null;
+    return state.todayDayData?.totals || null;
+}
+
+function updateMealComposerStrip() {
+    const totalsEl = document.getElementById("meal-composer-totals");
+    if (!totalsEl) return;
+    const totals = mealComposerTotals();
+    totalsEl.textContent = `${number(totals.calories)} kcal · P ${number(totals.protein_g, 1)} g · C ${number(totals.carbs_g, 1)} g · F ${number(totals.fat_g, 1)} g`;
+    const deltaEl = document.getElementById("meal-composer-delta");
+    if (!deltaEl) return;
+    const day = mealComposerDayTotals();
+    deltaEl.textContent =
+        day && day.calories != null
+            ? `Day ${number(day.calories)} → ${number(day.calories + totals.calories)} kcal`
+            : `+${number(totals.calories)} kcal`;
+    // An open breakdown panel re-renders with the strip so its
+    // per-item numbers never go stale mid-edit.
+    const panel = document.getElementById("meal-composer-breakdown");
+    if (panel && !panel.hidden) panel.innerHTML = composerBreakdownHtml();
+}
+
+// Tapping the strip expands the breakdown inline under it — the
+// F2 decomposition pattern (a totals card with a decomposition is
+// a toggle), never a dialog swap: the composer underneath must
+// survive the peek. Contents re-render on every strip update while
+// the panel is open, so the numbers never go stale mid-edit.
+function composerBreakdownHtml() {
+    const totals = mealComposerTotals();
+    const format = (macros) =>
+        `${number(macros.calories)} kcal · P ${number(macros.protein_g, 1)} g · C ${number(macros.carbs_g, 1)} g · F ${number(macros.fat_g, 1)} g`;
+    const rows = mealComposer.items
+        .map((item) => {
+            const name =
+                item.kind === "food"
+                    ? foodTitle(item.food)
+                    : item.name || "Manual food";
+            const portion =
+                item.kind === "food"
+                    ? item.customPortion
+                        ? item.portionLabel || "Custom portion"
+                        : foodPortion(item.food, item.portionId)?.label || ""
+                    : item.portionLabel || "";
+            const detail =
+                `${number(item.quantity || 1, 2)} × ${portion}`.trim();
+            return `<div class="macro-sheet-item"><span class="macro-sheet-item-name">${escapeHtml(name)}<span class="macro-sheet-item-portion">${escapeHtml(detail)}</span></span><span class="macro-sheet-item-value">${format(mealComposerItemMacros(item))}</span></div>`;
+        })
+        .join("");
+    const day = mealComposerDayTotals();
+    const dayLine =
+        day && day.calories != null
+            ? `<p class="macro-sheet-total">Day so far <b>${number(day.calories)} kcal</b> → <b>${number(day.calories + totals.calories)} kcal</b> with this meal</p>`
+            : "";
+    return `${dayLine}${rows || `<p class="tiny">No foods selected yet.</p>`}<div class="macro-sheet-foot"><span>Meal total</span><b>${format(totals)}</b></div>`;
+}
+
+function toggleComposerBreakdown() {
+    syncMealComposerFromDom();
+    const panel = document.getElementById("meal-composer-breakdown");
+    const strip = document.querySelector(".meal-composer-strip");
+    if (!panel) return;
+    const opening = panel.hidden;
+    panel.hidden = !opening;
+    if (opening) panel.innerHTML = composerBreakdownHtml();
+    strip?.setAttribute("aria-expanded", String(opening));
+}
+
+// Composer wave C4 (approved 2026-11-11): picking a search result
+// lands the user IN that food's quantity/unit editor — the new item
+// card scrolls into view and its quantity field takes focus.
+function focusMealComposerItem(index) {
+    const row = document.querySelector(
+        `#meal-selected-items [data-composer-index="${index}"]`,
+    );
+    if (!row) return;
+    row.scrollIntoView({ block: "nearest" });
+    const field =
+        row.querySelector('[data-composer-field="quantity"]') ||
+        row.querySelector('[data-composer-field="name"]');
+    field?.focus({ preventScroll: true });
+}
+
+// Composer wave C3 (approved 2026-11-11): a result row lists every
+// portion/unit the food can be logged in, not only the headline.
+// The headline portion still carries the row's kcal figure (search-
+// units brief item 2); the full set rides the sub-line in received
+// (natural-first) order. Candidates carry the server's portions
+// list; saved foods carry the full food object.
+function portionsListLine(portions) {
+    return (portions || [])
+        .map((portion) => portion.label)
+        .filter(Boolean)
+        .join(" · ");
 }
 
 function renderMealSearchResults(data) {
@@ -6799,7 +6932,11 @@ function renderMealSearchResults(data) {
                         candidateId: candidate.candidate_id,
                     });
                     const portion = candidate.default_portion;
-                    return `<button class="meal-search-result" type="button" data-action="select-meal-option" data-key="${key}"><span><strong>${escapeHtml([candidate.brand, candidate.name].filter(Boolean).join(" — ") || candidate.name)}</strong><small>${sourceBadge(candidate.provider)} ${escapeHtml(portion?.label || "Details available after selection")}</small></span><span>${portion?.calories == null ? "" : `${number(portion.calories)} kcal`}</span></button>`;
+                    const portionsLine =
+                        portionsListLine(candidate.portions) ||
+                        portion?.label ||
+                        "Details available after selection";
+                    return `<button class="meal-search-result" type="button" data-action="select-meal-option" data-key="${key}"><span><strong>${escapeHtml([candidate.brand, candidate.name].filter(Boolean).join(" — ") || candidate.name)}</strong><small>${sourceBadge(candidate.provider)} ${escapeHtml(portionsLine)}</small></span><span>${portion?.calories == null ? "" : `${number(portion.calories)} kcal`}</span></button>`;
                 })
                 .join("")}</div>`,
         );
@@ -6815,7 +6952,11 @@ function renderMealSearchResults(data) {
                         savedFoodId: saved.id,
                         defaultPortionId: saved.defaultPortionId,
                     });
-                    return `<button class="meal-search-result" type="button" data-action="select-meal-option" data-key="${key}"><span><strong>${escapeHtml(saved.label)}</strong><small>${sourceBadge(saved.food.provider)} ${escapeHtml(saved.food.name || "Saved food")}</small></span><span>${number(foodPortion(saved.food, saved.defaultPortionId)?.nutrients?.calories)} kcal</span></button>`;
+                    const portionsLine =
+                        portionsListLine(saved.food.portions) ||
+                        saved.food.name ||
+                        "Saved food";
+                    return `<button class="meal-search-result" type="button" data-action="select-meal-option" data-key="${key}"><span><strong>${escapeHtml(saved.label)}</strong><small>${sourceBadge(saved.food.provider)} ${escapeHtml(portionsLine)}</small></span><span>${number(foodPortion(saved.food, saved.defaultPortionId)?.nutrients?.calories)} kcal</span></button>`;
                 })
                 .join("")}</div>`,
         );
@@ -6896,6 +7037,7 @@ async function selectMealOption(key) {
         });
     }
     renderMealComposerItems();
+    focusMealComposerItem(mealComposer.items.length - 1);
 }
 
 // "Your usuals": the server ranks the user's own habitual foods for
@@ -6986,12 +7128,14 @@ function selectMealUsual(key) {
         usualComposerItem(usual, "usuals", { usual_key: usual.key }),
     );
     renderMealComposerItems();
+    focusMealComposerItem(mealComposer.items.length - 1);
 }
 
 function addYesterdayMeal() {
     syncMealComposerFromDom();
     const yesterday = mealComposer.yesterday;
     if (!yesterday?.items?.length) return;
+    const firstAdded = mealComposer.items.length;
     for (const entry of yesterday.items) {
         mealComposer.items.push(
             usualComposerItem(entry, "usuals_same_as_yesterday", {
@@ -7000,14 +7144,39 @@ function addYesterdayMeal() {
         );
     }
     renderMealComposerItems();
+    focusMealComposerItem(firstAdded);
 }
 
-async function lookupMealBarcode() {
-    const input = document.getElementById("meal-food-barcode");
+// Composer wave C2 (approved 2026-11-11): the typed barcode field
+// and Look up button are gone — the search row's scanner icon runs
+// the packaged app's Capacitor scanner (the Pantry page's path,
+// bridged as window.MunchScan by the mobile runtime) and feeds the
+// scanned code into the same barcode lookup. On the plain web there
+// is no scanner bridge; the icon explains that instead of failing
+// silently.
+async function scanMealBarcode() {
+    const scan = window.MunchScan?.scanBarcode;
+    if (typeof scan !== "function") {
+        toast("Barcode scanning is available in the Munch app.", "error");
+        return;
+    }
+    try {
+        const result = await scan();
+        const barcode = String(result?.ScanResult || "").trim();
+        if (!barcode) return;
+        await lookupMealBarcodeValue(barcode);
+    } catch (error) {
+        const message = String(
+            error?.message || error || "Barcode scan failed.",
+        );
+        if (/cancel/i.test(message)) return;
+        toast(message, "error");
+    }
+}
+
+async function lookupMealBarcodeValue(barcode) {
     const root = document.getElementById("meal-food-results");
-    if (!input || !root) return;
-    const barcode = input.value.trim();
-    if (!barcode) return;
+    if (!root || !barcode) return;
     root.innerHTML = `<p class="tiny">Looking up the package barcode…</p>`;
     const data = await api(
         `/api/app/food-barcode?barcode=${encodeURIComponent(barcode)}`,
@@ -7031,11 +7200,18 @@ function openMealComposer() {
     const pantryField = featureFlags().pantry
         ? `<label class="checkbox-row"><input type="checkbox" name="from_pantry" /> From my pantry</label>`
         : "";
+    // Composer wave C1–C6 (approved 2026-11-11, built 2026-11-13):
+    // the macro strip pins the top, Find foods leads, added foods
+    // sit below it, one slim search row with a scanner icon replaces
+    // the typed barcode field + Look up button, there is no Meal
+    // name field (meal type is the category; naming happens through
+    // Save as recipe), and the meal-type select drops below the
+    // foods it categorizes.
     openDialog(
         "Add meal",
-        `<form id="meal-form" class="auth-form"><input type="hidden" name="logged_at" value="${escapeHtml(`${state.date}T12:00:00.000Z`)}" /><label class="field"><span>Meal name</span><input name="description" value="Meal" maxlength="500" required /></label><label class="field"><span>Meal type</span><select name="meal_type">${mealTypeOptionsHtml(
+        `<button class="meal-composer-strip" type="button" data-action="open-composer-breakdown" aria-label="Meal totals — view breakdown" aria-expanded="false" aria-controls="meal-composer-breakdown"><span class="meal-composer-strip-totals" id="meal-composer-totals">0 kcal · P 0 g · C 0 g · F 0 g</span><span class="meal-composer-strip-delta" id="meal-composer-delta"></span></button><div id="meal-composer-breakdown" class="meal-composer-breakdown" hidden></div><form id="meal-form" class="auth-form"><input type="hidden" name="logged_at" value="${escapeHtml(`${state.date}T12:00:00.000Z`)}" /><section class="meal-composer-search"><div class="panel-title"><h3>Find foods</h3><span>Verified, saved, and recent</span></div><div id="meal-usuals" class="meal-usuals" hidden></div><div class="meal-composer-search-row meal-composer-search-row-slim"><input class="input" id="meal-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><button class="button button-secondary meal-scan-button" type="button" data-action="scan-food-barcode" aria-label="Scan barcode" title="Scan barcode"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M7.5 8v8M11 8v8M14 8v8M17 8v8"/></svg></button></div><div id="meal-food-results" class="meal-food-results"></div></section><section><div class="panel-title"><h3>Selected foods</h3><button class="button button-secondary button-small" type="button" data-action="add-manual-food">Add manual food</button></div><div id="meal-selected-items" class="meal-selected-items"></div></section><label class="field"><span>Meal type</span><select name="meal_type">${mealTypeOptionsHtml(
             defaultMealType(new Date(), state.bootstrap?.profile?.timezone),
-        )}</select></label><section class="meal-composer-search"><div class="panel-title"><h3>Find foods</h3><span>Verified, saved, and recent</span></div><div id="meal-usuals" class="meal-usuals" hidden></div><div class="meal-composer-search-row"><input class="input" id="meal-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><input class="input" id="meal-food-barcode" inputmode="numeric" placeholder="Barcode" aria-label="Food barcode" /><button class="button button-secondary" type="button" data-action="lookup-food-barcode">Look up</button></div><div id="meal-food-results" class="meal-food-results"></div></section><section><div class="panel-title"><h3>Selected foods</h3><button class="button button-secondary button-small" type="button" data-action="add-manual-food">Add manual food</button></div><div id="meal-selected-items" class="meal-selected-items"></div></section>${pantryField}<label class="field"><span>Notes</span><textarea name="notes" rows="2" maxlength="4000" placeholder="Optional"></textarea></label><button class="button button-primary" type="submit">Log meal</button></form>`,
+        )}</select></label>${pantryField}<label class="field"><span>Notes</span><textarea name="notes" rows="2" maxlength="4000" placeholder="Optional"></textarea></label><button class="button button-primary" type="submit">Log meal</button></form>`,
     );
     renderMealComposerItems();
     searchMealFoods("");
@@ -8424,10 +8600,15 @@ async function handleAction(button) {
             sourceType: "user_supplied",
         });
         renderMealComposerItems();
+        focusMealComposerItem(mealComposer.items.length - 1);
         return;
     }
-    if (action === "lookup-food-barcode") {
-        await lookupMealBarcode();
+    if (action === "scan-food-barcode") {
+        await scanMealBarcode();
+        return;
+    }
+    if (action === "open-composer-breakdown") {
+        toggleComposerBreakdown();
         return;
     }
     if (action === "edit-meal") return editMeal(button.dataset.id);
@@ -9222,6 +9403,17 @@ document.addEventListener("input", (event) => {
             240,
         );
     }
+    if (
+        event.target.closest?.("#meal-form") &&
+        event.target.matches?.("[data-composer-field]")
+    ) {
+        // C6: the strip is a RUNNING total — quantity and nutrient
+        // edits move it on the keystroke, not only on re-render.
+        // Sync + strip update only; the rows are not re-rendered, so
+        // focus and caret stay put.
+        syncMealComposerFromDom();
+        updateMealComposerStrip();
+    }
     if (event.target.id === "meal-draft-food-search") {
         window.clearTimeout(mealDraftReview.searchTimer);
         mealDraftReview.searchTimer = window.setTimeout(
@@ -9261,6 +9453,28 @@ document.addEventListener("input", (event) => {
         refreshRecipeGrid();
     }
 });
+
+// Composer wave C5 (approved 2026-11-11): the composer carries no
+// name field — the meal type is the category, and a real title is
+// earned by saving the meal as a recipe. The stored description is
+// derived the way mealDisplayName already names placeholder meals:
+// the first food, plus how many more; the meal type when the meal
+// has no named food yet.
+function composerMealDescription(form) {
+    const first = mealComposer.items[0];
+    const firstName =
+        first?.kind === "food"
+            ? first.food.name || foodTitle(first.food)
+            : first?.name;
+    if (firstName) {
+        const extra = mealComposer.items.length - 1;
+        return extra > 0 ? `${firstName} + ${extra} more` : firstName;
+    }
+    const typeLabel = form
+        ?.querySelector('select[name="meal_type"]')
+        ?.selectedOptions?.[0]?.textContent?.trim();
+    return typeLabel || "Meal";
+}
 
 function mealComposerPayload() {
     syncMealComposerFromDom();
@@ -9913,7 +10127,7 @@ document.addEventListener("submit", async (event) => {
             const result = await api("/api/app/meals", {
                 method: "POST",
                 body: JSON.stringify({
-                    description: values.description,
+                    description: composerMealDescription(form),
                     meal_type: values.meal_type,
                     logged_at: values.logged_at,
                     notes: values.notes || undefined,

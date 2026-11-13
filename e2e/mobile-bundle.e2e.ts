@@ -398,6 +398,13 @@ test("packaged meal composer picks the natural portion first and logs the chosen
             carbs_g: 12,
             fat_g: 5,
         },
+        // Wave C3: the summary also lists every portion (natural-
+        // first) so the result row can show all units.
+        portions: [
+            { id: "cup", label: "1 cup", gram_weight: 244, calories: 122 },
+            { id: "fl-oz", label: "1 fl oz", gram_weight: 30.5, calories: 15 },
+            { id: "100g", label: "100 g", gram_weight: 100, calories: 50 },
+        ],
     };
     const milkFood = {
         ...milkSummary,
@@ -499,7 +506,10 @@ test("packaged meal composer picks the natural portion first and logs the chosen
             body: JSON.stringify({ food: milkFood }),
         }),
     );
-    const mealPosts: { items?: { portion_id?: string }[] }[] = [];
+    const mealPosts: {
+        description?: string;
+        items?: { portion_id?: string }[];
+    }[] = [];
     await page.route("**/api/app/meals", async (route) => {
         if (route.request().method() === "POST") {
             mealPosts.push(route.request().postDataJSON());
@@ -519,10 +529,28 @@ test("packaged meal composer picks the natural portion first and logs the chosen
     await expect(page.getByRole("button", { name: "Add water" })).toBeVisible();
     await page.getByRole("button", { name: "Add meal" }).first().click();
 
-    // Search ran on open; the result row headlines the cup portion.
+    // Composer wave pins (C1/C2/C5): the packaged composer carries
+    // no typed barcode field, no Look up button, and no Meal name
+    // field; the scanner icon is present instead.
+    const composerDialog = page.locator("#app-dialog");
+    await expect(composerDialog.locator("#meal-food-barcode")).toHaveCount(0);
+    await expect(
+        composerDialog.getByRole("button", { name: "Look up" }),
+    ).toHaveCount(0);
+    await expect(
+        composerDialog.locator('input[name="description"]'),
+    ).toHaveCount(0);
+    await expect(
+        composerDialog.getByRole("button", { name: "Scan barcode" }),
+    ).toBeVisible();
+
+    // Search ran on open; the result row headlines the cup portion
+    // (C3: and lists every portion beside it — fl oz and 100 g too).
     const result = page.locator('[data-action="select-meal-option"]').first();
     await expect(result).toContainText("1 cup");
     await expect(result).toContainText("122 kcal");
+    await expect(result).toContainText("1 fl oz");
+    await expect(result).toContainText("100 g");
     await result.click();
 
     // The portion picker opens on the natural portion, labelled with
@@ -530,6 +558,10 @@ test("packaged meal composer picks the natural portion first and logs the chosen
     const portionSelect = page.locator('[data-composer-field="portion_id"]');
     await expect(portionSelect).toBeVisible();
     await expect(portionSelect).toHaveValue("cup");
+    // C4: the tap lands in the new food's quantity editor.
+    await expect(
+        page.locator('[data-composer-field="quantity"]'),
+    ).toBeFocused();
     const firstOption = await portionSelect
         .locator("option")
         .first()
@@ -538,11 +570,18 @@ test("packaged meal composer picks the natural portion first and logs the chosen
     await expect(page.locator(".meal-composer-macros")).toContainText(
         "1 cup · 122 kcal",
     );
+    // C6: the pinned strip carries the same running total.
+    await expect(page.locator("#meal-composer-totals")).toContainText(
+        "122 kcal",
+    );
 
     // Choosing another portion updates the shown totals immediately…
     await portionSelect.selectOption("fl-oz");
     await expect(page.locator(".meal-composer-macros")).toContainText(
         "1 fl oz · 15 kcal",
+    );
+    await expect(page.locator("#meal-composer-totals")).toContainText(
+        "15 kcal",
     );
     // …and choosing "1 cup" is what gets logged.
     await portionSelect.selectOption("cup");
@@ -552,6 +591,9 @@ test("packaged meal composer picks the natural portion first and logs the chosen
     await page.locator('#meal-form button[type="submit"]').click();
     await expect.poll(() => mealPosts.length).toBe(1);
     expect(mealPosts[0]?.items?.[0]?.portion_id).toBe("cup");
+    // C5: with no name field, the stored description is derived
+    // from the meal's foods — the first food's name here.
+    expect(mealPosts[0]?.description).toBe("Milk, whole, 3.25% milkfat");
 });
 
 test("packaged bundle ships the mobile runtime and the Pantry page", async ({
