@@ -67,6 +67,47 @@ import { decisionsConfig } from "../decisions/config.js";
 import { evaluateMealPhotoGate } from "../decisions/gate.js";
 import { chooseCandidatesForMealPhoto } from "../decisions/decider.js";
 import { reviewRecipeResolution } from "../decisions/resolution-review.js";
+import { reviewRecipeYield } from "../decisions/yield-estimate.js";
+import type {
+    RecipeNutritionResolution,
+    RecipeYieldEstimate,
+} from "../recipe-nutrition-resolution.js";
+
+/** The composed accountability chain for recipe saves: A1/A2 review
+ * first, then the A2b yield estimate reads the final gram weights.
+ * Each seat is independently flagged and fail-open. */
+async function reviewRecipeResolutionAndYield(
+    resolution: RecipeNutritionResolution,
+): Promise<RecipeNutritionResolution> {
+    return reviewRecipeYield(await reviewRecipeResolution(resolution));
+}
+
+/** A client may only ever supply a USER yield (the Adjust
+ * correction). Estimates are produced server-side by seat A2b; a
+ * client-sent "estimate" is ignored, never trusted. */
+function userYieldEstimateFromBody(
+    value: unknown,
+): RecipeYieldEstimate | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    if (record.source !== "user") return undefined;
+    const weight =
+        typeof record.weight_g === "number" &&
+        Number.isFinite(record.weight_g) &&
+        record.weight_g > 0
+            ? record.weight_g
+            : null;
+    const volume =
+        typeof record.volume_ml === "number" &&
+        Number.isFinite(record.volume_ml) &&
+        record.volume_ml > 0
+            ? record.volume_ml
+            : null;
+    if (weight === null && volume === null) return undefined;
+    return { source: "user", weight_g: weight, volume_ml: volume };
+}
 import { RecipeImportError } from "../recipe-import/fetch.js";
 import {
     readRecipePhoto,
@@ -652,6 +693,7 @@ export function recipeInputFromBody(value: unknown): RecipeInput {
                 : undefined,
         sourceUrl:
             typeof body.source_url === "string" ? body.source_url : undefined,
+        yieldEstimate: userYieldEstimateFromBody(body.yield_estimate),
         ingredients: body.ingredients.map((raw) => {
             const ingredient = recordValue(raw, "Recipe ingredient");
             const quantity =
@@ -2151,7 +2193,7 @@ export function createAppRouter(): Hono {
                     ? body.idempotency_key
                     : crypto.randomUUID(),
             resolutionDependencies: {
-                resolutionReview: reviewRecipeResolution,
+                resolutionReview: reviewRecipeResolutionAndYield,
             },
         });
         return privateJson(c, {
@@ -2344,7 +2386,7 @@ export function createAppRouter(): Hono {
                     ? body.idempotency_key
                     : crypto.randomUUID(),
             resolutionDependencies: {
-                resolutionReview: reviewRecipeResolution,
+                resolutionReview: reviewRecipeResolutionAndYield,
             },
         });
         return privateJson(c, {
@@ -2387,7 +2429,7 @@ export function createAppRouter(): Hono {
                     ? body.idempotency_key
                     : crypto.randomUUID(),
             resolutionDependencies: {
-                resolutionReview: reviewRecipeResolution,
+                resolutionReview: reviewRecipeResolutionAndYield,
             },
         });
         return privateJson(c, {
@@ -2563,7 +2605,7 @@ export function createAppRouter(): Hono {
                 recipeId: current.id,
                 expectedVersion,
                 resolutionDependencies: {
-                    resolutionReview: reviewRecipeResolution,
+                    resolutionReview: reviewRecipeResolutionAndYield,
                 },
                 // One heal per stored revision: a double-tap or retry
                 // replays the same update instead of stacking revisions.

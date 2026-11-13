@@ -65,6 +65,10 @@ export interface DecisionsConfig {
      * serves the A2 defensibility call. */
     resolutionReviewTimeoutMs?: number;
     estimateRungEnabled?: boolean;
+    /** A2b yield estimate seat. Optional/additive like the other
+     * seats; `decisionsConfig()` always populates both fields. */
+    yieldEstimateEnabled?: boolean;
+    yieldEstimateTimeoutMs?: number;
 }
 
 type FlagState = "on" | "off" | "unset";
@@ -215,6 +219,16 @@ export function decisionsConfig(
             master,
             flagState(env.MUNCH_JEV_ESTIMATE_RUNG_ENABLED),
         ),
+        yieldEstimateEnabled: seatEnabled(
+            master,
+            flagState(env.MUNCH_JEV_YIELD_ESTIMATE_ENABLED),
+        ),
+        yieldEstimateTimeoutMs: boundedInteger(
+            env.MUNCH_JEV_YIELD_ESTIMATE_TIMEOUT_MS,
+            3_000,
+            100,
+            15_000,
+        ),
     };
 }
 
@@ -234,6 +248,10 @@ export interface DecisionModelThresholds {
      * p(estimate defensible) is at or above this value. Calibrated
      * per model from the A2 eval — never borrowed. */
     estimateDefensibleMin?: number;
+    /** A2b: an estimated yield is stored only when the model's
+     * p(yield estimate defensible) is at or above this value.
+     * Calibrated per model from the A2b eval — never borrowed. */
+    yieldDefensibleMin?: number;
     /** C2: minimum p(contradiction) at or above which a shortfall row
      * is recomputed and, if the contradiction persists, surfaced.
      * Calibrated per model from the C2 eval — never borrowed. */
@@ -275,6 +293,10 @@ export const DECISION_MODEL_THRESHOLDS: Record<
     "typesafe/jev-1.14": {
         gateFoodMin: 0.1,
         estimateDefensibleMin: 0.5,
+        // A2b eval (2026-11-13, scripts/yield-estimate-eval.ts):
+        // defensible cases p >= 0.62, the no-method control p = 0.02
+        // — 0.5 sits between, from this model's own distribution.
+        yieldDefensibleMin: 0.5,
         shortfallContradictionMin: 0.5,
         pantrySameItemMin: 0.55,
         pantryUnitsCompatibleMin: 0.6,
@@ -296,6 +318,10 @@ export const DECISION_MODEL_THRESHOLDS: Record<
     "perplexity/pplx-decider-v1.2": {
         gateFoodMin: 0.1,
         estimateDefensibleMin: 0.5,
+        // A2b eval (same run as the Jev entry above): defensible
+        // cases p >= 0.99, the no-method control p = 0.026 — 0.5
+        // independently supported by this model's distribution.
+        yieldDefensibleMin: 0.5,
         shortfallContradictionMin: 0.5,
         pantrySameItemMin: 0.4,
         pantryUnitsCompatibleMin: 0.5,
@@ -466,4 +492,26 @@ export function estimateRungEnabled(config: DecisionsConfig): boolean {
 
 export function resolutionReviewTimeoutMs(config: DecisionsConfig): number {
     return config.resolutionReviewTimeoutMs ?? 3_000;
+}
+
+/** A2b standard defensibility floor for any unlisted slug; listed
+ * models carry values calibrated from the A2b eval
+ * (scripts/yield-estimate-eval.ts). */
+export const DEFAULT_YIELD_DEFENSIBLE_MIN = 0.5;
+
+export function yieldDefensibleThresholdForModel(model: string): number {
+    return (
+        DECISION_MODEL_THRESHOLDS[model]?.yieldDefensibleMin ??
+        DEFAULT_YIELD_DEFENSIBLE_MIN
+    );
+}
+
+/** Whether the A2b yield seat is enabled on a resolved config.
+ * Absence means off. */
+export function yieldEstimateEnabled(config: DecisionsConfig): boolean {
+    return config.yieldEstimateEnabled === true;
+}
+
+export function yieldEstimateTimeoutMs(config: DecisionsConfig): number {
+    return config.yieldEstimateTimeoutMs ?? 3_000;
 }
