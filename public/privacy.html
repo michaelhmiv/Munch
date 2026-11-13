@@ -43,7 +43,7 @@
                         clients.
                     </p>
                     <p class="tiny spacer-top">
-                        Last updated: November 11, 2026
+                        Last updated: November 13, 2026
                     </p>
                 </div>
             </section>
@@ -271,10 +271,17 @@
                         <p>
                             <strong>The models we use.</strong> Requests are
                             routed through OpenRouter to Meta's Muse Ember
-                            model. Photo logging also uses small decision models
+                            model. If Ember is unavailable, photo identification
+                            falls back automatically — first to OpenAI's Luna
+                            model, then to DeepSeek's vision model — and receipt
+                            reading falls back to ScaleDown's extraction model,
+                            which reads line labels only, so every line it
+                            returns is checked by you before anything is saved.
+                            Photo logging also uses small decision models
                             (TypeSafe Jev, with Perplexity as its fallback) to
-                            check and choose between food matches. Every request
-                            Munch sends is marked so that providers may not
+                            check and choose between food matches. Wherever the
+                            receiving service supports the instruction, Munch
+                            marks its AI requests so that providers may not
                             collect the data or use it to train models.
                             Providers process requests under their own terms,
                             and that instruction is a routing control, not a

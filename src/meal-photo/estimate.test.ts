@@ -148,7 +148,11 @@ describe("estimateMealPhotoNutrients", () => {
         expect(calls).toBe(2);
     });
 
-    test("does not retry HTTP failures", async () => {
+    // Fallback law (model-integration brief, Nov 11) supersedes the
+    // old no-retry pin for this seat: a transient HTTP failure gets
+    // at most ONE retry on the same model, then the chain is
+    // exhausted (single-model config here) and the error surfaces.
+    test("retries a transient HTTP failure once, then surfaces it", async () => {
         let calls = 0;
         await expect(
             estimateMealPhotoNutrients([riceRequest], config, {
@@ -158,7 +162,7 @@ describe("estimateMealPhotoNutrients", () => {
                 },
             }),
         ).rejects.toThrow("HTTP 503");
-        expect(calls).toBe(1);
+        expect(calls).toBe(2);
     });
 
     test("a zero-calorie or missing entry is unusable — key absent from the map", async () => {
@@ -254,5 +258,45 @@ describe("usableEstimateNutrients", () => {
                 potassium_mg: null,
             }),
         ).toBeNull();
+    });
+});
+
+describe("fallback drill: meal-photo estimate chain", () => {
+    const chainConfig: MealPhotoVisionConfig = {
+        ...config,
+        models: ["meta/muse-ember", "openai/gpt-5.6-luna"],
+    };
+
+    test("drill: primary HTTP 500s, Luna's estimates are used", async () => {
+        const seen: string[] = [];
+        const result = await estimateMealPhotoNutrients(
+            [riceRequest],
+            chainConfig,
+            {
+                fetcher: async (_url, init) => {
+                    const model = JSON.parse(String(init?.body ?? "{}"))
+                        .model as string;
+                    seen.push(model);
+                    if (model === "meta/muse-ember") {
+                        return new Response("down", { status: 500 });
+                    }
+                    return envelope(riceEstimate);
+                },
+            },
+        );
+        expect(result.get("item:1")?.nutrients.calories).toBe(205);
+        expect(seen).toEqual([
+            "meta/muse-ember",
+            "meta/muse-ember",
+            "openai/gpt-5.6-luna",
+        ]);
+    });
+
+    test("drill: whole chain down throws the exhausted-chain error", async () => {
+        await expect(
+            estimateMealPhotoNutrients([riceRequest], chainConfig, {
+                fetcher: async () => new Response("down", { status: 500 }),
+            }),
+        ).rejects.toThrow("fallback chain");
     });
 });

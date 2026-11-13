@@ -1,8 +1,11 @@
 import { z } from "zod";
 import type { NutrientValues } from "../food-providers/types.js";
 import {
+    classifyAiProviderError,
     openRouterReasoningParam,
     providerErrorDetail,
+    runAiModelChain,
+    type AiAttemptOutcome,
 } from "../website-ai-config.js";
 import {
     mealPhotoVisionConfig,
@@ -32,10 +35,12 @@ import {
  * Reliability pattern mirrors vision.ts / the recipe resolver:
  * temperature 0, strict JSON schema WITH nutrient fields, OpenRouter
  * response-healing plugin, one bounded retry on unparseable output,
- * strict zod parse, a token cap, and a safe spend log line. HTTP /
- * transport failures are not retried. A response that stays unusable
- * throws — the caller then marks the item with a BLOCKING draft
- * question instead of silently empty nutrition.
+ * strict zod parse, a token cap, and a safe spend log line. The
+ * seat walks the same designated model chain as identification
+ * (fallback law, model-integration brief): a model-level failure
+ * moves to the next model, and only a fully exhausted chain throws
+ * — the caller then marks the item with a BLOCKING draft question
+ * instead of silently empty nutrition.
  */
 
 const nullableNutrient = z.number().min(0).nullable();
@@ -259,9 +264,8 @@ const ESTIMATE_PROMPT = `Estimate the nutrition of each food item below for the 
  * One batched estimate call for every ungrounded item of a photo.
  * Returns a map keyed by request key containing only USABLE estimates
  * (positive calories, finite nonnegative nutrients); a key missing
- * from the map means that item got no usable estimate. Throws after
- * the single healing retry when the output stays unparseable, and
- * immediately on HTTP/transport failure.
+ * from the map means that item got no usable estimate. Throws only
+ * when every model in the seat's chain has failed.
  */
 export async function estimateMealPhotoNutrients(
     requests: MealPhotoEstimateRequest[],
@@ -272,8 +276,10 @@ export async function estimateMealPhotoNutrients(
     if (!config) throw new Error("Meal photo estimate is not configured");
     const startedAt = Date.now();
     const fetcher = dependencies.fetcher ?? fetch;
-    const requestBody = {
-        model: config.model,
+    const models = config.models?.length ? config.models : [config.model];
+    let callsUsed = 0;
+    const buildRequestBody = (model: string) => ({
+        model,
         temperature: 0,
         max_tokens: DEFAULT_MEAL_PHOTO_ESTIMATE_MAX_TOKENS,
         response_format: {
@@ -285,7 +291,7 @@ export async function estimateMealPhotoNutrients(
             },
         },
         plugins: [{ id: "response-healing" }],
-        ...openRouterReasoningParam(config.model),
+        ...openRouterReasoningParam(model),
         provider: { data_collection: "deny" },
         messages: [
             {
@@ -308,75 +314,94 @@ export async function estimateMealPhotoNutrients(
                 ).slice(0, 30_000)}\n</estimate-data>`,
             },
         ],
-    };
-    let callsUsed = 0;
-    let lastParseError: unknown;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    });
+    // One attempt against one model, same contract as identification:
+    // a parsed result is a value; provider failures and unparseable
+    // output are classified failures for the chain walk.
+    const attempt = async (
+        model: string,
+    ): Promise<AiAttemptOutcome<Map<string, MealPhotoEstimate>>> => {
+        callsUsed += 1;
+        let payload: unknown;
         try {
-            callsUsed += 1;
-            const payload = await postCompletion(
+            payload = await postCompletion(
                 config,
                 fetcher,
-                requestBody as unknown as Record<string, unknown>,
+                buildRequestBody(model) as unknown as Record<string, unknown>,
             );
-            const text = responseText(
-                (payload as any)?.choices?.[0]?.message?.content,
-            );
-            if (!text) {
-                lastParseError = new Error(
-                    "Meal photo estimate returned no structured content",
-                );
-                continue;
-            }
-            let decoded: unknown;
-            try {
-                decoded = JSON.parse(text);
-            } catch {
-                lastParseError = new Error(
-                    "Meal photo estimate returned invalid JSON",
-                );
-                continue;
-            }
-            try {
-                const parsed = estimateResultSchema.parse(decoded);
-                const requested = new Set(requests.map((r) => r.key));
-                const result = new Map<string, MealPhotoEstimate>();
-                for (const entry of parsed.estimates) {
-                    if (!requested.has(entry.key) || result.has(entry.key)) {
-                        continue;
-                    }
-                    const usable = usableEstimateNutrients(entry.nutrients);
-                    if (!usable) continue;
-                    const gramWeight =
-                        entry.gram_weight_g !== null &&
-                        Number.isFinite(entry.gram_weight_g) &&
-                        entry.gram_weight_g > 0
-                            ? round2(entry.gram_weight_g)
-                            : undefined;
-                    result.set(entry.key, {
-                        nutrients: usable,
-                        ...(gramWeight !== undefined ? { gramWeight } : {}),
-                    });
-                }
-                logPhase("success", config.model, startedAt, callsUsed);
-                return result;
-            } catch (error) {
-                lastParseError = error;
-                continue;
-            }
         } catch (error) {
-            if (
-                error instanceof Error &&
-                /provider returned HTTP|aborted|fetch/i.test(error.message)
-            ) {
-                logPhase("error", config.model, startedAt, callsUsed);
-                throw error;
-            }
-            lastParseError = error;
+            return { ok: false, failure: classifyAiProviderError(error) };
         }
+        const text = responseText(
+            (payload as any)?.choices?.[0]?.message?.content,
+        );
+        if (!text) {
+            return {
+                ok: false,
+                failure: {
+                    retryable: true,
+                    reason: "Meal photo estimate returned no structured content",
+                },
+            };
+        }
+        let decoded: unknown;
+        try {
+            decoded = JSON.parse(text);
+        } catch {
+            return {
+                ok: false,
+                failure: {
+                    retryable: true,
+                    reason: "Meal photo estimate returned invalid JSON",
+                },
+            };
+        }
+        try {
+            const parsed = estimateResultSchema.parse(decoded);
+            const requested = new Set(requests.map((r) => r.key));
+            const result = new Map<string, MealPhotoEstimate>();
+            for (const entry of parsed.estimates) {
+                if (!requested.has(entry.key) || result.has(entry.key)) {
+                    continue;
+                }
+                const usable = usableEstimateNutrients(entry.nutrients);
+                if (!usable) continue;
+                const gramWeight =
+                    entry.gram_weight_g !== null &&
+                    Number.isFinite(entry.gram_weight_g) &&
+                    entry.gram_weight_g > 0
+                        ? round2(entry.gram_weight_g)
+                        : undefined;
+                result.set(entry.key, {
+                    nutrients: usable,
+                    ...(gramWeight !== undefined ? { gramWeight } : {}),
+                });
+            }
+            return { ok: true, value: result };
+        } catch (error) {
+            return {
+                ok: false,
+                failure: {
+                    retryable: true,
+                    reason:
+                        error instanceof Error
+                            ? error.message
+                            : "Meal photo estimate returned unusable output",
+                },
+            };
+        }
+    };
+    let estimated: { value: Map<string, MealPhotoEstimate>; model: string };
+    try {
+        estimated = await runAiModelChain({
+            seat: "meal_photo_estimate",
+            models,
+            attempt,
+        });
+    } catch (error) {
+        logPhase("error", models[models.length - 1]!, startedAt, callsUsed);
+        throw error;
     }
-    logPhase("error", config.model, startedAt, callsUsed);
-    throw lastParseError instanceof Error
-        ? lastParseError
-        : new Error("Meal photo estimate returned unusable output");
+    logPhase("success", estimated.model, startedAt, callsUsed);
+    return estimated.value;
 }
