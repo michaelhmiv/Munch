@@ -3282,9 +3282,7 @@ test("meal.photoLog runs end to end in the packaged bundle", async ({
     // confirming. (The pre-audit dialog-accumulation assertions
     // died with the form dialog they described; the strip is the
     // multi-photo surface in the camera-first flow.)
-    await expect(page.locator(".meal-draft-photos")).toContainText(
-        "Photo 1",
-    );
+    await expect(page.locator(".meal-draft-photos")).toContainText("Photo 1");
     await expect(page.locator("#meal-draft-photo-file")).toBeAttached();
 
     // Conversational add-to-draft (Amendment E) inside the same review.
