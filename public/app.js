@@ -3345,6 +3345,34 @@ function recipeDetailActionsMarkup(recipe) {
     return `${startCook}<button class="button button-secondary" type="button" data-action="log-recipe" data-id="${escapeHtml(recipe.id)}" data-revision="${escapeHtml(recipe.revision_id)}">Log recipe</button>${flags.plan ? `<button class="button button-secondary" type="button" data-action="plan-recipe" data-id="${escapeHtml(recipe.id)}" data-revision="${escapeHtml(recipe.revision_id)}">Add to plan</button>` : ""}${groceries}${calculate}<button class="button button-secondary" type="button" data-action="archive-recipe" data-id="${escapeHtml(recipe.id)}" data-version="${escapeHtml(recipe.version)}" data-revision="${escapeHtml(recipe.revision_id)}">Archive</button>`;
 }
 
+// The calculate response carries the recipe exactly as the server
+// just persisted it (the new current revision) — the single source
+// of truth the detail view re-renders from. The library list renders
+// from state.recipeLibrary, which only renderRecipes() repopulates,
+// and neither calculate caller re-renders the route (the form-submit
+// tail does, this action doesn't). Without this sync the card behind
+// the detail dialog keeps the pre-heal entry — "unavailable
+// nutrition", zeroed per-serving values, and the OLD revision id on
+// its Log button — until a full route re-render. Patch the entry in
+// place from that same response and repaint only the grid; fields
+// the detail payload doesn't carry (usage counts, ownership,
+// created_at) are preserved untouched.
+function syncRecipeLibraryEntry(freshRecipe) {
+    if (!freshRecipe?.id) return;
+    const entry = state.recipeLibrary.find(
+        (recipe) => recipe.recipe_id === freshRecipe.id,
+    );
+    if (!entry) return;
+    entry.revision_id = freshRecipe.revision_id;
+    entry.nutrition_status = freshRecipe.nutrition_status;
+    entry.nutrition_per_serving = freshRecipe.nutrition_per_serving;
+    entry.version = freshRecipe.version;
+    entry.servings = freshRecipe.servings;
+    entry.name = freshRecipe.name;
+    entry.updated_at = freshRecipe.updated_at;
+    refreshRecipeGrid();
+}
+
 async function calculateRecipeNutrition(id) {
     const data = await api(
         `/api/app/recipes/${encodeURIComponent(id)}/calculate-nutrition`,
@@ -3354,6 +3382,7 @@ async function calculateRecipeNutrition(id) {
             keepPrevious: true,
         },
     );
+    syncRecipeLibraryEntry(data.recipe);
     return data.result;
 }
 
