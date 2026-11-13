@@ -31,6 +31,109 @@ export interface ProvenanceMeal {
     calories: number | null;
 }
 
+/**
+ * Stored-data sweep surface (audit §3): the user-facing side of the
+ * Jev sweep. `healedRecipes` backs the one visible line — "We fixed
+ * the nutrition on N recipes" — with before/after per-serving totals
+ * available per recipe. `checkEntries` is the "check these entries"
+ * list: logged-meal items the sweep confirmed as implausible. Meals
+ * are NEVER rewritten by the sweep; an entry here is a prompt for the
+ * user to confirm any correction themselves.
+ */
+export interface SweepChecksSummary {
+    healedRecipeCount: number;
+    healedRecipes: Array<{
+        recipeId: string;
+        beforeRevisionId: string;
+        afterRevisionId: string;
+        confirmedIngredients: string[];
+        perServingBefore: Record<string, number | null>;
+        perServingAfter: Record<string, number | null>;
+    }>;
+    flaggedRecipes: Array<{
+        recipeId: string;
+        confirmedIngredients: string[];
+        signatures: string[];
+    }>;
+    checkEntries: Array<{
+        mealId: string;
+        itemId: string;
+        itemName: string;
+        signatures: string[];
+    }>;
+}
+
+export interface StoredSweepFinding {
+    kind: "recipe_healed" | "recipe_flagged" | "meal_check";
+    payload: Record<string, unknown>;
+}
+
+export function summarizeSweepChecks(
+    findings: StoredSweepFinding[],
+): SweepChecksSummary {
+    const summary: SweepChecksSummary = {
+        healedRecipeCount: 0,
+        healedRecipes: [],
+        flaggedRecipes: [],
+        checkEntries: [],
+    };
+    for (const finding of findings) {
+        const payload = finding.payload ?? {};
+        if (finding.kind === "recipe_healed") {
+            summary.healedRecipes.push({
+                recipeId: String(payload.recipe_id ?? ""),
+                beforeRevisionId: String(payload.before_revision_id ?? ""),
+                afterRevisionId: String(payload.after_revision_id ?? ""),
+                confirmedIngredients: Array.isArray(
+                    payload.confirmed_ingredients,
+                )
+                    ? payload.confirmed_ingredients.map(String)
+                    : [],
+                perServingBefore:
+                    (payload.per_serving_before as Record<
+                        string,
+                        number | null
+                    >) ?? {},
+                perServingAfter:
+                    (payload.per_serving_after as Record<
+                        string,
+                        number | null
+                    >) ?? {},
+            });
+        } else if (finding.kind === "recipe_flagged") {
+            summary.flaggedRecipes.push({
+                recipeId: String(payload.recipe_id ?? ""),
+                confirmedIngredients: Array.isArray(
+                    payload.confirmed_ingredients,
+                )
+                    ? payload.confirmed_ingredients.map(String)
+                    : [],
+                signatures: Array.isArray(payload.signatures)
+                    ? payload.signatures.map(String)
+                    : [],
+            });
+        } else if (finding.kind === "meal_check") {
+            summary.checkEntries.push({
+                mealId: String(payload.meal_id ?? ""),
+                itemId: String(payload.item_id ?? ""),
+                itemName: String(payload.item_name ?? ""),
+                signatures: Array.isArray(payload.signatures)
+                    ? payload.signatures.map(String)
+                    : [],
+            });
+        }
+    }
+    summary.healedRecipeCount = summary.healedRecipes.length;
+    return summary;
+}
+
+export const EMPTY_SWEEP_CHECKS: SweepChecksSummary = {
+    healedRecipeCount: 0,
+    healedRecipes: [],
+    flaggedRecipes: [],
+    checkEntries: [],
+};
+
 export interface NutritionProvenanceAnalysis {
     coverage: {
         mealCount: number;
@@ -64,6 +167,7 @@ export interface NutritionProvenanceAnalysis {
             provider: string | null;
         }>
     >;
+    sweepChecks: SweepChecksSummary;
 }
 
 function finite(value: unknown): number | null {
@@ -85,6 +189,7 @@ export function provenanceSource(item: ProvenanceItem): string {
 export function summarizeNutritionProvenance(
     meals: ProvenanceMeal[],
     items: ProvenanceItem[],
+    sweepFindings: StoredSweepFinding[] = [],
 ): NutritionProvenanceAnalysis {
     const itemizedMealIds = new Set(items.map((item) => item.mealId));
     const totalCalories = meals.reduce(
@@ -184,6 +289,7 @@ export function summarizeNutritionProvenance(
             estimatedItemCount,
         },
         contributors,
+        sweepChecks: summarizeSweepChecks(sweepFindings),
     };
 }
 
@@ -231,6 +337,34 @@ async function loadProvenanceItems(
     });
 }
 
+async function loadSweepFindings(
+    userId: string,
+): Promise<StoredSweepFinding[]> {
+    try {
+        return await withUserDatabase(userId, async (tx) => {
+            const rows = await tx<Array<Record<string, unknown>>>`
+                select kind, payload
+                from munch.jev_sweep_findings
+                where user_id = ${userId}::uuid
+                  and acknowledged_at is null
+                order by created_at desc
+                limit 100
+            `;
+            return rows.map((row) => ({
+                kind: String(row.kind) as StoredSweepFinding["kind"],
+                payload:
+                    row.payload && typeof row.payload === "object"
+                        ? (row.payload as Record<string, unknown>)
+                        : {},
+            }));
+        });
+    } catch {
+        // The findings table lands with migration 0030; an analysis
+        // must never fail because the sweep surface is unavailable.
+        return [];
+    }
+}
+
 export async function getNutritionProvenanceAnalysis(
     userId: string,
     startDate: string,
@@ -247,7 +381,8 @@ export async function getNutritionProvenanceAnalysis(
         userId,
         normalizedMeals.map((meal) => meal.id),
     );
-    return summarizeNutritionProvenance(normalizedMeals, items);
+    const sweepFindings = await loadSweepFindings(userId);
+    return summarizeNutritionProvenance(normalizedMeals, items, sweepFindings);
 }
 
 export { CONTRIBUTOR_NUTRIENTS };
