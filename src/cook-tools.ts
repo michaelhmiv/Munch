@@ -23,6 +23,8 @@ import {
     type CookScope,
     updateCookDish,
 } from "./cooks/repository.js";
+import type { RecipePortionSpec } from "./planning/repository.js";
+import { parseFractionSpec } from "./planning/recipe-yield.js";
 import {
     normalizeCookMediaMimeType,
     validateCookMediaUpload,
@@ -1194,7 +1196,7 @@ export function registerCookTools(
         {
             title: "Log Cook Portion",
             description:
-                "Log an explicitly eaten portion from a cook only when its dish is linked to an exact saved recipe revision. This is optional and never happens when a cook is created or finished; it uses the saved revision's resolved ingredients and prevents duplicate retries.",
+                "Log an explicitly eaten portion from a cook only when its dish is linked to an exact saved recipe revision. Give exactly one portion form: servings_consumed, OR amount + unit (a volume or weight measure resolved against the recipe's yield for that family), OR fraction (a share of the whole recipe, decimal or \"n/d\"). This is optional and never happens when a cook is created or finished; it uses the saved revision's resolved ingredients and prevents duplicate retries.",
             annotations: {
                 readOnlyHint: false,
                 destructiveHint: false,
@@ -1204,7 +1206,15 @@ export function registerCookTools(
             inputSchema: {
                 cook_id: z.string().uuid(),
                 dish_id: z.string().uuid().optional(),
-                servings_consumed: z.coerce.number().positive(),
+                servings_consumed: z.coerce.number().positive().optional(),
+                amount: z.coerce.number().positive().optional(),
+                unit: z.string().min(1).max(40).optional(),
+                fraction: z
+                    .union([
+                        z.coerce.number().positive(),
+                        z.string().min(1).max(20),
+                    ])
+                    .optional(),
                 meal_type: z.enum(["breakfast", "lunch", "dinner", "snack"]),
                 notes: z.string().max(4_000).optional(),
                 request_id: z.string().max(500).optional(),
@@ -1222,11 +1232,37 @@ export function registerCookTools(
             withAnalytics(
                 "log_cook_portion",
                 async () => {
+                    const portionForms = [
+                        args.servings_consumed !== undefined,
+                        args.amount !== undefined || args.unit !== undefined,
+                        args.fraction !== undefined,
+                    ].filter(Boolean).length;
+                    if (portionForms !== 1) {
+                        throw new Error(
+                            "Give exactly one portion form: servings_consumed, amount + unit, or fraction",
+                        );
+                    }
+                    let portion: RecipePortionSpec | undefined;
+                    if (args.amount !== undefined || args.unit !== undefined) {
+                        if (args.amount === undefined || !args.unit) {
+                            throw new Error(
+                                "Amount logging needs both amount and unit",
+                            );
+                        }
+                        portion = {
+                            mode: "amount",
+                            amount: args.amount,
+                            unit: args.unit,
+                        };
+                    } else if (args.fraction !== undefined) {
+                        portion = parseFractionSpec({ value: args.fraction });
+                    }
                     const result = await logCookPortion({
                         userId,
                         cookId: args.cook_id,
                         dishId: args.dish_id,
                         servingsConsumed: args.servings_consumed,
+                        portion,
                         mealType: args.meal_type,
                         notes: args.notes,
                         idempotencyKey: args.request_id ?? crypto.randomUUID(),

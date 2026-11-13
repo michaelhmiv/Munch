@@ -29,7 +29,9 @@ import {
     searchRecipes,
     updateRecipe,
     type RecipeInput,
+    type RecipePortionSpec,
 } from "./planning/repository.js";
+import { parseFractionSpec } from "./planning/recipe-yield.js";
 import { widgetToolMeta } from "./openai-submission.js";
 
 const MEAL_LOGGED_WIDGET_URI = "ui://widget/meal-logged.html";
@@ -70,9 +72,16 @@ const ingredientSchema = z.object({
     source_snapshot: z.record(z.string(), z.unknown()).optional(),
 });
 
+const recipeYieldSchema = z.object({
+    quantity: z.number().positive(),
+    unit: z.string().min(1).max(40),
+});
+
 const recipeSchema = z.object({
     name: z.string().min(1).max(200),
     servings: z.number().positive(),
+    yield_volume: recipeYieldSchema.optional(),
+    yield_weight: recipeYieldSchema.optional(),
     description: z.string().max(2000).optional(),
     instructions: z.array(z.string().min(1).max(2000)).max(100),
     preparation_minutes: z.number().int().nonnegative().max(10_080).optional(),
@@ -189,6 +198,31 @@ const recipeIngredientOutputSchema = z.object({
     confidence: z.number().nullable(),
     source_snapshot: z.record(z.string(), z.unknown()),
 });
+const recipeYieldOutputSchema = z.object({
+    quantity: z.number().positive(),
+    unit: z.string(),
+});
+const effectiveYieldOutputSchema = recipeYieldOutputSchema.extend({
+    family: z.enum(["volume", "weight"]),
+    source: z.enum(["set", "estimated"]),
+});
+const recipePortionOutputSchema = z.object({
+    mode: z.enum(["servings", "amount", "fraction"]),
+    entered_amount: z.number().nullable(),
+    entered_unit: z.string().nullable(),
+    fraction_numerator: z.number().int().positive().nullable(),
+    fraction_denominator: z.number().int().positive().nullable(),
+    share: z.number().nonnegative(),
+    yield_snapshot: z
+        .object({
+            quantity: z.number().positive(),
+            unit: z.string(),
+            family: z.enum(["volume", "weight"]),
+            source: z.enum(["set", "estimated"]),
+        })
+        .nullable(),
+    servings_equivalent: z.number().nonnegative(),
+});
 const recipeDetailOutputSchema = z.object({
     id: z.string().uuid(),
     name: z.string(),
@@ -203,6 +237,18 @@ const recipeDetailOutputSchema = z.object({
     revision_id: z.string().uuid(),
     revision_number: z.number().int().positive(),
     servings: z.number().positive(),
+    yields: z.object({
+        volume: recipeYieldOutputSchema.nullable(),
+        weight: recipeYieldOutputSchema.nullable(),
+    }),
+    yield_estimates: z.object({
+        volume: recipeYieldOutputSchema.nullable(),
+        weight: recipeYieldOutputSchema.nullable(),
+    }),
+    effective_yields: z.object({
+        volume: effectiveYieldOutputSchema.nullable(),
+        weight: effectiveYieldOutputSchema.nullable(),
+    }),
     description: z.string().nullable(),
     instructions: z.array(z.string()),
     preparation_minutes: z.number().int().nonnegative().nullable(),
@@ -265,7 +311,9 @@ const recipeLogOutputSchema = z.object({
     recipe_id: z.string().uuid(),
     recipe_revision_id: z.string().uuid(),
     recipe_revision_number: z.number().int().positive(),
-    servings_consumed: z.number().positive(),
+    servings_consumed: z.number().nonnegative(),
+    portion: recipePortionOutputSchema,
+    share: z.number().nonnegative(),
     deduplicated: z.boolean(),
 });
 const plannedMealOutputSchema = z.object({
@@ -347,6 +395,8 @@ function toRecipeInput(value: z.infer<typeof recipeSchema>): RecipeInput {
     return {
         name: value.name,
         servings: value.servings,
+        yieldVolume: value.yield_volume,
+        yieldWeight: value.yield_weight,
         description: value.description,
         instructions: value.instructions,
         preparationMinutes: value.preparation_minutes,
@@ -429,6 +479,8 @@ function serializeLoggedRecipe(result: Awaited<ReturnType<typeof logRecipe>>) {
         recipe_revision_id: result.recipeRevisionId,
         recipe_revision_number: result.recipeRevisionNumber,
         servings_consumed: result.servingsConsumed,
+        portion: result.portion,
+        share: result.share,
         deduplicated: result.deduplicated,
     };
 }
@@ -849,7 +901,7 @@ export function registerRecipePlanningTools(
         {
             title: "Log Recipe",
             description:
-                "Log an explicit serving amount of a saved recipe without re-estimating its ingredients. Ask for the serving amount and meal type first when either is missing. Munch scales the saved ingredient quantities and nutrition, records the exact recipe revision, and stores source snapshots on every historical meal item. Use recipe_revision_id to intentionally log an older revision.",
+                "Log a portion of a saved recipe without re-estimating its ingredients. Give exactly one portion form: servings_consumed, OR amount + unit (a volume or weight measure resolved against the recipe's total yield for that measure family — its set yield when it has one, otherwise its labeled ingredient estimate), OR fraction (a share of the whole recipe, as a decimal like 0.25 or a ratio string like \"1/4\"). Ask for the portion and meal type first when either is missing. Munch scales the saved ingredient quantities and nutrition by the portion's share, records the exact recipe revision, keeps the entered portion and its yield snapshot on every historical meal item, and reports servings_consumed as the servings equivalent. Use recipe_revision_id to intentionally log an older revision.",
             annotations: {
                 readOnlyHint: false,
                 destructiveHint: false,
@@ -859,7 +911,12 @@ export function registerRecipePlanningTools(
             inputSchema: {
                 recipe_id: z.string().uuid(),
                 recipe_revision_id: z.string().uuid().optional(),
-                servings_consumed: z.number().positive(),
+                servings_consumed: z.number().positive().optional(),
+                amount: z.number().positive().optional(),
+                unit: z.string().min(1).max(40).optional(),
+                fraction: z
+                    .union([z.number().positive(), z.string().min(1).max(20)])
+                    .optional(),
                 meal_type: z.enum(["breakfast", "lunch", "dinner", "snack"]),
                 logged_at: z.string().optional(),
                 notes: z.string().max(4_000).optional(),
@@ -874,11 +931,37 @@ export function registerRecipePlanningTools(
                 "log_recipe",
                 async () => {
                     requireRecipeAccess(capabilities);
+                    const portionForms = [
+                        args.servings_consumed !== undefined,
+                        args.amount !== undefined || args.unit !== undefined,
+                        args.fraction !== undefined,
+                    ].filter(Boolean).length;
+                    if (portionForms !== 1) {
+                        throw new Error(
+                            "Give exactly one portion form: servings_consumed, amount + unit, or fraction",
+                        );
+                    }
+                    let portion: RecipePortionSpec | undefined;
+                    if (args.amount !== undefined || args.unit !== undefined) {
+                        if (args.amount === undefined || !args.unit) {
+                            throw new Error(
+                                "Amount logging needs both amount and unit",
+                            );
+                        }
+                        portion = {
+                            mode: "amount",
+                            amount: args.amount,
+                            unit: args.unit,
+                        };
+                    } else if (args.fraction !== undefined) {
+                        portion = parseFractionSpec({ value: args.fraction });
+                    }
                     const result = await logRecipe({
                         userId,
                         recipeId: args.recipe_id,
                         recipeRevisionId: args.recipe_revision_id,
                         servingsConsumed: args.servings_consumed,
+                        portion,
                         mealType: args.meal_type,
                         loggedAt: args.logged_at,
                         notes: args.notes,
@@ -892,7 +975,7 @@ export function registerRecipePlanningTools(
                                 type: "text",
                                 text: result.deduplicated
                                     ? "Recipe meal log was already recorded; returned the existing meal."
-                                    : `Logged ${args.servings_consumed} serving${args.servings_consumed === 1 ? "" : "s"} of the saved recipe without re-estimating its ingredients.`,
+                                    : `Logged ${result.meal.description} without re-estimating its ingredients.`,
                             },
                         ],
                         structuredContent: serialized,

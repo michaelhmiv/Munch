@@ -8004,3 +8004,334 @@ dialog #water-form {
     color: var(--accent-ink, #8a5a12);
     font-size: 12px;
 }
+/* ---------- Recipe unit logging — the portion picker (2026-11-13) ----------
+   Approved renderings: munch-recipe-unit-logging-renderings.html.
+   Direction C geometry throughout (31px drawn controls, ::after hit
+   overlay to the 44px floor, rule border, 10px radius). Scoped to
+   the picker so the dialog's shared field grammar is untouched. */
+.recipe-portion-picker {
+    margin: 0 0 4px;
+}
+
+.recipe-portion-picker .mode-switch {
+    display: flex;
+    gap: 4px;
+    background: #efe8d8;
+    border: 1px solid #d8cdb6;
+    border-radius: 12px;
+    padding: 4px;
+    margin: 0 0 14px;
+}
+
+.recipe-portion-picker .mode-btn {
+    position: relative;
+    flex: 1 1 0;
+    height: 31px;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    background: transparent;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    color: #4a4237;
+    cursor: pointer;
+    padding: 4px;
+}
+
+.recipe-portion-picker .mode-btn::after {
+    content: "";
+    position: absolute;
+    inset: -7px -4px;
+}
+
+.recipe-portion-picker .mode-btn[aria-selected="true"] {
+    background: #176b3a;
+    border-color: #176b3a;
+    color: #fff;
+}
+
+.recipe-portion-picker .field {
+    display: block;
+    margin: 0 0 12px;
+}
+
+.recipe-portion-picker .field > .field-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #4a4237;
+    margin: 0 0 5px;
+}
+
+.recipe-portion-picker .picker-input,
+.recipe-portion-picker .picker-select {
+    font: inherit;
+    font-size: 16px;
+    color: #2b2620;
+    background: #fff;
+    border: 1px solid #8a7c63;
+    border-radius: 10px;
+    height: 31px;
+    min-height: 31px;
+    padding: 4px 12px;
+    width: auto;
+}
+
+.recipe-portion-picker .servings-row {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 10px;
+}
+
+.recipe-portion-picker .stepper-group {
+    display: flex;
+    gap: 6px;
+    flex: none;
+    align-items: center;
+}
+
+.recipe-portion-picker .stepper-btn {
+    position: relative;
+    flex: 0 0 31px;
+    height: 31px;
+    border: 1px solid #8a7c63;
+    border-radius: 10px;
+    background: transparent;
+    font: inherit;
+    font-size: 16px;
+    font-weight: 600;
+    color: #2b2620;
+    cursor: pointer;
+    padding: 0;
+}
+
+.recipe-portion-picker .stepper-btn::after {
+    content: "";
+    position: absolute;
+    inset: -7px -4px;
+}
+
+.recipe-portion-picker .stepper-input {
+    width: 68px;
+    flex: none;
+    text-align: center;
+}
+
+.recipe-portion-picker .amount-row {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.recipe-portion-picker .amount-row [data-amount],
+.recipe-portion-picker .amount-row [data-yield-qty] {
+    flex: 0 0 76px;
+    width: 76px;
+}
+
+.recipe-portion-picker .amount-row .picker-select {
+    flex: 0 0 100px;
+}
+
+.recipe-portion-picker .equiv-inline {
+    font-size: 13.5px;
+    color: #5d5344;
+    margin: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.recipe-portion-picker .yield-line {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 14px;
+    color: #4a4237;
+    margin: 0 0 10px;
+}
+
+.recipe-portion-picker .yield-line strong {
+    color: #2b2620;
+}
+
+.recipe-portion-picker .yield-adjust {
+    border: 1px dashed #ded5c0;
+    border-radius: 12px;
+    background: #fff;
+    padding: 12px 14px;
+    margin: 0 0 12px;
+}
+
+.recipe-portion-picker .yield-adjust .field-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #4a4237;
+    margin: 0 0 5px;
+}
+
+.recipe-portion-picker .chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 6px;
+    align-items: center;
+}
+
+.recipe-portion-picker .chip-row .equiv-inline {
+    flex: none;
+}
+
+.recipe-portion-picker .frac-chip {
+    position: relative;
+    height: 31px;
+    padding: 6px 14px;
+    border: 1px solid #8a7c63;
+    border-radius: 10px;
+    background: transparent;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    color: #2b2620;
+    cursor: pointer;
+}
+
+.recipe-portion-picker .frac-chip::after {
+    content: "";
+    position: absolute;
+    inset: -7px -4px;
+}
+
+.recipe-portion-picker .frac-chip[aria-pressed="true"] {
+    background: #176b3a;
+    border-color: #176b3a;
+    color: #fff;
+}
+
+.recipe-portion-picker .portion-nutrition-label {
+    font-size: 11.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #6e7462;
+    margin: 2px 0 8px;
+    font-weight: 600;
+}
+
+.recipe-portion-picker .portion-tiles {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.recipe-portion-picker .portion-tile {
+    border: 1px solid #ded5c0;
+    border-radius: 12px;
+    background: #fff;
+    padding: 10px 12px 9px;
+    min-height: 96px;
+    display: flex;
+    flex-direction: column;
+}
+
+.recipe-portion-picker .portion-tile-label {
+    font-size: 11.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #6e7462;
+}
+
+.recipe-portion-picker .portion-tile-value {
+    font-size: 27px;
+    font-weight: 600;
+    margin-top: 3px;
+}
+
+.recipe-portion-picker .portion-tile-value small {
+    font-size: 13.5px;
+    font-weight: 400;
+    color: #6e7462;
+}
+
+.recipe-portion-picker .portion-tile-sub {
+    font-size: 12px;
+    color: #6e7462;
+    margin-top: 2px;
+}
+
+.recipe-portion-picker .portion-micros-toggle {
+    margin-top: 8px;
+    width: 100%;
+    border: 1px solid #ded5c0;
+    background: #fff;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font: inherit;
+    font-size: 13.5px;
+    color: #22301f;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    min-height: 44px;
+}
+
+.recipe-portion-picker .portion-micros {
+    margin-top: 8px;
+    border: 1px dashed #ded5c0;
+    border-radius: 10px;
+    padding: 9px 12px;
+    background: #fffdf8;
+}
+
+.recipe-portion-picker .portion-micro-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    padding: 3.5px 0;
+}
+
+.recipe-portion-picker .portion-micro-row span:first-child {
+    color: #6e7462;
+}
+
+.recipe-portion-picker .portion-math {
+    font-size: 13px;
+    color: #5d5344;
+    margin: 10px 0 0;
+}
+
+.recipe-portion-picker .portion-math strong {
+    color: #4a4237;
+}
+
+/* Logged recipe meal card: the entered portion line + the
+   calorie-descending treatment's "+ N more" row (2026-11-13). */
+.meal-portion-line {
+    font-size: 13px;
+    color: #5d5344;
+    margin: 0 0 4px;
+}
+
+.meal-more-row small {
+    font-style: italic;
+    color: #5d5344;
+}
+
+/* Recipe editor: the two yield slots beside Servings. */
+.yield-edit-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.yield-edit-row input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.yield-edit-row select {
+    flex: 0 0 92px;
+}

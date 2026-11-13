@@ -381,6 +381,20 @@ const BUTTON_CLASS_REGISTRY = new Map<
         },
     ],
     [
+        "mode-btn",
+        {
+            status: "context",
+            reason: "recipe unit-logging portion picker mode segments (owner-approved renderings, 2026-11-13): 31px Direction C segment geometry with the ::after hit overlay; the selected segment takes the primary green fill",
+        },
+    ],
+    [
+        "stepper-btn",
+        {
+            status: "context",
+            reason: "recipe unit-logging servings stepper (owner-approved renderings, 2026-11-13): 31px Direction C square steppers with the ::after hit overlay; glyph-only, ink on transparent with the rule border",
+        },
+    ],
+    [
         "button-google",
         {
             status: "allow",

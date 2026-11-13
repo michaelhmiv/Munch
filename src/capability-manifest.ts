@@ -1167,9 +1167,18 @@ export const CAPABILITY_MANIFEST = [
     {
         id: "recipe.update",
         mcp: complete(["update_recipe"]),
-        web: complete(["PATCH /api/app/recipes/:id"]),
-        app: complete(["PATCH /api/app/recipes/:id"]),
-        ios: complete(["PATCH /api/app/recipes/:id"]),
+        web: complete([
+            "PATCH /api/app/recipes/:id",
+            "POST /api/app/recipes/:id/yield",
+        ]),
+        app: complete([
+            "PATCH /api/app/recipes/:id",
+            "POST /api/app/recipes/:id/yield",
+        ]),
+        ios: complete([
+            "PATCH /api/app/recipes/:id",
+            "POST /api/app/recipes/:id/yield",
+        ]),
         iosBasis:
             "Shared bundle: iOS packages the same .mobile-web artifact as Android (same build script, cap sync ios) and reaches the same routes over the bearer transport; this outcome has no platform-specific native dependency.",
         iosGap: null,

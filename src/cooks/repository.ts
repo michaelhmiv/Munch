@@ -12,6 +12,7 @@ import {
     logRecipe,
     type PlanningScope,
     type RecipeInput,
+    type RecipePortionSpec,
 } from "../planning/repository.js";
 
 const UUID_RE =
@@ -2044,7 +2045,10 @@ export async function logCookPortion(input: {
     userId: string;
     cookId: string;
     dishId?: string;
-    servingsConsumed: number;
+    /** Servings eaten; mutually exclusive with `portion` (unit logging). */
+    servingsConsumed?: number;
+    /** Unit-logging portion (servings | amount | fraction). */
+    portion?: RecipePortionSpec;
     mealType: "breakfast" | "lunch" | "dinner" | "snack";
     notes?: string;
     idempotencyKey: string;
@@ -2065,6 +2069,7 @@ export async function logCookPortion(input: {
         recipeId: dish.recipe_id,
         recipeRevisionId: dish.recipe_revision_id,
         servingsConsumed: input.servingsConsumed,
+        portion: input.portion,
         mealType: input.mealType,
         notes: input.notes ?? `Logged from cook ${input.cookId}`,
         idempotencyKey: input.idempotencyKey,

@@ -11,6 +11,40 @@ import { formatRecipeQuantity } from "./quantity-format.js";
 
 const appSource = readFileSync(new URL("./app.js", import.meta.url), "utf8");
 
+// The extracted chunk starts at the unit-logging portion picker so
+// assertions run on the shipped picker templates too; openRecipeLog
+// fetches the recipe payload through api(), which the harness stubs
+// with a fixed recipe (12 servings, set 12-cup yield).
+const chunkStart = () => appSource.indexOf("const RECIPE_LOG_MODE_KEY");
+const stubRecipe = {
+    id: "recipe-1",
+    revision_number: 2,
+    servings: 12,
+    nutrition_status: "complete",
+    nutrition_total: {
+        calories: 5960,
+        protein_g: 234.7,
+        carbs_g: 457.9,
+        fat_g: 342.8,
+        fiber_g: 17.3,
+        sugar_g: 107.1,
+        sodium_mg: 6244,
+    },
+    effective_yields: {
+        volume: {
+            quantity: 12,
+            unit: "cup",
+            family: "volume",
+            source: "set",
+        },
+        weight: null,
+    },
+};
+const stubApi = async () => ({ recipe: stubRecipe });
+const stubDialog = {
+    querySelector: () => ({ querySelector: () => null }),
+};
+
 // Main's recipe-log dialog renders its meal-type select through
 // mealTypeOptionsHtml(defaultMealType(...)) (meal-slot law): the
 // harness supplies the real helper chunk and the real
@@ -28,8 +62,8 @@ function escapeHtml(value: unknown): string {
         .replaceAll('"', "&quot;");
 }
 
-test("recipe log dialog separates servings cooked from servings eaten", () => {
-    const start = appSource.indexOf("function openRecipeLog");
+test("recipe log dialog separates servings cooked from servings eaten", async () => {
+    const start = chunkStart();
     const end = appSource.indexOf("function openRecipePlan");
     const chunk = appSource.slice(start, end);
     let body = "";
@@ -40,6 +74,8 @@ test("recipe log dialog separates servings cooked from servings eaten", () => {
         featureFlags: () => ({ pantry: true }),
         formatRecipeQuantity,
         defaultMealType,
+        api: stubApi,
+        dialog: stubDialog,
         state: { bootstrap: { profile: { timezone: "UTC" } } },
         openDialog: (_title: string, html: string) => {
             body = html;
@@ -53,9 +89,9 @@ test("recipe log dialog separates servings cooked from servings eaten", () => {
         id: string,
         rev: string,
         options?: { fromPantryDefault?: boolean },
-    ) => void;
+    ) => Promise<void>;
 
-    open("recipe-1", "rev-1");
+    await open("recipe-1", "rev-1");
     expect(body).toContain("From my pantry");
     expect(body).toContain("Servings cooked");
     expect(body).toContain("Servings eaten");
@@ -65,14 +101,14 @@ test("recipe log dialog separates servings cooked from servings eaten", () => {
     expect(body).not.toContain('name="from_pantry" checked');
     expect(body).toContain("data-cooked-field hidden");
 
-    open("recipe-1", "rev-1", { fromPantryDefault: true });
+    await open("recipe-1", "rev-1", { fromPantryDefault: true });
     // Guided-cook default: checked, cooked field visible.
     expect(body).toContain('name="from_pantry" checked');
     expect(body).not.toContain("data-cooked-field hidden");
 });
 
-test("pantry module off hides the option entirely", () => {
-    const start = appSource.indexOf("function openRecipeLog");
+test("pantry module off hides the option entirely", async () => {
+    const start = chunkStart();
     const end = appSource.indexOf("function openRecipePlan");
     const chunk = appSource.slice(start, end);
     let body = "";
@@ -83,6 +119,8 @@ test("pantry module off hides the option entirely", () => {
         featureFlags: () => ({ pantry: false }),
         formatRecipeQuantity,
         defaultMealType,
+        api: stubApi,
+        dialog: stubDialog,
         state: { bootstrap: { profile: { timezone: "UTC" } } },
         openDialog: (_title: string, html: string) => {
             body = html;
@@ -92,7 +130,10 @@ test("pantry module off hides the option entirely", () => {
         `${mealTypeHelpers}\n${chunk}\nthis.__open = openRecipeLog;`,
         context,
     );
-    (context.__open as (id: string, rev: string) => void)("r", "rev");
+    await (context.__open as (id: string, rev: string) => Promise<void>)(
+        "r",
+        "rev",
+    );
     expect(body).not.toContain("from_pantry");
     expect(body).not.toContain("servings_cooked");
     // The log itself is untouched by the module being off.
@@ -100,7 +141,7 @@ test("pantry module off hides the option entirely", () => {
 });
 
 test("draw-down summary rows are data-shaped: used amount + remainder, skipped named", () => {
-    const start = appSource.indexOf("function openRecipeLog");
+    const start = chunkStart();
     const end = appSource.indexOf("function openRecipePlan");
     const chunk = appSource.slice(start, end);
     const context: Record<string, unknown> = {
@@ -109,6 +150,8 @@ test("draw-down summary rows are data-shaped: used amount + remainder, skipped n
             String(Number(Number(value ?? 0).toFixed(digits))),
         featureFlags: () => ({ pantry: true }),
         formatRecipeQuantity,
+        api: stubApi,
+        dialog: stubDialog,
         openDialog: () => {},
     };
     runInNewContext(
