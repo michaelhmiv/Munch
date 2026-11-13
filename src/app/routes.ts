@@ -89,6 +89,7 @@ import {
     scaleRecipeRequirements,
     type DrawdownSummary,
 } from "../inventory/drawdown.js";
+import { getPlanShortfall } from "../inventory/shortfall.js";
 import type { InventoryScope } from "../inventory/repository.js";
 import {
     addGroceryItems,
@@ -2107,6 +2108,28 @@ export function createAppRouter(): Hono {
             ),
         ),
     );
+
+    // Cross-work slice 5 (brief §3): plan → pantry shortfall for the
+    // requested range. Read-only and proposal-only — this endpoint
+    // never writes a grocery item; adds happen through the existing
+    // POST /api/app/groceries/items when the user taps Add.
+    app.get("/api/app/planning/shortfall", async (c) => {
+        const userId = c.get("munchUserId");
+        const capabilities = await resolveRequestMunchCapabilities(c, userId);
+        const scopeValue = c.req.query("scope") ?? "personal";
+        if (scopeValue !== "personal" && scopeValue !== "household") {
+            throw new Error("Shortfall scope must be personal or household");
+        }
+        const scope = requirePlanningScope(scopeValue, capabilities, false);
+        return privateJson(c, {
+            shortfall: await getPlanShortfall({
+                userId,
+                startDate: requiredQuery(c.req.query("start"), "start"),
+                endDate: requiredQuery(c.req.query("end"), "end"),
+                scope,
+            }),
+        });
+    });
 
     app.post("/api/app/recipes", requireSameOrigin, async (c) => {
         const userId = c.get("munchUserId");

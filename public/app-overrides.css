@@ -7450,3 +7450,85 @@ dialog:has(
     padding-top: 6px;
     font-size: 13.5px;
 }
+
+/* ---------- Cross-work slice 5: shortfall indicator ----------
+   Design authority §9: shortages are signaled by a dot or a small
+   badge the user taps — never a banner. Danger ink (#8c2f22) is
+   reserved for exactly this. The badge draws 23px inside a ≥44px
+   hit area; the nav dot draws 9px at the tab's top-right corner. */
+
+a[data-route="groceries"] {
+    position: relative;
+}
+
+.nav-shortfall-dot {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--danger);
+    cursor: pointer;
+}
+
+.shortfall-badge {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 23px;
+    height: 23px;
+    margin-left: 8px;
+    padding: 0;
+    border: 1px solid var(--danger);
+    border-radius: 50%;
+    background: transparent;
+    color: var(--danger);
+    font-family: Georgia, "Times New Roman", Times, serif;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+    vertical-align: middle;
+    cursor: pointer;
+}
+
+.shortfall-badge::after {
+    content: "";
+    position: absolute;
+    inset: -11px;
+}
+
+.shortfall-rows {
+    display: flex;
+    flex-direction: column;
+}
+
+.shortfall-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 0;
+    border-top: 1px solid var(--hairline, #d8cdb6);
+}
+
+.shortfall-row:first-child {
+    border-top: none;
+}
+
+.shortfall-row-main {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.shortfall-row-main strong {
+    font-size: 15px;
+}
+
+.shortfall-row-main span {
+    color: var(--ink-mute, #5d5344);
+    font-size: 13px;
+}
