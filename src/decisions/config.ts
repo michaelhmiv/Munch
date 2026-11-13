@@ -39,6 +39,9 @@ export interface DecisionsConfig {
     matchTimeoutMs: number;
     gateEnabled: boolean;
     deciderEnabled: boolean;
+    /** Seat C3 — chat-agent unsourced-claim check (log-only). */
+    chatClaimsEnabled: boolean;
+    chatClaimsTimeoutMs: number;
     matchEnabled: boolean;
     /** C2 shortfall-contradiction seat (audit §2 C2). Optional so
      * existing config literals in sibling seats/tests stay valid;
@@ -149,6 +152,16 @@ export function decisionsConfig(
             master,
             flagState(env.MUNCH_JEV_DECIDER_ENABLED),
         ),
+        chatClaimsEnabled: seatEnabled(
+            master,
+            flagState(env.MUNCH_JEV_CHAT_CLAIMS_ENABLED),
+        ),
+        chatClaimsTimeoutMs: boundedInteger(
+            env.MUNCH_JEV_CHAT_CLAIMS_TIMEOUT_MS,
+            3_000,
+            100,
+            15_000,
+        ),
         matchTimeoutMs: boundedInteger(
             env.MUNCH_JEV_MATCH_TIMEOUT_MS,
             2_000,
@@ -243,6 +256,13 @@ export function decisionsConfig(
  */
 export interface DecisionModelThresholds {
     gateFoodMin: number;
+    /**
+     * Seat C3: minimum p(supported) at or above which a numeric claim
+     * in a chat reply counts as sourced. Calibrated per model from
+     * the C3 eval's own score distributions (see
+     * scripts/chat-claims-eval.ts) — never borrowed across models.
+     */
+    chatClaimsSupportedMin: number;
     /** A2: an unresolved ingredient (or an A1-flagged one) may be
      * filled by the labelled estimate rung when the model's
      * p(estimate defensible) is at or above this value. Calibrated
@@ -290,6 +310,13 @@ export const DECISION_MODEL_THRESHOLDS: Record<
     // genuine anomalies <= 0.53, benign draws >= 0.93 (the 20-cup-milk
     // fixture scored 0.83 -- both models judge it plausible; it is
     // the eval's named miss, not a threshold failure).
+    // C3 eval (2026-11-13, scripts/chat-claims-eval.ts; 22 fixtures,
+    // 46 scored claims/model): Jev p(supported) — planted-unsourced
+    // max 0.26, sourced min 0.78 → 0.5 sits mid-band. Perplexity —
+    // planted-unsourced max 0.19, sourced min 0.58 (the mg→g
+    // conversion) → 0.4, weighted toward the false-accusation side,
+    // the seat's headline metric. Both models: catch 8/8, false
+    // accusations 0/38 at these thresholds.
     "typesafe/jev-1.14": {
         gateFoodMin: 0.1,
         estimateDefensibleMin: 0.5,
@@ -302,6 +329,7 @@ export const DECISION_MODEL_THRESHOLDS: Record<
         pantryUnitsCompatibleMin: 0.6,
         drawdownMatchMin: 0.5,
         drawdownQuantityMin: 0.7,
+        chatClaimsSupportedMin: 0.5,
     },
     // Bake-off: positives min 0.90 / median 0.99; negatives ALL ≤ 0.011
     // — the widest separation of the three, so 0.10 transfers with the
@@ -327,11 +355,12 @@ export const DECISION_MODEL_THRESHOLDS: Record<
         pantryUnitsCompatibleMin: 0.5,
         drawdownMatchMin: 0.5,
         drawdownQuantityMin: 0.7,
+        chatClaimsSupportedMin: 0.4,
     },
     // Bake-off: positives min 0.84 / median 0.99; hottest negative 0.071
     // — 0.10 sits above it, but with the thinnest margin of the three;
     // watch the production logs before ever lowering this.
-    "liquid/d1-ultra": { gateFoodMin: 0.1 },
+    "liquid/d1-ultra": { gateFoodMin: 0.1, chatClaimsSupportedMin: 0.5 },
 };
 
 /** The brief's standard gate threshold for any unlisted slug. */
@@ -340,6 +369,16 @@ export const DEFAULT_GATE_FOOD_MIN = 0.1;
 export function gateFoodThresholdForModel(model: string): number {
     return (
         DECISION_MODEL_THRESHOLDS[model]?.gateFoodMin ?? DEFAULT_GATE_FOOD_MIN
+    );
+}
+
+/** Standard C3 supported-claim threshold for any unlisted slug. */
+export const DEFAULT_CHAT_CLAIMS_SUPPORTED_MIN = 0.5;
+
+export function chatClaimsThresholdForModel(model: string): number {
+    return (
+        DECISION_MODEL_THRESHOLDS[model]?.chatClaimsSupportedMin ??
+        DEFAULT_CHAT_CLAIMS_SUPPORTED_MIN
     );
 }
 

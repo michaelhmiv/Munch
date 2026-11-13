@@ -55,6 +55,14 @@ export type ChatAgentResult =
           model: string;
           reply: string;
           toolCalls: ChatAgentToolCallRecord[];
+          /**
+           * The tool-result texts the model received this turn, in
+           * execution order. Consumed off the reply path by the C3
+           * unsourced-claim check (src/decisions/chat-claims.ts) as
+           * part of the sourced values a reply may quote; never
+           * persisted and never shown to the user.
+           */
+          toolResultTexts: string[];
           /** Meal draft ids created by tool calls during this turn. */
           draftIds: string[];
           /** True when the per-message tool cap stopped further calls. */
@@ -232,6 +240,7 @@ export async function requestChatReply(
     ];
 
     const toolCallRecords: ChatAgentToolCallRecord[] = [];
+    const toolResultTexts: string[] = [];
     const draftIds: string[] = [];
     let toolCallsUsed = 0;
     let modelCalls = 0;
@@ -340,6 +349,7 @@ export async function requestChatReply(
                         ? `${reply.slice(0, MAX_REPLY_CHARS)}…`
                         : reply,
                 toolCalls: toolCallRecords,
+                toolResultTexts,
                 draftIds,
                 capReached,
             };
@@ -394,6 +404,7 @@ export async function requestChatReply(
                 name: call.name,
                 outcome: execution.outcome,
             });
+            toolResultTexts.push(execution.text);
             if (execution.draftId && !draftIds.includes(execution.draftId)) {
                 draftIds.push(execution.draftId);
             }
@@ -441,6 +452,7 @@ export async function requestChatReply(
                         ? `${reply.slice(0, MAX_REPLY_CHARS)}…`
                         : reply,
                 toolCalls: toolCallRecords,
+                toolResultTexts,
                 draftIds,
                 capReached,
             };

@@ -3,6 +3,8 @@ import {
     decisionsConfig,
     draftReviewPlausibleThresholdForModel,
     gateFoodThresholdForModel,
+    chatClaimsThresholdForModel,
+    DEFAULT_CHAT_CLAIMS_SUPPORTED_MIN,
     shortfallCheckEnabled,
     shortfallCheckTimeoutMs,
     shortfallContradictionThresholdForModel,
@@ -83,6 +85,55 @@ describe("decisionsConfig flags (S1/S2 ship OFF)", () => {
         expect(killed!.matchEnabled).toBe(false);
         expect(killed!.deciderEnabled).toBe(true);
         expect(decisionsConfig({ ...KEY })!.matchTimeoutMs).toBe(2_000);
+    });
+});
+
+describe("decisionsConfig C3 chat-claims flag (MUNCH_JEV_CHAT_CLAIMS_ENABLED)", () => {
+    test("defaults off, follows the master, and a seat off wins", () => {
+        expect(decisionsConfig({ ...KEY })!.chatClaimsEnabled).toBe(false);
+        expect(
+            decisionsConfig({ ...KEY, MUNCH_JEV_ENABLED: "true" })!
+                .chatClaimsEnabled,
+        ).toBe(true);
+        expect(
+            decisionsConfig({
+                ...KEY,
+                MUNCH_JEV_CHAT_CLAIMS_ENABLED: "true",
+            })!.chatClaimsEnabled,
+        ).toBe(true);
+        expect(
+            decisionsConfig({
+                ...KEY,
+                MUNCH_JEV_ENABLED: "true",
+                MUNCH_JEV_CHAT_CLAIMS_ENABLED: "false",
+            })!.chatClaimsEnabled,
+        ).toBe(false);
+    });
+
+    test("timeout defaults to 3000 and is bounded", () => {
+        expect(decisionsConfig({ ...KEY })!.chatClaimsTimeoutMs).toBe(3_000);
+        expect(
+            decisionsConfig({
+                ...KEY,
+                MUNCH_JEV_CHAT_CLAIMS_TIMEOUT_MS: "4500",
+            })!.chatClaimsTimeoutMs,
+        ).toBe(4_500);
+        expect(
+            decisionsConfig({
+                ...KEY,
+                MUNCH_JEV_CHAT_CLAIMS_TIMEOUT_MS: "5",
+            })!.chatClaimsTimeoutMs,
+        ).toBe(100);
+    });
+
+    test("C3 thresholds resolve per model with a standard fallback", () => {
+        expect(chatClaimsThresholdForModel("typesafe/jev-1.14")).toBe(0.5);
+        expect(
+            chatClaimsThresholdForModel("perplexity/pplx-decider-v1.2"),
+        ).toBe(0.4);
+        expect(chatClaimsThresholdForModel("example/unknown-1")).toBe(
+            DEFAULT_CHAT_CLAIMS_SUPPORTED_MIN,
+        );
     });
 });
 

@@ -20,6 +20,8 @@ function testConfig(overrides: Partial<DecisionsConfig> = {}): DecisionsConfig {
         matchTimeoutMs: 50,
         gateEnabled: true,
         deciderEnabled: true,
+        chatClaimsEnabled: true,
+        chatClaimsTimeoutMs: 50,
         matchEnabled: true,
         draftReviewTimeoutMs: 50,
         draftReviewEnabled: true,

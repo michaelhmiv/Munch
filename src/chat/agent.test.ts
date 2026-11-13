@@ -206,6 +206,11 @@ describe("chat v2 agent loop", () => {
                 { name: "search_foods", outcome: "ok" },
                 { name: "prepare_meal_review", outcome: "ok" },
             ]);
+            // C3 consumes these off the reply path as sourced values.
+            expect(result.toolResultTexts).toEqual([
+                '{"candidates":[]}',
+                '{"review":{"id":"draft-1"}}',
+            ]);
         }
         // The second model request must carry the tool result.
         const secondMessages = JSON.stringify(requests[1]?.body.messages);

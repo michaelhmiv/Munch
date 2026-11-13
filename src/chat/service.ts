@@ -1,3 +1,4 @@
+import { scheduleChatClaimCheck } from "../decisions/chat-claims.js";
 import { getMealDraft } from "../meal-drafts/repository.js";
 import type { MealDraft } from "../meal-drafts/types.js";
 import { requestChatReply, type ChatAgentResult } from "./agent.js";
@@ -55,6 +56,10 @@ import {
  * 7. The turn is persisted atomically (user + assistant, with the
  *    created meal draft's link, its per-item grounding trace read
  *    back from the draft itself, and the tool-call trace).
+ * 8. The C3 unsourced-claim check is SCHEDULED (never awaited):
+ *    a log-only Jev seat that compares the reply's numeric claims
+ *    against this turn's tool-result values off the reply path
+ *    (src/decisions/chat-claims.ts). It cannot change the reply.
  */
 
 export type ChatGateResult =
@@ -164,6 +169,8 @@ export interface ChatServiceDependencies extends ChatEntitlementDependencies {
         init?: RequestInit,
     ) => Promise<Response>;
     loadDraft?: (userId: string, draftId: string) => Promise<MealDraft | null>;
+    /** C3 unsourced-claim check seam (log-only, off the reply path). */
+    scheduleClaimCheck?: typeof scheduleChatClaimCheck;
 }
 
 export type SendChatMessageResult =
@@ -349,6 +356,26 @@ export async function sendChatMessage(
         draftId: draft?.id ?? primaryDraftId,
         groundingTrace: trace,
         toolTrace: result.toolCalls,
+    });
+    // C3 unsourced-claim check (log-only): scheduled AFTER the turn
+    // is persisted and never awaited — it cannot delay, alter, or
+    // block the reply above. Flag-off means it returns without
+    // scheduling anything (zero Decisions calls).
+    (dependencies.scheduleClaimCheck ?? scheduleChatClaimCheck)({
+        reply: result.reply,
+        toolResultTexts: result.toolResultTexts ?? [],
+        contextTexts: [
+            JSON.stringify(context),
+            ...(entrySeed
+                ? [
+                      JSON.stringify({
+                          surface: entrySeed.surface,
+                          summary: entrySeed.summary,
+                          data: entrySeed.data,
+                      }),
+                  ]
+                : []),
+        ],
     });
     return {
         status: "ok",
