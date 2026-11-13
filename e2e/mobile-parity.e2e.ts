@@ -3559,11 +3559,11 @@ test("photo-flow P8: pantry and receipt captures use the shared control, camera 
     const receiptControl = page.locator(
         "[data-photo-capture]:has(#receipt-photo)",
     );
+    // The captures live in the tools rail's sheets now (tools-to-top
+    // N1): open the Scan pantry sheet to reach its control.
+    await page.locator('.tools-rail [data-open-sheet="sheet-scan"]').click();
     await expect(
         pantryControl.locator('[data-capture-action="camera"]'),
-    ).toBeVisible();
-    await expect(
-        receiptControl.locator('[data-capture-action="camera"]'),
     ).toBeVisible();
     await expect(page.locator('input[type="file"]:visible')).toHaveCount(0);
     await pantryControl.locator('[data-capture-action="camera"]').click();
@@ -3583,6 +3583,13 @@ test("photo-flow P8: pantry and receipt captures use the shared control, camera 
         .locator("#pantry-photo")
         .evaluate((el) => (el as HTMLInputElement).files?.length ?? 0);
     expect(fileCount).toBe(1);
+    // The receipt capture is the same shared control in its own
+    // sheet.
+    await page.locator("#sheet-scan [data-close-sheet]").click();
+    await page.locator('.tools-rail [data-open-sheet="sheet-receipt"]').click();
+    await expect(
+        receiptControl.locator('[data-capture-action="camera"]'),
+    ).toBeVisible();
 });
 
 test("S6 slice 1 regression: Abandon draft dismisses a pending draft with no native confirm", async ({
