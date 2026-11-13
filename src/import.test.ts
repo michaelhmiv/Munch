@@ -1015,3 +1015,36 @@ test("buildSummaryText explains a batch-gate failure that has no per-row results
     expect(text).toContain("integrity check");
     expect(text).toContain("expected_row_count");
 });
+
+// ---------- A3 batch plausibility hook (fold-in) ----------
+
+test("runImport: reviewBatch warnings surface and rows still import (advisory only)", async () => {
+    const { deps, inserted } = makeStore();
+    let calls = 0;
+    deps.reviewBatch = async (rows) => {
+        calls++;
+        expect(rows).toHaveLength(2);
+        return ["Plausibility review flagged a row."];
+    };
+    const result = await runImport(
+        args([
+            row({ source_line: 2 }),
+            row({ source_line: 3, description: "Soup", calories: 400 }),
+        ]),
+        deps,
+    );
+    expect(calls).toBe(1);
+    expect(result.status).toBe("success");
+    expect(inserted).toHaveLength(2);
+    expect(result.warnings).toContain("Plausibility review flagged a row.");
+});
+
+test("runImport: a throwing reviewBatch changes nothing (fail-open)", async () => {
+    const { deps, inserted } = makeStore();
+    deps.reviewBatch = async () => {
+        throw new Error("decisions down");
+    };
+    const result = await runImport(args([row({ source_line: 2 })]), deps);
+    expect(result.status).toBe("success");
+    expect(inserted).toHaveLength(1);
+});
