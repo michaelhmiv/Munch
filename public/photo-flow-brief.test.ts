@@ -206,7 +206,7 @@ describe("draft button-flow wiring (audit fixes)", () => {
             'if (action === "confirm-meal-draft")',
             'if (action === "cancel-meal-draft")',
         );
-        expect(confirm).toContain("btn-spinner");
+        expect(confirm).toContain("meal-draft-spinner-wht");
         expect(confirm).toContain("Logging…");
         // The dead-click gate is gone: no checkbox demand, no early
         // return — acceptance rides the click itself.

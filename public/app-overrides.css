@@ -7370,16 +7370,19 @@ dialog:has(
     animation: meal-draft-spin 0.85s linear infinite;
 }
 
-.btn-spinner {
+/* The saving-state spinner inside the green Confirm button: the
+   meal-draft spinner in its white variant (the approved board's
+   .wht) — same ring grammar and rotation, track and head in white
+   so it reads on the primary fill. */
+.meal-draft-spinner-wht {
     display: inline-block;
     width: 16px;
     height: 16px;
+    margin-top: 0;
     margin-right: 8px;
     vertical-align: -3px;
-    border-radius: 50%;
-    border: 2px solid rgb(255 255 255 / 0.35);
+    border-color: rgb(255 255 255 / 0.35);
     border-top-color: #fff;
-    animation: meal-draft-spin 0.85s linear infinite;
 }
 
 @keyframes meal-draft-spin {
@@ -7389,8 +7392,7 @@ dialog:has(
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .meal-draft-spinner,
-    .btn-spinner {
+    .meal-draft-spinner {
         animation: none;
     }
 }

@@ -7705,7 +7705,7 @@ async function handleAction(button) {
         const originalLabel = button.innerHTML;
         button.disabled = true;
         button.setAttribute("aria-busy", "true");
-        button.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span>Logging…`;
+        button.innerHTML = `<span class="meal-draft-spinner meal-draft-spinner-wht" aria-hidden="true"></span>Logging…`;
         try {
             // Photo-flow P4: confirming is also a save — unsaved edits
             // commit first, so the logged meal is the one on screen,
