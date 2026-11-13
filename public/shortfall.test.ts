@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
+import { formatRecipeQuantity } from "./quantity-format.js";
 
 // Cross-work slice 5 (brief §3) — plan → pantry shortfall indicator.
 // The dialog builder is extracted from app.js and executed with
@@ -45,6 +46,7 @@ test("rundown dialog renders data rows with per-item and add-all actions", () =>
     let actions = "";
     const context: Record<string, unknown> = {
         escapeHtml,
+        formatRecipeQuantity,
         state: { shortfall: { enabled: true, items: [sampleItem] } },
         openDialog: (t: string, b: string, a: string) => {
             title = t;
@@ -66,10 +68,47 @@ test("rundown dialog renders data rows with per-item and add-all actions", () =>
     expect(actions).toContain('data-action="shortfall-add-all"');
 });
 
+test("rundown quantities in volume units render as US recipe fractions", () => {
+    // Owner ruling (2026-11-13): "~0.25 cup" becomes "~1/4 cup" —
+    // the shortfall lines go through the one shared formatter.
+    const cupItem = {
+        name: "Milk",
+        normalized_name: "milk",
+        need_quantity: 0.75,
+        need_unit: "cup",
+        have_quantity: 0.25,
+        short_quantity: 0.5,
+        pantry_state: "short",
+        reasons: [
+            { recipe_name: "Chicken Pot Pie", planned_meal_id: "m2", times: 1 },
+        ],
+        planned_meal_id: "m2",
+    };
+    let body = "";
+    const context: Record<string, unknown> = {
+        escapeHtml,
+        formatRecipeQuantity,
+        state: { shortfall: { enabled: true, items: [cupItem] } },
+        openDialog: (_t: string, b: string) => {
+            body = b;
+        },
+    };
+    runInNewContext(
+        `${dialogChunk()}\nthis.__open = openShortfallDialog;`,
+        context,
+    );
+    (context.__open as () => void)();
+    expect(body).toContain("need ~1/2 cup");
+    expect(body).toContain("Pantry: ~1/4 cup");
+    expect(body).not.toContain("0.25");
+    expect(body).not.toContain("0.5 cup");
+});
+
 test("opening the rundown adds nothing — adds ride explicit taps only", () => {
     const calls: unknown[] = [];
     const context: Record<string, unknown> = {
         escapeHtml,
+        formatRecipeQuantity,
         state: { shortfall: { enabled: true, items: [sampleItem] } },
         openDialog: () => {},
         api: (...args: unknown[]) => {
@@ -98,6 +137,7 @@ test("an added item re-renders as Added with no add-all left", () => {
     let actions = "unset";
     const context: Record<string, unknown> = {
         escapeHtml,
+        formatRecipeQuantity,
         state: {
             shortfall: {
                 enabled: true,

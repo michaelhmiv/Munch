@@ -1,3 +1,4 @@
+import { formatRecipeQuantity } from "../quantity-format.js";
 import { scaleNutrients } from "./nutrients.js";
 import type { FoodPortion, NutrientValues } from "./types.js";
 
@@ -112,7 +113,9 @@ export function portionFromPer100g(input: {
         id: input.id,
         amount: input.amount,
         unit: normalizePortionUnit(input.unit),
-        label: input.label.trim() || `${input.amount} ${input.unit}`,
+        label:
+            input.label.trim() ||
+            `${formatRecipeQuantity(input.amount, input.unit) ?? input.amount} ${input.unit}`,
         gramWeight: Math.round(input.gramWeight * 100) / 100,
         nutrients: scaleNutrients(
             input.nutrientsPer100g,

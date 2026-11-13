@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
+import { formatRecipeQuantity } from "./quantity-format.js";
 
 // "Already have it" client grammar, exercised on the real functions
 // lifted out of app.js: the presence badge on grocery rows (both
@@ -18,6 +19,7 @@ function extract(name: string): string {
 
 const context: Record<string, unknown> = {
     state: { pantryRunOutPrompted: new Set<string>() },
+    formatRecipeQuantity,
 };
 runInNewContext(
     [
