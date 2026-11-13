@@ -206,14 +206,14 @@ describe("multi-photo capture and submit wiring", () => {
         expect(submit).toContain("mealPhotoCapture.session = {");
     });
 
-    test("removing the last photo cancels the draft and returns to the capture sheet", () => {
+    test("removing the last photo cancels the draft and restarts direct capture", () => {
         const remove = sliceBetween(
             'if (action === "remove-draft-photo")',
             'if (action === "add-draft-manual")',
         );
         expect(remove).toContain("reestimateDraftPhotos(remaining)");
         expect(remove).toContain("/cancel`");
-        expect(remove).toContain("openMealPhotoDialog()");
+        expect(remove).toContain("startMealPhotoCapture()");
     });
 
     test("the review listens for its own capture control's change event", () => {
