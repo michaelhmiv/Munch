@@ -229,7 +229,8 @@ async function loadMeal(
     return { ...mealFromRow(row), items: await loadItems(tx, mealId) };
 }
 
-export async function insertStructuredMeal(
+export async function insertStructuredMealInTransaction(
+    tx: DatabaseTransaction,
     userId: string,
     input: StructuredMealInput,
 ): Promise<StructuredMealInsertResult> {
@@ -250,8 +251,7 @@ export async function insertStructuredMeal(
         throw new Error("Structured meal loggedAt is invalid");
     }
 
-    return withUserDatabase(userId, async (tx) => {
-        const mealRows = await tx<Array<Record<string, unknown>>>`
+    const mealRows = await tx<Array<Record<string, unknown>>>`
             insert into munch.meals (
                 user_id,
                 logged_at,
@@ -292,32 +292,31 @@ export async function insertStructuredMeal(
             do nothing
             returning *
         `;
-        let mealRow = mealRows[0];
-        let deduplicated = false;
-        if (!mealRow) {
-            const existingRows = await tx<Array<{ id: string }>>`
+    let mealRow = mealRows[0];
+    let deduplicated = false;
+    if (!mealRow) {
+        const existingRows = await tx<Array<{ id: string }>>`
                 select id
                 from munch.meals
                 where user_id = ${userId}
                   and idempotency_key = ${idempotencyKey}
                 limit 1
             `;
-            if (!existingRows[0])
-                throw new Error("Idempotent meal could not be reloaded");
-            mealRow = { id: existingRows[0].id };
-            deduplicated = true;
-        }
-        const mealId = String(mealRow.id);
+        if (!existingRows[0])
+            throw new Error("Idempotent meal could not be reloaded");
+        mealRow = { id: existingRows[0].id };
+        deduplicated = true;
+    }
+    const mealId = String(mealRow.id);
 
-        if (deduplicated) {
-            const existing = await loadMeal(tx, mealId);
-            if (!existing)
-                throw new Error("Idempotent meal could not be reloaded");
-            return { meal: existing, deduplicated: true };
-        }
+    if (deduplicated) {
+        const existing = await loadMeal(tx, mealId);
+        if (!existing) throw new Error("Idempotent meal could not be reloaded");
+        return { meal: existing, deduplicated: true };
+    }
 
-        for (const [position, item] of items.entries()) {
-            await tx`
+    for (const [position, item] of items.entries()) {
+        await tx`
                 insert into munch.meal_items (
                     meal_id,
                     user_id,
@@ -376,16 +375,24 @@ export async function insertStructuredMeal(
                     ${item.sourceSnapshot ?? {}}::jsonb
                 )
             `;
-        }
+    }
 
-        return {
-            meal: {
-                ...mealFromRow(mealRow),
-                items: await loadItems(tx, mealId),
-            },
-            deduplicated: false,
-        };
-    });
+    return {
+        meal: {
+            ...mealFromRow(mealRow),
+            items: await loadItems(tx, mealId),
+        },
+        deduplicated: false,
+    };
+}
+
+export async function insertStructuredMeal(
+    userId: string,
+    input: StructuredMealInput,
+): Promise<StructuredMealInsertResult> {
+    return withUserDatabase(userId, (tx) =>
+        insertStructuredMealInTransaction(tx, userId, input),
+    );
 }
 
 export async function getStructuredMeal(

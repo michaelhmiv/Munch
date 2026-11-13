@@ -352,6 +352,15 @@ dialog .auth-card {
     padding: 8px 0;
 }
 
+/* Log as planned: the Today planned row's trailing actions
+   (Log as planned / Log it · Swap · Skip / Logged chip) sit in one
+   grid cell so the row keeps its two-column shape. */
+.app-content .planned-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
 .app-content .food-row strong {
     line-height: 1.3;
 }

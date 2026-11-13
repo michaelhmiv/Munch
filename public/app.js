@@ -789,7 +789,37 @@ async function renderToday() {
     // account. A future day swaps the totals for the Planned
     // projection, drops the ad slot (it belongs to a lived day), and
     // lists planned meals where logged meals would sit.
-    content.innerHTML = `<div class="operate-view today-view"><div class="page-heading"><div class="today-heading-row"><h2>${escapeHtml(formatDate(state.date, { weekday: true }))}</h2>${isFutureDay ? `<span class="day-kind-chip">Planned</span>` : ""}<div class="today-heading-icons"><button class="button button-secondary button-small trends-icon-btn" type="button" data-action="open-calendar" aria-label="Open calendar" title="Calendar"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg></button><button class="button button-secondary button-small trends-icon-btn" type="button" data-action="open-trends" aria-label="Open Trends" title="Trends"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><rect x="4" y="12" width="3.4" height="7" rx="1"/><rect x="10.3" y="7" width="3.4" height="12" rx="1"/><rect x="16.6" y="9.5" width="3.4" height="9.5" rx="1"/></svg></button></div></div><div class="auth-actions"></div></div><section class="panel">${macrosSection}</section>${isFutureDay ? "" : todayAdSlotMarkup()}<div class="dashboard-grid"><section class="panel panel-span-8">${mealsPanel}</section><aside class="panel panel-span-4"><div class="panel-title"><h3>Daily details</h3></div><div class="summary-grid" style="grid-template-columns:1fr 1fr">${metricCard("Water", data.water.totalMl, " ml", goals.daily_water_ml, false, { key: "today-water", targetLink: true, body: waterMetricDetail(data.water.entries) })}${metricCard("Weight", latestWeightValue, ` ${weightUnit}`, null, false, { key: "today-weight", body: weightMetricDetail(data.weight, weightUnit) })}</div><div class="auth-actions"><button class="button button-secondary button-small" data-action="add-water">Add water</button><button class="button button-secondary button-small" data-action="add-weight">Add weight</button></div><div class="panel-title spacer-top"><h3>Hydration entries</h3><span>${state.waterEntries.length}</span></div>${waterEntryRows(state.waterEntries)}<div class="panel-title spacer-top"><h3>Weight entries</h3><span>${state.weightEntries.length}</span></div>${weightEntryRows(state.weightEntries, weightUnit)}${data.drafts?.length ? `<div class="panel-title spacer-top"><h3>Pending drafts</h3><span>${data.drafts.length}</span></div><div class="meal-groups">${data.drafts.map(pendingDraftCard).join("")}</div>` : ""}${!isFutureDay && data.plannedMeals?.length ? `<div class="panel-title spacer-top"><h3>Planned today</h3><span>${data.plannedMeals.length}</span></div>${data.plannedMeals.map((meal) => `<div class="food-row"><div><strong>${escapeHtml(meal.recipe_name)}</strong><small>${escapeHtml(meal.meal_slot || "Meal")} · ${number(meal.servings, 1)} servings</small></div><span>${meal.nutrition_per_serving?.calories ? `${number(meal.nutrition_per_serving.calories * meal.servings)} kcal` : ""}</span><button class="button button-quiet button-small" type="button" data-action="view-recipe" data-id="${escapeHtml(meal.recipe_id)}">View recipe</button></div>`).join("")}` : ""}</aside></div></div>`;
+    content.innerHTML = `<div class="operate-view today-view"><div class="page-heading"><div class="today-heading-row"><h2>${escapeHtml(formatDate(state.date, { weekday: true }))}</h2>${isFutureDay ? `<span class="day-kind-chip">Planned</span>` : ""}<div class="today-heading-icons"><button class="button button-secondary button-small trends-icon-btn" type="button" data-action="open-calendar" aria-label="Open calendar" title="Calendar"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg></button><button class="button button-secondary button-small trends-icon-btn" type="button" data-action="open-trends" aria-label="Open Trends" title="Trends"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><rect x="4" y="12" width="3.4" height="7" rx="1"/><rect x="10.3" y="7" width="3.4" height="12" rx="1"/><rect x="16.6" y="9.5" width="3.4" height="9.5" rx="1"/></svg></button></div></div><div class="auth-actions"></div></div><section class="panel">${macrosSection}</section>${isFutureDay ? "" : todayAdSlotMarkup()}<div class="dashboard-grid"><section class="panel panel-span-8">${mealsPanel}</section><aside class="panel panel-span-4"><div class="panel-title"><h3>Daily details</h3></div><div class="summary-grid" style="grid-template-columns:1fr 1fr">${metricCard("Water", data.water.totalMl, " ml", goals.daily_water_ml, false, { key: "today-water", targetLink: true, body: waterMetricDetail(data.water.entries) })}${metricCard("Weight", latestWeightValue, ` ${weightUnit}`, null, false, { key: "today-weight", body: weightMetricDetail(data.weight, weightUnit) })}</div><div class="auth-actions"><button class="button button-secondary button-small" data-action="add-water">Add water</button><button class="button button-secondary button-small" data-action="add-weight">Add weight</button></div><div class="panel-title spacer-top"><h3>Hydration entries</h3><span>${state.waterEntries.length}</span></div>${waterEntryRows(state.waterEntries)}<div class="panel-title spacer-top"><h3>Weight entries</h3><span>${state.weightEntries.length}</span></div>${weightEntryRows(state.weightEntries, weightUnit)}${data.drafts?.length ? `<div class="panel-title spacer-top"><h3>Pending drafts</h3><span>${data.drafts.length}</span></div><div class="meal-groups">${data.drafts.map(pendingDraftCard).join("")}</div>` : ""}${
+        !isFutureDay && data.plannedMeals?.length
+            ? `<div class="panel-title spacer-top"><h3>Planned today</h3><span>${data.plannedMeals.length}</span></div>${data.plannedMeals
+                  .map((meal) => {
+                      // Log as planned states on Today: a logged entry reads
+                      // Logged; an evening prompt (the server sends
+                      // plannedPrompts only for today's unlogged meals)
+                      // offers Log it / Swap / Skip; any other unlogged meal
+                      // planned for today offers Log as planned.
+                      const prompt =
+                          !meal.logged &&
+                          (data.plannedPrompts || []).some(
+                              (candidate) =>
+                                  candidate.planned_meal_id ===
+                                  meal.planned_meal_id,
+                          ) &&
+                          !plannedPromptSkipped(meal.planned_meal_id);
+                      const viewButton = `<button class="button button-quiet button-small" type="button" data-action="view-recipe" data-id="${escapeHtml(meal.recipe_id)}">View recipe</button>`;
+                      let actions = viewButton;
+                      if (meal.logged) {
+                          actions = `<span class="macro-chip">Logged</span>${viewButton}`;
+                      } else if (prompt) {
+                          actions = `${plannedLogButton(meal, "Log it")}<button class="button button-secondary button-small" type="button" data-action="meal-swap" data-id="${escapeHtml(meal.planned_meal_id)}" data-version="${escapeHtml(String(meal.version))}">Swap</button><button class="button button-quiet button-small" type="button" data-action="planned-prompt-skip" data-id="${escapeHtml(meal.planned_meal_id)}">Skip</button>`;
+                      } else if (data.isToday) {
+                          actions = `${plannedLogButton(meal, "Log as planned")}${viewButton}`;
+                      }
+                      return `<div class="food-row"><div><strong>${escapeHtml(meal.recipe_name)}</strong><small>${escapeHtml(meal.meal_slot || "Meal")} · ${number(meal.servings, 1)} servings</small></div><span>${meal.nutrition_per_serving?.calories ? `${number(meal.nutrition_per_serving.calories * meal.servings)} kcal` : ""}</span><span class="planned-actions">${actions}</span></div>`;
+                  })
+                  .join("")}`
+            : ""
+    }</aside></div></div>`;
 }
 
 // =====================================================================
@@ -3387,6 +3417,79 @@ async function openRecipe(id) {
     searchRecipeFoods("");
 }
 
+// Log as planned (connection option #1): one tap on a meal planned
+// for today opens this confirm step — the saved recipe exactly as
+// planned, servings editable — and the server links the log back to
+// the plan entry so it can only ever be logged once. Skips of the
+// evening prompt are session-scoped, matching the shopping-mode
+// pattern: the row returns tomorrow or after a restart, never
+// silently forever.
+const PLANNED_PROMPT_SKIP_PREFIX = "munch.planned-prompt-skip:";
+
+function plannedPromptSkipped(plannedMealId) {
+    try {
+        return (
+            sessionStorage.getItem(
+                PLANNED_PROMPT_SKIP_PREFIX + plannedMealId,
+            ) === "1"
+        );
+    } catch {
+        return false;
+    }
+}
+
+function skipPlannedPrompt(plannedMealId) {
+    try {
+        sessionStorage.setItem(PLANNED_PROMPT_SKIP_PREFIX + plannedMealId, "1");
+    } catch {
+        // Session storage unavailable: the row simply returns on the
+        // next render. Nothing else depends on the dismissal.
+    }
+}
+
+function plannedLogButton(meal, label) {
+    return `<button class="button button-secondary button-small" type="button" data-action="log-as-planned" data-planned-meal-id="${escapeHtml(meal.planned_meal_id)}" data-recipe-id="${escapeHtml(meal.recipe_id)}" data-revision-id="${escapeHtml(meal.recipe_revision_id)}" data-name="${escapeHtml(meal.recipe_name)}" data-servings="${escapeHtml(String(meal.servings))}" data-slot="${escapeHtml(meal.meal_slot || "")}">${escapeHtml(label)}</button>`;
+}
+
+function openPlannedLog(meal) {
+    const plannedSlot = ["breakfast", "lunch", "dinner", "snack"].includes(
+        meal.meal_slot,
+    )
+        ? meal.meal_slot
+        : "dinner";
+    const slotOptions = [
+        ["breakfast", "Breakfast"],
+        ["lunch", "Lunch"],
+        ["dinner", "Dinner"],
+        ["snack", "Snack"],
+    ]
+        .map(
+            ([value, label]) =>
+                `<option value="${value}"${value === plannedSlot ? " selected" : ""}>${label}</option>`,
+        )
+        .join("");
+    openDialog(
+        `Log ${meal.recipe_name} as planned`,
+        `<form id="planned-log-form" class="auth-form" data-id="${escapeHtml(meal.recipe_id)}" data-revision="${escapeHtml(meal.recipe_revision_id)}" data-planned-meal-id="${escapeHtml(meal.planned_meal_id)}">
+            <p>Use the saved ingredients and nutrition exactly as stored. Choose how much you ate.</p>
+            <label>Servings eaten<input name="servings_consumed" type="number" min="0.001" step="any" value="${escapeHtml(String(meal.servings))}" required /></label>
+            <label>Meal<select name="meal_type">${slotOptions}</select></label>
+            <label>Notes<textarea name="notes" rows="2" maxlength="2000"></textarea></label>
+            <button class="button button-primary" type="submit">Log meal</button>
+        </form>`,
+    );
+}
+
+function planCardActions(meal) {
+    const viewButton = `<button class="button button-secondary button-small" type="button" data-action="view-recipe" data-id="${escapeHtml(meal.recipe_id)}">View recipe</button>`;
+    if (meal.logged) return viewButton;
+    const swapButton = `<button class="button button-secondary button-small" type="button" data-action="meal-swap" data-id="${escapeHtml(meal.planned_meal_id)}" data-version="${escapeHtml(meal.version)}">Swap recipe</button>`;
+    const today = dateInTimezone(state.bootstrap?.profile?.timezone || "UTC");
+    return meal.planned_date === today
+        ? `${viewButton}${swapButton}${plannedLogButton(meal, "Log as planned")}`
+        : `${viewButton}${swapButton}`;
+}
+
 function openRecipeLog(id, revisionId) {
     openDialog(
         "Log saved recipe",
@@ -3452,7 +3555,7 @@ async function renderPlan() {
     )
         .map(
             (date) =>
-                `<section class="meal-group plan-day"><header class="meal-group-header"><div><strong>${escapeHtml(formatDate(date, { weekday: true }))}</strong></div><span>${(byDate[date] || []).length} planned</span></header>${(byDate[date] || []).length ? (byDate[date] || []).map((meal) => `<article class="meal-card plan-meal-card"><div class="meal-card-head"><div><h4>${escapeHtml(meal.recipe_name)}</h4><div class="meal-meta"><span>${escapeHtml(meal.meal_slot || "Meal")}</span><span>${escapeHtml(meal.ownership)}</span>${meal.created_by ? `<span>Added by ${escapeHtml(meal.created_by)}</span>` : ""}</div></div><strong class="plan-servings">${number(meal.servings, 1)} servings</strong></div><div class="meal-macros"><span class="macro-chip">${number((meal.nutrition_per_serving?.calories || 0) * meal.servings)} kcal</span><span class="macro-chip">P ${number((meal.nutrition_per_serving?.protein_g || 0) * meal.servings, 1)}g</span></div><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="view-recipe" data-id="${escapeHtml(meal.recipe_id)}">View recipe</button><button class="button button-secondary button-small" type="button" data-action="meal-swap" data-id="${escapeHtml(meal.planned_meal_id)}" data-version="${escapeHtml(meal.version)}">Swap recipe</button></div></article>`).join("") : `<p class="plan-empty">No meals planned.</p>`}</section>`,
+                `<section class="meal-group plan-day"><header class="meal-group-header"><div><strong>${escapeHtml(formatDate(date, { weekday: true }))}</strong></div><span>${(byDate[date] || []).length} planned</span></header>${(byDate[date] || []).length ? (byDate[date] || []).map((meal) => `<article class="meal-card plan-meal-card"><div class="meal-card-head"><div><h4>${escapeHtml(meal.recipe_name)}</h4><div class="meal-meta"><span>${escapeHtml(meal.meal_slot || "Meal")}</span><span>${escapeHtml(meal.ownership)}</span>${meal.created_by ? `<span>Added by ${escapeHtml(meal.created_by)}</span>` : ""}${meal.logged ? `<span>Logged</span>` : ""}</div></div><strong class="plan-servings">${number(meal.servings, 1)} servings</strong></div><div class="meal-macros"><span class="macro-chip">${number((meal.nutrition_per_serving?.calories || 0) * meal.servings)} kcal</span><span class="macro-chip">P ${number((meal.nutrition_per_serving?.protein_g || 0) * meal.servings, 1)}g</span></div><div class="auth-actions">${planCardActions(meal)}</div></article>`).join("") : `<p class="plan-empty">No meals planned.</p>`}</section>`,
         )
         .join("")}</div></div>`;
 }
@@ -8266,6 +8369,20 @@ async function handleAction(button) {
     if (action === "view-recipe") return openRecipe(button.dataset.id);
     if (action === "log-recipe")
         return openRecipeLog(button.dataset.id, button.dataset.revision);
+    if (action === "log-as-planned")
+        return openPlannedLog({
+            planned_meal_id: button.dataset.plannedMealId,
+            recipe_id: button.dataset.recipeId,
+            recipe_revision_id: button.dataset.revisionId,
+            recipe_name: button.dataset.name,
+            servings: Number(button.dataset.servings) || 1,
+            meal_slot: button.dataset.slot || null,
+        });
+    if (action === "planned-prompt-skip") {
+        skipPlannedPrompt(button.dataset.id);
+        await renderRoute();
+        return;
+    }
     if (action === "log-cook-dish")
         return openRecipeLog(button.dataset.id, button.dataset.revision);
     if (action === "plan-recipe") return openRecipePlan(button.dataset.id);
@@ -9288,6 +9405,7 @@ document.addEventListener("submit", async (event) => {
             "recipe-create-form",
             "recipe-edit-form",
             "recipe-log-form",
+            "planned-log-form",
             "recipe-plan-form",
             "recipe-groceries-form",
             "grocery-add-form",
@@ -9781,6 +9899,31 @@ document.addEventListener("submit", async (event) => {
                 result.result?.deduplicated
                     ? "This recipe meal was already logged."
                     : "Recipe meal logged.",
+            );
+        }
+        if (form.id === "planned-log-form") {
+            const result = await api(
+                `/api/app/recipes/${encodeURIComponent(form.dataset.id)}/log`,
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        servings_consumed: Number(values.servings_consumed),
+                        meal_type: values.meal_type,
+                        notes: values.notes || undefined,
+                        recipe_revision_id: form.dataset.revision || undefined,
+                        planned_meal_id: form.dataset.plannedMealId,
+                        // Deterministic per plan entry: a retried
+                        // submit replays the same key, and the server
+                        // refuses a second log regardless of the key.
+                        idempotency_key: `log-as-planned:${form.dataset.plannedMealId}`,
+                    }),
+                    keepPrevious: true,
+                },
+            );
+            toast(
+                result.result?.deduplicated
+                    ? "Already logged from this plan."
+                    : "Logged from plan.",
             );
         }
         if (form.id === "recipe-plan-form") {
