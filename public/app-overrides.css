@@ -7201,3 +7201,214 @@ dialog:has(
     margin-top: 7px;
     padding: 7px 0 3px;
 }
+
+/* Simplified meal-draft review (owner-approved frames, 2026-11-12):
+   description + quiet meal-type meta, a flat totals strip, plain
+   hairline rows (tap opens the editor, swipe-left removes), one
+   note box, one wide Confirm. Built under Impeccable against the
+   design authority; colors are the editorial tokens. */
+.meal-draft-desc {
+    margin: 0;
+    font-size: 15px;
+    font-style: italic;
+    color: var(--ink-600);
+}
+
+.meal-draft-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 44px;
+    font-size: 13px;
+    color: var(--ink-500);
+}
+
+.meal-draft-mealtype {
+    min-height: 44px;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-weight: 600;
+    color: var(--ink-900);
+}
+
+.meal-draft-totals {
+    display: grid;
+    grid-template-columns: 1.25fr 1fr 1fr 1fr;
+    gap: 8px;
+    border-top: 1px solid var(--ink-100);
+    border-bottom: 1px solid var(--ink-100);
+    padding: 10px 0;
+}
+
+.meal-draft-total {
+    display: grid;
+    gap: 2px;
+}
+
+.meal-draft-total > span {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-500);
+}
+
+.meal-draft-total > strong {
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.meal-draft-total-lead > strong {
+    font-size: 25.6px;
+    font-weight: 600;
+}
+
+.meal-draft-total-lead > strong small {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-500);
+}
+
+.meal-draft-items {
+    display: grid;
+}
+
+.meal-draft-review .meal-draft-item {
+    padding: 0;
+    border-top: 1px solid var(--ink-100);
+}
+
+.meal-draft-review .meal-draft-item:first-child {
+    border-top: 0;
+}
+
+.meal-draft-item-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 48px;
+    padding: 8px 2px;
+    border: 0;
+    background: none;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    color: inherit;
+}
+
+.meal-draft-item-summary {
+    display: grid;
+    flex: 1;
+    gap: 1px;
+}
+
+.meal-draft-item-summary strong {
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.meal-draft-item-summary small {
+    font-size: 13px;
+    color: var(--ink-500);
+}
+
+.meal-draft-item-kcal {
+    font-size: 15px;
+}
+
+.meal-draft-item-fields {
+    padding: 2px 0 12px;
+}
+
+.meal-draft-item-remove {
+    margin-top: 8px;
+    color: var(--danger);
+}
+
+.meal-draft-blocker {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.45;
+    color: var(--danger);
+}
+
+.meal-draft-notebox {
+    display: grid;
+    gap: 9px;
+}
+
+.meal-draft-status {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    border: 1px solid var(--ink-100);
+    border-radius: 12px;
+    background: var(--paper);
+    padding: 12px;
+}
+
+.meal-draft-status-text {
+    display: grid;
+    gap: 2px;
+    font-size: 13.5px;
+}
+
+.meal-draft-status-text small {
+    font-size: 13px;
+    color: var(--ink-500);
+}
+
+.meal-draft-spinner {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+    border-radius: 50%;
+    border: 2px solid var(--ink-100);
+    border-top-color: #176b3a;
+    animation: meal-draft-spin 0.85s linear infinite;
+}
+
+/* The saving-state spinner inside the green Confirm button: the
+   meal-draft spinner in its white variant (the approved board's
+   .wht) — same ring grammar and rotation, track and head in white
+   so it reads on the primary fill. */
+.meal-draft-spinner-wht {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    margin-top: 0;
+    margin-right: 8px;
+    vertical-align: -3px;
+    border-color: rgb(255 255 255 / 0.35);
+    border-top-color: #fff;
+}
+
+@keyframes meal-draft-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .meal-draft-spinner {
+        animation: none;
+    }
+}
+
+.meal-draft-dim {
+    opacity: 0.5;
+}
+
+.meal-draft-actions {
+    display: grid;
+    gap: 6px;
+    justify-items: center;
+    border-top: 0;
+    padding-top: 0;
+}
+
+.meal-draft-confirm {
+    width: 100%;
+}

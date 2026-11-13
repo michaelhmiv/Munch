@@ -184,9 +184,14 @@ describe("draft button-flow wiring (audit fixes)", () => {
         'if (action === "add-draft-text")',
         'if (action === "add-draft-manual")',
     );
-    test("add-text shows a working state before the request and a standing status line", () => {
-        expect(handlers).toContain('setButtonBusy(button, true, "Adding…")');
-        expect(handlers).toContain('setAddTextStatus("Adding to draft…")');
+    test("add-text enters the re-analyzing state before the request and clears it after", () => {
+        // Simplified review (2026-11-12 approval): the working state
+        // is the review's own re-analyzing render, driven by
+        // mealDraftReview.addTextBusy — set before the api call and
+        // cleared on both the success and error paths.
+        expect(handlers).toContain("mealDraftReview.addTextBusy = text;");
+        expect(handlers).toContain("mealDraftReview.addTextBusy = null;");
+        expect(handlers).not.toContain("setAddTextStatus");
     });
     test("answer shows a working state", () => {
         const answer = sliceBetween(
@@ -196,20 +201,22 @@ describe("draft button-flow wiring (audit fixes)", () => {
         expect(answer).toContain('setButtonBusy(button, true, "Saving…")');
         expect(answer).toContain("setButtonBusy(button, false)");
     });
-    test("confirm shows a working state and the labelled click is the acceptance", () => {
+    test("confirm shows its saving state and the click accepts open questions as shown", () => {
         const confirm = sliceBetween(
             'if (action === "confirm-meal-draft")',
             'if (action === "cancel-meal-draft")',
         );
-        expect(confirm).toContain(
-            'setButtonBusy(button, true, "Logging meal…")',
-        );
-        // The dead-click gate is gone: no early return demanding the
-        // checkbox after the "Confirm and accept assumptions" click.
+        expect(confirm).toContain("meal-draft-spinner-wht");
+        expect(confirm).toContain("Logging…");
+        // The dead-click gate is gone: no checkbox demand, no early
+        // return — acceptance rides the click itself.
+        expect(confirm).not.toContain("data-draft-accept-assumptions");
         expect(confirm).not.toContain(
             "Answer the open questions or accept the remaining assumptions.",
         );
-        expect(confirm).toContain("|| hasOpenQuestions");
+        expect(confirm).toContain(
+            "accept_remaining_assumptions: hasOpenQuestions",
+        );
     });
     test("save-draft-all restores its button on failure", () => {
         const save = sliceBetween(

@@ -2205,8 +2205,8 @@ test.beforeAll(async () => {
                     "/api/app/meal-drafts/fixture-photo-draft/items/",
                 )
             ) {
-                // Photo-flow P4: the review's single Save changes
-                // PATCHes dirty items here; record the body so the
+                // Simplified review: Confirm PATCHes dirty items
+                // here before confirming; record the body so the
                 // test can assert the edited values were committed,
                 // and answer with the merged draft, version bumped.
                 const chunks: Buffer[] = [];
@@ -3303,7 +3303,7 @@ test("meal.photoLog runs end to end in the packaged bundle", async ({
     ).toBe(true);
 });
 
-test("photo-flow P4: one Save changes commits draft edits; unsaved edits survive other actions", async ({
+test("simplified review: Confirm commits draft edits; unsaved edits survive other actions", async ({
     page,
 }) => {
     lastDraftItemPatch = null;
@@ -3313,8 +3313,15 @@ test("photo-flow P4: one Save changes commits draft edits; unsaved edits survive
         "Fixture rice bowl",
     );
 
-    // P3: item editors start collapsed — the fields stay hidden
-    // until the item's row is tapped open.
+    // The simplified review's whole inventory: totals strip, plain
+    // rows, one note box, one Confirm — and none of the struck
+    // sections (no Questions, no Save changes, no Meal details).
+    await expect(page.locator(".meal-draft-totals")).toBeVisible();
+    await expect(page.locator("[data-draft-savebar]")).toHaveCount(0);
+    await expect(page.locator("#meal-draft-food-search")).toHaveCount(0);
+
+    // Item editors start collapsed — the fields stay hidden until
+    // the item's row is tapped open.
     const editor = page.locator('[data-draft-item-index="0"]');
     await expect(
         editor.locator('[data-draft-field="gram_weight"]'),
@@ -3324,31 +3331,12 @@ test("photo-flow P4: one Save changes commits draft edits; unsaved edits survive
         editor.locator('[data-draft-field="gram_weight"]'),
     ).toBeVisible();
 
-    // P4: an edit marks the draft dirty, and the ONE Save changes
-    // action commits it — the item PATCH carries the edited value
-    // and the draft version it was made against.
-    await editor.locator('[data-draft-field="gram_weight"]').fill("250");
-    await expect(page.locator("[data-draft-save-note]")).toHaveText(
-        "Unsaved changes",
-    );
-    await page.locator('[data-action="save-draft-all"]').click();
-    await expect(page.locator("[data-draft-save-note]")).toHaveText(
-        "All changes saved.",
-    );
-    expect(lastDraftItemPatch?.path).toBe(
-        "/api/app/meal-drafts/fixture-photo-draft/items/fixture-item-rice",
-    );
-    const patchBody = lastDraftItemPatch?.body as {
-        expected_version?: number;
-        item?: { gram_weight?: number };
-    };
-    expect(patchBody?.expected_version).toBe(1);
-    expect(patchBody?.item?.gram_weight).toBe(250);
-
-    // The two-save trap, closed: edit again, then trigger a full
+    // Edits are local until Confirm: edit, then trigger a full
     // re-render via another action (add-text answers with a fresh
-    // server draft) — the unsaved quantity is still in the editor
-    // afterwards, still marked unsaved.
+    // server draft) — the unsaved values are still in the editor
+    // afterwards (the two-save trap stays closed without a Save
+    // button: the snapshot machinery, not a second save, keeps them).
+    await editor.locator('[data-draft-field="gram_weight"]').fill("250");
     await editor.locator('[data-draft-field="quantity"]').fill("2");
     await page
         .locator("#meal-draft-add-text-input")
@@ -3358,9 +3346,31 @@ test("photo-flow P4: one Save changes commits draft edits; unsaved edits survive
     await expect(editor.locator('[data-draft-field="quantity"]')).toHaveValue(
         "2",
     );
-    await expect(page.locator("[data-draft-save-note]")).toHaveText(
-        "Unsaved changes",
+    await expect(
+        editor.locator('[data-draft-field="gram_weight"]'),
+    ).toHaveValue("250");
+
+    // Confirm IS the save: the item PATCH carrying both edits goes
+    // out first, then the confirm logs the meal.
+    await page.locator('[data-action="confirm-meal-draft"]').click();
+    await expect(page.locator("#toast-region")).toContainText(
+        "Meal confirmed and logged.",
     );
+    expect(lastDraftItemPatch?.path).toBe(
+        "/api/app/meal-drafts/fixture-photo-draft/items/fixture-item-rice",
+    );
+    const patchBody = lastDraftItemPatch?.body as {
+        expected_version?: number;
+        item?: { gram_weight?: number; quantity?: number };
+    };
+    expect(patchBody?.item?.gram_weight).toBe(250);
+    expect(patchBody?.item?.quantity).toBe(2);
+    expect(
+        observedRequest(
+            "POST",
+            "/api/app/meal-drafts/fixture-photo-draft/confirm",
+        ),
+    ).toBe(true);
 });
 
 test("photo-flow P2: a preparation statement updates the draft in place", async ({
@@ -3399,9 +3409,10 @@ test("photo-flow audit: confirm with an open question logs on the labelled click
     // The silent-save reproduction (2026-11-12): a draft whose
     // question is still open. The old handler toasted and returned
     // before any request — and the toast is invisible under the
-    // modal — so the save simply never happened. The button reads
-    // "Confirm and accept assumptions", so the click IS the
-    // acceptance it labels: one tap sends the confirm, flagged.
+    // modal — so the save simply never happened. The simplified
+    // review (owner-approved) has no Questions section: the open
+    // question is nowhere on the surface, and the single Confirm
+    // click IS the acceptance — one tap sends the confirm, flagged.
     photoDraftVariant = "open-question";
     lastConfirmBody = null;
     try {
@@ -3413,7 +3424,7 @@ test("photo-flow audit: confirm with an open question logs on the labelled click
         await expect(page.locator("#meal-draft-review")).toContainText(
             "Fixture rice bowl",
         );
-        await expect(page.locator("#meal-draft-review")).toContainText(
+        await expect(page.locator("#meal-draft-review")).not.toContainText(
             "Was the rice cooked with oil or butter?",
         );
 
@@ -3442,8 +3453,11 @@ test("photo-flow audit: add-text shows a working state while the revision is in 
     page,
 }) => {
     // The revision request is held server-side so the in-flight
-    // state is observable: button disabled and relabelled, status
-    // line announcing the work — then the applied message lands.
+    // state is observable: in the simplified review the working
+    // state is the re-analyzing render itself (owner-approved
+    // frame) — the status block announces the work and echoes the
+    // note back, and the controls go inert — then the applied
+    // message lands under the note box.
     addTextDelayMs = 1500;
     try {
         await bootPackagedApp(page);
@@ -3460,15 +3474,16 @@ test("photo-flow audit: add-text shows a working state while the revision is in 
         await page.locator('[data-action="add-draft-text"]').click();
         const addButton = page.locator('[data-action="add-draft-text"]');
         await expect(addButton).toBeDisabled();
-        await expect(addButton).toHaveText("Adding…");
-        await expect(page.locator("#meal-draft-add-text-status")).toHaveText(
-            "Adding to draft…",
+        const status = page.locator(".meal-draft-status");
+        await expect(status).toContainText("Re-analyzing your meal");
+        await expect(status).toContainText(
+            "Your note: “I added a good bit of butter”",
         );
         // Applied: the server's own message replaces the working
         // state and the new item is in the review.
-        await expect(page.locator("#meal-draft-add-text-status")).toContainText(
-            "Added butter to the draft.",
-        );
+        await expect(
+            page.locator(".meal-draft-add-text-message"),
+        ).toContainText("Added butter to the draft.");
         await expect(page.locator("#meal-draft-review")).toContainText(
             "Butter",
         );
@@ -5101,8 +5116,11 @@ test("S8 chat: Premium round-trip — send, grounded draft proposal, draft revie
     await expect(page.locator("#meal-draft-review")).toContainText(
         "Chicken breast, grilled",
     );
+    // The simplified review carries no source/provenance line; the
+    // chat draft's unverified item (the moon soup) surfaces as the
+    // review's one blocking line instead.
     await expect(page.locator("#meal-draft-review")).toContainText(
-        "Source: chat",
+        "no nutrition values yet",
     );
     expect(
         observedRequest("GET", "/api/app/meal-drafts/fixture-chat-draft"),
