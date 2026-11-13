@@ -298,8 +298,8 @@ export const CAPABILITY_MANIFEST = [
         // outcome row here by design: the MCP channel is where users
         // bring their OWN AI (and MCP access is itself Premium-gated).
         // Placement is contextual only (no global entry): the surface
-        // is reached from the Today / Meal Plan / Pantry / Insights
-        // entry rows, which seed the conversation.
+        // is reached from the Meal Plan / Pantry / Insights brain
+        // entries, which seed the conversation.
         id: "nutrition.chatAgent",
         mcp: websiteOnly([]),
         web: complete([
@@ -307,21 +307,21 @@ export const CAPABILITY_MANIFEST = [
             "POST /api/app/chat/messages",
             "POST /api/app/chat/conversations",
             '[data-testid="chat-seed"]',
-            '[data-testid="chat-entry-pantry"]',
+            '[data-testid="brain-entry-pantry"]',
         ]),
         app: complete([
             "GET /api/app/chat",
             "POST /api/app/chat/messages",
             "POST /api/app/chat/conversations",
             '[data-testid="chat-seed"]',
-            '[data-testid="chat-entry-pantry"]',
+            '[data-testid="brain-entry-pantry"]',
         ]),
         ios: complete([
             "GET /api/app/chat",
             "POST /api/app/chat/messages",
             "POST /api/app/chat/conversations",
             '[data-testid="chat-seed"]',
-            '[data-testid="chat-entry-pantry"]',
+            '[data-testid="brain-entry-pantry"]',
         ]),
         iosBasis:
             "Shared bundle: iOS packages the same .mobile-web artifact as Android (same build script, cap sync ios) and reaches the same routes over the bearer transport; this outcome has no platform-specific native dependency. The entitlement gate is server-side and rail-neutral, so an App Store Premium subscription counts exactly like Stripe or Play.",

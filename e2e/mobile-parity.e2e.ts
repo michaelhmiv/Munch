@@ -3559,11 +3559,11 @@ test("photo-flow P8: pantry and receipt captures use the shared control, camera 
     const receiptControl = page.locator(
         "[data-photo-capture]:has(#receipt-photo)",
     );
+    // The captures live in the tools rail's sheets now (tools-to-top
+    // N1): open the Scan pantry sheet to reach its control.
+    await page.locator('.tools-rail [data-open-sheet="sheet-scan"]').click();
     await expect(
         pantryControl.locator('[data-capture-action="camera"]'),
-    ).toBeVisible();
-    await expect(
-        receiptControl.locator('[data-capture-action="camera"]'),
     ).toBeVisible();
     await expect(page.locator('input[type="file"]:visible')).toHaveCount(0);
     await pantryControl.locator('[data-capture-action="camera"]').click();
@@ -3583,6 +3583,13 @@ test("photo-flow P8: pantry and receipt captures use the shared control, camera 
         .locator("#pantry-photo")
         .evaluate((el) => (el as HTMLInputElement).files?.length ?? 0);
     expect(fileCount).toBe(1);
+    // The receipt capture is the same shared control in its own
+    // sheet.
+    await page.locator("#sheet-scan [data-close-sheet]").click();
+    await page.locator('.tools-rail [data-open-sheet="sheet-receipt"]').click();
+    await expect(
+        receiptControl.locator('[data-capture-action="camera"]'),
+    ).toBeVisible();
 });
 
 test("S6 slice 1 regression: Abandon draft dismisses a pending draft with no native confirm", async ({
@@ -5229,17 +5236,48 @@ test("chat v2 placement: contextual entries only — no global entry, seeded ope
     );
     expect(observedRequest("POST", "/api/app/chat/conversations")).toBe(true);
 
-    // Pantry is the second packaged page: its entry is present with
-    // the seeded href (presence + target asserted; a click would
-    // leave the SPA shell by design of the two-page bundle).
+    // Pantry is the second packaged page: its tools ride the rail
+    // under the hero (tools-to-top N1) and its chat entry is the
+    // brain glyph (N2) — presence + target + label asserted like
+    // Plan's brain; a click would leave the SPA shell by design of
+    // the two-page bundle. The planner card's text entry is gone.
     await page.goto(`${baseURL}/pantry.html`);
-    const pantryEntry = page.getByTestId("chat-entry-pantry");
-    await expect(pantryEntry).toBeVisible();
-    await expect(pantryEntry).toContainText("Cook from what's here");
-    await expect(pantryEntry).toHaveAttribute(
+    await expect(page.getByTestId("chat-entry-pantry")).toHaveCount(0);
+    const pantryBrain = page.getByTestId("brain-entry-pantry");
+    await expect(pantryBrain).toBeVisible();
+    await expect(pantryBrain).toHaveAttribute(
+        "aria-label",
+        /Cook from what's here/,
+    );
+    await expect(pantryBrain).toHaveAttribute(
         "href",
         "/app/chat?surface=pantry",
     );
+    // The rail carries its four tools in the resolved order, and
+    // the Add sheet opens from the rail with the quick-add form
+    // inside — the form no longer sits in a card under the
+    // inventory.
+    const railTools = await page
+        .locator(".tools-rail .rail-tool")
+        .evaluateAll((els) =>
+            els.map(
+                (el) =>
+                    el.getAttribute("data-open-sheet") ??
+                    el.getAttribute("data-testid"),
+            ),
+        );
+    expect(railTools).toEqual([
+        "sheet-add",
+        "sheet-scan",
+        "sheet-receipt",
+        "brain-entry-pantry",
+    ]);
+    await expect(page.locator("#sheet-add")).toBeHidden();
+    await page.locator('.tools-rail [data-open-sheet="sheet-add"]').click();
+    await expect(page.locator("#sheet-add")).toBeVisible();
+    await expect(page.locator("#manual-add")).toBeVisible();
+    await page.locator("#sheet-add [data-close-sheet]").click();
+    await expect(page.locator("#sheet-add")).toBeHidden();
 });
 
 test("today navigation: calendar dots and day jump, macro breakdown sheet, six-destination nav (brief items 1-6)", async ({

@@ -259,13 +259,194 @@ main {
     border-color: var(--green);
 }
 
-/* ---------- Forms & buttons ---------- */
-.grid-two {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px 22px;
-    margin-top: 4px;
+/* ---------- Tools rail + planner row ----------
+   Tools-to-top ruling (Nov 11): the Pantry tools ride a compact
+   icon-only bar under the hero. Its height matches the filter-chip
+   row (44px) and every tool's tap area is the full 44px box; there
+   are no word labels — the accessible name rides the aria-label.
+   The brain is the rail's fourth tool: the one learned "talk to
+   the AI about this" glyph, in the production brain green, wired
+   exactly like the Trends and Plan brains (this page loads only
+   pantry.css, so the .brain-link values are mirrored here). */
+.tools-rail {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
 }
+.rail-tool {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    background: transparent;
+    color: var(--ink);
+    cursor: pointer;
+    text-decoration: none;
+}
+.rail-tool:hover {
+    background: var(--green-tint);
+    color: var(--green-deep);
+}
+.rail-tool svg {
+    width: 22px;
+    height: 22px;
+    display: block;
+}
+.rail-tool.brain-link {
+    color: #2e5b34;
+}
+.rail-tool.brain-link:hover {
+    background: #e6eddc;
+    color: #2e5b34;
+}
+/* The structured planner keeps a slim labeled row under the rail
+   (the page's one labeled entry): hairline rules, serif label,
+   italic subline, green arrow — the grammar the retired chat
+   entry row used, now pointing at the planner sheet. */
+.planner-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    min-height: 56px;
+    margin-top: 10px;
+    padding: 8px 0;
+    border: 0;
+    border-top: 1px solid var(--hairline);
+    border-bottom: 1px solid var(--hairline);
+    border-radius: 0;
+    background: transparent;
+    color: var(--ink);
+    text-align: left;
+    cursor: pointer;
+}
+.planner-row:hover {
+    background: transparent;
+    color: var(--ink);
+}
+.planner-row-text {
+    display: block;
+}
+.planner-row-label {
+    display: block;
+    font-family: var(--serif);
+    font-size: 17.5px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+.planner-row-sub {
+    display: block;
+    font-size: 13.5px;
+    font-style: italic;
+    font-weight: 500;
+    line-height: 1.35;
+    color: var(--ink-soft);
+}
+.planner-row-arrow {
+    font-size: 20px;
+    line-height: 1;
+    color: var(--green);
+    flex: none;
+}
+
+/* ---------- Sheets (rail tools) ----------
+   Native <dialog> sheets in the one elevated material (panel),
+   the authority scrim, and the dialog radius; on phones the sheet
+   pins to the bottom edge with the 24px top radius. Fields inside
+   a sheet invert to paper wells (authority §2.3). Motion is the
+   shared dialog token — opacity/transform only, never gating. */
+dialog.sheet {
+    width: min(600px, calc(100vw - 28px));
+    max-height: calc(100dvh - 40px);
+    overflow: auto;
+    padding: 14px;
+    border: 1px solid var(--hairline);
+    border-radius: 14px;
+    background: var(--paper-card);
+    color: var(--ink);
+}
+dialog.sheet::backdrop {
+    background: rgb(43 38 32 / 0.48);
+}
+dialog.sheet[open] {
+    animation: munch-sheet-in var(--motion-dialog) var(--motion-ease);
+}
+@keyframes munch-sheet-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+.sheet-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+.sheet-head h2 {
+    font-family: var(--serif);
+    font-size: 21px;
+    font-weight: 600;
+    line-height: 1.18;
+    margin: 4px 0 0;
+}
+.sheet-close {
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding: 6px 10px;
+    border: 0;
+    background: transparent;
+    color: var(--ink-soft);
+    font-size: 14.4px;
+    font-weight: 500;
+}
+.sheet-close:hover {
+    background: transparent;
+    color: var(--ink);
+}
+.sheet input,
+.sheet select,
+.sheet textarea {
+    background: var(--paper);
+}
+.sheet-lede {
+    max-width: 780px;
+    margin-bottom: 4px;
+}
+.sheet .planner-form {
+    grid-template-columns: 1fr 1fr;
+}
+.sheet .planner-staples,
+.sheet #plan-meal {
+    grid-column: 1 / -1;
+}
+.sheet .meal-ideas {
+    grid-template-columns: 1fr;
+}
+@media (max-width: 760px) {
+    dialog.sheet {
+        width: 100%;
+        max-width: none;
+        max-height: calc(100dvh - 24px);
+        margin: auto 0 0;
+        border-bottom: 0;
+        border-radius: 24px 24px 0 0;
+    }
+}
+
+/* ---------- Forms & buttons ---------- */
 .fields {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -339,10 +520,6 @@ button:disabled {
     flex-direction: column;
     gap: 8px;
 }
-.capture-block + .capture-block {
-    border-top: 1px solid var(--hairline);
-    padding-top: 10px;
-}
 /* Photo-flow P8: the shared capture control (replaces the retired
    native-capture-actions the old enhancer injected). */
 .photo-capture {
@@ -407,7 +584,6 @@ button:disabled {
 /* ---------- Review (scan / receipt) ---------- */
 .review-head,
 .inventory-head,
-.planner-head,
 .meal-idea-head {
     display: flex;
     justify-content: space-between;
@@ -464,10 +640,6 @@ button:disabled {
 /* ---------- Meal ideas ("What can I make?") ---------- */
 .planner-section {
     margin-top: 4px;
-}
-.planner-head .muted {
-    max-width: 780px;
-    margin-top: 5px;
 }
 .planner-form {
     display: grid;
@@ -683,7 +855,6 @@ button:disabled {
     .topbar nav {
         display: none;
     }
-    .grid-two,
     .meal-ideas {
         grid-template-columns: 1fr;
     }
@@ -722,55 +893,9 @@ button:disabled {
     display: none;
 }
 
-/* Chat v2 — contextual entry row (Pantry). The same grammar as the
-   app shell's .entry-row in app-overrides.css (this page loads only
-   pantry.css): hairline rules, serif label, italic subline naming
-   the attached context, green arrow; >= 56px tall. */
-.entry-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    min-height: 56px;
-    margin-top: 10px;
-    padding: 8px 0;
-    border-top: 1px solid #d8cdb6;
-    border-bottom: 1px solid #d8cdb6;
-    text-decoration: none;
-    color: #2b2620;
-}
-
-.entry-row-text {
-    display: block;
-}
-
-.entry-row-label {
-    display: block;
-    font-family: Georgia, "Times New Roman", Times, serif;
-    font-size: 17.5px;
-    font-weight: 600;
-    line-height: 1.3;
-    color: #2b2620;
-}
-
-.entry-row-sub {
-    display: block;
-    font-size: 13.5px;
-    font-style: italic;
-    line-height: 1.35;
-    color: #4a4237;
-}
-
-.entry-row-arrow {
-    font-size: 20px;
-    line-height: 1;
-    color: #176b3a;
-    flex: none;
-}
-
 /* Bottom navigation — mirrored from the app shell's .mobile-bottom-nav
    (styles.css + app-overrides.css; this page loads only pantry.css, so
-   the rules live here like .entry-row above). Same destinations, same
+   the rules live here like .planner-row above). Same destinations, same
    paper ground and serif grammar, shown at the shell's phone
    breakpoint so Pantry wayfinding matches every other route. */
 .mobile-bottom-nav {

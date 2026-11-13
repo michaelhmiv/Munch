@@ -38,6 +38,123 @@
             <div id="status" class="status" aria-live="polite"></div>
 
             <div id="workspace" class="hidden">
+                <!-- Tools rail (tools-to-top ruling, Nov 11): the
+                     Pantry tools ride a compact icon-only bar under
+                     the hero — height matched to the filter row,
+                     44px tap areas, no word labels. Add, Scan
+                     pantry, and Scan receipt open their forms as
+                     sheets; the brain opens the pantry-seeded chat —
+                     the one learned "talk to the AI about this"
+                     glyph, wired like the Trends and Plan brains. -->
+                <nav class="tools-rail" aria-label="Pantry tools">
+                    <button
+                        type="button"
+                        class="rail-tool"
+                        data-open-sheet="sheet-add"
+                        aria-label="Add to Pantry"
+                        title="Add to Pantry"
+                    >
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.6"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                        >
+                            <path d="M12 5v14M5 12h14" />
+                        </svg>
+                    </button>
+                    <button
+                        type="button"
+                        class="rail-tool"
+                        data-open-sheet="sheet-scan"
+                        aria-label="Scan pantry"
+                        title="Scan pantry"
+                    >
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.6"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                        >
+                            <path
+                                d="M4 8.5A1.5 1.5 0 0 1 5.5 7h1L8 4.8A1.5 1.5 0 0 1 9.2 4h5.6A1.5 1.5 0 0 1 16 4.8L17.5 7h1A1.5 1.5 0 0 1 20 8.5V18a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18V8.5z"
+                            />
+                            <circle cx="12" cy="12.8" r="3.4" />
+                        </svg>
+                    </button>
+                    <button
+                        type="button"
+                        class="rail-tool"
+                        data-open-sheet="sheet-receipt"
+                        aria-label="Scan receipt"
+                        title="Scan receipt"
+                    >
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.6"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                        >
+                            <path
+                                d="M6 3.5h12V19l-1.5 1.3L15 19l-1.5 1.3L12 19l-1.5 1.3L9 19l-1.5 1.3L6 19z"
+                            />
+                            <path d="M9 8h6M9 12h6" />
+                        </svg>
+                    </button>
+                    <a
+                        class="rail-tool brain-link"
+                        href="/app/chat?surface=pantry"
+                        data-testid="brain-entry-pantry"
+                        aria-label="Cook from what's here — talk to the AI about your pantry"
+                        title="Cook from what's here"
+                        ><svg
+                            viewBox="0 0 24 24"
+                            width="22"
+                            height="22"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.6"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                            focusable="false"
+                        >
+                            <path
+                                d="M12 4.2C10.3 2.9 7.2 3.5 6.4 6 4.9 6.9 4.3 9 5.1 10.7 4.3 12.5 5 14.9 6.6 15.5 7.1 18 9.9 19 12 17.9"
+                            />
+                            <path
+                                d="M12 4.2c1.7-1.3 4.8-0.7 5.6 1.8 1.5 0.9 2.1 3 1.3 4.7 0.8 1.8 0.1 4.2-1.5 4.8-0.5 2.5-3.3 3.5-5.4 2.4"
+                            />
+                            <path d="M12 4.2v13.7" />
+                            <path d="M6.9 8.6c1-0.5 2.1-0.2 2.8 0.6" />
+                            <path d="M7.2 13c0.9 0.5 2 0.4 2.8-0.2" />
+                            <path d="M17.1 8.6c-1-0.5-2.1-0.2-2.8 0.6" />
+                            <path d="M16.8 13c-0.9 0.5-2 0.4-2.8-0.2" /></svg
+                    ></a>
+                </nav>
+                <button
+                    type="button"
+                    class="planner-row"
+                    data-open-sheet="sheet-planner"
+                >
+                    <span class="planner-row-text"
+                        ><span class="planner-row-label">What can I make?</span
+                        ><span class="planner-row-sub"
+                            >Meal ideas from your Pantry, fridge, and
+                            freezer</span
+                        ></span
+                    ><span class="planner-row-arrow" aria-hidden="true">→</span>
+                </button>
+
                 <section class="toolbar">
                     <div class="toolbar-row">
                         <input
@@ -199,12 +316,35 @@
                     </form>
                 </section>
 
-                <section class="grid-two">
-                    <form id="manual-add" class="card stack">
+                <section id="review" class="card hidden">
+                    <div class="review-head">
                         <div>
-                            <p class="eyebrow">Quick add</p>
-                            <h2>Add something</h2>
+                            <p class="eyebrow">Review</p>
+                            <h2 id="review-title">Detected items</h2>
                         </div>
+                        <button id="apply-review" type="button">
+                            Apply confirmed items
+                        </button>
+                    </div>
+                    <div id="review-lines" class="review-lines"></div>
+                </section>
+
+                <dialog
+                    id="sheet-add"
+                    class="sheet"
+                    aria-labelledby="sheet-add-title"
+                >
+                    <div class="sheet-head">
+                        <h2 id="sheet-add-title">Add to Pantry</h2>
+                        <button
+                            type="button"
+                            class="sheet-close"
+                            data-close-sheet
+                        >
+                            Close
+                        </button>
+                    </div>
+                    <form id="manual-add" class="stack">
                         <label
                             >Name
                             <input
@@ -246,236 +386,242 @@
                             by design.
                         </p>
                     </form>
+                </dialog>
 
-                    <section class="card stack">
-                        <div>
-                            <p class="eyebrow">Scan</p>
-                            <h2>Scan what you have</h2>
-                        </div>
-                        <div class="capture-block">
-                            <p class="muted">
-                                Upload a pantry, fridge, or freezer photo. Munch
-                                processes the image transiently and stores only
-                                the items you confirm.
-                            </p>
-                            <div
-                                class="photo-capture"
-                                data-photo-capture
-                                data-capture-review-button="#scan-pantry"
-                            >
-                                <span class="photo-capture-label"
-                                    >Pantry photo</span
-                                >
-                                <div class="photo-capture-actions">
-                                    <button
-                                        class="photo-capture-button"
-                                        type="button"
-                                        data-capture-action="camera"
-                                    >
-                                        Take photo
-                                    </button>
-                                    <button
-                                        class="photo-capture-button"
-                                        type="button"
-                                        data-capture-action="library"
-                                    >
-                                        Choose from library
-                                    </button>
-                                </div>
-                                <input
-                                    class="photo-capture-input"
-                                    id="pantry-photo"
-                                    type="file"
-                                    accept="image/jpeg,image/png,image/webp"
-                                    hidden
-                                />
-                                <p
-                                    class="tiny photo-capture-files"
-                                    data-capture-files
-                                    role="status"
-                                ></p>
-                            </div>
-                            <button id="scan-pantry" type="button">
-                                Review photo
-                            </button>
-                        </div>
-                        <div class="capture-block">
-                            <p class="muted">
-                                Scan a receipt — Munch can match purchased foods
-                                to your Grocery list and add the rest to Pantry.
-                                Non-food lines are ignored.
-                            </p>
-                            <div
-                                class="photo-capture"
-                                data-photo-capture
-                                data-capture-review-button="#scan-receipt"
-                            >
-                                <span class="photo-capture-label"
-                                    >Receipt photo</span
-                                >
-                                <div class="photo-capture-actions">
-                                    <button
-                                        class="photo-capture-button"
-                                        type="button"
-                                        data-capture-action="camera"
-                                    >
-                                        Take photo
-                                    </button>
-                                    <button
-                                        class="photo-capture-button"
-                                        type="button"
-                                        data-capture-action="library"
-                                    >
-                                        Choose from library
-                                    </button>
-                                </div>
-                                <input
-                                    class="photo-capture-input"
-                                    id="receipt-photo"
-                                    type="file"
-                                    accept="image/jpeg,image/png,image/webp"
-                                    hidden
-                                />
-                                <p
-                                    class="tiny photo-capture-files"
-                                    data-capture-files
-                                    role="status"
-                                ></p>
-                            </div>
-                            <button id="scan-receipt" type="button">
-                                Review receipt
-                            </button>
-                        </div>
-                    </section>
-                </section>
-
-                <section id="review" class="card hidden">
-                    <div class="review-head">
-                        <div>
-                            <p class="eyebrow">Review</p>
-                            <h2 id="review-title">Detected items</h2>
-                        </div>
-                        <button id="apply-review" type="button">
-                            Apply confirmed items
+                <dialog
+                    id="sheet-scan"
+                    class="sheet"
+                    aria-labelledby="sheet-scan-title"
+                >
+                    <div class="sheet-head">
+                        <h2 id="sheet-scan-title">Scan pantry</h2>
+                        <button
+                            type="button"
+                            class="sheet-close"
+                            data-close-sheet
+                        >
+                            Close
                         </button>
                     </div>
-                    <div id="review-lines" class="review-lines"></div>
-                </section>
-
-                <section id="meal-planner" class="card planner-section">
-                    <div class="planner-head">
-                        <div>
-                            <p class="eyebrow">Kitchen intelligence</p>
-                            <h2>What can I make?</h2>
-                            <p class="muted">
-                                Munch checks the whole kitchen—not just the main
-                                protein—including vegetables, starches, dairy,
-                                spices, sauces, condiments, herbs, aromatics,
-                                oils, quantities, and saved recipes before it
-                                ranks meals.
-                            </p>
-                        </div>
-                    </div>
-                    <form id="meal-idea-form" class="planner-form">
-                        <label
-                            >Goal
-                            <select id="meal-goal" name="goal">
-                                <option value="high_protein">
-                                    High protein
-                                </option>
-                                <option value="use_what_i_have">
-                                    Use what I have
-                                </option>
-                                <option value="balanced">Balanced</option>
-                                <option value="high_fiber">High fiber</option>
-                                <option value="low_calorie">
-                                    Lower calorie
-                                </option>
-                            </select></label
+                    <div class="capture-block">
+                        <p class="muted">
+                            Upload a pantry, fridge, or freezer photo. Munch
+                            processes the image transiently and stores only the
+                            items you confirm.
+                        </p>
+                        <div
+                            class="photo-capture"
+                            data-photo-capture
+                            data-capture-review-button="#scan-pantry"
                         >
-                        <label
-                            >Meal
-                            <select id="meal-type" name="meal_type">
-                                <option value="dinner">Dinner</option>
-                                <option value="lunch">Lunch</option>
-                                <option value="breakfast">Breakfast</option>
-                                <option value="snack">Snack</option>
-                            </select></label
-                        >
-                        <label
-                            >Servings
-                            <input
-                                id="meal-servings"
-                                name="servings"
-                                type="number"
-                                min="1"
-                                max="20"
-                                value="2"
-                        /></label>
-                        <label
-                            >Max minutes
-                            <input
-                                id="meal-max-minutes"
-                                name="max_minutes"
-                                type="number"
-                                min="1"
-                                max="1440"
-                                placeholder="No limit"
-                        /></label>
-                        <label
-                            >Missing items okay
-                            <select
-                                id="meal-missing-items"
-                                name="allow_missing_items"
+                            <span class="photo-capture-label"
+                                >Pantry photo</span
                             >
-                                <option value="0">None</option>
-                                <option value="1" selected>One</option>
-                                <option value="2">Two</option>
-                            </select></label
-                        >
-                        <label class="planner-staples"
-                            >Assumed staples (optional)
+                            <div class="photo-capture-actions">
+                                <button
+                                    class="photo-capture-button"
+                                    type="button"
+                                    data-capture-action="camera"
+                                >
+                                    Take photo
+                                </button>
+                                <button
+                                    class="photo-capture-button"
+                                    type="button"
+                                    data-capture-action="library"
+                                >
+                                    Choose from library
+                                </button>
+                            </div>
                             <input
-                                id="meal-staples"
-                                name="assumed_staples"
-                                maxlength="300"
-                                placeholder="salt, black pepper"
+                                class="photo-capture-input"
+                                id="pantry-photo"
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                hidden
                             />
-                            <small
-                                >Leave blank unless you want Munch to assume you
-                                always have these.</small
-                            ></label
-                        >
-                        <button id="plan-meal" type="submit">
-                            Plan from my kitchen
+                            <p
+                                class="tiny photo-capture-files"
+                                data-capture-files
+                                role="status"
+                            ></p>
+                        </div>
+                        <button id="scan-pantry" type="button">
+                            Review photo
                         </button>
-                    </form>
-                    <div
-                        id="meal-idea-status"
-                        class="status"
-                        aria-live="polite"
-                    ></div>
-                    <div id="meal-ideas" class="meal-ideas"></div>
-                    <!-- Chat v2 placement (Contextual only): the
-                         Pantry entry for the chat agent, beneath the
-                         structured planner. Opens the chat seeded
-                         with the pantry attached. -->
-                    <a
-                        class="entry-row"
-                        href="/app/chat?surface=pantry"
-                        data-testid="chat-entry-pantry"
-                        ><span class="entry-row-text"
-                            ><span class="entry-row-label"
-                                >Cook from what's here</span
-                            ><span class="entry-row-sub"
-                                >Or talk it through — opens with your pantry
-                                attached</span
-                            ></span
-                        ><span class="entry-row-arrow" aria-hidden="true"
-                            >→</span
-                        ></a
-                    >
-                </section>
+                    </div>
+                </dialog>
+
+                <dialog
+                    id="sheet-receipt"
+                    class="sheet"
+                    aria-labelledby="sheet-receipt-title"
+                >
+                    <div class="sheet-head">
+                        <h2 id="sheet-receipt-title">Scan receipt</h2>
+                        <button
+                            type="button"
+                            class="sheet-close"
+                            data-close-sheet
+                        >
+                            Close
+                        </button>
+                    </div>
+                    <div class="capture-block">
+                        <p class="muted">
+                            Scan a receipt — Munch can match purchased foods to
+                            your Grocery list and add the rest to Pantry.
+                            Non-food lines are ignored.
+                        </p>
+                        <div
+                            class="photo-capture"
+                            data-photo-capture
+                            data-capture-review-button="#scan-receipt"
+                        >
+                            <span class="photo-capture-label"
+                                >Receipt photo</span
+                            >
+                            <div class="photo-capture-actions">
+                                <button
+                                    class="photo-capture-button"
+                                    type="button"
+                                    data-capture-action="camera"
+                                >
+                                    Take photo
+                                </button>
+                                <button
+                                    class="photo-capture-button"
+                                    type="button"
+                                    data-capture-action="library"
+                                >
+                                    Choose from library
+                                </button>
+                            </div>
+                            <input
+                                class="photo-capture-input"
+                                id="receipt-photo"
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                hidden
+                            />
+                            <p
+                                class="tiny photo-capture-files"
+                                data-capture-files
+                                role="status"
+                            ></p>
+                        </div>
+                        <button id="scan-receipt" type="button">
+                            Review receipt
+                        </button>
+                    </div>
+                </dialog>
+
+                <dialog
+                    id="sheet-planner"
+                    class="sheet"
+                    aria-labelledby="sheet-planner-title"
+                >
+                    <div class="sheet-head">
+                        <h2 id="sheet-planner-title">What can I make?</h2>
+                        <button
+                            type="button"
+                            class="sheet-close"
+                            data-close-sheet
+                        >
+                            Close
+                        </button>
+                    </div>
+                    <section id="meal-planner" class="planner-section">
+                        <p class="muted sheet-lede">
+                            Munch checks the whole kitchen—not just the main
+                            protein—including vegetables, starches, dairy,
+                            spices, sauces, condiments, herbs, aromatics, oils,
+                            quantities, and saved recipes before it ranks meals.
+                        </p>
+                        <form id="meal-idea-form" class="planner-form">
+                            <label
+                                >Goal
+                                <select id="meal-goal" name="goal">
+                                    <option value="high_protein">
+                                        High protein
+                                    </option>
+                                    <option value="use_what_i_have">
+                                        Use what I have
+                                    </option>
+                                    <option value="balanced">Balanced</option>
+                                    <option value="high_fiber">
+                                        High fiber
+                                    </option>
+                                    <option value="low_calorie">
+                                        Lower calorie
+                                    </option>
+                                </select></label
+                            >
+                            <label
+                                >Meal
+                                <select id="meal-type" name="meal_type">
+                                    <option value="dinner">Dinner</option>
+                                    <option value="lunch">Lunch</option>
+                                    <option value="breakfast">Breakfast</option>
+                                    <option value="snack">Snack</option>
+                                </select></label
+                            >
+                            <label
+                                >Servings
+                                <input
+                                    id="meal-servings"
+                                    name="servings"
+                                    type="number"
+                                    min="1"
+                                    max="20"
+                                    value="2"
+                            /></label>
+                            <label
+                                >Max minutes
+                                <input
+                                    id="meal-max-minutes"
+                                    name="max_minutes"
+                                    type="number"
+                                    min="1"
+                                    max="1440"
+                                    placeholder="No limit"
+                            /></label>
+                            <label
+                                >Missing items okay
+                                <select
+                                    id="meal-missing-items"
+                                    name="allow_missing_items"
+                                >
+                                    <option value="0">None</option>
+                                    <option value="1" selected>One</option>
+                                    <option value="2">Two</option>
+                                </select></label
+                            >
+                            <label class="planner-staples"
+                                >Assumed staples (optional)
+                                <input
+                                    id="meal-staples"
+                                    name="assumed_staples"
+                                    maxlength="300"
+                                    placeholder="salt, black pepper"
+                                />
+                                <small
+                                    >Leave blank unless you want Munch to assume
+                                    you always have these.</small
+                                ></label
+                            >
+                            <button id="plan-meal" type="submit">
+                                Plan from my kitchen
+                            </button>
+                        </form>
+                        <div
+                            id="meal-idea-status"
+                            class="status"
+                            aria-live="polite"
+                        ></div>
+                        <div id="meal-ideas" class="meal-ideas"></div>
+                    </section>
+                </dialog>
             </div>
         </main>
         <!-- Bottom navigation: the same six destinations as the app
