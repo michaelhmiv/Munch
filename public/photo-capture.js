@@ -57,8 +57,18 @@ export function photoCaptureMarkup({
     accept = "image/jpeg,image/png,image/webp",
     cameraLabel = "Take photo",
     libraryLabel = "Choose from library",
+    compact = false,
 } = {}) {
-    return `<div class="photo-capture" data-photo-capture><span class="photo-capture-label">${escapeText(label ?? "Photo")}</span><div class="photo-capture-actions"><button class="button button-primary photo-capture-button" type="button" data-capture-action="camera">${escapeText(cameraLabel)}</button><button class="button button-secondary photo-capture-button" type="button" data-capture-action="library">${escapeText(libraryLabel)}</button></div><input class="photo-capture-input" type="file"${inputId ? ` id="${escapeAttribute(inputId)}"` : ""}${name ? ` name="${escapeAttribute(name)}"` : ""} accept="${escapeAttribute(accept)}"${multiple ? " multiple" : ""} hidden /><p class="tiny photo-capture-files" data-capture-files role="status"></p></div>`;
+    const input = `<input class="photo-capture-input" type="file"${inputId ? ` id="${escapeAttribute(inputId)}"` : ""}${name ? ` name="${escapeAttribute(name)}"` : ""} accept="${escapeAttribute(accept)}"${multiple ? " multiple" : ""} hidden />`;
+    if (compact) {
+        // Compact: the camera is the whole control — one icon button,
+        // no label, no library button. Same data-photo-capture /
+        // data-capture-action contract, so the web wiring and the
+        // packaged native enhancer treat it identically; the file
+        // line still announces the selection under the button.
+        return `<div class="photo-capture photo-capture-compact" data-photo-capture><button class="button button-secondary photo-capture-camera" type="button" data-capture-action="camera" aria-label="${escapeAttribute(cameraLabel)}"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg></button>${input}<p class="tiny photo-capture-files" data-capture-files role="status"></p></div>`;
+    }
+    return `<div class="photo-capture" data-photo-capture><span class="photo-capture-label">${escapeText(label ?? "Photo")}</span><div class="photo-capture-actions"><button class="button button-primary photo-capture-button" type="button" data-capture-action="camera">${escapeText(cameraLabel)}</button><button class="button button-secondary photo-capture-button" type="button" data-capture-action="library">${escapeText(libraryLabel)}</button></div>${input}<p class="tiny photo-capture-files" data-capture-files role="status"></p></div>`;
 }
 
 /** Reflect the input's current selection in the control's file line. */

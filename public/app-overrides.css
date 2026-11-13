@@ -3098,6 +3098,39 @@ dialog .guided-grocery-row input[type="checkbox"] {
     color: #176b3a;
 }
 
+/* Active-cook update strip (tools-to-top N5): one line, the camera,
+   and the full-form door in a single row directly under the
+   header/checklist. The row rides the operate 44px control height —
+   mid-cook entry is one-thumb work, so the field shares the buttons'
+   target height instead of the 31px form-field anchor. */
+.cook-update-strip {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.cook-update-strip-field {
+    flex: 1;
+    min-width: 0;
+}
+
+.cook-update-strip-field input {
+    width: 100%;
+    height: 44px;
+    min-height: 44px;
+    padding: 5px 12px;
+    border: 1px solid #8a7c63;
+    border-radius: 10px;
+    background: #fffdf8;
+    color: #2b2620;
+    font-family: Georgia, "Times New Roman", Times, serif;
+    font-size: 1rem;
+}
+
+.cook-update-strip .photo-capture-compact {
+    flex: 0 0 auto;
+}
+
 /* Comparison columns are hairline panels, not white cards. */
 .cook-compare-column {
     border: 0;
@@ -5048,6 +5081,23 @@ dialog .guided-grocery-row input[type="checkbox"] {
 
 .photo-capture-files:empty {
     display: none;
+}
+
+/* Compact capture (cook update strip): the camera button alone,
+   with the selection line under it when files are chosen. */
+.photo-capture-compact {
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+}
+
+.photo-capture-camera {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    min-width: 44px;
+    padding: 5px 10px;
 }
 
 /* Photo-flow wave — P3: the draft review is single-column at phone

@@ -29,6 +29,7 @@ import {
     downscaleImageFile,
     installPhotoCapture,
     photoCaptureMarkup,
+    setPhotoCaptureFiles,
 } from "./photo-capture.js";
 import { defaultMealType } from "./meal-slot.js";
 import {
@@ -4627,6 +4628,35 @@ function refreshCookModePanel(panel) {
     return stepBoxes.length > 0 && stepBoxes.every((box) => box.checked);
 }
 
+// The one cook-update form. On a completed cook it renders as the
+// detail's bottom section; on an active cook it opens as a sheet —
+// the same markup and the same cook-update-form submit branch either
+// way, so the payload (timezone, message, photos) never forks.
+function cookUpdateFormMarkup(cook, { message = "" } = {}) {
+    return `<form id="cook-update-form" class="auth-form" data-id="${escapeHtml(cook.id)}" enctype="multipart/form-data"><input type="hidden" name="timezone" value="${escapeHtml(cook.timezone)}" /><label class="field"><span>What happened?</span><textarea name="message" rows="3" maxlength="20000" placeholder="A couple minutes ago I wrapped the wings. Internal temp was 155°F.">${escapeHtml(message)}</textarea></label><div class="field">${photoCaptureMarkup({ name: "photos", label: "Add photos", multiple: true })}</div><button class="button button-primary" type="submit">Record update</button></form>`;
+}
+
+// The active-cook update strip (tools-to-top N5): a one-line field,
+// the camera, and the door to the full form, pinned directly under
+// the header/checklist where the cook is working — instead of a form
+// parked below Dishes, Photos, and the whole Timeline. Its form is a
+// second door into the same update submit branch, with the identical
+// field contract (timezone, message, photos).
+function cookUpdateStripMarkup(cook) {
+    return `<section class="cook-detail-section cook-update-strip-section"><form id="cook-update-strip-form" class="cook-update-strip" data-id="${escapeHtml(cook.id)}" enctype="multipart/form-data"><input type="hidden" name="timezone" value="${escapeHtml(cook.timezone)}" /><label class="cook-update-strip-field"><span class="sr-only">What happened?</span><input name="message" type="text" maxlength="20000" placeholder="What happened?" autocomplete="off" /></label>${photoCaptureMarkup({ name: "photos", multiple: true, compact: true })}<button class="button button-quiet" type="button" data-action="open-cook-update-form" data-id="${escapeHtml(cook.id)}">Full form</button><button class="button button-primary" type="submit">Record</button></form></section>`;
+}
+
+// The full update form as a sheet, carrying over whatever the strip
+// already holds — typed text and chosen photos — so moving up to the
+// full form mid-entry loses nothing.
+function openCookUpdateForm(cook, { message = "", files = [] } = {}) {
+    openDialog("Record an update", cookUpdateFormMarkup(cook, { message }));
+    if (files.length) {
+        const control = dialog.querySelector("[data-photo-capture]");
+        if (control) setPhotoCaptureFiles(control, files);
+    }
+}
+
 function cookDetailMarkup(detail) {
     const cook = detail.cook;
     const photoMarkup = detail.media?.length
@@ -4715,7 +4745,7 @@ function cookDetailMarkup(detail) {
               .join("") +
           "</details>"
         : "";
-    return `<div class="cook-detail-view"><div class="cook-detail-head"><div><p class="section-kicker">${escapeHtml(cook.status === "active" ? "Active cook" : "Completed cook")}</p><h2>${escapeHtml(cook.title)}</h2><p class="tiny">${escapeHtml(formatDate(cook.cook_date, { year: true }))} · ${escapeHtml(cook.timezone)} · version ${number(cook.version)}</p></div><div class="auth-actions cook-actions" data-cook-actions data-context="detail" data-id="${escapeHtml(cook.id)}" data-status="${escapeHtml(cook.status)}">${cookDetailActionsMarkup(cook)}</div></div>${cook.original_message ? '<details class="cook-original"><summary>Original context</summary><p>' + escapeHtml(cook.original_message) + "</p></details>" : ""}${cookModeMarkup(detail)}<section class="cook-detail-section"><div class="panel-title"><div><h3>Dishes</h3><span>${detail.dishes.length} recorded</span></div></div><div class="cook-dishes">${dishes}</div></section><section class="cook-detail-section"><div class="panel-title"><div><h3>Photos</h3><span>${detail.media.length} saved</span></div></div>${photoMarkup}</section><section class="cook-detail-section"><div class="panel-title"><div><h3>Timeline</h3><span>${detail.events.length} event${detail.events.length === 1 ? "" : "s"}</span></div></div>${cookTimelineMarkup(detail)}</section><section class="cook-detail-section"><div class="panel-title"><div><h3>Record an update</h3><span>One message can add multiple events and photos.</span></div></div><form id="cook-update-form" class="auth-form" data-id="${escapeHtml(cook.id)}" enctype="multipart/form-data"><input type="hidden" name="timezone" value="${escapeHtml(cook.timezone)}" /><label class="field"><span>What happened?</span><textarea name="message" rows="3" maxlength="20000" placeholder="A couple minutes ago I wrapped the wings. Internal temp was 155°F."></textarea></label><div class="field">${photoCaptureMarkup({ name: "photos", label: "Add photos", multiple: true })}</div><button class="button button-primary" type="submit">Record update</button></form></section><section class="cook-detail-section"><div class="panel-title"><div><h3>Result</h3><span>User observations stay separate from suggestions.</span></div></div><form id="cook-outcome-form" class="auth-form" data-id="${escapeHtml(cook.id)}" data-version="${escapeHtml(outcome?.version || "")}"><label class="field"><span>Feedback</span><textarea name="written_feedback" rows="3" maxlength="20000" placeholder="What did it taste and feel like?">${escapeHtml(outcome?.written_feedback || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Overall assessment (1–5)</span><input name="overall_assessment" type="number" min="1" max="5" step="0.1" value="${escapeHtml(outcome?.overall_assessment || "")}" /></label><label class="field"><span>Characteristics JSON</span><input name="characteristics" value="${escapeHtml(JSON.stringify(outcome?.characteristics || {}))}" placeholder='{"smoke_intensity":"medium"}' /></label></div><label class="field"><span>What worked</span><textarea name="worked" rows="2" maxlength="10000">${escapeHtml(outcome?.worked || "")}</textarea></label><label class="field"><span>What disappointed you</span><textarea name="disappointed" rows="2" maxlength="10000">${escapeHtml(outcome?.disappointed || "")}</textarea></label><label class="field"><span>Change next time</span><textarea name="next_time_notes" rows="2" maxlength="10000">${escapeHtml(outcome?.next_time_notes || "")}</textarea></label><label class="checkbox-row"><input name="is_preferred" type="checkbox" ${outcome?.is_preferred ? "checked" : ""} /> Preferred attempt</label><button class="button button-primary" type="submit">Save result</button></form></section><section class="cook-detail-section"><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="cook-recipe-draft" data-id="${escapeHtml(cook.id)}">Save as recipe</button><button class="button button-secondary button-small" type="button" data-action="set-preferred-cook" data-id="${escapeHtml(cook.id)}">Choose preferred attempt</button></div>${updateMarkup}</section></div>`;
+    return `<div class="cook-detail-view"><div class="cook-detail-head"><div><p class="section-kicker">${escapeHtml(cook.status === "active" ? "Active cook" : "Completed cook")}</p><h2>${escapeHtml(cook.title)}</h2><p class="tiny">${escapeHtml(formatDate(cook.cook_date, { year: true }))} · ${escapeHtml(cook.timezone)} · version ${number(cook.version)}</p></div><div class="auth-actions cook-actions" data-cook-actions data-context="detail" data-id="${escapeHtml(cook.id)}" data-status="${escapeHtml(cook.status)}">${cookDetailActionsMarkup(cook)}</div></div>${cook.original_message ? '<details class="cook-original"><summary>Original context</summary><p>' + escapeHtml(cook.original_message) + "</p></details>" : ""}${cookModeMarkup(detail)}${cook.status === "active" ? cookUpdateStripMarkup(cook) : ""}<section class="cook-detail-section"><div class="panel-title"><div><h3>Dishes</h3><span>${detail.dishes.length} recorded</span></div></div><div class="cook-dishes">${dishes}</div></section><section class="cook-detail-section"><div class="panel-title"><div><h3>Photos</h3><span>${detail.media.length} saved</span></div></div>${photoMarkup}</section><section class="cook-detail-section"><div class="panel-title"><div><h3>Timeline</h3><span>${detail.events.length} event${detail.events.length === 1 ? "" : "s"}</span></div></div>${cookTimelineMarkup(detail)}</section>${cook.status === "active" ? "" : `<section class="cook-detail-section"><div class="panel-title"><div><h3>Record an update</h3><span>One message can add multiple events and photos.</span></div></div>${cookUpdateFormMarkup(cook)}</section>`}<section class="cook-detail-section"><div class="panel-title"><div><h3>Result</h3><span>User observations stay separate from suggestions.</span></div></div><form id="cook-outcome-form" class="auth-form" data-id="${escapeHtml(cook.id)}" data-version="${escapeHtml(outcome?.version || "")}"><label class="field"><span>Feedback</span><textarea name="written_feedback" rows="3" maxlength="20000" placeholder="What did it taste and feel like?">${escapeHtml(outcome?.written_feedback || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Overall assessment (1–5)</span><input name="overall_assessment" type="number" min="1" max="5" step="0.1" value="${escapeHtml(outcome?.overall_assessment || "")}" /></label><label class="field"><span>Characteristics JSON</span><input name="characteristics" value="${escapeHtml(JSON.stringify(outcome?.characteristics || {}))}" placeholder='{"smoke_intensity":"medium"}' /></label></div><label class="field"><span>What worked</span><textarea name="worked" rows="2" maxlength="10000">${escapeHtml(outcome?.worked || "")}</textarea></label><label class="field"><span>What disappointed you</span><textarea name="disappointed" rows="2" maxlength="10000">${escapeHtml(outcome?.disappointed || "")}</textarea></label><label class="field"><span>Change next time</span><textarea name="next_time_notes" rows="2" maxlength="10000">${escapeHtml(outcome?.next_time_notes || "")}</textarea></label><label class="checkbox-row"><input name="is_preferred" type="checkbox" ${outcome?.is_preferred ? "checked" : ""} /> Preferred attempt</label><button class="button button-primary" type="submit">Save result</button></form></section><section class="cook-detail-section"><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="cook-recipe-draft" data-id="${escapeHtml(cook.id)}">Save as recipe</button><button class="button button-secondary button-small" type="button" data-action="set-preferred-cook" data-id="${escapeHtml(cook.id)}">Choose preferred attempt</button></div>${updateMarkup}</section></div>`;
 }
 
 function openCookDishEditor(dish, cookId, cookVersion) {
@@ -8011,6 +8041,23 @@ async function handleAction(button) {
         else await renderRoute();
         return;
     }
+    if (action === "open-cook-update-form") {
+        const form = button.closest("form");
+        const files = form?.querySelector("input.photo-capture-input")?.files;
+        openCookUpdateForm(
+            {
+                id: button.dataset.id || form?.dataset.id || "",
+                timezone:
+                    form?.querySelector('input[name="timezone"]')?.value || "",
+            },
+            {
+                message:
+                    form?.querySelector('input[name="message"]')?.value || "",
+                files: files ? [...files] : [],
+            },
+        );
+        return;
+    }
     if (action === "cook-recipe-draft") {
         await openCookRecipeDraft(button.dataset.id);
         return;
@@ -9669,6 +9716,7 @@ document.addEventListener("submit", async (event) => {
             "saved-food-form",
             "cook-create-form",
             "cook-update-form",
+            "cook-update-strip-form",
             "cook-edit-form",
             "cook-dish-edit-form",
             "cook-event-edit-form",
@@ -9733,7 +9781,10 @@ document.addEventListener("submit", async (event) => {
             await renderRoute();
             return;
         }
-        if (form.id === "cook-update-form") {
+        if (
+            form.id === "cook-update-form" ||
+            form.id === "cook-update-strip-form"
+        ) {
             const formData = new FormData(form);
             formData.set("idempotency_key", crypto.randomUUID());
             const result = await api(

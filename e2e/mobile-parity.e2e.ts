@@ -4710,13 +4710,19 @@ test("S6 slice 5: Cooks list renders themed panels with row actions and no ad sl
     const lastCall = adCalls[adCalls.length - 1] as { visible?: boolean };
     expect(lastCall.visible).toBe(false);
 
-    // The active cook opens into the themed detail: dishes, timeline,
-    // and the NL update form all render inside the shared frame.
+    // The active cook opens into the themed detail: dishes and the
+    // timeline render inside the shared frame, and the update entry
+    // is the compact strip pinned under the header (tools-to-top N5).
+    // The full NL form is not parked at the bottom anymore — it opens
+    // from the strip as a sheet.
     await activePanel.locator('[data-action="open-cook"]').click();
     await expect(page.locator("#app-dialog")).toContainText("Chicken & Rice");
     await expect(page.locator("#app-dialog")).toContainText(
         "Chicken went into the hot skillet.",
     );
+    await expect(page.locator("#cook-update-strip-form")).toBeVisible();
+    await expect(page.locator("#cook-update-form")).toHaveCount(0);
+    await page.locator('[data-action="open-cook-update-form"]').click();
     await expect(page.locator("#cook-update-form")).toBeVisible();
 });
 
