@@ -221,6 +221,7 @@ test("rows carry the presence flag beside the quantity line — separate channel
     };
     const context: Record<string, unknown> = {
         escapeHtml,
+        formatRecipeQuantity,
         state: { shortfall: { enabled: true, items: [shortItem] } },
         openDialog: (_t: string, b: string) => {
             body = b;
@@ -232,7 +233,7 @@ test("rows carry the presence flag beside the quantity line — separate channel
     );
     (context.__open as () => void)();
     // The row reports quantity; the flag reports presence.
-    expect(body).toContain("Pantry: ~0.25 cup");
+    expect(body).toContain("Pantry: ~1/4 cup");
     expect(body).toContain("pantry-flag pantry-flag-have");
     expect(body).toContain("In your pantry");
     // A short row is still addable — presence never vetoes the tap.
@@ -253,6 +254,7 @@ test("an on-list row shows the listed flag and no Add — and scopes add-all out
     };
     const context: Record<string, unknown> = {
         escapeHtml,
+        formatRecipeQuantity,
         state: { shortfall: { enabled: true, items: [listedItem] } },
         openDialog: (_t: string, b: string, a: string) => {
             body = b;
@@ -284,6 +286,7 @@ test("a none row flags Not in pantry and keeps its Add", () => {
     };
     const context: Record<string, unknown> = {
         escapeHtml,
+        formatRecipeQuantity,
         state: { shortfall: { enabled: true, items: [noneItem] } },
         openDialog: (_t: string, b: string) => {
             body = b;

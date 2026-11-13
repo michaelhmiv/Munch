@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
+import { formatRecipeQuantity } from "./quantity-format.js";
 
 // Pantry-presence flags on the remaining add-decision surfaces
 // (owner ruling, Nov 13): the recipe detail's ingredient rows —
@@ -80,6 +81,7 @@ async function renderRecipeDetail(): Promise<string> {
     const context: Record<string, unknown> = {
         sourceLabels: { usda: "USDA" },
         sourceClasses: {},
+        formatRecipeQuantity,
         api: async () => ({ recipe }),
         openDialog: (_title: string, html: string) => {
             body = html;
