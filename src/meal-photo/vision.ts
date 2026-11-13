@@ -1,8 +1,12 @@
 import { z } from "zod";
 import {
+    aiModelChain,
+    classifyAiProviderError,
     openRouterReasoningParam,
     providerErrorDetail,
+    runAiModelChain,
     websiteAiModel,
+    type AiAttemptOutcome,
 } from "../website-ai-config.js";
 
 /**
@@ -21,6 +25,15 @@ import {
  * output only, strict zod parse, safe spend log line. The photo is sent
  * inline as a data URL and is never persisted server-side
  * (`provider.data_collection: "deny"`, transient processing only).
+ *
+ * FALLBACK LAW (model-integration brief, Nov 11): identification
+ * sits behind a model chain — Ember primary, then the designated
+ * measured fallbacks (Luna, then DeepSeek-1017; see
+ * mealPhotoVisionConfig). A provider failure changes the slug,
+ * never the code path; a parsed answer (including "no food") is an
+ * answer, not an outage, and never engages the chain. When the
+ * whole chain is down the caller refunds and shows the same
+ * failure state as before this wiring existed.
  */
 
 const mealPhotoItemSchema = z
@@ -97,6 +110,11 @@ export const DEFAULT_MEAL_PHOTO_MAX_TOKENS = 2_000;
 export interface MealPhotoVisionConfig {
     apiKey: string;
     model: string;
+    /** Ordered identification chain: primary first, then the
+     * designated fallbacks. Optional so hand-built configs in tests
+     * keep the single-model behaviour; mealPhotoVisionConfig always
+     * populates it. */
+    models?: string[];
     baseUrl: string;
     timeoutMs: number;
     maxTokens?: number;
@@ -137,6 +155,20 @@ function disabledFlag(value: string | undefined): boolean {
     );
 }
 
+/**
+ * Designated identification fallbacks (model-integration brief,
+ * "Fallback law"; full-pipeline measured in the Nov 11 bake-off):
+ * Luna (`openai/gpt-5.6-luna`, recall 84.3%, $0.00070/draft), then
+ * DeepSeek-1017 (`deepseek/deepseek-v4.1-flash-1017`, the pinned
+ * dated snapshot; recall 81.3% with the Jev decider, $0.00029/draft,
+ * the fastest measured configuration). A fallback earns its place
+ * by measurement — changing this list re-runs the bake-off.
+ * `MUNCH_MEAL_PHOTO_FALLBACK_MODELS` overrides it (empty string =
+ * no fallbacks); swapping is an env change, never a code change.
+ */
+export const DEFAULT_MEAL_PHOTO_FALLBACK_MODELS =
+    "openai/gpt-5.6-luna,deepseek/deepseek-v4.1-flash-1017";
+
 export function mealPhotoVisionConfig(
     env: Record<string, string | undefined> = process.env,
 ): MealPhotoVisionConfig | null {
@@ -145,6 +177,11 @@ export function mealPhotoVisionConfig(
     return {
         apiKey,
         model: websiteAiModel(env),
+        models: aiModelChain(
+            websiteAiModel(env),
+            env.MUNCH_MEAL_PHOTO_FALLBACK_MODELS,
+            DEFAULT_MEAL_PHOTO_FALLBACK_MODELS,
+        ),
         baseUrl: (
             env.MUNCH_MEAL_PHOTO_BASE_URL?.trim() ||
             env.MUNCH_AI_BASE_URL?.trim() ||
@@ -251,9 +288,11 @@ async function postCompletion(
 
 /**
  * Stage 2: identify + portions. Throws MealPhotoNoFoodError when the
- * model finds no food; throws a plain Error after the single healing
- * retry when output stays unparseable (the caller refunds and shows a
- * failure state — never a partial silent log).
+ * answering model finds no food; when a model fails (provider error,
+ * timeout, or output unparseable after its one retry) the chain walk
+ * moves to the next designated model, and only a fully exhausted
+ * chain throws (the caller refunds and shows a failure state —
+ * never a partial silent log).
  */
 /**
  * Identify ONE meal from up to MAX_MEAL_PHOTOS photos in a SINGLE
@@ -295,8 +334,10 @@ export async function identifyMealPhotoFromImages(
         images.length > 1
             ? `${IDENTIFY_PROMPT} ${MULTI_PHOTO_DEDUPE_INSTRUCTION}`
             : IDENTIFY_PROMPT;
-    const requestBody = {
-        model: config.model,
+    const models = config.models?.length ? config.models : [config.model];
+    let callsUsed = 0;
+    const buildRequestBody = (model: string) => ({
+        model,
         temperature: 0,
         max_tokens: config.maxTokens ?? DEFAULT_MEAL_PHOTO_MAX_TOKENS,
         response_format: {
@@ -308,7 +349,7 @@ export async function identifyMealPhotoFromImages(
             },
         },
         plugins: [{ id: "response-healing" }],
-        ...openRouterReasoningParam(config.model),
+        ...openRouterReasoningParam(model),
         provider: { data_collection: "deny" },
         messages: [
             {
@@ -329,86 +370,86 @@ export async function identifyMealPhotoFromImages(
                 ],
             },
         ],
-    };
-    let callsUsed = 0;
-    let lastParseError: unknown;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    });
+    // One attempt against one model: a parsed result (even an empty
+    // one — that is the model answering "no food", not an outage) is
+    // a value; provider failures and unparseable output are
+    // classified failures for the chain walk.
+    const attempt = async (
+        model: string,
+    ): Promise<AiAttemptOutcome<MealPhotoVisionResult>> => {
+        callsUsed += 1;
+        let payload: unknown;
         try {
-            callsUsed += 1;
-            const payload = await postCompletion(
+            payload = await postCompletion(
                 config,
                 fetcher,
-                requestBody as unknown as Record<string, unknown>,
+                buildRequestBody(model) as unknown as Record<string, unknown>,
             );
-            const text = responseText(
-                (payload as any)?.choices?.[0]?.message?.content,
-            );
-            if (!text) {
-                lastParseError = new Error(
-                    "Meal photo vision returned no structured content",
-                );
-                continue;
-            }
-            let decoded: unknown;
-            try {
-                decoded = JSON.parse(text);
-            } catch {
-                lastParseError = new Error(
-                    "Meal photo vision returned invalid JSON",
-                );
-                continue;
-            }
-            try {
-                const result = mealPhotoResultSchema.parse(decoded);
-                logPhase(
-                    "identify",
-                    "success",
-                    config.model,
-                    startedAt,
-                    callsUsed,
-                );
-                if (result.items.length === 0) {
-                    throw new MealPhotoNoFoodError();
-                }
-                return result;
-            } catch (error) {
-                if (error instanceof MealPhotoNoFoodError) throw error;
-                lastParseError = error;
-                continue;
-            }
         } catch (error) {
-            if (error instanceof MealPhotoNoFoodError) {
-                logPhase(
-                    "identify",
-                    "error",
-                    config.model,
-                    startedAt,
-                    callsUsed,
-                );
-                throw error;
-            }
-            // HTTP/transport failures are not retried (S2 pattern); only
-            // unparseable output loops back for the one healing retry.
-            if (
-                error instanceof Error &&
-                /provider returned HTTP|aborted|fetch/i.test(error.message)
-            ) {
-                logPhase(
-                    "identify",
-                    "error",
-                    config.model,
-                    startedAt,
-                    callsUsed,
-                );
-                throw error;
-            }
-            lastParseError = error;
+            return { ok: false, failure: classifyAiProviderError(error) };
         }
+        const text = responseText(
+            (payload as any)?.choices?.[0]?.message?.content,
+        );
+        if (!text) {
+            return {
+                ok: false,
+                failure: {
+                    retryable: true,
+                    reason: "Meal photo vision returned no structured content",
+                },
+            };
+        }
+        let decoded: unknown;
+        try {
+            decoded = JSON.parse(text);
+        } catch {
+            return {
+                ok: false,
+                failure: {
+                    retryable: true,
+                    reason: "Meal photo vision returned invalid JSON",
+                },
+            };
+        }
+        try {
+            return { ok: true, value: mealPhotoResultSchema.parse(decoded) };
+        } catch (error) {
+            return {
+                ok: false,
+                failure: {
+                    retryable: true,
+                    reason:
+                        error instanceof Error
+                            ? error.message
+                            : "Meal photo vision returned unusable output",
+                },
+            };
+        }
+    };
+    let identified: { value: MealPhotoVisionResult; model: string };
+    try {
+        identified = await runAiModelChain({
+            seat: "meal_photo_identify",
+            models,
+            attempt,
+        });
+    } catch (error) {
+        logPhase(
+            "identify",
+            "error",
+            models[models.length - 1]!,
+            startedAt,
+            callsUsed,
+        );
+        throw error;
     }
-    logPhase("identify", "error", config.model, startedAt, callsUsed);
-    throw lastParseError instanceof Error
-        ? lastParseError
-        : new Error("Meal photo vision returned unusable output");
+    logPhase("identify", "success", identified.model, startedAt, callsUsed);
+    if (identified.value.items.length === 0) {
+        throw new MealPhotoNoFoodError();
+    }
+    return identified.value;
 }
 
 /** Single-photo identification (the original S3 entry point). */

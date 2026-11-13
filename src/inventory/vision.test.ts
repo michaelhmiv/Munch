@@ -298,3 +298,172 @@ describe("inventory vision", () => {
         ).rejects.toThrow("JPEG, PNG, or WebP");
     });
 });
+
+describe("fallback drill: receipt ScaleDown labels-only fallback", () => {
+    const fallbackConfig = {
+        ...config,
+        extractionsUrl: "https://example.test/extractions",
+        receiptFallbackModel: "scaledown/extract",
+    };
+    const receiptInput = {
+        mode: "receipt" as const,
+        mimeType: "image/jpeg",
+        bytes: new Uint8Array([1]),
+    };
+
+    function extractionsPayload(labels: string[]) {
+        return new Response(
+            JSON.stringify({
+                answers: { raw_labels: { value: labels } },
+                usage: { cost: 0.00006 },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+        );
+    }
+
+    test("drill: Ember HTTP 500 engages ScaleDown; every line lands in review", async () => {
+        let chatCalls = 0;
+        let extractionsBody: Record<string, any> = {};
+        const preview = await previewInventoryImage(
+            receiptInput,
+            fallbackConfig,
+            {
+                fetcher: async (url, init) => {
+                    if (String(url).includes("extractions")) {
+                        extractionsBody = JSON.parse(
+                            String(init?.body ?? "{}"),
+                        );
+                        return extractionsPayload(["EGGS 12CT", "MLK GL 1GAL"]);
+                    }
+                    chatCalls += 1;
+                    return new Response("down", { status: 500 });
+                },
+            },
+        );
+        expect(chatCalls).toBe(1);
+        expect(extractionsBody.model).toBe("scaledown/extract");
+        expect(Object.keys(extractionsBody.fields ?? {})).toEqual([
+            "raw_labels",
+        ]);
+        expect(preview.lines).toEqual([
+            {
+                raw_label: "EGGS 12CT",
+                name: "EGGS 12CT",
+                quantity: null,
+                unit: null,
+                is_food: true,
+                confidence: 0,
+                location: "unspecified",
+            },
+            {
+                raw_label: "MLK GL 1GAL",
+                name: "MLK GL 1GAL",
+                quantity: null,
+                unit: null,
+                is_food: true,
+                confidence: 0,
+                location: "unspecified",
+            },
+        ]);
+        expect(preview.notes.join(" ")).toContain("labels-only fallback");
+    });
+
+    test("drill: healthy Ember never touches the fallback", async () => {
+        let extractionsCalls = 0;
+        const preview = await previewInventoryImage(
+            receiptInput,
+            fallbackConfig,
+            {
+                fetcher: async (url) => {
+                    if (String(url).includes("extractions")) {
+                        extractionsCalls += 1;
+                        return extractionsPayload(["SHOULD NOT BE USED"]);
+                    }
+                    return new Response(
+                        JSON.stringify({
+                            choices: [
+                                {
+                                    message: {
+                                        content: JSON.stringify({
+                                            lines: [],
+                                            notes: [],
+                                        }),
+                                    },
+                                },
+                            ],
+                        }),
+                        {
+                            status: 200,
+                            headers: { "content-type": "application/json" },
+                        },
+                    );
+                },
+            },
+        );
+        expect(preview.lines).toEqual([]);
+        expect(extractionsCalls).toBe(0);
+    });
+
+    test("drill: pantry-photo mode has no fallback", async () => {
+        let extractionsCalls = 0;
+        await expect(
+            previewInventoryImage(
+                { ...receiptInput, mode: "pantry_photo" as const },
+                fallbackConfig,
+                {
+                    fetcher: async (url) => {
+                        if (String(url).includes("extractions")) {
+                            extractionsCalls += 1;
+                            return extractionsPayload(["X"]);
+                        }
+                        return new Response("down", { status: 500 });
+                    },
+                },
+            ),
+        ).rejects.toThrow("HTTP 500");
+        expect(extractionsCalls).toBe(0);
+    });
+
+    test("drill: fallback down too surfaces the primary's error", async () => {
+        await expect(
+            previewInventoryImage(receiptInput, fallbackConfig, {
+                fetcher: async () => new Response("down", { status: 500 }),
+            }),
+        ).rejects.toThrow("Pantry vision provider returned HTTP 500");
+    });
+
+    test("drill: request validation never engages the fallback", async () => {
+        let calls = 0;
+        await expect(
+            previewInventoryImage(
+                { ...receiptInput, mimeType: "image/gif" },
+                fallbackConfig,
+                {
+                    fetcher: async () => {
+                        calls += 1;
+                        return extractionsPayload(["X"]);
+                    },
+                },
+            ),
+        ).rejects.toThrow("JPEG, PNG, or WebP");
+        expect(calls).toBe(0);
+    });
+
+    test("config pin: designated default, env override, opt-out", () => {
+        const built = inventoryVisionConfig({
+            OPENROUTER_API_KEY: "test",
+            MUNCH_PANTRY_VISION_ENABLED: "true",
+        });
+        expect(built?.receiptFallbackModel).toBe("scaledown/extract");
+        expect(built?.extractionsUrl).toBe(
+            "https://openrouter.ai/api/alpha/extractions",
+        );
+        expect(
+            inventoryVisionConfig({
+                OPENROUTER_API_KEY: "test",
+                MUNCH_PANTRY_VISION_ENABLED: "true",
+                MUNCH_RECEIPT_FALLBACK_MODEL: "",
+            })?.receiptFallbackModel,
+        ).toBeNull();
+    });
+});

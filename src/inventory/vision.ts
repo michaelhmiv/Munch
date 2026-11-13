@@ -141,6 +141,13 @@ export interface InventoryVisionConfig {
     timeoutMs: number;
     maxTokens?: number;
     appUrl?: string;
+    /** OpenRouter Extractions API endpoint for the receipt fallback
+     * (tests/drills override it). */
+    extractionsUrl?: string;
+    /** Designated receipt fallback model (ScaleDown labels-only).
+     * Null/absent disables the fallback; inventoryVisionConfig
+     * populates it from the designated default. */
+    receiptFallbackModel?: string | null;
 }
 
 export interface InventoryVisionDependencies {
@@ -168,6 +175,21 @@ function enabledFlag(value: string | undefined): boolean {
     );
 }
 
+/**
+ * Receipt fallback (model-integration brief, "Fallback law"): when
+ * the Ember extraction fails at model level, receipt reading falls
+ * back to ScaleDown's extraction model on OpenRouter's Extractions
+ * API — labels only (measured Nov 11: 92.9% of lines, 100%
+ * precision, $0.00006/receipt), with every returned line routed to
+ * the review step for quantity/unit confirmation. It rides the same
+ * OpenRouter key. `MUNCH_RECEIPT_FALLBACK_MODEL` overrides the
+ * designated model (empty string disables the fallback) and
+ * `MUNCH_RECEIPT_EXTRACTIONS_URL` the endpoint.
+ */
+export const DEFAULT_RECEIPT_EXTRACTIONS_URL =
+    "https://openrouter.ai/api/alpha/extractions";
+export const DEFAULT_RECEIPT_FALLBACK_MODEL = "scaledown/extract";
+
 export function inventoryVisionConfig(
     env: Record<string, string | undefined> = process.env,
 ): InventoryVisionConfig | null {
@@ -193,6 +215,13 @@ export function inventoryVisionConfig(
             8_000,
         ),
         appUrl: env.MUNCH_APP_BASE_URL?.trim(),
+        extractionsUrl:
+            env.MUNCH_RECEIPT_EXTRACTIONS_URL?.trim() ||
+            DEFAULT_RECEIPT_EXTRACTIONS_URL,
+        receiptFallbackModel:
+            env.MUNCH_RECEIPT_FALLBACK_MODEL === undefined
+                ? DEFAULT_RECEIPT_FALLBACK_MODEL
+                : env.MUNCH_RECEIPT_FALLBACK_MODEL.trim() || null,
     };
 }
 
@@ -235,7 +264,65 @@ function logVisionPhase(
     );
 }
 
+/**
+ * Preview an inventory image (receipt or pantry photo). Receipt
+ * mode carries the designated fallback: when the primary extraction
+ * fails at model level, the labels-only ScaleDown extraction
+ * answers instead (see previewViaReceiptFallback). Pantry-photo
+ * mode has no designated fallback in the brief and keeps the
+ * primary's failure surface. When the fallback also fails, the
+ * primary's error is what surfaces — a retryable failure, never
+ * fabricated lines.
+ */
 export async function previewInventoryImage(
+    input: {
+        mode: InventoryVisionMode;
+        mimeType: string;
+        bytes: Uint8Array;
+    },
+    config = inventoryVisionConfig(),
+    dependencies: InventoryVisionDependencies = {},
+): Promise<InventoryVisionPreview> {
+    if (!config) throw new Error("Pantry vision is not configured");
+    // Request validation stays ahead of the fallback: a malformed
+    // image is not a provider outage and must never engage ScaleDown.
+    if (!/^image\/(jpeg|png|webp)$/i.test(input.mimeType)) {
+        throw new Error("Pantry image must be JPEG, PNG, or WebP");
+    }
+    if (
+        input.bytes.byteLength < 1 ||
+        input.bytes.byteLength > 8 * 1024 * 1024
+    ) {
+        throw new Error("Pantry image must be between 1 byte and 8 MB");
+    }
+    try {
+        return await previewViaChatModel(input, config, dependencies);
+    } catch (chatError) {
+        const fallbackModel = config.receiptFallbackModel?.trim();
+        if (input.mode !== "receipt" || !fallbackModel) throw chatError;
+        const reason =
+            chatError instanceof Error ? chatError.message : String(chatError);
+        console.info(
+            `[ai] seat=receipt_extract event=fallback model=${safeLogValue(config.model)} next_model=${safeLogValue(fallbackModel)} reason=${reason.slice(0, 200)}`,
+        );
+        const startedAt = Date.now();
+        try {
+            const preview = await previewViaReceiptFallback(
+                input,
+                config,
+                dependencies,
+                fallbackModel,
+            );
+            logVisionPhase("success", fallbackModel, startedAt, 1);
+            return preview;
+        } catch {
+            logVisionPhase("error", fallbackModel, startedAt, 1);
+            throw chatError;
+        }
+    }
+}
+
+async function previewViaChatModel(
     input: {
         mode: InventoryVisionMode;
         mimeType: string;
@@ -358,4 +445,99 @@ export async function previewInventoryImage(
     throw lastParseError instanceof Error
         ? lastParseError
         : new Error("Pantry vision returned unusable output");
+}
+
+/**
+ * Labels-only receipt fallback: ScaleDown extraction through
+ * OpenRouter's Extractions API (the exact request shape measured in
+ * the Nov 11 receipt bake-off harness, scripts/receipt-extractions-
+ * eval.ts). Only the raw printed labels are requested — no
+ * quantities, units, or food judgements — so every line is mapped
+ * with confidence 0, which routes it to the review step for
+ * quantity/unit confirmation (the brief's degraded mode: degraded,
+ * never blocked). Nothing is persisted here; the preview contract
+ * is unchanged.
+ */
+const RECEIPT_RAW_LABELS_FIELD = {
+    type: "list",
+    items: "text",
+    instructions:
+        "Every purchased line item printed on the receipt, in receipt order, with the product label exactly as printed (including abbreviations). Do not include subtotal, total, tax, payment, change, loyalty, coupon, or discount lines.",
+} as const;
+
+function extractionsImageFormat(mimeType: string): string {
+    if (/png$/i.test(mimeType)) return "png";
+    if (/webp$/i.test(mimeType)) return "webp";
+    return "jpeg";
+}
+
+async function previewViaReceiptFallback(
+    input: { mimeType: string; bytes: Uint8Array },
+    config: InventoryVisionConfig,
+    dependencies: InventoryVisionDependencies,
+    fallbackModel: string,
+): Promise<InventoryVisionPreview> {
+    const fetcher = dependencies.fetcher ?? fetch;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+    try {
+        const response = await fetcher(
+            config.extractionsUrl ?? DEFAULT_RECEIPT_EXTRACTIONS_URL,
+            {
+                method: "POST",
+                signal: controller.signal,
+                headers: {
+                    authorization: `Bearer ${config.apiKey}`,
+                    "content-type": "application/json",
+                    "x-title": "Munch Pantry",
+                },
+                body: JSON.stringify({
+                    model: fallbackModel,
+                    fields: { raw_labels: RECEIPT_RAW_LABELS_FIELD },
+                    assets: {
+                        photo: {
+                            type: "image",
+                            format: extractionsImageFormat(input.mimeType),
+                            data_base64: Buffer.from(input.bytes).toString(
+                                "base64",
+                            ),
+                        },
+                    },
+                }),
+            },
+        );
+        if (!response.ok) {
+            throw new Error(
+                `Receipt fallback provider returned HTTP ${response.status}${await providerErrorDetail(response)}`,
+            );
+        }
+        const payload = (await response.json()) as any;
+        const answer = payload?.answers?.raw_labels;
+        const rawList = answer?.value ?? answer?.guess;
+        const labels = (Array.isArray(rawList) ? rawList : [])
+            .map((value: unknown) =>
+                typeof value === "string" ? value.trim() : "",
+            )
+            .filter((label: string) => label.length > 0)
+            .slice(0, 200);
+        if (labels.length === 0) {
+            throw new Error("Receipt fallback returned no line labels");
+        }
+        return {
+            lines: labels.map((label: string) => ({
+                raw_label: label,
+                name: label,
+                quantity: null,
+                unit: null,
+                is_food: true,
+                confidence: 0,
+                location: "unspecified" as const,
+            })),
+            notes: [
+                "Receipt read with the labels-only fallback reader \u2014 check each line and add its quantity and unit.",
+            ],
+        };
+    } finally {
+        clearTimeout(timeout);
+    }
 }

@@ -278,3 +278,139 @@ describe("identifyMealPhotoFromImages (multi-photo, 2026-11-12)", () => {
         ).rejects.toThrow("between 1 and 3");
     });
 });
+
+describe("fallback drill: meal-photo identify chain (model-integration brief)", () => {
+    const chainConfig: MealPhotoVisionConfig = {
+        ...config,
+        models: [
+            "meta/muse-ember",
+            "openai/gpt-5.6-luna",
+            "deepseek/deepseek-v4.1-flash-1017",
+        ],
+    };
+    const photo = { mimeType: "image/jpeg", bytes: new Uint8Array([1]) };
+
+    function modelOf(init?: RequestInit): string {
+        return JSON.parse(String(init?.body ?? "{}")).model as string;
+    }
+
+    test("drill: primary HTTP 500s, retry also fails, Luna answers", async () => {
+        const seen: string[] = [];
+        const result = await identifyMealPhoto(photo, chainConfig, {
+            fetcher: async (_url, init) => {
+                const model = modelOf(init);
+                seen.push(model);
+                if (model === "meta/muse-ember") {
+                    return new Response("down", { status: 500 });
+                }
+                return envelope(oneItem);
+            },
+        });
+        expect(result.items).toHaveLength(1);
+        expect(seen).toEqual([
+            "meta/muse-ember",
+            "meta/muse-ember",
+            "openai/gpt-5.6-luna",
+        ]);
+    });
+
+    test("drill: primary times out twice, Luna answers", async () => {
+        const seen: string[] = [];
+        const result = await identifyMealPhoto(photo, chainConfig, {
+            fetcher: async (_url, init) => {
+                const model = modelOf(init);
+                seen.push(model);
+                if (model === "meta/muse-ember") {
+                    throw new Error("The operation was aborted");
+                }
+                return envelope(oneItem);
+            },
+        });
+        expect(result.items).toHaveLength(1);
+        expect(seen).toEqual([
+            "meta/muse-ember",
+            "meta/muse-ember",
+            "openai/gpt-5.6-luna",
+        ]);
+    });
+
+    test("drill: unparseable output walks the whole chain to DeepSeek", async () => {
+        const seen: string[] = [];
+        const result = await identifyMealPhoto(photo, chainConfig, {
+            fetcher: async (_url, init) => {
+                const model = modelOf(init);
+                seen.push(model);
+                if (model === "deepseek/deepseek-v4.1-flash-1017") {
+                    return envelope(oneItem);
+                }
+                return envelope("not json at all");
+            },
+        });
+        expect(result.items).toHaveLength(1);
+        expect(seen).toEqual([
+            "meta/muse-ember",
+            "meta/muse-ember",
+            "openai/gpt-5.6-luna",
+            "openai/gpt-5.6-luna",
+            "deepseek/deepseek-v4.1-flash-1017",
+        ]);
+    });
+
+    test("drill: a parsed no-food answer never engages the chain", async () => {
+        const seen: string[] = [];
+        await expect(
+            identifyMealPhoto(photo, chainConfig, {
+                fetcher: async (_url, init) => {
+                    seen.push(modelOf(init));
+                    return envelope(JSON.stringify({ items: [] }));
+                },
+            }),
+        ).rejects.toBeInstanceOf(MealPhotoNoFoodError);
+        expect(seen).toEqual(["meta/muse-ember"]);
+    });
+
+    test("drill: whole chain down throws the exhausted-chain error", async () => {
+        let calls = 0;
+        await expect(
+            identifyMealPhoto(photo, chainConfig, {
+                fetcher: async () => {
+                    calls += 1;
+                    return new Response("down", { status: 503 });
+                },
+            }),
+        ).rejects.toThrow("fallback chain");
+        expect(calls).toBe(6);
+    });
+
+    test("config pin: designated chain order, env override, opt-out", () => {
+        expect(
+            mealPhotoVisionConfig({ OPENROUTER_API_KEY: "test" })?.models,
+        ).toEqual([
+            "meta/muse-ember",
+            "openai/gpt-5.6-luna",
+            "deepseek/deepseek-v4.1-flash-1017",
+        ]);
+        expect(
+            mealPhotoVisionConfig({
+                OPENROUTER_API_KEY: "test",
+                MUNCH_MEAL_PHOTO_FALLBACK_MODELS: "custom/fallback",
+            })?.models,
+        ).toEqual(["meta/muse-ember", "custom/fallback"]);
+        expect(
+            mealPhotoVisionConfig({
+                OPENROUTER_API_KEY: "test",
+                MUNCH_MEAL_PHOTO_FALLBACK_MODELS: "",
+            })?.models,
+        ).toEqual(["meta/muse-ember"]);
+        expect(
+            mealPhotoVisionConfig({
+                OPENROUTER_API_KEY: "test",
+                MUNCH_AI_MODEL: "custom/primary",
+            })?.models,
+        ).toEqual([
+            "custom/primary",
+            "openai/gpt-5.6-luna",
+            "deepseek/deepseek-v4.1-flash-1017",
+        ]);
+    });
+});
