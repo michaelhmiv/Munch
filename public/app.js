@@ -3884,6 +3884,29 @@ function showPendingDrawdownSummary() {
     openDialog("Pantry draw-down", drawdownSummaryMarkup(drawdown));
 }
 
+// C1 outlier soft prompt: the water/weight entry has ALREADY saved
+// when this surfaces — the prompt is advisory only. "Log it anyway"
+// (the dialog's Close/keep path) leaves the entry untouched; only an
+// explicit Remove tap deletes it, through the existing delete route.
+let pendingOutlierPrompt = null;
+
+function queueOutlierPrompt(kind, result) {
+    const prompt = result?.outlier_prompt;
+    if (!prompt?.message || !result?.entry?.id) return;
+    pendingOutlierPrompt = { kind, entryId: result.entry.id, prompt };
+}
+
+function showPendingOutlierPrompt() {
+    if (!pendingOutlierPrompt) return;
+    const { kind, entryId, prompt } = pendingOutlierPrompt;
+    pendingOutlierPrompt = null;
+    openDialog(
+        kind === "water" ? "Check this water entry" : "Check this weight entry",
+        `<p>${escapeHtml(prompt.message)}</p><p class="tiny">It is already in your log. Keep it as logged, or remove it and log it again.</p>`,
+        `<div class="auth-actions spacer-top"><button class="button button-primary" type="button" data-action="close-dialog">Log it anyway</button><button class="button button-secondary" type="button" data-action="outlier-remove-entry" data-kind="${escapeHtml(kind)}" data-id="${escapeHtml(entryId)}">Remove entry</button></div>`,
+    );
+}
+
 function openRecipePlan(id) {
     openDialog(
         "Add recipe to meal plan",
@@ -9581,6 +9604,21 @@ async function handleAction(button) {
         toast("Weight entry deleted.");
         return renderRoute();
     }
+    if (action === "outlier-remove-entry") {
+        // C1: the ONLY destructive path out of the soft prompt, and
+        // only on this explicit tap — the prompt itself never removes.
+        button.disabled = true;
+        const kind = button.dataset.kind === "weight" ? "weight" : "water";
+        await api(`/api/app/${kind}/${encodeURIComponent(button.dataset.id)}`, {
+            method: "DELETE",
+            keepPrevious: true,
+        });
+        if (dialog.open) closeAppDialog();
+        toast(
+            kind === "water" ? "Water entry removed." : "Weight entry removed.",
+        );
+        return renderRoute();
+    }
     if (action === "edit-weight") {
         openWeightEditor(button.dataset.id);
         return;
@@ -10830,7 +10868,7 @@ document.addEventListener("submit", async (event) => {
             toast("Meal updated.");
         }
         if (form.id === "water-form") {
-            await api("/api/app/water", {
+            const result = await api("/api/app/water", {
                 method: "POST",
                 body: JSON.stringify({
                     amount_ml: waterFormAmountMl(values.amount, values.unit),
@@ -10839,14 +10877,16 @@ document.addEventListener("submit", async (event) => {
                 keepPrevious: true,
             });
             toast("Water added.");
+            queueOutlierPrompt("water", result);
         }
         if (form.id === "weight-form") {
-            await api("/api/app/weight", {
+            const result = await api("/api/app/weight", {
                 method: "POST",
                 body: JSON.stringify(values),
                 keepPrevious: true,
             });
             toast("Weight added.");
+            queueOutlierPrompt("weight", result);
         }
         if (form.id === "edit-water-form") {
             await api(`/api/app/water/${encodeURIComponent(form.dataset.id)}`, {
@@ -11159,8 +11199,12 @@ document.addEventListener("submit", async (event) => {
         // Cross-work §4: a queued pantry draw-down summary is the
         // log's confirmation — it opens over the re-rendered route.
         showPendingDrawdownSummary();
+        // C1: the soft outlier prompt opens over the re-rendered
+        // route, after the entry has saved (see queueOutlierPrompt).
+        showPendingOutlierPrompt();
     } catch (error) {
         pendingPantryRunOutPrompts = [];
+        pendingOutlierPrompt = null;
         toast(error.message || "Save failed", "error");
     } finally {
         submit.disabled = false;

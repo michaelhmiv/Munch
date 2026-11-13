@@ -140,6 +140,25 @@ export function getWaterInRange(
     );
 }
 
+/** Most recent water entries (newest last), for the C1 outlier seat. */
+export async function getRecentWater(
+    userId: string,
+    limit = 14,
+): Promise<WaterEntry[]> {
+    return withUserDatabase(userId, async (tx) => {
+        const rows = await tx<Array<WaterRow>>`
+            select
+                id, user_id, amount_ml, logged_at, notes, created_at,
+                idempotency_key
+            from munch.water_logs
+            where user_id = ${userId}
+            order by logged_at desc
+            limit ${limit}
+        `;
+        return rows.map(mapWater).reverse();
+    });
+}
+
 export async function updateWater(
     userId: string,
     id: string,

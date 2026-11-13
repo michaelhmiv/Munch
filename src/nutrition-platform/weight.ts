@@ -158,6 +158,25 @@ export async function getLatestWeight(
     });
 }
 
+/** Most recent weight entries (newest last), for the C1 outlier seat. */
+export async function getRecentWeight(
+    userId: string,
+    limit = 14,
+): Promise<WeightEntry[]> {
+    return withUserDatabase(userId, async (tx) => {
+        const rows = await tx<Array<WeightRow>>`
+            select
+                id, user_id, weight_g, logged_at, notes, created_at,
+                idempotency_key
+            from munch.weight_logs
+            where user_id = ${userId}
+            order by logged_at desc
+            limit ${limit}
+        `;
+        return rows.map(mapWeight).reverse();
+    });
+}
+
 export async function updateWeight(
     userId: string,
     id: string,
