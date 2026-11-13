@@ -12,6 +12,11 @@ on:
         required: false
         type: boolean
         default: false
+      release_notes:
+        description: "Release notes (changelog) attached to the Firebase distribution — required by Michael's 2026-11-13 release-notes rule (build-runbook.md §1). Paste the prepared notes verbatim; when left empty, the distribute steps fall back to the automated commit text so a bare dispatch still works."
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -295,18 +300,21 @@ jobs:
         if: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && vars.GCP_DISTRIBUTION_SERVICE_ACCOUNT != '' }}
         env:
           FIREBASE_APP_ID: ${{ steps.firebase.outputs.app_id }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
         run: |
           set -euo pipefail
+          release_notes="${RELEASE_NOTES:-Automated Android build from commit $(printf '%s' "$GITHUB_SHA" | cut -c1-7)}"
           firebase appdistribution:distribute "artifacts/app-debug.apk" \
             --app "$FIREBASE_APP_ID" \
             --project "munch-android-bf1cd" \
             --testers "michaelhmiv@gmail.com" \
-            --release-notes "Automated Android build from commit $(printf '%s' "$GITHUB_SHA" | cut -c1-7)"
+            --release-notes "$release_notes"
       - name: Distribute Android APK with the existing Firebase key
         if: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER == '' && vars.GCP_DISTRIBUTION_SERVICE_ACCOUNT == '' }}
         env:
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
           FIREBASE_APP_ID: ${{ steps.firebase.outputs.app_id }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
         run: |
           set -euo pipefail
           if [ -z "$FIREBASE_SERVICE_ACCOUNT_JSON" ]; then
@@ -318,9 +326,10 @@ jobs:
           chmod 600 "$service_account_file"
           trap 'rm -f "$service_account_file"' EXIT
           export GOOGLE_APPLICATION_CREDENTIALS="$service_account_file"
+          release_notes="${RELEASE_NOTES:-Automated Android build from commit $(printf '%s' "$GITHUB_SHA" | cut -c1-7)}"
           firebase appdistribution:distribute "artifacts/app-debug.apk" \
             --app "$FIREBASE_APP_ID" \
             --project "munch-android-bf1cd" \
             --testers "michaelhmiv@gmail.com" \
-            --release-notes "Automated Android build from commit $(printf '%s' "$GITHUB_SHA" | cut -c1-7)"
+            --release-notes "$release_notes"
 # No cancellation group is used, so merged main commits each retain a release run.
