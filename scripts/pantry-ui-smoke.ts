@@ -32,6 +32,77 @@ for (const marker of requiredHtml) {
     }
 }
 
+// Tools-to-top rail + sheets (Nov 11 ruling; missed-work audit
+// N1/N2): the four tools ride an icon-only rail in the resolved
+// order — Add, Scan pantry, Scan receipt, brain — above the
+// inventory; every form lives inside its dialog sheet, never as a
+// card under the inventory; and the Pantry chat entry is the brain
+// glyph, not the planner card's retired text row.
+const requiredRail = [
+    'class="tools-rail"',
+    'data-open-sheet="sheet-add"',
+    'data-open-sheet="sheet-scan"',
+    'data-open-sheet="sheet-receipt"',
+    'data-open-sheet="sheet-planner"',
+    'id="sheet-add"',
+    'id="sheet-scan"',
+    'id="sheet-receipt"',
+    'id="sheet-planner"',
+    'data-testid="brain-entry-pantry"',
+    'href="/app/chat?surface=pantry"',
+];
+for (const marker of requiredRail) {
+    if (!html.includes(marker)) {
+        throw new Error(`Pantry tools rail omitted required markup: ${marker}`);
+    }
+}
+const railOrder = [
+    'class="tools-rail"',
+    'data-open-sheet="sheet-add"',
+    'data-open-sheet="sheet-scan"',
+    'data-open-sheet="sheet-receipt"',
+    'data-testid="brain-entry-pantry"',
+    'id="inventory"',
+].map((marker) => html.indexOf(marker));
+if (
+    railOrder.some(
+        (index, i) => index < 0 || (i > 0 && index < railOrder[i - 1]),
+    )
+) {
+    throw new Error(
+        "Pantry rail tools are out of order (Add, Scan pantry, Scan receipt, brain) or the rail does not ride above the inventory",
+    );
+}
+for (const [sheet, inner] of [
+    ["sheet-add", "manual-add"],
+    ["sheet-scan", "pantry-photo"],
+    ["sheet-receipt", "receipt-photo"],
+    ["sheet-planner", "meal-planner"],
+] as const) {
+    if (html.indexOf(`id="${inner}"`) < html.indexOf(`id="${sheet}"`)) {
+        throw new Error(
+            `Pantry form ${inner} is not inside its sheet ${sheet}`,
+        );
+    }
+}
+if (
+    html.includes('class="grid-two"') ||
+    html.includes('data-testid="chat-entry-pantry"') ||
+    html.includes('class="entry-row"')
+) {
+    throw new Error(
+        "The retired below-inventory tool cards or the planner-card chat text row resurfaced",
+    );
+}
+if (!js.includes("showModal") || !js.includes("data-open-sheet")) {
+    throw new Error("Pantry sheets are not wired to the tools rail");
+}
+if (!css.includes(".tools-rail") || !css.includes("dialog.sheet")) {
+    throw new Error(
+        "Pantry stylesheet is missing the tools rail or sheet rules",
+    );
+}
+
 // Pantry enablement is the Settings feature-module flag only (Nov 11):
 // the page's legacy "Use Pantry" switch, its PATCH endpoint, and its
 // client wiring must stay gone.

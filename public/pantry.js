@@ -193,6 +193,28 @@ itemEditorForm.addEventListener("submit", async (event) => {
 
 $("#item-editor-cancel").addEventListener("click", closeItemEditor);
 
+// Tools rail (tools-to-top ruling, Nov 11): the rail buttons and the
+// planner row open their forms as sheets (native <dialog>, modal).
+// A scan sheet closes itself when its preview lands, so the review
+// section shows in context on the page (renderReview scrolls to it).
+function closeSheet(sheet) {
+    if (sheet?.open) sheet.close();
+}
+for (const opener of document.querySelectorAll("[data-open-sheet]")) {
+    opener.addEventListener("click", () => {
+        const sheet = document.getElementById(opener.dataset.openSheet);
+        if (sheet && !sheet.open) sheet.showModal();
+    });
+}
+for (const sheet of document.querySelectorAll("dialog.sheet")) {
+    sheet.addEventListener("click", (event) => {
+        if (event.target === sheet) sheet.close();
+    });
+    for (const closer of sheet.querySelectorAll("[data-close-sheet]")) {
+        closer.addEventListener("click", () => sheet.close());
+    }
+}
+
 function renderInventory(items) {
     inventoryEl.replaceChildren();
     itemCountEl.textContent = `${items.length} item${items.length === 1 ? "" : "s"}`;
@@ -369,6 +391,7 @@ $("#manual-add").addEventListener("submit", async (event) => {
     if (form.get("unit")) operation.unit = String(form.get("unit"));
     await reconcileOperations([operation]);
     event.currentTarget.reset();
+    closeSheet($("#sheet-add"));
 });
 
 function renderReview(mode, preview, sourceLabel) {
@@ -422,6 +445,7 @@ async function previewImage(input, endpoint, mode) {
         status("Analyzing image…");
         const result = await api(endpoint, { method: "POST", body: form });
         renderReview(mode, result.preview, file.name);
+        closeSheet(input.closest("dialog.sheet"));
         status("Review the detected items before applying them.");
     } catch (error) {
         status(error.message, true);
