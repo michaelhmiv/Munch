@@ -1,3 +1,7 @@
+import {
+    applyAmbiguousMatchDecider,
+    type MatchDeciderDependencies,
+} from "../decisions/match.js";
 import { naturalPortion } from "../food-providers/portions.js";
 import {
     getFoodSearchService,
@@ -185,6 +189,7 @@ export async function searchAppFoods(
     userId: string,
     query: string,
     limit?: number,
+    matchDependencies: MatchDeciderDependencies = {},
 ) {
     const normalizedQuery = query.trim();
     const bounded = boundedLimit(limit);
@@ -199,9 +204,21 @@ export async function searchAppFoods(
             ? getFoodSearchService().search(normalizedQuery, bounded)
             : Promise.resolve({ candidates: [], failures: [] }),
     ]);
+    // Seat B2 (ambiguous-match decider): reorders ONLY the provider
+    // candidate list, and only inside the ambiguity band with its
+    // flag on — otherwise the list is the deterministic ranking
+    // untouched (see src/decisions/match.ts). Saved foods and recent
+    // items are the user's own foods; a model never reorders those.
+    const candidates = normalizedQuery
+        ? await applyAmbiguousMatchDecider(
+              normalizedQuery,
+              providerResult.candidates,
+              matchDependencies,
+          )
+        : providerResult.candidates;
     return {
         query: normalizedQuery,
-        candidates: providerResult.candidates.map(summarizeFoodCandidate),
+        candidates: candidates.map(summarizeFoodCandidate),
         providerFailures: serializeFailures(providerResult.failures),
         savedFoods: saved.map(serializeSavedFood),
         recentMealItems: recent.map(serializeRecentMealItem),

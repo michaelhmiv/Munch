@@ -36,8 +36,10 @@ export interface DecisionsConfig {
     models: string[];
     gateTimeoutMs: number;
     deciderTimeoutMs: number;
+    matchTimeoutMs: number;
     gateEnabled: boolean;
     deciderEnabled: boolean;
+    matchEnabled: boolean;
     /** C2 shortfall-contradiction seat (audit §2 C2). Optional so
      * existing config literals in sibling seats/tests stay valid;
      * `decisionsConfig()` always populates both fields. */
@@ -128,6 +130,16 @@ export function decisionsConfig(
         deciderEnabled: seatEnabled(
             master,
             flagState(env.MUNCH_JEV_DECIDER_ENABLED),
+        ),
+        matchTimeoutMs: boundedInteger(
+            env.MUNCH_JEV_MATCH_TIMEOUT_MS,
+            2_000,
+            100,
+            15_000,
+        ),
+        matchEnabled: seatEnabled(
+            master,
+            flagState(env.MUNCH_JEV_MATCH_ENABLED),
         ),
         shortfallCheckEnabled: seatEnabled(
             master,

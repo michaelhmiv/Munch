@@ -1,0 +1,162 @@
+{
+    "sharp cheddar cheese": {
+        "fdc_id": "173414",
+        "name": "Cheese, cheddar (Includes foods for USDA's Food Distribution Program)",
+        "nutrients_per_100g": {
+            "potassium_mg": 76.0,
+            "carbs_g": 3.37,
+            "calories": 403.0,
+            "protein_g": 22.87,
+            "alcohol_g": 0.0,
+            "fat_g": 33.31,
+            "cholesterol_mg": 99.0,
+            "saturated_fat_g": 18.867,
+            "sodium_mg": 653.0,
+            "fiber_g": 0.0
+        }
+    },
+    "peanut butter": {
+        "fdc_id": "174266",
+        "name": "Peanut butter, smooth style, with salt (Includes foods for USDA's Food Distribution Program)",
+        "nutrients_per_100g": {
+            "cholesterol_mg": 0.0,
+            "potassium_mg": 558.0,
+            "fiber_g": 5.0,
+            "sodium_mg": 426.0,
+            "protein_g": 22.21,
+            "fat_g": 51.36,
+            "carbs_g": 22.31,
+            "calories": 598.0,
+            "saturated_fat_g": 10.325,
+            "alcohol_g": 0.0
+        }
+    },
+    "greek yogurt": {
+        "fdc_id": "170894",
+        "name": "Yogurt, Greek, plain, nonfat (Includes foods for USDA's Food Distribution Program)",
+        "nutrients_per_100g": {
+            "fiber_g": 0.0,
+            "protein_g": 10.19,
+            "alcohol_g": 0.0,
+            "cholesterol_mg": 5.0,
+            "saturated_fat_g": 0.117,
+            "sodium_mg": 36.0,
+            "fat_g": 0.39,
+            "carbs_g": 3.6,
+            "calories": 59.0,
+            "potassium_mg": 141.0
+        }
+    },
+    "whole milk": {
+        "fdc_id": "171265",
+        "name": "Milk, whole, 3.25% milkfat, with added vitamin D",
+        "nutrients_per_100g": {
+            "cholesterol_mg": 10.0,
+            "fat_g": 3.25,
+            "alcohol_g": 0.0,
+            "carbs_g": 4.8,
+            "calories": 61.0,
+            "saturated_fat_g": 1.865,
+            "fiber_g": 0.0,
+            "sodium_mg": 43.0,
+            "protein_g": 3.15,
+            "potassium_mg": 132.0
+        }
+    },
+    "orange juice": {
+        "fdc_id": "169098",
+        "name": "Orange juice, raw (Includes foods for USDA's Food Distribution Program)",
+        "nutrients_per_100g": {
+            "alcohol_g": 0.0,
+            "protein_g": 0.7,
+            "fiber_g": 0.2,
+            "sodium_mg": 1.0,
+            "saturated_fat_g": 0.024,
+            "cholesterol_mg": 0.0,
+            "fat_g": 0.2,
+            "carbs_g": 10.4,
+            "calories": 45.0,
+            "potassium_mg": 200.0
+        }
+    },
+    "oatmeal": {
+        "fdc_id": "173904",
+        "name": "Cereals, oats, regular and quick, not fortified, dry",
+        "nutrients_per_100g": {
+            "alcohol_g": 0.0,
+            "cholesterol_mg": 0.0,
+            "saturated_fat_g": 1.11,
+            "fiber_g": 10.1,
+            "potassium_mg": 362.0,
+            "fat_g": 6.52,
+            "carbs_g": 67.7,
+            "calories": 379.0,
+            "sodium_mg": 6.0,
+            "protein_g": 13.15
+        }
+    },
+    "brown rice": {
+        "fdc_id": "169704",
+        "name": "Rice, brown, long-grain, cooked (Includes foods for USDA's Food Distribution Program)",
+        "nutrients_per_100g": {
+            "alcohol_g": 0.0,
+            "saturated_fat_g": 0.26,
+            "fiber_g": 1.6,
+            "sodium_mg": 4.0,
+            "protein_g": 2.74,
+            "fat_g": 0.97,
+            "carbs_g": 25.58,
+            "calories": 123.0,
+            "potassium_mg": 86.0,
+            "cholesterol_mg": 0.0
+        }
+    },
+    "olive oil": {
+        "fdc_id": "171413",
+        "name": "Oil, olive, salad or cooking",
+        "nutrients_per_100g": {
+            "fat_g": 100.0,
+            "carbs_g": 0.0,
+            "calories": 884.0,
+            "potassium_mg": 1.0,
+            "sodium_mg": 2.0,
+            "protein_g": 0.0,
+            "saturated_fat_g": 13.808,
+            "alcohol_g": 0.0,
+            "cholesterol_mg": 0.0,
+            "fiber_g": 0.0
+        }
+    },
+    "chicken breast": {
+        "fdc_id": "171077",
+        "name": "Chicken, broiler or fryers, breast, skinless, boneless, meat only, raw",
+        "nutrients_per_100g": {
+            "potassium_mg": 334.0,
+            "fat_g": 2.62,
+            "calories": 120.0,
+            "saturated_fat_g": 0.563,
+            "sodium_mg": 45.0,
+            "protein_g": 22.5,
+            "cholesterol_mg": 73.0,
+            "carbs_g": 0.0,
+            "fiber_g": 0.0,
+            "alcohol_g": 0.0
+        }
+    },
+    "canned black beans": {
+        "fdc_id": "175237",
+        "name": "Beans, black, mature seeds, cooked, boiled, with salt",
+        "nutrients_per_100g": {
+            "fiber_g": 8.7,
+            "alcohol_g": 0.0,
+            "sodium_mg": 237.0,
+            "protein_g": 8.86,
+            "cholesterol_mg": 0.0,
+            "saturated_fat_g": 0.139,
+            "fat_g": 0.54,
+            "carbs_g": 23.71,
+            "calories": 132.0,
+            "potassium_mg": 355.0
+        }
+    }
+}

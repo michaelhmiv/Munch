@@ -62,6 +62,26 @@ describe("decisionsConfig flags (S1/S2 ship OFF)", () => {
         expect(config!.gateEnabled).toBe(false);
         expect(config!.deciderEnabled).toBe(false);
     });
+
+    test("B2 match seat: defaults OFF, follows the same flag pattern", () => {
+        expect(decisionsConfig({ ...KEY })!.matchEnabled).toBe(false);
+        expect(
+            decisionsConfig({ ...KEY, MUNCH_JEV_ENABLED: "true" })!
+                .matchEnabled,
+        ).toBe(true);
+        expect(
+            decisionsConfig({ ...KEY, MUNCH_JEV_MATCH_ENABLED: "true" })!
+                .matchEnabled,
+        ).toBe(true);
+        const killed = decisionsConfig({
+            ...KEY,
+            MUNCH_JEV_ENABLED: "true",
+            MUNCH_JEV_MATCH_ENABLED: "false",
+        });
+        expect(killed!.matchEnabled).toBe(false);
+        expect(killed!.deciderEnabled).toBe(true);
+        expect(decisionsConfig({ ...KEY })!.matchTimeoutMs).toBe(2_000);
+    });
 });
 
 describe("decisionsConfig model chain", () => {

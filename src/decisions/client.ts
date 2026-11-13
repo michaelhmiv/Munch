@@ -28,6 +28,7 @@ export interface DecisionsCallOptions {
     seat:
         | "gate"
         | "decider"
+        | "match"
         | "shortfall_check"
         | "pantry_match"
         | "drawdown_review";
