@@ -32,7 +32,9 @@ export interface DecisionsCallOptions {
         | "draft_review"
         | "shortfall_check"
         | "pantry_match"
-        | "drawdown_review";
+        | "drawdown_review"
+        | "plausibility"
+        | "estimate_rung";
     state: unknown;
     questions: Record<string, unknown>;
     timeoutMs: number;

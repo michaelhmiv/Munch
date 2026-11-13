@@ -26,6 +26,8 @@ function testConfig(overrides: Partial<DecisionsConfig> = {}): DecisionsConfig {
         deciderEnabled: true,
         draftReviewTimeoutMs: 50,
         draftReviewEnabled: true,
+        plausibilityTimeoutMs: 50,
+        plausibilityEnabled: true,
         matchTimeoutMs: 50,
         matchEnabled: true,
         pantryMatchEnabled: true,

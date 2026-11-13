@@ -66,6 +66,7 @@ import {
 import { decisionsConfig } from "../decisions/config.js";
 import { evaluateMealPhotoGate } from "../decisions/gate.js";
 import { chooseCandidatesForMealPhoto } from "../decisions/decider.js";
+import { reviewRecipeResolution } from "../decisions/resolution-review.js";
 import { RecipeImportError } from "../recipe-import/fetch.js";
 import {
     readRecipePhoto,
@@ -2149,6 +2150,9 @@ export function createAppRouter(): Hono {
                 typeof body.idempotency_key === "string"
                     ? body.idempotency_key
                     : crypto.randomUUID(),
+            resolutionDependencies: {
+                resolutionReview: reviewRecipeResolution,
+            },
         });
         return privateJson(c, {
             result,
@@ -2339,6 +2343,9 @@ export function createAppRouter(): Hono {
                 typeof body.idempotency_key === "string"
                     ? body.idempotency_key
                     : crypto.randomUUID(),
+            resolutionDependencies: {
+                resolutionReview: reviewRecipeResolution,
+            },
         });
         return privateJson(c, {
             result,
@@ -2379,6 +2386,9 @@ export function createAppRouter(): Hono {
                 typeof body.idempotency_key === "string"
                     ? body.idempotency_key
                     : crypto.randomUUID(),
+            resolutionDependencies: {
+                resolutionReview: reviewRecipeResolution,
+            },
         });
         return privateJson(c, {
             result,
@@ -2552,6 +2562,9 @@ export function createAppRouter(): Hono {
                 scope: recipeScopeForCapabilities(current, capabilities, true),
                 recipeId: current.id,
                 expectedVersion,
+                resolutionDependencies: {
+                    resolutionReview: reviewRecipeResolution,
+                },
                 // One heal per stored revision: a double-tap or retry
                 // replays the same update instead of stacking revisions.
                 idempotencyKey:

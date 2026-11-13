@@ -53,6 +53,18 @@ export interface DecisionsConfig {
     drawdownReviewTimeoutMs: number;
     draftReviewTimeoutMs: number;
     draftReviewEnabled: boolean;
+    /** A1 plausibility (the shared checker, src/decisions/
+     * plausibility.ts — live seat A1 and the stored-data sweep run
+     * the same module behind this one flag). Required, matching the
+     * sweep's shape, so both branches' configs are identical. */
+    plausibilityTimeoutMs: number;
+    plausibilityEnabled: boolean;
+    /** A2 estimate rung (audit §2 Tier 1). Optional so existing
+     * config literals in sibling seats/tests stay valid;
+     * `decisionsConfig()` always populates both fields. The timeout
+     * serves the A2 defensibility call. */
+    resolutionReviewTimeoutMs?: number;
+    estimateRungEnabled?: boolean;
 }
 
 type FlagState = "on" | "off" | "unset";
@@ -183,6 +195,26 @@ export function decisionsConfig(
             master,
             flagState(env.MUNCH_JEV_DRAFT_REVIEW_ENABLED),
         ),
+        plausibilityTimeoutMs: boundedInteger(
+            env.MUNCH_JEV_PLAUSIBILITY_TIMEOUT_MS,
+            5_000,
+            100,
+            30_000,
+        ),
+        plausibilityEnabled: seatEnabled(
+            master,
+            flagState(env.MUNCH_JEV_PLAUSIBILITY_ENABLED),
+        ),
+        resolutionReviewTimeoutMs: boundedInteger(
+            env.MUNCH_JEV_RESOLUTION_TIMEOUT_MS,
+            3_000,
+            100,
+            15_000,
+        ),
+        estimateRungEnabled: seatEnabled(
+            master,
+            flagState(env.MUNCH_JEV_ESTIMATE_RUNG_ENABLED),
+        ),
     };
 }
 
@@ -197,6 +229,11 @@ export function decisionsConfig(
  */
 export interface DecisionModelThresholds {
     gateFoodMin: number;
+    /** A2: an unresolved ingredient (or an A1-flagged one) may be
+     * filled by the labelled estimate rung when the model's
+     * p(estimate defensible) is at or above this value. Calibrated
+     * per model from the A2 eval — never borrowed. */
+    estimateDefensibleMin?: number;
     /** C2: minimum p(contradiction) at or above which a shortfall row
      * is recomputed and, if the contradiction persists, surfaced.
      * Calibrated per model from the C2 eval — never borrowed. */
@@ -237,6 +274,7 @@ export const DECISION_MODEL_THRESHOLDS: Record<
     // the eval's named miss, not a threshold failure).
     "typesafe/jev-1.14": {
         gateFoodMin: 0.1,
+        estimateDefensibleMin: 0.5,
         shortfallContradictionMin: 0.5,
         pantrySameItemMin: 0.55,
         pantryUnitsCompatibleMin: 0.6,
@@ -257,6 +295,7 @@ export const DECISION_MODEL_THRESHOLDS: Record<
     // genuine <= 0.39, benign >= 0.99 (20-cup milk 0.97: named miss).
     "perplexity/pplx-decider-v1.2": {
         gateFoodMin: 0.1,
+        estimateDefensibleMin: 0.5,
         shortfallContradictionMin: 0.5,
         pantrySameItemMin: 0.4,
         pantryUnitsCompatibleMin: 0.5,
@@ -368,4 +407,63 @@ export function draftReviewPlausibleThresholdForModel(model: string): number {
         DRAFT_REVIEW_MODEL_THRESHOLDS[model]?.draftPlausibleMin ??
         DEFAULT_DRAFT_PLAUSIBLE_MIN
     );
+}
+
+/**
+ * Per-model A1 plausibility thresholds: `implausibleMin` is the minimum
+ * p(implausible) at or above which a stored/live resolution is confirmed
+ * corrupt by the shared checker (`src/decisions/plausibility.ts`, used
+ * by seat A1 and by the stored-data sweep). Calibrated per model from
+ * the sweep eval fixture (scripts/jev-sweep-eval.ts) — never borrowed
+ * across models. Values are set from that eval's measured separation;
+ * see the eval report in the sweep PR.
+ */
+export interface PlausibilityModelThresholds {
+    implausibleMin: number;
+}
+
+export const PLAUSIBILITY_MODEL_THRESHOLDS: Record<
+    string,
+    PlausibilityModelThresholds
+> = {
+    // Sweep eval 2026-11-13 (scripts/jev-sweep-eval.ts; stored-shape
+    // specimens, production call shape, 2 repeats): defects scored
+    // 0.89–0.97, legitimately-unusual controls 0.15–0.43 — 0.50 sits
+    // in the wide empty middle of Jev's own distribution.
+    "typesafe/jev-1.14": { implausibleMin: 0.5 },
+    // Same eval, scored separately: defects 0.74–1.00, controls
+    // 0.08–0.33 — 0.50 is again the middle of pplx's own gap, not a
+    // value borrowed from Jev.
+    "perplexity/pplx-decider-v1.2": { implausibleMin: 0.5 },
+};
+
+/** Unlisted slugs get the conservative end: fewer accusations, not more. */
+export const DEFAULT_PLAUSIBILITY_IMPLAUSIBLE_MIN = 0.9;
+
+export function plausibilityThresholdForModel(model: string): number {
+    return (
+        PLAUSIBILITY_MODEL_THRESHOLDS[model]?.implausibleMin ??
+        DEFAULT_PLAUSIBILITY_IMPLAUSIBLE_MIN
+    );
+}
+
+/** A2 standard defensibility floor for any unlisted slug; listed
+ * models carry their own calibrated values (same eval as A1). */
+export const DEFAULT_ESTIMATE_DEFENSIBLE_MIN = 0.5;
+
+export function estimateDefensibleThresholdForModel(model: string): number {
+    return (
+        DECISION_MODEL_THRESHOLDS[model]?.estimateDefensibleMin ??
+        DEFAULT_ESTIMATE_DEFENSIBLE_MIN
+    );
+}
+
+/** Whether the A2 estimate-rung seat is enabled on a resolved
+ * config. Absence means off. */
+export function estimateRungEnabled(config: DecisionsConfig): boolean {
+    return config.estimateRungEnabled === true;
+}
+
+export function resolutionReviewTimeoutMs(config: DecisionsConfig): number {
+    return config.resolutionReviewTimeoutMs ?? 3_000;
 }

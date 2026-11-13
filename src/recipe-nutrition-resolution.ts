@@ -81,10 +81,29 @@ export interface RecipeNutritionResolution {
      * into the ordinary no-match count.
      */
     providerErrorPositions: number[];
+    /** Positions filled by the A2 labelled estimate rung (audit §2)
+     * when the resolution-review hook ran. Absent when it did not. */
+    modelEstimates?: number;
+    /** Positions the A1 plausibility review flagged. Absent when
+     * the review hook did not run. */
+    flaggedReviewPositions?: number[];
 }
 
 export interface RecipeNutritionResolutionDependencies {
     foodSearch?: Pick<FoodSearchService, "search">;
+    /**
+     * A1+A2 accountability hook (Jev accountability audit §2 Tier 1):
+     * invoked with the deterministic resolution before it is
+     * returned, on every path that threads these dependencies. The
+     * implementation lives website-side (src/decisions/) and is
+     * supplied by website callers — the host-AI boundary law keeps
+     * model clients out of this module's dependency graph. The hook
+     * is fail-open by contract; the resolver additionally guards the
+     * call so a throwing hook can never change the outcome.
+     */
+    resolutionReview?: (
+        resolution: RecipeNutritionResolution,
+    ) => Promise<RecipeNutritionResolution>;
 }
 
 type ToolServer = {
@@ -913,7 +932,7 @@ export async function resolveRecipeNutrition(
             providerErrorPositions.push(position);
         }
     });
-    return {
+    const resolution: RecipeNutritionResolution = {
         recipe: {
             ...recipe,
             ingredients: settled.map((result) => result.ingredient),
@@ -925,6 +944,14 @@ export async function resolveRecipeNutrition(
         unresolvedPositions,
         providerErrorPositions,
     };
+    if (dependencies.resolutionReview) {
+        try {
+            return await dependencies.resolutionReview(resolution);
+        } catch {
+            return resolution;
+        }
+    }
+    return resolution;
 }
 
 /**

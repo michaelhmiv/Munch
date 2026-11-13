@@ -290,3 +290,32 @@ describe("decisionsConfig B3/B4 seat flags", () => {
         expect(config!.drawdownReviewTimeoutMs).toBe(2_000);
     });
 });
+
+describe("decisionsConfig A1 plausibility seat flag", () => {
+    test("defaults off; master on enables it; explicit seat off wins", () => {
+        expect(decisionsConfig({ ...KEY })!.plausibilityEnabled).toBe(false);
+        expect(
+            decisionsConfig({ ...KEY, MUNCH_JEV_ENABLED: "true" })!
+                .plausibilityEnabled,
+        ).toBe(true);
+        expect(
+            decisionsConfig({
+                ...KEY,
+                MUNCH_JEV_ENABLED: "true",
+                MUNCH_JEV_PLAUSIBILITY_ENABLED: "false",
+            })!.plausibilityEnabled,
+        ).toBe(false);
+        expect(
+            decisionsConfig({ ...KEY, MUNCH_JEV_PLAUSIBILITY_ENABLED: "true" })!
+                .plausibilityEnabled,
+        ).toBe(true);
+    });
+
+    test("plausibility timeout defaults to 5000 and is bounded", () => {
+        expect(decisionsConfig({ ...KEY })!.plausibilityTimeoutMs).toBe(5_000);
+        expect(
+            decisionsConfig({ ...KEY, MUNCH_JEV_PLAUSIBILITY_TIMEOUT_MS: "5" })!
+                .plausibilityTimeoutMs,
+        ).toBe(100);
+    });
+});
