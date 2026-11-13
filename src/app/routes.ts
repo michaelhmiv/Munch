@@ -84,6 +84,13 @@ import {
 } from "../saved-foods/repository.js";
 import { getStructuredMeal } from "../structured-meals/repository.js";
 import {
+    applyPantryDrawdown,
+    mealItemRequirements,
+    scaleRecipeRequirements,
+    type DrawdownSummary,
+} from "../inventory/drawdown.js";
+import type { InventoryScope } from "../inventory/repository.js";
+import {
     addGroceryItems,
     addRecipeToGroceryList,
     archiveRecipe,
@@ -1155,7 +1162,8 @@ export function createAppRouter(): Hono {
         if (!Array.isArray(body.items)) {
             throw new Error("Meal items are required");
         }
-        const result = await createAppMeal(c.get("munchUserId"), {
+        const userId = c.get("munchUserId");
+        const result = await createAppMeal(userId, {
             description: body.description,
             mealType: body.meal_type,
             loggedAt: body.logged_at,
@@ -1163,9 +1171,30 @@ export function createAppRouter(): Hono {
             idempotencyKey: body.idempotency_key,
             items: body.items.map((item) => recordValue(item, "Meal item")),
         });
+        // Cross-work §4: "From my pantry" on single-food logging —
+        // the logged amount is the used amount. The meal has already
+        // committed; the draw-down follows in its own transaction
+        // and can only ever report not_applied, never fail the log.
+        let drawdown: DrawdownSummary | undefined;
+        if (body.from_pantry === true) {
+            drawdown = result.deduplicated
+                ? { status: "already_applied", lines: [] }
+                : await applyPantryDrawdown({
+                      userId,
+                      scope: { type: "personal" },
+                      sourceType: "meal_reconciliation",
+                      mealId: result.meal.id,
+                      mealIdempotencyKey:
+                          typeof body.idempotency_key === "string"
+                              ? body.idempotency_key
+                              : result.meal.id,
+                      requirements: mealItemRequirements(result.meal.items),
+                  });
+        }
         return privateJson(c, {
             meal: result.meal,
             deduplicated: result.deduplicated,
+            ...(drawdown ? { drawdown } : {}),
         });
     });
 
@@ -2380,7 +2409,47 @@ export function createAppRouter(): Hono {
                     ? body.idempotency_key
                     : crypto.randomUUID(),
         });
-        return privateJson(c, { result });
+        // Cross-work §4: "From my pantry" on the recipe Log flow.
+        // Servings COOKED drive the draw-down; servings consumed
+        // (above) drive the logged nutrition — the two never mix.
+        // The draw-down targets the pantry scope the recipe belongs
+        // to and commits in its own transaction after the log; a
+        // failure reports not_applied and never fails the log.
+        let drawdown: DrawdownSummary | undefined;
+        if (body.from_pantry === true) {
+            if (result.deduplicated) {
+                drawdown = { status: "already_applied", lines: [] };
+            } else {
+                const servingsCooked =
+                    positiveNumber(body.servings_cooked) ?? servingsConsumed;
+                const scope: InventoryScope =
+                    current.ownership.type === "household"
+                        ? {
+                              type: "household",
+                              householdId: current.ownership.household_id,
+                          }
+                        : { type: "personal" };
+                drawdown = await applyPantryDrawdown({
+                    userId,
+                    scope,
+                    sourceType: "recipe_preparation",
+                    mealId: result.meal.id,
+                    mealIdempotencyKey:
+                        typeof body.idempotency_key === "string"
+                            ? body.idempotency_key
+                            : result.meal.id,
+                    requirements: scaleRecipeRequirements(
+                        current.ingredients,
+                        servingsCooked,
+                        current.servings,
+                    ),
+                });
+            }
+        }
+        return privateJson(c, {
+            result,
+            ...(drawdown ? { drawdown } : {}),
+        });
     });
 
     app.post("/api/app/recipes/:id/plan", requireSameOrigin, async (c) => {

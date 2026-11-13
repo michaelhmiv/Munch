@@ -2628,6 +2628,17 @@ dialog .guided-plan-pref-action .button {
     accent-color: #176b3a;
 }
 
+/* Cross-work §4: the "From my pantry" checkbox on the log forms
+   draws at the authority's 22px with the green accent, inside the
+   checkbox-row's full-width tap label. */
+#recipe-log-form .checkbox-row input[type="checkbox"],
+#meal-form .checkbox-row input[type="checkbox"] {
+    width: 22px;
+    height: 22px;
+    flex: 0 0 auto;
+    accent-color: #176b3a;
+}
+
 /* Grocery suggestion rows stay a full 44px+ tappable check row. */
 dialog .guided-grocery-row {
     min-height: 44px;
