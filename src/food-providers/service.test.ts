@@ -126,6 +126,46 @@ describe("food candidate summaries", () => {
             }),
         );
     });
+
+    test("lists every portion natural-first for result rows (wave C3)", () => {
+        const summary = summarizeFoodCandidate(
+            candidate({
+                portions: [
+                    {
+                        id: "fl-oz",
+                        amount: 1,
+                        unit: "fl oz",
+                        label: "1 fl oz",
+                        gramWeight: 30.5,
+                        nutrients: { calories: 15 },
+                    },
+                    {
+                        id: "cup",
+                        amount: 1,
+                        unit: "cup",
+                        label: "1 cup",
+                        gramWeight: 244,
+                        nutrients: { calories: 122 },
+                    },
+                    {
+                        id: "cup-duplicate",
+                        amount: 1,
+                        unit: "cup",
+                        label: "1 cup",
+                        gramWeight: 244,
+                        nutrients: { calories: 122 },
+                    },
+                ],
+            }),
+        );
+        // All portions ride the summary (deduplicated, natural-first:
+        // the cup headlines ahead of the fl oz), so a search result
+        // row can show every unit the food can be logged in.
+        expect(summary.portions).toEqual([
+            { id: "cup", label: "1 cup", gram_weight: 244, calories: 122 },
+            { id: "fl-oz", label: "1 fl oz", gram_weight: 30.5, calories: 15 },
+        ]);
+    });
 });
 
 describe("local food resolution", () => {

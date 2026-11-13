@@ -443,7 +443,8 @@ dialog .auth-card {
 }
 
 .meal-composer-search {
-    margin-top: 4px;
+    /* Wave C1: Find foods leads the composer — no top offset. */
+    margin-top: 0;
 }
 
 .meal-composer-search-row {
@@ -567,6 +568,73 @@ dialog .auth-card {
 
 .meal-composer-macros {
     color: var(--ink-500);
+}
+
+/* Composer wave C1/C2 (approved 2026-11-11): the search row is
+   ONE slim row — search field + scanner icon button. */
+.meal-composer-search-row-slim {
+    grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.meal-scan-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+}
+
+/* Composer wave C6 (approved 2026-11-11): the totals strip pinned
+   to the top of the composer — it renders as a sibling of the form
+   (a sticky child of the grid form could not travel), panel
+   material on a hairline rule, serif, slim drawn height on a ≥44px
+   hit area. The day delta rides in gold #8a6d3b (design authority
+   §1): C6 is the owner's own ruling for this element, the one
+   gold-text exception. Tapping the strip opens the breakdown
+   sheet. */
+.meal-composer-strip {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    min-height: 44px;
+    margin-top: 24px;
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    background: var(--paper-card);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 0.95rem;
+    padding: 6px 12px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.meal-composer-strip-delta {
+    color: #8a6d3b;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+/* The strip's breakdown (F2 inline decomposition): a panel-material
+   sheet that expands under the pinned strip with per-item rows. */
+.meal-composer-breakdown {
+    margin-top: 6px;
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    background: var(--paper-card);
+    padding: 10px 12px;
+}
+
+.meal-composer-breakdown[hidden] {
+    display: none;
+}
+
+#meal-form {
+    margin-top: 10px;
 }
 
 /* Repetitive collection screens should read like lists, not a wall of cards. */
@@ -927,6 +995,12 @@ dialog .auth-card {
     .meal-composer-nutrients,
     .import-native-grid {
         grid-template-columns: 1fr;
+    }
+
+    /* The composer's slim search row stays one row on phones:
+       search field + scanner icon side by side (wave C2). */
+    .meal-composer-search-row-slim {
+        grid-template-columns: minmax(0, 1fr) auto;
     }
 
     .import-native-stats {

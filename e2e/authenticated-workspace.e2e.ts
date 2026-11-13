@@ -122,6 +122,40 @@ test("meal composer logs a food through its portion picker", async ({
     await expect(page).toHaveTitle(/^Today — Munch$/);
 
     await page.getByRole("button", { name: "Add meal" }).first().click();
+
+    // Composer wave C1–C6 pins (approved 2026-11-11): no typed
+    // barcode field, no Look up button, no leading Meal name field;
+    // the totals strip pins the top of the composer and Find foods
+    // precedes the added-foods list in DOM order.
+    const dialog = page.locator("#app-dialog");
+    await expect(dialog.locator("#meal-food-barcode")).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: "Look up" })).toHaveCount(
+        0,
+    );
+    await expect(dialog.locator('input[name="description"]')).toHaveCount(0);
+    await expect(dialog.locator(".meal-composer-strip")).toBeVisible();
+    await expect(
+        dialog.getByRole("button", { name: "Scan barcode" }),
+    ).toBeVisible();
+    const composerOrder = await dialog.evaluate((root) => {
+        const strip = root.querySelector(".meal-composer-strip");
+        const findFoods = [...root.querySelectorAll("h3")].find(
+            (heading) => heading.textContent === "Find foods",
+        );
+        const selected = root.querySelector("#meal-selected-items");
+        const precedes = (a: Element | undefined, b: Element | null) =>
+            Boolean(
+                a &&
+                b &&
+                a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING,
+            );
+        return {
+            stripFirst: precedes(strip as Element, findFoods ?? null),
+            findFirst: precedes(findFoods, selected),
+        };
+    });
+    expect(composerOrder).toEqual({ stripFirst: true, findFirst: true });
+
     const searchInput = page.locator("#meal-food-search");
     await searchInput.fill("milk");
 
@@ -155,6 +189,13 @@ test("meal composer logs a food through its portion picker", async ({
 
     const portionSelect = page.locator('[data-composer-field="portion_id"]');
     await expect(portionSelect).toBeVisible({ timeout: 30_000 });
+    // C4: the tap lands the user in the new food's quantity/unit
+    // editor — its quantity field takes focus.
+    await expect(
+        page.locator('[data-composer-field="quantity"]'),
+    ).toBeFocused();
+    // C6: the pinned strip carries the meal's running totals.
+    await expect(page.locator("#meal-composer-totals")).toContainText("kcal");
     // Read the options in one evaluate: probing for an option that
     // may not exist with a waiting locator would burn the test budget.
     const options = await portionSelect.evaluate((select) =>
@@ -172,6 +213,15 @@ test("meal composer logs a food through its portion picker", async ({
     await expect(page.locator(".meal-composer-macros")).toContainText("kcal", {
         timeout: 15_000,
     });
+
+    // C6: tapping the strip expands the breakdown inline — the meal
+    // total is there, and the composer underneath survives the peek
+    // (the form is still open and submittable afterwards).
+    await page.locator(".meal-composer-strip").click();
+    const breakdown = page.locator("#meal-composer-breakdown");
+    await expect(breakdown).toBeVisible();
+    await expect(breakdown).toContainText("Meal total");
+    await expect(page.locator("#meal-form")).toBeVisible();
 
     await page.locator('#meal-form button[type="submit"]').click();
     await expect(page.locator("#toast-region")).toContainText("Meal logged.", {

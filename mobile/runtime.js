@@ -40,6 +40,16 @@ window.MunchAds = Object.freeze({
         return MunchAds.showPrivacyOptions();
     },
 });
+// Composer wave C2 (approved 2026-11-11): the meal composer's single
+// search row carries a scanner icon instead of the typed barcode
+// field + Look up button. app.js feature-detects this bridge exactly
+// like MunchAds; the scan itself is the same Capacitor path the
+// Pantry page uses (scanInstalledBarcode below).
+window.MunchScan = Object.freeze({
+    scanBarcode() {
+        return scanInstalledBarcode();
+    },
+});
 let backgroundedAt = null;
 let foregroundSessionCheck = null;
 const mobileAuthCallbacks = new Map();

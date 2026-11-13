@@ -274,6 +274,14 @@ const GOLD_CSS_ALLOWLIST = new Map<string, string>([
     // Authority §1: chart accents.
     [".trends-bar.is-weekend", "chart accent: weekend bars (authority §1)"],
     [".trends-rolling", "chart accent: rolling-average line (authority §1)"],
+    // Owner ruling, composer wave C6 (approved 2026-11-11): the
+    // meal's contribution delta on the composer totals strip is set
+    // in gold — the owner's own item spec for that element, recorded
+    // here as the one gold-text exception to §1's reservation.
+    [
+        ".meal-composer-strip-delta",
+        "composer wave C6 (owner ruling 2026-11-11): meal contribution delta on the totals strip",
+    ],
 ]);
 
 /** (c) Gold in JS is confined to Trends chart color maps. */
@@ -363,6 +371,13 @@ const BUTTON_CLASS_REGISTRY = new Map<
         {
             status: "context",
             reason: "full-width 48px sizing for the meal-draft add-text submit; color comes from the shared button grammar",
+        },
+    ],
+    [
+        "meal-scan-button",
+        {
+            status: "context",
+            reason: "44px icon sizing for a .button-secondary in markup (composer wave C2 scanner icon); color comes from the shared button grammar",
         },
     ],
     [
