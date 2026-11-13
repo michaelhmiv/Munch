@@ -1109,17 +1109,23 @@ export const CAPABILITY_MANIFEST = [
         mcp: complete(["parse_recipe_url"]),
         web: complete([
             "POST /api/app/recipes/import-preview",
+            "POST /api/app/recipes/import-photo-preview",
             '[data-action="import-recipe-url"]',
+            '[data-action="import-recipe-photo"]',
             "/app/recipes",
         ]),
         app: complete([
             "POST /api/app/recipes/import-preview",
+            "POST /api/app/recipes/import-photo-preview",
             '[data-action="import-recipe-url"]',
+            '[data-action="import-recipe-photo"]',
             "/app/recipes",
         ]),
         ios: complete([
             "POST /api/app/recipes/import-preview",
+            "POST /api/app/recipes/import-photo-preview",
             '[data-action="import-recipe-url"]',
+            '[data-action="import-recipe-photo"]',
             "/app/recipes",
         ]),
         iosBasis:

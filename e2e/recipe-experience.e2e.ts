@@ -1,9 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
-// Recipe experience (R1–R3) on the real server with the provisioned
-// reviewer account. ONE sign-in drives the whole journey (the suite
-// shares a sign-in rate-limit budget):
+// Recipe experience (R1–R3 + cross-work slice 3 photo import) on the
+// real server with the provisioned reviewer account. ONE sign-in
+// drives the whole journey (the suite shares a sign-in rate-limit
+// budget):
 //  R1 — a recipe seeded with plain typed lines shows its unmatchable
 //       ingredient flagged "Not resolved"; Calculate nutrition writes
 //       a new revision (the meta line moves to revision 2) and the
@@ -253,4 +254,145 @@ test("recipe heals visibly, stocks groceries with merge counts, and cooks in che
             .getByRole("button", { name: "Finish cook" }),
     ).toBeVisible();
     await page.screenshot({ path: `${CAPTURE_DIR}/cook-mode-finish.png` });
+    await page.locator(".dialog-close").click();
+
+    // ---- Cross-work slice 3: photo recipe import. The header shows
+    // the three doors (Import · Photo · Create); the Photo door opens
+    // the shared capture control; a fixture recipe-card photo lands
+    // in the SAME import-review dialog as the URL importer,
+    // populated and editable, with the partly-illegible warnings
+    // visible; saving creates the recipe through the existing save
+    // path. The vision read itself is intercepted with the recorded
+    // fixture draft (the e2e job carries no OpenRouter key — the
+    // recorded-response contract is covered by the ai-fixture lane);
+    // the save below is the real API.
+    const photoName = `E2E Photo Tomato Soup ${stamp}`;
+    const photoDraft = {
+        schema_version: 2,
+        status: "partial",
+        requires_review: true,
+        parser: { strategy: "photo_vision", version: "photo-vision-1.0.0" },
+        source: {
+            submitted_url: null,
+            final_url: null,
+            canonical_url: null,
+            title: null,
+            site_name: null,
+            author: null,
+        },
+        recipe: {
+            name: photoName,
+            servings: 1,
+            instructions: ["Simmer everything for 30 minutes."],
+            cooking_minutes: 30,
+            source_type: "imported",
+            ingredients: [
+                {
+                    name: "crushed tomatoes",
+                    quantity: 2,
+                    unit: "cup",
+                    source_type: "model_estimate",
+                    confidence: 0.93,
+                    source_snapshot: { resolution_layer: "recipe_photo" },
+                },
+                {
+                    name: "onion",
+                    quantity: 1,
+                    preparation: "diced",
+                    source_type: "model_estimate",
+                    confidence: 0.55,
+                    source_snapshot: { resolution_layer: "recipe_photo" },
+                },
+            ],
+        },
+        nutrition: {
+            status: "unavailable",
+            total: {},
+            per_serving: {},
+        },
+        ingredient_review: [
+            {
+                position: 0,
+                raw_text: "2 cups crushed tomatoes",
+                resolution: "assumed",
+                candidates: [],
+            },
+            {
+                position: 1,
+                raw_text: "1 onion, diced",
+                resolution: "assumed",
+                candidates: [],
+            },
+        ],
+        assumptions: [],
+        warnings: [
+            {
+                code: "photo_text_uncertain",
+                message: "The servings line is cut off in the photo.",
+                severity: "warning",
+            },
+            {
+                code: "photo_text_uncertain",
+                message: "The onion quantity is smudged.",
+                severity: "warning",
+            },
+        ],
+    };
+    await page.route("**/api/app/recipes/import-photo-preview", (route) =>
+        route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+                draft: photoDraft,
+                transient_media: true,
+                photo_retained: false,
+            }),
+        }),
+    );
+    await page.goto("/app/recipes");
+    // Three doors must fit the phone width — the actions row wraps,
+    // nothing clips off-screen.
+    const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - window.innerWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+    const doors = page.locator(".recipes-view .recipe-actions .button");
+    await expect(doors).toHaveCount(3);
+    await expect(doors.nth(0)).toHaveText("Import recipe from website");
+    await expect(doors.nth(1)).toHaveText("Photo");
+    await expect(doors.nth(2)).toHaveText("Create recipe");
+    await page.screenshot({
+        path: `${CAPTURE_DIR}/recipes-header-three-doors.png`,
+    });
+    await doors.nth(1).click();
+    await expect(page.locator("#recipe-photo-file")).toBeAttached();
+    await page
+        .locator("#recipe-photo-file")
+        .setInputFiles("e2e/fixtures/recipe-card-partly-illegible.png");
+    await page.getByRole("button", { name: "Read recipe photo" }).click();
+    const reviewDialog = page.locator("#app-dialog");
+    await expect(reviewDialog.locator('input[name="name"]')).toHaveValue(
+        photoName,
+    );
+    await expect(reviewDialog).toContainText("Review warnings");
+    await expect(reviewDialog).toContainText(
+        "The servings line is cut off in the photo.",
+    );
+    await expect(reviewDialog).toContainText("Recipe photo");
+    // Editable before save: correct the servings the photo cut off.
+    await reviewDialog.locator('input[name="servings"]').fill("4");
+    await page.screenshot({
+        path: `${CAPTURE_DIR}/recipe-photo-review.png`,
+    });
+    await reviewDialog
+        .getByRole("button", { name: "Save imported recipe" })
+        .click();
+    await expect(page.locator(".toast")).toContainText(
+        "Imported recipe saved.",
+    );
+    await page.unroute("**/api/app/recipes/import-photo-preview");
+    await page.goto("/app/recipes");
+    await expect(
+        page.locator(".recipe-panel", { hasText: photoName }),
+    ).toBeVisible();
 });

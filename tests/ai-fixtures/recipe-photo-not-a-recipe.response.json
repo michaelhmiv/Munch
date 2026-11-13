@@ -1,0 +1,20 @@
+{
+    "choices": [
+        {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+                "content": "{\"is_recipe\": false, \"title\": null, \"servings\": null, \"description\": null, \"preparation_minutes\": null, \"cooking_minutes\": null, \"source_title\": null, \"ingredients\": [], \"instructions\": [], \"warnings\": []}",
+                "role": "assistant"
+            }
+        }
+    ],
+    "id": "fixture-recipe-photo-not-a-recipe",
+    "model": "meta/muse-ember",
+    "object": "chat.completion",
+    "usage": {
+        "completion_tokens": 210,
+        "prompt_tokens": 1400,
+        "total_tokens": 1610
+    }
+}

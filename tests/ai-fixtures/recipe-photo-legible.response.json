@@ -1,0 +1,20 @@
+{
+    "choices": [
+        {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+                "content": "{\"is_recipe\": true, \"title\": \"Overnight Oats\", \"servings\": 2, \"description\": \"A make-ahead breakfast jar.\", \"preparation_minutes\": 10, \"cooking_minutes\": null, \"source_title\": \"Family Recipe Cards\", \"ingredients\": [{\"raw_text\": \"1 1/2 cups rolled oats\", \"name\": \"rolled oats\", \"quantity\": 1.5, \"unit\": \"cup\", \"preparation\": null, \"optional\": false, \"confidence\": 0.96}, {\"raw_text\": \"1/2 cup milk\", \"name\": \"milk\", \"quantity\": 0.5, \"unit\": \"cup\", \"preparation\": null, \"optional\": false, \"confidence\": 0.95}, {\"raw_text\": \"1 tbsp honey\", \"name\": \"honey\", \"quantity\": 1, \"unit\": \"tbsp\", \"preparation\": null, \"optional\": true, \"confidence\": 0.9}], \"instructions\": [\"Mix everything in a jar.\", \"Chill overnight and serve cold.\"], \"warnings\": []}",
+                "role": "assistant"
+            }
+        }
+    ],
+    "id": "fixture-recipe-photo-legible",
+    "model": "meta/muse-ember",
+    "object": "chat.completion",
+    "usage": {
+        "completion_tokens": 210,
+        "prompt_tokens": 1400,
+        "total_tokens": 1610
+    }
+}

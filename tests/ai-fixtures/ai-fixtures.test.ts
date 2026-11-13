@@ -21,6 +21,12 @@ import {
     type PantryMealIdeasResponse,
 } from "../../src/inventory/meal-ideas.js";
 import { OpenRouterRecipeImportResolver } from "../../src/recipe-import/semantic-resolver.js";
+import {
+    readRecipePhoto,
+    RecipePhotoNoRecipeError,
+    type RecipePhotoVisionConfig,
+} from "../../src/recipe-import/photo-vision.js";
+import { previewRecipePhoto } from "../../src/recipe-import/service.js";
 import { websiteGuidanceAiConfig } from "../../src/website-ai-config.js";
 
 /**
@@ -576,5 +582,105 @@ describe("ai-fixture: meal photo production case — chicken/rice/broccoli (S3 h
         }
         expect(message).toContain("cooked white rice");
         expect(message).toContain("cannot be confirmed");
+    });
+});
+
+describe("ai-fixture: recipe photo import (recorded responses)", () => {
+    const photoConfig: RecipePhotoVisionConfig = {
+        apiKey: "fixture-key",
+        baseUrl: "https://openrouter.invalid/v1",
+        model: "meta/muse-ember",
+        timeoutMs: 1_000,
+        maxTokens: 4_000,
+        maxCallsPerImport: 2,
+        responseFormat: "json_schema",
+        responseHealing: true,
+    };
+
+    test("legible recipe-card fixture reads into structured fields and drafts through the shared pipeline", async () => {
+        const fixture = await loadFixture("recipe-photo-legible.response.json");
+        let body: Record<string, any> = {};
+        const extraction = await readRecipePhoto(
+            { mimeType: "image/png", bytes: new Uint8Array([1, 2, 3]) },
+            photoConfig,
+            {
+                fetcher: async (_input, init) => {
+                    body = JSON.parse(String(init?.body ?? "{}"));
+                    return new Response(JSON.stringify(fixture), {
+                        status: 200,
+                        headers: { "content-type": "application/json" },
+                    });
+                },
+            },
+        );
+        expect(body.provider).toEqual({ data_collection: "deny" });
+        expect(body.reasoning).toEqual({ effort: "minimal" });
+        expect(extraction.name).toBe("Overnight Oats");
+        expect(extraction.servings).toBe(2);
+        expect(extraction.ingredients.map((i) => i.name)).toEqual([
+            "rolled oats",
+            "milk",
+            "honey",
+        ]);
+        expect(extraction.ingredients[0]).toMatchObject({
+            quantity: 1.5,
+            unit: "cup",
+        });
+        expect(extraction.instructions).toHaveLength(2);
+        expect(extraction.warnings).toEqual([]);
+
+        const draft = await previewRecipePhoto(extraction, {
+            foodSearch: {
+                search: async () => ({ candidates: [], failures: [] }),
+            },
+        });
+        expect(draft.parser.strategy).toBe("photo_vision");
+        expect(draft.recipe.name).toBe("Overnight Oats");
+        expect(draft.source.final_url).toBeNull();
+        expect(draft.recipe.ingredients).toHaveLength(3);
+    });
+
+    test("partly illegible fixture keeps its warnings and forces review", async () => {
+        const fixture = await loadFixture(
+            "recipe-photo-partly-illegible.response.json",
+        );
+        const extraction = await readRecipePhoto(
+            { mimeType: "image/png", bytes: new Uint8Array([4, 5]) },
+            photoConfig,
+            { fetcher: recordedFetcher(fixture) },
+        );
+        expect(extraction.name).toBe("Tomato Soup");
+        expect(extraction.servings).toBeUndefined();
+        const messages = extraction.warnings.map((w) => w.message);
+        expect(messages).toContain(
+            "The servings line is cut off in the photo.",
+        );
+        expect(messages).toContain("The onion quantity is smudged.");
+
+        const draft = await previewRecipePhoto(extraction, {
+            foodSearch: {
+                search: async () => ({ candidates: [], failures: [] }),
+            },
+        });
+        expect(draft.requires_review).toBe(true);
+        expect(
+            draft.warnings.some(
+                (w) =>
+                    w.message === "The servings line is cut off in the photo.",
+            ),
+        ).toBe(true);
+    });
+
+    test("non-recipe fixture fails honestly with no invented recipe", async () => {
+        const fixture = await loadFixture(
+            "recipe-photo-not-a-recipe.response.json",
+        );
+        await expect(
+            readRecipePhoto(
+                { mimeType: "image/jpeg", bytes: new Uint8Array([9]) },
+                photoConfig,
+                { fetcher: recordedFetcher(fixture) },
+            ),
+        ).rejects.toBeInstanceOf(RecipePhotoNoRecipeError);
     });
 });

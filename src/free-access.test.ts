@@ -41,6 +41,7 @@ describe("AI features are free and ungated (Amendment D)", () => {
         const app = await Bun.file("src/app/routes.ts").text();
         expect(app).toContain("/api/app/meal-photo");
         expect(app).toContain("/api/app/recipes/import-preview");
+        expect(app).toContain("/api/app/recipes/import-photo-preview");
         const guidance = await Bun.file("src/app/guidance-routes.ts").text();
         expect(guidance).toContain("/api/app/planning/propose");
     });
