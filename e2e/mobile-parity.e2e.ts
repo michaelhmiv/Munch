@@ -3688,8 +3688,20 @@ test("S6 slice 1: the single ad slot lives on Today, flag-gated and Premium-hidd
     );
     expect(slotBox!.y + slotBox!.height).toBeLessThanOrEqual(mealsBox!.y);
     // Slim and stable: the reserve is the mock's 54px grammar.
-    expect(slotBox!.height).toBeGreaterThanOrEqual(54);
-    expect(slotBox!.height).toBeLessThan(64);
+    // Compare whole pixels: boundingBox() derives height as the
+    // difference of two box-model quad coordinates, and those quads
+    // pass through the browser's float32 geometry pipeline. The
+    // slot's layout height is exactly 54px (min-height: 54px wins;
+    // computed height reads back "54px"), but at this page depth
+    // (~457px down) each quad coordinate sits on a 2^-15px float32
+    // grid, so the measured difference can land one quantum low —
+    // 53.999969482421875 — even though nothing shrank. Rounding to
+    // the nearest whole pixel measures the layout honestly: a
+    // genuine regression still fails (53.4px rounds to 53 < 54;
+    // 64px+ rounds to 64, not < 64).
+    const slotHeight = Math.round(slotBox!.height);
+    expect(slotHeight).toBeGreaterThanOrEqual(54);
+    expect(slotHeight).toBeLessThan(64);
     adCalls = await page.evaluate(
         () => (window as unknown as { __adCalls?: unknown[] }).__adCalls ?? [],
     );
