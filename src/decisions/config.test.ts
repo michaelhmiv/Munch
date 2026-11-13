@@ -149,7 +149,9 @@ describe("C2 shortfall-check seat flag (MUNCH_JEV_SHORTFALL_CHECK_ENABLED)", () 
     });
 
     test("timeout defaults to 2000ms and is bounded", () => {
-        expect(shortfallCheckTimeoutMs(decisionsConfig({ ...KEY })!)).toBe(2_000);
+        expect(shortfallCheckTimeoutMs(decisionsConfig({ ...KEY })!)).toBe(
+            2_000,
+        );
         expect(
             shortfallCheckTimeoutMs(
                 decisionsConfig({
@@ -161,13 +163,17 @@ describe("C2 shortfall-check seat flag (MUNCH_JEV_SHORTFALL_CHECK_ENABLED)", () 
     });
 
     test("per-model contradiction thresholds are calibrated entries, with the standard default", () => {
-        expect(shortfallContradictionThresholdForModel("typesafe/jev-1.14")).toBe(0.5);
         expect(
-            shortfallContradictionThresholdForModel("perplexity/pplx-decider-v1.2"),
+            shortfallContradictionThresholdForModel("typesafe/jev-1.14"),
         ).toBe(0.5);
-        expect(shortfallContradictionThresholdForModel("example/unknown-1")).toBe(
-            DEFAULT_SHORTFALL_CONTRADICTION_MIN,
-        );
+        expect(
+            shortfallContradictionThresholdForModel(
+                "perplexity/pplx-decider-v1.2",
+            ),
+        ).toBe(0.5);
+        expect(
+            shortfallContradictionThresholdForModel("example/unknown-1"),
+        ).toBe(DEFAULT_SHORTFALL_CONTRADICTION_MIN);
     });
 });
 
