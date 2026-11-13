@@ -310,14 +310,14 @@ export const DECISION_MODEL_THRESHOLDS: Record<
     // genuine anomalies <= 0.53, benign draws >= 0.93 (the 20-cup-milk
     // fixture scored 0.83 -- both models judge it plausible; it is
     // the eval's named miss, not a threshold failure).
-        // C3 eval (2026-11-13, scripts/chat-claims-eval.ts; 22 fixtures,
+    // C3 eval (2026-11-13, scripts/chat-claims-eval.ts; 22 fixtures,
     // 46 scored claims/model): Jev p(supported) — planted-unsourced
     // max 0.26, sourced min 0.78 → 0.5 sits mid-band. Perplexity —
     // planted-unsourced max 0.19, sourced min 0.58 (the mg→g
     // conversion) → 0.4, weighted toward the false-accusation side,
     // the seat's headline metric. Both models: catch 8/8, false
     // accusations 0/38 at these thresholds.
-"typesafe/jev-1.14": {
+    "typesafe/jev-1.14": {
         gateFoodMin: 0.1,
         estimateDefensibleMin: 0.5,
         // A2b eval (2026-11-13, scripts/yield-estimate-eval.ts):
