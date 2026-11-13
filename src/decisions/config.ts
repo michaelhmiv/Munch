@@ -51,6 +51,8 @@ export interface DecisionsConfig {
     /** Seat B4 — draw-down anomaly review (audit §2). */
     drawdownReviewEnabled: boolean;
     drawdownReviewTimeoutMs: number;
+    draftReviewTimeoutMs: number;
+    draftReviewEnabled: boolean;
 }
 
 type FlagState = "on" | "off" | "unset";
@@ -170,6 +172,16 @@ export function decisionsConfig(
             2_000,
             100,
             15_000,
+        ),
+        draftReviewTimeoutMs: boundedInteger(
+            env.MUNCH_JEV_DRAFT_REVIEW_TIMEOUT_MS,
+            2_000,
+            100,
+            15_000,
+        ),
+        draftReviewEnabled: seatEnabled(
+            master,
+            flagState(env.MUNCH_JEV_DRAFT_REVIEW_ENABLED),
         ),
     };
 }
@@ -317,5 +329,43 @@ export function drawdownQuantityThresholdForModel(model: string): number {
     return (
         DECISION_MODEL_THRESHOLDS[model]?.drawdownQuantityMin ??
         DEFAULT_PANTRY_REVIEW_MIN
+    );
+}
+
+/**
+ * Per-model A3 draft-review thresholds: `draftPlausibleMin` is the
+ * minimum p(plausible) at or above which a grounded item's numbers
+ * stand; below it the item is flagged. Calibrated per model from the
+ * A3 eval fixture (scripts/jev-a3-draft-review-eval.ts), never
+ * borrowed across models. Provisional values below are set from that
+ * eval before the seat ships; the eval report is the authority for
+ * any change.
+ */
+export interface DraftReviewModelThresholds {
+    draftPlausibleMin: number;
+}
+
+export const DRAFT_REVIEW_MODEL_THRESHOLDS: Record<
+    string,
+    DraftReviewModelThresholds
+> = {
+    // A3 eval 2026-11-13 (scripts/jev-a3-draft-review-eval.ts, 17
+    // constructed production-shaped draft items + 2 bulk sets): Jev
+    // insane items scored p(plausible) <= 0.42, correct items >= 0.89
+    // — 0.50 sits inside that gap: 7/7 caught, 0/10 false-flagged.
+    "typesafe/jev-1.14": { draftPlausibleMin: 0.5 },
+    // Same eval: pplx insane <= 0.23, correct >= 0.87 — 0.50 sits
+    // inside ITS gap too (independently measured, not borrowed):
+    // 7/7 caught, 0/10 false-flagged; bulk 2/2 with 0 false flags.
+    "perplexity/pplx-decider-v1.2": { draftPlausibleMin: 0.5 },
+};
+
+/** Standard A3 threshold for any unlisted slug. */
+export const DEFAULT_DRAFT_PLAUSIBLE_MIN = 0.5;
+
+export function draftReviewPlausibleThresholdForModel(model: string): number {
+    return (
+        DRAFT_REVIEW_MODEL_THRESHOLDS[model]?.draftPlausibleMin ??
+        DEFAULT_DRAFT_PLAUSIBLE_MIN
     );
 }

@@ -298,6 +298,15 @@ export interface ImportDeps {
     /** Which of these idempotency keys already exist, so a dry run can predict
      *  deduplication instead of promising creates that won't happen. */
     existingKeys(keys: string[]): Promise<Set<string>>;
+    /**
+     * Optional A3-style batch plausibility review (jev-accountability
+     * audit §2 fold-in): one batched call per import over the batch's
+     * rows, returning WARNING strings for rows it flags. Advisory
+     * only — it never blocks, edits, or drops a row (bulk import is
+     * a direct commit with no draft stage), and a throwing or absent
+     * hook changes nothing (fail-open). Supplied by import-service.
+     */
+    reviewBatch?: (rows: ImportRow[]) => Promise<string[]>;
 }
 
 // ---------- Timestamp resolution ----------
@@ -1124,6 +1133,16 @@ export async function runImport(
     summary.failed = validations.length - okRows.length;
 
     const warnings = [...batch.warnings];
+    // A3-style batch plausibility review: one batched call per import
+    // (the hook owns the model call and its own fail-open); flagged
+    // rows surface here as warnings and import exactly as before.
+    if (deps.reviewBatch) {
+        try {
+            warnings.push(...(await deps.reviewBatch(rows)));
+        } catch {
+            // Fail-open: a review failure never affects the import.
+        }
+    }
     const inferred = okRows.filter((v) => v.resolved.meal_type_inferred).length;
     if (inferred > 0) {
         warnings.push(

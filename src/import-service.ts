@@ -1,13 +1,39 @@
 import {
+    runImport,
+    type BulkImportArgs,
+    type ImportResult,
+    type ImportRow,
+} from "./import.js";
+import {
     countMeals,
     existingIdempotencyKeys,
     getProfile,
     insertMeal,
 } from "./storage.js";
-import { runImport, type BulkImportArgs, type ImportResult } from "./import.js";
 
 /** Hard ceiling shared by MCP and website history imports. */
 export const MAX_MEALS_PER_USER = 200_000;
+
+/**
+ * A3 bulk-import plausibility hook (jev-accountability audit §2
+ * fold-in): one batched numeric review per import, returning warning
+ * strings for flagged rows. The implementation is a Decisions-API
+ * seat and therefore lives website-side (src/decisions/draft-review
+ * .ts) — the host-AI boundary law keeps model clients and credentials
+ * out of this module's dependency graph, exactly as the A1 recipe
+ * hook does (recipe-nutrition-resolution.ts). The website entry
+ * (src/index.ts) registers the implementation at startup, so in the
+ * production process — which hosts both the web import route and the
+ * MCP transport — every bulk_import_meals batch is reviewed. Where
+ * nothing is registered, imports run exactly as before (fail-open).
+ */
+export type BulkImportReviewHook = (rows: ImportRow[]) => Promise<string[]>;
+
+let bulkImportReviewHook: BulkImportReviewHook | undefined;
+
+export function registerBulkImportReviewHook(hook: BulkImportReviewHook): void {
+    bulkImportReviewHook = hook;
+}
 
 /**
  * Run the canonical user-scoped import adapter used by both MCP and the web.
@@ -50,5 +76,6 @@ export async function runUserImport(
         nowMs: Date.now(),
         insert: (input) => insertMeal(userId, input),
         existingKeys: (keys) => existingIdempotencyKeys(userId, keys),
+        reviewBatch: bulkImportReviewHook,
     });
 }

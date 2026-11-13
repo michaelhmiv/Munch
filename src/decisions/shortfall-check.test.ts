@@ -20,6 +20,8 @@ function testConfig(overrides: Partial<DecisionsConfig> = {}): DecisionsConfig {
         gateEnabled: true,
         deciderEnabled: true,
         matchEnabled: true,
+        draftReviewTimeoutMs: 50,
+        draftReviewEnabled: true,
         pantryMatchEnabled: true,
         pantryMatchTimeoutMs: 50,
         drawdownReviewEnabled: true,

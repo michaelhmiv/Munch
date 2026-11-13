@@ -22,9 +22,17 @@ import { maskIp } from "./net.js";
 import { validateStartupConfiguration } from "./operations/config.js";
 import { createOperationsRouter } from "./operations/routes.js";
 import { getLandingStats, type LandingStats } from "./storage.js";
+import { bulkImportReviewWarnings } from "./decisions/draft-review.js";
+import { registerBulkImportReviewHook } from "./import-service.js";
 import { warmWidgets } from "./widgets.js";
 
 validateStartupConfiguration();
+
+// A3 bulk-import fold-in: register the Decisions-backed plausibility
+// hook for bulk_import_meals / web imports (see import-service.ts —
+// the hook is registered here, in the website entry, so the MCP
+// dependency graph itself never reaches the model clients).
+registerBulkImportReviewHook(bulkImportReviewWarnings);
 
 const app = new Hono();
 

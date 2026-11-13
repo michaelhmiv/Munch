@@ -29,6 +29,7 @@ export interface DecisionsCallOptions {
         | "gate"
         | "decider"
         | "match"
+        | "draft_review"
         | "shortfall_check"
         | "pantry_match"
         | "drawdown_review";

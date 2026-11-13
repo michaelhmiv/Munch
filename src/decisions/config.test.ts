@@ -1,12 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import {
     decisionsConfig,
+    draftReviewPlausibleThresholdForModel,
     gateFoodThresholdForModel,
     shortfallCheckEnabled,
     shortfallCheckTimeoutMs,
     shortfallContradictionThresholdForModel,
     DEFAULT_DECIDER_FALLBACK_MODELS,
     DEFAULT_DECIDER_MODEL,
+    DEFAULT_DRAFT_PLAUSIBLE_MIN,
     DEFAULT_GATE_FOOD_MIN,
     DEFAULT_SHORTFALL_CONTRADICTION_MIN,
 } from "./config.js";
@@ -194,6 +196,48 @@ describe("C2 shortfall-check seat flag (MUNCH_JEV_SHORTFALL_CHECK_ENABLED)", () 
         expect(
             shortfallContradictionThresholdForModel("example/unknown-1"),
         ).toBe(DEFAULT_SHORTFALL_CONTRADICTION_MIN);
+    });
+});
+
+describe("decisionsConfig A3 draft-review seat flag", () => {
+    test("defaults: draft review OFF with the other seats", () => {
+        const config = decisionsConfig({ ...KEY });
+        expect(config!.draftReviewEnabled).toBe(false);
+        expect(config!.draftReviewTimeoutMs).toBe(2_000);
+    });
+
+    test("seat enables independently; explicit off beats master on", () => {
+        const on = decisionsConfig({
+            ...KEY,
+            MUNCH_JEV_DRAFT_REVIEW_ENABLED: "true",
+        });
+        expect(on!.draftReviewEnabled).toBe(true);
+        const off = decisionsConfig({
+            ...KEY,
+            MUNCH_JEV_ENABLED: "true",
+            MUNCH_JEV_DRAFT_REVIEW_ENABLED: "false",
+        });
+        expect(off!.draftReviewEnabled).toBe(false);
+        expect(off!.gateEnabled).toBe(true);
+    });
+});
+
+describe("per-model A3 draft-review thresholds (calibrated, never borrowed)", () => {
+    test("designated models carry their own calibrated values", () => {
+        const jev = draftReviewPlausibleThresholdForModel("typesafe/jev-1.14");
+        const pplx = draftReviewPlausibleThresholdForModel(
+            "perplexity/pplx-decider-v1.2",
+        );
+        expect(jev).toBeGreaterThan(0);
+        expect(jev).toBeLessThan(1);
+        expect(pplx).toBeGreaterThan(0);
+        expect(pplx).toBeLessThan(1);
+    });
+
+    test("an unlisted slug falls back to the standard threshold", () => {
+        expect(draftReviewPlausibleThresholdForModel("example/unknown-1")).toBe(
+            DEFAULT_DRAFT_PLAUSIBLE_MIN,
+        );
     });
 });
 
