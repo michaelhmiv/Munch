@@ -116,9 +116,7 @@ interface Captured {
     headerActions: string;
 }
 
-async function render(
-    recipe: Record<string, unknown>,
-): Promise<{
+async function render(recipe: Record<string, unknown>): Promise<{
     open: (id: string) => Promise<void>;
     edit: () => Promise<void>;
     calls: Captured[];
