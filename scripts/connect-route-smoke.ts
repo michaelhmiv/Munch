@@ -143,8 +143,8 @@ if (/\btrial\b/i.test(homepage)) {
         "homepage carries trial wording (the free trial was removed, 2026-11-13)",
     );
 }
-if (!homepage.includes("$2.99")) {
-    fail("homepage does not state the canonical $2.99 price");
+if (!homepage.includes("$3.99")) {
+    fail("homepage does not state the canonical $3.99 price");
 }
 if (homepage.includes("demo-avatar") || homepage.includes("capability-icon")) {
     fail(
