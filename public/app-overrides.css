@@ -646,6 +646,26 @@ dialog .auth-card {
     margin: 0;
 }
 
+/* Photo-flow audit (2026-11-12): in-dialog feedback for the draft
+   review's actions — the confirm gate's reason and every save /
+   answer failure render here, inside the modal, because toasts
+   paint under a modal dialog's top layer. Plain ink (danger is
+   reserved for shortage/destructive per the design authority). */
+.meal-draft-action-note {
+    margin: 0;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: var(--ink-700, #4a4237);
+}
+
+.meal-draft-actions {
+    flex-wrap: wrap;
+}
+
+.meal-draft-actions .meal-draft-action-note {
+    flex: 1 1 100%;
+}
+
 .meal-draft-question {
     display: grid;
     gap: 7px;
@@ -987,14 +1007,6 @@ dialog .auth-card {
 .meal-photo-capture {
     display: grid;
     gap: 16px;
-}
-.meal-photo-lede {
-    font-family: Georgia, "Times New Roman", Times, serif;
-    font-size: 17px;
-    line-height: 1.55;
-    margin: 0;
-    padding-bottom: 16px;
-    border-bottom: 1px solid #d8cdb6;
 }
 .meal-photo-capture input[type="file"] {
     min-height: 48px;

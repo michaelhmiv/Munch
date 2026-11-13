@@ -104,10 +104,10 @@ function afterDelivery(control) {
         document.querySelector(reviewSelector)?.click();
     }
     if (input?.id === "meal-photo-file") {
-        surfaceStatus(
-            control,
-            "Photo added. Choose “Estimate my meal” when you're ready.",
-        );
+        // Photo-flow audit (2026-11-12): delivery now submits the
+        // estimate automatically — there is no Estimate button to
+        // point at anymore.
+        surfaceStatus(control, "Photo added.");
     }
 }
 

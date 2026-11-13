@@ -104,6 +104,15 @@ let chatSent = false;
 let addTextVariant: "added" | "updated" = "added";
 /** Photo-flow P4: the last item PATCH the review sent, body included. */
 let lastDraftItemPatch: { path: string; body: unknown } | null = null;
+/** Photo-flow audit (2026-11-12): the photo draft fixture normally
+ * carries no questions; the confirm-gate regression flips it to a
+ * draft with one open question (the silent-save reproduction). */
+let photoDraftVariant: "plain" | "open-question" = "plain";
+/** Photo-flow audit (2026-11-12): hold the add-text response this
+ * long so the working state is observable mid-flight. */
+let addTextDelayMs = 0;
+/** Photo-flow audit (2026-11-12): the last confirm body received. */
+let lastConfirmBody: unknown = null;
 /** Chat v2: the entry surface of the currently seeded conversation. */
 let chatSeedSurface: string | null = null;
 
@@ -1322,6 +1331,25 @@ const PHOTO_DRAFT = {
     ],
 };
 
+/** The draft the fixture serves: PHOTO_DRAFT as-is, or — for the
+ * confirm-gate regression — the same draft carrying one open
+ * question, the exact shape that stranded a real save. */
+function photoDraftFixture() {
+    if (photoDraftVariant !== "open-question") return PHOTO_DRAFT;
+    return {
+        ...PHOTO_DRAFT,
+        questions: [
+            {
+                id: "fixture-question-oil",
+                prompt: "Was the rice cooked with oil or butter?",
+                status: "open",
+                kind: "clarification",
+                item_id: "fixture-item-rice",
+            },
+        ],
+    };
+}
+
 function fixtureJson(pathname: string, method: string): unknown | undefined {
     if (pathname === "/api/app/bootstrap") return bootstrapFixture();
     // Pantry page bootstrap (chat v2 placement journey): settings
@@ -1720,7 +1748,7 @@ function fixtureJson(pathname: string, method: string): unknown | undefined {
         return { candidates: [], savedFoods: [], recentMealItems: [] };
     }
     if (pathname === "/api/app/meal-drafts/fixture-photo-draft") {
-        return { draft: PHOTO_DRAFT };
+        return { draft: photoDraftFixture() };
     }
     if (pathname === "/api/app/export" && method === "POST") {
         return {
@@ -2340,12 +2368,54 @@ test.beforeAll(async () => {
                 );
                 return;
             }
+            // Photo-flow audit (2026-11-12): record confirm bodies
+            // so the gate regression can assert the acceptance flag
+            // the second tap sends.
+            if (
+                method === "POST" &&
+                url.pathname ===
+                    "/api/app/meal-drafts/fixture-photo-draft/confirm"
+            ) {
+                const chunks: Buffer[] = [];
+                request.on("data", (chunk) => chunks.push(chunk as Buffer));
+                request.on("end", () => {
+                    try {
+                        lastConfirmBody = JSON.parse(
+                            Buffer.concat(chunks).toString("utf8") || "{}",
+                        );
+                    } catch {
+                        lastConfirmBody = null;
+                    }
+                    response.writeHead(200, {
+                        "content-type": "application/json",
+                        "cache-control": "no-store",
+                    });
+                    response.end(
+                        JSON.stringify(fixtureJson(url.pathname, method) ?? {}),
+                    );
+                });
+                return;
+            }
             const fixture = fixtureJson(url.pathname, method);
-            response.writeHead(200, {
-                "content-type": "application/json",
-                "cache-control": "no-store",
-            });
-            response.end(JSON.stringify(fixture ?? {}));
+            const sendFixture = () => {
+                response.writeHead(200, {
+                    "content-type": "application/json",
+                    "cache-control": "no-store",
+                });
+                response.end(JSON.stringify(fixture ?? {}));
+            };
+            // Photo-flow audit (2026-11-12): the add-text working
+            // state is only observable if the response is held.
+            if (
+                method === "POST" &&
+                url.pathname ===
+                    "/api/app/meal-drafts/fixture-photo-draft/add-text" &&
+                addTextDelayMs > 0
+            ) {
+                setTimeout(sendFixture, addTextDelayMs);
+            } else {
+                sendFixture();
+            }
             return;
         }
         if (url.pathname === "/exports/download") {
@@ -3181,27 +3251,30 @@ test("meal.photoLog runs end to end in the packaged bundle", async ({
     await bootPackagedApp(page);
     await page.locator('[data-action="log-by-photo"]:visible').first().click();
 
-    // The S3 dialog renders in the bundle, and meal-photo-native.js has
-    // enhanced it with the native capture actions (the packaged-only
-    // wiring S4 added and S5 exists to exercise).
-    await expect(page.locator("#meal-photo-file")).toBeAttached();
-    const takePhoto = page.getByRole("button", { name: "Take photo" });
-    await expect(takePhoto).toBeVisible();
-
-    // Native capture: the stub camera returns a photo; the real native
-    // module fetches it, builds a File and hands it to the dialog input.
-    await takePhoto.click();
-    await expect(page.locator("#meal-photo-status")).toContainText(
-        "Photo added",
-    );
-
-    // Estimate: the packaged app posts the photo and lands in the draft
-    // review — the full S3 pipeline surface, inside the bundle.
-    await page.locator("#meal-photo-submit").click();
+    // Photo-flow audit (2026-11-12): camera-first means the tap IS
+    // the camera action. The dialog opens the camera itself (the
+    // stub records the call), the delivered photo submits the
+    // estimate automatically, and the flow lands in the draft
+    // review — no pre-capture form, no Estimate button, and the
+    // retired form controls never render.
     await expect(page.locator("#meal-draft-review")).toContainText(
         "Fixture rice bowl",
     );
     expect(observedRequest("POST", "/api/app/meal-photo")).toBe(true);
+    await expect
+        .poll(() =>
+            page.evaluate(
+                () =>
+                    (
+                        window as unknown as {
+                            __cameraCalls?: string[];
+                        }
+                    ).__cameraCalls ?? [],
+            ),
+        )
+        .toContain("camera");
+    await expect(page.locator("#meal-photo-submit")).toHaveCount(0);
+    await expect(page.locator("#meal-photo-meal-type")).toHaveCount(0);
 
     // Conversational add-to-draft (Amendment E) inside the same review.
     await expect(page.locator("#meal-draft-add-text-input")).toBeVisible();
@@ -3236,11 +3309,6 @@ test("photo-flow P4: one Save changes commits draft edits; unsaved edits survive
     lastDraftItemPatch = null;
     await bootPackagedApp(page);
     await page.locator('[data-action="log-by-photo"]:visible').first().click();
-    await page.getByRole("button", { name: "Take photo" }).click();
-    await expect(page.locator("#meal-photo-status")).toContainText(
-        "Photo added",
-    );
-    await page.locator("#meal-photo-submit").click();
     await expect(page.locator("#meal-draft-review")).toContainText(
         "Fixture rice bowl",
     );
@@ -3305,11 +3373,6 @@ test("photo-flow P2: a preparation statement updates the draft in place", async 
             .locator('[data-action="log-by-photo"]:visible')
             .first()
             .click();
-        await page.getByRole("button", { name: "Take photo" }).click();
-        await expect(page.locator("#meal-photo-status")).toContainText(
-            "Photo added",
-        );
-        await page.locator("#meal-photo-submit").click();
         await expect(page.locator("#meal-draft-review")).toContainText(
             "Fixture rice bowl",
         );
@@ -3327,6 +3390,106 @@ test("photo-flow P2: a preparation statement updates the draft in place", async 
         );
     } finally {
         addTextVariant = "added";
+    }
+});
+
+test("photo-flow audit: confirm with an open question asks in place, then logs on acceptance", async ({
+    page,
+}) => {
+    // The silent-save reproduction (2026-11-12): a draft whose
+    // question is still open. The old handler toasted and returned
+    // before any request — and the toast is invisible under the
+    // modal — so the save simply never happened.
+    photoDraftVariant = "open-question";
+    lastConfirmBody = null;
+    try {
+        await bootPackagedApp(page);
+        await page
+            .locator('[data-action="log-by-photo"]:visible')
+            .first()
+            .click();
+        await expect(page.locator("#meal-draft-review")).toContainText(
+            "Fixture rice bowl",
+        );
+        await expect(page.locator("#meal-draft-review")).toContainText(
+            "Was the rice cooked with oil or butter?",
+        );
+
+        // First tap: NO confirm request goes out, and the reason +
+        // the way forward appear in the dialog itself.
+        await page.locator('[data-action="confirm-meal-draft"]').click();
+        await expect(
+            page.locator('[data-action="confirm-meal-draft-accept"]'),
+        ).toBeVisible();
+        await expect(page.locator(".meal-draft-actions")).toContainText(
+            "still open",
+        );
+        expect(
+            observedRequest(
+                "POST",
+                "/api/app/meal-drafts/fixture-photo-draft/confirm",
+            ),
+        ).toBe(false);
+        expect(lastConfirmBody).toBeNull();
+
+        // The explicit acceptance sends the confirm, flagged.
+        await page.locator('[data-action="confirm-meal-draft-accept"]').click();
+        await expect(page.locator("#toast-region")).toContainText(
+            "Meal confirmed and logged.",
+        );
+        expect(
+            observedRequest(
+                "POST",
+                "/api/app/meal-drafts/fixture-photo-draft/confirm",
+            ),
+        ).toBe(true);
+        const confirmBody = lastConfirmBody as {
+            accept_remaining_assumptions?: boolean;
+            confirmed?: boolean;
+        } | null;
+        expect(confirmBody?.confirmed).toBe(true);
+        expect(confirmBody?.accept_remaining_assumptions).toBe(true);
+    } finally {
+        photoDraftVariant = "plain";
+    }
+});
+
+test("photo-flow audit: add-text shows a working state while the revision is in flight", async ({
+    page,
+}) => {
+    // The revision request is held server-side so the in-flight
+    // state is observable: button disabled and relabelled, status
+    // line announcing the work — then the applied message lands.
+    addTextDelayMs = 1500;
+    try {
+        await bootPackagedApp(page);
+        await page
+            .locator('[data-action="log-by-photo"]:visible')
+            .first()
+            .click();
+        await expect(page.locator("#meal-draft-review")).toContainText(
+            "Fixture rice bowl",
+        );
+        await page
+            .locator("#meal-draft-add-text-input")
+            .fill("I added a good bit of butter");
+        await page.locator('[data-action="add-draft-text"]').click();
+        const addButton = page.locator('[data-action="add-draft-text"]');
+        await expect(addButton).toBeDisabled();
+        await expect(addButton).toHaveText("Adding…");
+        await expect(page.locator("#meal-draft-add-text-status")).toHaveText(
+            "Adding to draft…",
+        );
+        // Applied: the server's own message replaces the working
+        // state and the new item is in the review.
+        await expect(page.locator("#meal-draft-add-text-status")).toContainText(
+            "Added butter to the draft.",
+        );
+        await expect(page.locator("#meal-draft-review")).toContainText(
+            "Butter",
+        );
+    } finally {
+        addTextDelayMs = 0;
     }
 });
 

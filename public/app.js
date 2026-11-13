@@ -26,6 +26,11 @@ import {
     installPhotoCapture,
     photoCaptureMarkup,
 } from "./photo-capture.js";
+import { defaultMealType } from "./meal-slot.js";
+import {
+    draftConfirmDecision,
+    openDraftQuestionCount,
+} from "./meal-draft-confirm.js";
 import {
     ROUTE_FEATURE_MODULES,
     applyFeatureNav,
@@ -114,6 +119,13 @@ const mealDraftReview = {
     pendingManual: [],
     searchTimer: null,
     addTextMessage: null,
+    // Photo-flow audit (2026-11-12): honest in-place feedback inside
+    // the modal dialog — toasts render outside the dialog and are
+    // painted under its top layer, so anything the review's buttons
+    // need to say must be said here, in the dialog itself.
+    addTextWorking: false,
+    actionNote: null,
+    confirmAcceptPending: false,
     // Photo-flow P4 (one coherent save model): unsaved edits are
     // tracked explicitly, survive re-renders via a DOM snapshot, and
     // are committed by the single Save changes action.
@@ -5668,6 +5680,34 @@ function draftHasUnsavedChanges() {
     return mealDraftReview.detailsDirty || mealDraftReview.dirtyItems.size > 0;
 }
 
+/**
+ * Show mealDraftReview.actionNote in the review WITHOUT a
+ * re-render (photo-flow audit, 2026-11-12). The unsaved-edits
+ * snapshot covers [data-draft-field] editors only — typed question
+ * answers and add-text are not in it — so an error path that
+ * re-rendered would silently discard the very text the user is
+ * being asked to retry. The note element is created on first use
+ * (before the save bar) and reused after; a later full render
+ * produces the same element from the same state.
+ */
+function showDraftActionNoteInPlace() {
+    const root = document.getElementById("meal-draft-review");
+    if (!root || !mealDraftReview.actionNote) return;
+    let note = root.querySelector("[data-draft-action-note]");
+    if (!note) {
+        note = document.createElement("p");
+        note.className = "meal-draft-action-note";
+        note.dataset.draftActionNote = "";
+        note.setAttribute("role", "alert");
+        const anchor =
+            root.querySelector("[data-draft-savebar]") ||
+            root.querySelector(".meal-draft-actions");
+        if (anchor) anchor.before(note);
+        else root.append(note);
+    }
+    note.textContent = mealDraftReview.actionNote;
+}
+
 function refreshDraftSaveBar() {
     const bar = document.querySelector("[data-draft-savebar]");
     if (!bar) return;
@@ -5747,6 +5787,107 @@ async function saveDraftChanges() {
     return mealDraftReview.draft;
 }
 
+/**
+ * Confirm (log) the reviewed draft — the save the photo flow ends
+ * in. Photo-flow audit (2026-11-12) rewrite of the old handler,
+ * whose failure mode was the silent save: with questions open and
+ * the assumptions checkbox unchecked it toasted and returned
+ * BEFORE any request was sent, and the toast renders outside the
+ * modal dialog (painted under its top layer), so the tap simply
+ * died — production logged zero confirm requests for a draft the
+ * user repeatedly tried to save. Now:
+ *
+ *   - unsaved edits commit first (unchanged P4 law);
+ *   - the gate is a decision (meal-draft-confirm.js): open
+ *     questions + no acceptance swaps the actions row IN PLACE for
+ *     the explicit acceptance step — no request, and the user is
+ *     told why, where they're looking;
+ *   - any failure (save or confirm) is caught here and stated in
+ *     the review via the action note; the draft and everything
+ *     typed stay on screen. Nothing fails silently.
+ */
+async function confirmMealDraftFromReview(button, { accepted }) {
+    if (!mealDraftReview.draft) return;
+    button.disabled = true;
+    try {
+        // Photo-flow P4: confirming is also a save — unsaved edits
+        // commit first, so the logged meal is the one on screen,
+        // never the stale server copy.
+        if (draftHasUnsavedChanges()) {
+            await saveDraftChanges();
+        }
+        const draft = mealDraftReview.draft;
+        const openCount = openDraftQuestionCount(draft);
+        const assumptionsAccepted =
+            accepted ||
+            Boolean(
+                document.querySelector("[data-draft-accept-assumptions]")
+                    ?.checked,
+            );
+        if (
+            draftConfirmDecision({
+                openQuestionCount: openCount,
+                accepted: assumptionsAccepted,
+            }) === "needs_acceptance"
+        ) {
+            mealDraftReview.confirmAcceptPending = true;
+            const actions = document.querySelector(".meal-draft-actions");
+            if (actions) {
+                actions.innerHTML = mealDraftActionsMarkup(
+                    draft.questions.filter(
+                        (question) => question.status === "open",
+                    ),
+                );
+                actions
+                    .querySelector('[data-action="confirm-meal-draft-accept"]')
+                    ?.focus();
+            }
+            return;
+        }
+        const result = await api(
+            `/api/app/meal-drafts/${encodeURIComponent(draft.id)}/confirm`,
+            {
+                method: "POST",
+                body: JSON.stringify({
+                    expected_version: draft.version,
+                    confirmed: true,
+                    accept_remaining_assumptions: assumptionsAccepted,
+                }),
+                keepPrevious: true,
+            },
+        );
+        mealDraftReview.confirmAcceptPending = false;
+        mealDraftReview.actionNote = null;
+        closeAppDialog();
+        toast("Meal confirmed and logged.");
+        await renderRoute();
+        return result;
+    } catch (error) {
+        mealDraftReview.actionNote =
+            error.message ||
+            "The meal couldn't be logged — your draft is unchanged. Try again.";
+        showDraftActionNoteInPlace();
+        if (button.isConnected) button.disabled = false;
+        return;
+    }
+}
+
+/**
+ * The review's closing actions. Photo-flow audit (2026-11-12):
+ * when questions are still open and the user has tapped confirm
+ * without accepting, the row swaps IN PLACE for the explicit
+ * acceptance step — the reason and the way forward, inside the
+ * dialog, instead of a toast the modal paints over. Both render
+ * paths (full review render, post-abandon-ask rebuild) use this
+ * one helper so the two can never drift apart.
+ */
+function mealDraftActionsMarkup(openQuestions) {
+    if (mealDraftReview.confirmAcceptPending && openQuestions.length) {
+        return `<p class="meal-draft-action-note" role="alert">${openQuestions.length} question${openQuestions.length === 1 ? " is" : "s are"} still open. Logging now accepts the assumptions shown, as shown.</p><button class="button button-primary" type="button" data-action="confirm-meal-draft-accept">Log meal and accept assumptions</button><button class="button button-secondary" type="button" data-action="dismiss-confirm-accept">Keep reviewing</button>`;
+    }
+    return `<button class="button button-primary" type="button" data-action="confirm-meal-draft">${openQuestions.length ? "Confirm and accept assumptions" : "Confirm and log meal"}</button><button class="button button-quiet" type="button" data-action="cancel-meal-draft">Abandon draft</button>`;
+}
+
 function renderMealDraftReview(draft) {
     const root = document.getElementById("meal-draft-review");
     const snapshot = mealDraftReview.suppressSnapshot
@@ -5767,7 +5908,7 @@ function renderMealDraftReview(draft) {
         "awaiting_confirmation",
     ].includes(draft.status);
     const dirty = draftHasUnsavedChanges();
-    root.innerHTML = `<div class="meal-draft-review"><div class="panel-title"><div><span class="section-kicker">${escapeHtml(draft.status.replaceAll("_", " "))}</span><h3>${escapeHtml(draft.description || "Meal draft")}</h3></div><span>Version ${draft.version}</span></div><p class="tiny">${draft.expires_at ? `Expires ${escapeHtml(formatTime(draft.expires_at))}` : ""} ${draft.source_mode ? `· Source: ${escapeHtml(draft.source_mode)}` : ""}</p><div class="summary-grid">${metricCard("Calories", totals.calories, " kcal", null, true)}${metricCard("Protein", totals.protein_g, "g", null)}${metricCard("Carbs", totals.carbs_g, "g", null)}${metricCard("Fat", totals.fat_g, "g", null)}</div>${editable && draft.source_mode === "photo" ? `<section class="meal-draft-section meal-draft-add-text"><div class="panel-title"><h4>Anything else to add?</h4></div><label class="field"><span class="sr-only">Anything else to add?</span><input class="input meal-draft-add-text-input" id="meal-draft-add-text-input" type="text" placeholder="I added a good bit of butter…" maxlength="500" autocomplete="off" /></label><button class="button button-secondary meal-draft-add-text-button" type="button" data-action="add-draft-text">Add to draft</button>${mealDraftReview.addTextMessage ? `<p class="tiny meal-draft-add-text-message" role="status">${escapeHtml(mealDraftReview.addTextMessage)}</p>` : ""}</section>` : ""}${editable ? `<section class="meal-draft-section" data-draft-details><div class="panel-title"><h4>Meal details</h4></div><div class="meal-composer-grid"><label class="field"><span>Description</span><input data-draft-field="description" value="${escapeHtml(draft.description || "")}" maxlength="2000" /></label><label class="field"><span>Meal type</span><select data-draft-field="meal_type"><option value="breakfast" ${draft.meal_type === "breakfast" ? "selected" : ""}>Breakfast</option><option value="lunch" ${draft.meal_type === "lunch" ? "selected" : ""}>Lunch</option><option value="dinner" ${draft.meal_type === "dinner" ? "selected" : ""}>Dinner</option><option value="snack" ${draft.meal_type === "snack" ? "selected" : ""}>Snack</option></select></label><label class="field"><span>Logged at</span><input data-draft-field="logged_at" type="datetime-local" value="${escapeHtml(draftDateTimeValue(draft.logged_at))}" /></label></div><label class="field"><span>Notes</span><textarea data-draft-field="notes" rows="2" maxlength="4000">${escapeHtml(draft.notes || "")}</textarea></label></section>` : ""}<section class="meal-draft-section"><div class="panel-title"><h4>Foods and provenance</h4><span>${draft.items.length} item${draft.items.length === 1 ? "" : "s"}</span></div>${draft.items.map(draftItemEditor).join("") || `<p class="tiny">No foods are in this draft yet.</p>`}${mealDraftReview.pendingManual.map(draftManualEditor).join("")}</section>${editable ? `<section class="meal-draft-section meal-composer-search"><div class="panel-title"><h4>Add another food</h4><button class="button button-secondary button-small" type="button" data-action="add-draft-manual">Add manual food</button></div><div class="meal-composer-search-row"><input class="input" id="meal-draft-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><input class="input" id="meal-draft-food-barcode" inputmode="numeric" placeholder="Barcode" aria-label="Food barcode" /><button class="button button-secondary" type="button" data-action="lookup-draft-food-barcode">Look up</button></div><div id="meal-draft-food-results" class="meal-food-results"></div></section>` : ""}${openQuestions.length ? `<section class="meal-draft-section"><div class="panel-title"><h4>Questions</h4><span>${openQuestions.length} open</span></div>${openQuestions.map((question) => `<div class="meal-draft-question" data-draft-question-id="${escapeHtml(question.id)}"><strong>${escapeHtml(question.prompt)}</strong><div class="meal-composer-search-row"><input class="input" data-draft-question-answer placeholder="Answer or correction" maxlength="2000" /><button class="button button-secondary button-small" type="button" data-action="answer-meal-draft-question" data-question-id="${escapeHtml(question.id)}">Save answer</button></div></div>`).join("")}<label class="checkbox-row"><input type="checkbox" data-draft-accept-assumptions /> Accept the remaining assumptions as shown</label></section>` : ""}${editable ? `<div class="meal-draft-savebar" data-draft-savebar><span data-draft-save-note class="${dirty ? "meal-draft-dirty" : "meal-draft-saved"}">${dirty ? "Unsaved changes" : escapeHtml(mealDraftReview.savedMessage ?? "")}</span><button class="button button-primary" type="button" data-action="save-draft-all" ${dirty ? "" : "disabled"}>Save changes</button></div>` : ""}<div class="auth-actions meal-draft-actions">${editable ? `<button class="button button-primary" type="button" data-action="confirm-meal-draft">${openQuestions.length ? "Confirm and accept assumptions" : "Confirm and log meal"}</button><button class="button button-quiet" type="button" data-action="cancel-meal-draft">Abandon draft</button>` : `<p class="tiny">This draft is ${escapeHtml(draft.status)}.</p>`}</div></div>`;
+    root.innerHTML = `<div class="meal-draft-review"><div class="panel-title"><div><span class="section-kicker">${escapeHtml(draft.status.replaceAll("_", " "))}</span><h3>${escapeHtml(draft.description || "Meal draft")}</h3></div><span>Version ${draft.version}</span></div><p class="tiny">${draft.expires_at ? `Expires ${escapeHtml(formatTime(draft.expires_at))}` : ""} ${draft.source_mode ? `· Source: ${escapeHtml(draft.source_mode)}` : ""}</p><div class="summary-grid">${metricCard("Calories", totals.calories, " kcal", null, true)}${metricCard("Protein", totals.protein_g, "g", null)}${metricCard("Carbs", totals.carbs_g, "g", null)}${metricCard("Fat", totals.fat_g, "g", null)}</div>${editable && draft.source_mode === "photo" ? `<section class="meal-draft-section meal-draft-add-text"><div class="panel-title"><h4>Anything else to add?</h4></div><label class="field"><span class="sr-only">Anything else to add?</span><input class="input meal-draft-add-text-input" id="meal-draft-add-text-input" type="text" placeholder="I added a good bit of butter…" maxlength="500" autocomplete="off" ${mealDraftReview.addTextWorking ? "disabled" : ""} /></label><button class="button button-secondary meal-draft-add-text-button" type="button" data-action="add-draft-text" ${mealDraftReview.addTextWorking ? "disabled" : ""}>${mealDraftReview.addTextWorking ? "Adding…" : "Add to draft"}</button><p class="tiny meal-draft-add-text-message" id="meal-draft-add-text-status" role="status">${mealDraftReview.addTextWorking ? "Adding to draft…" : escapeHtml(mealDraftReview.addTextMessage ?? "")}</p></section>` : ""}${editable ? `<section class="meal-draft-section" data-draft-details><div class="panel-title"><h4>Meal details</h4></div><div class="meal-composer-grid"><label class="field"><span>Description</span><input data-draft-field="description" value="${escapeHtml(draft.description || "")}" maxlength="2000" /></label><label class="field"><span>Meal type</span><select data-draft-field="meal_type"><option value="breakfast" ${draft.meal_type === "breakfast" ? "selected" : ""}>Breakfast</option><option value="lunch" ${draft.meal_type === "lunch" ? "selected" : ""}>Lunch</option><option value="dinner" ${draft.meal_type === "dinner" ? "selected" : ""}>Dinner</option><option value="snack" ${draft.meal_type === "snack" ? "selected" : ""}>Snack</option></select></label><label class="field"><span>Logged at</span><input data-draft-field="logged_at" type="datetime-local" value="${escapeHtml(draftDateTimeValue(draft.logged_at))}" /></label></div><label class="field"><span>Notes</span><textarea data-draft-field="notes" rows="2" maxlength="4000">${escapeHtml(draft.notes || "")}</textarea></label></section>` : ""}<section class="meal-draft-section"><div class="panel-title"><h4>Foods and provenance</h4><span>${draft.items.length} item${draft.items.length === 1 ? "" : "s"}</span></div>${draft.items.map(draftItemEditor).join("") || `<p class="tiny">No foods are in this draft yet.</p>`}${mealDraftReview.pendingManual.map(draftManualEditor).join("")}</section>${editable ? `<section class="meal-draft-section meal-composer-search"><div class="panel-title"><h4>Add another food</h4><button class="button button-secondary button-small" type="button" data-action="add-draft-manual">Add manual food</button></div><div class="meal-composer-search-row"><input class="input" id="meal-draft-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><input class="input" id="meal-draft-food-barcode" inputmode="numeric" placeholder="Barcode" aria-label="Food barcode" /><button class="button button-secondary" type="button" data-action="lookup-draft-food-barcode">Look up</button></div><div id="meal-draft-food-results" class="meal-food-results"></div></section>` : ""}${openQuestions.length ? `<section class="meal-draft-section"><div class="panel-title"><h4>Questions</h4><span>${openQuestions.length} open</span></div>${openQuestions.map((question) => `<div class="meal-draft-question" data-draft-question-id="${escapeHtml(question.id)}"><strong>${escapeHtml(question.prompt)}</strong><div class="meal-composer-search-row"><input class="input" data-draft-question-answer placeholder="Answer or correction" maxlength="2000" /><button class="button button-secondary button-small" type="button" data-action="answer-meal-draft-question" data-question-id="${escapeHtml(question.id)}">Save answer</button></div></div>`).join("")}<label class="checkbox-row"><input type="checkbox" data-draft-accept-assumptions /> Accept the remaining assumptions as shown</label></section>` : ""}${mealDraftReview.actionNote ? `<p class="meal-draft-action-note" data-draft-action-note role="alert">${escapeHtml(mealDraftReview.actionNote)}</p>` : ""}${editable ? `<div class="meal-draft-savebar" data-draft-savebar><span data-draft-save-note class="${dirty ? "meal-draft-dirty" : "meal-draft-saved"}">${dirty ? "Unsaved changes" : escapeHtml(mealDraftReview.savedMessage ?? "")}</span><button class="button button-primary" type="button" data-action="save-draft-all" ${dirty ? "" : "disabled"}>Save changes</button></div>` : ""}<div class="auth-actions meal-draft-actions">${editable ? mealDraftActionsMarkup(openQuestions) : `<p class="tiny">This draft is ${escapeHtml(draft.status)}.</p>`}</div></div>`;
     applyDraftUnsavedEdits(snapshot, draft);
     if (scrollHost) scrollHost.scrollTop = scrollTop;
 }
@@ -5902,6 +6043,9 @@ async function openMealDraft(id) {
     mealDraftReview.options.clear();
     mealDraftReview.pendingManual = [];
     mealDraftReview.addTextMessage = null;
+    mealDraftReview.addTextWorking = false;
+    mealDraftReview.actionNote = null;
+    mealDraftReview.confirmAcceptPending = false;
     mealDraftReview.dirtyItems.clear();
     mealDraftReview.detailsDirty = false;
     mealDraftReview.expandedItems.clear();
@@ -5918,88 +6062,125 @@ async function openMealDraft(id) {
     searchDraftFoods("");
 }
 
-const mealPhotoCapture = { idempotencyKey: null };
+const mealPhotoCapture = { idempotencyKey: null, submitting: false };
 
 async function openMealPhotoDialog() {
     mealPhotoCapture.idempotencyKey = `web-meal-photo:${crypto.randomUUID()}`;
+    mealPhotoCapture.submitting = false;
+    // Photo-flow audit (2026-11-12): camera-first means the tap on
+    // "Log by photo" IS the camera action — no pre-capture form. The
+    // dialog carries only the capture control, its status line, and
+    // the manual fallback; the moment a photo lands, the estimate
+    // runs (confirm-before-save still gates the actual logging, on
+    // the review). Meal type is no longer asked here: it defaults
+    // from the local time of day and stays editable on the review.
     openDialog(
         "Log by photo",
         `<div class="meal-photo-capture">
-            <p class="meal-photo-lede">Photograph your meal and Munch will estimate the items and portions into a reviewable draft. Nothing is logged until you confirm the draft, and the photo itself is processed transiently — it is never kept.</p>
             <div class="field">${photoCaptureMarkup({ inputId: "meal-photo-file", label: "Meal photo" })}</div>
-            <label class="field"><span>Meal type</span><select id="meal-photo-meal-type"><option value="breakfast">Breakfast</option><option value="lunch" selected>Lunch</option><option value="dinner">Dinner</option><option value="snack">Snack</option></select></label>
             <p class="tiny meal-photo-status" id="meal-photo-status" role="alert"></p>
             <div class="auth-actions">
-                <button class="button button-primary" type="button" data-action="submit-meal-photo" id="meal-photo-submit">Estimate my meal</button>
                 <button class="button button-secondary" type="button" data-action="meal-photo-manual">Log manually instead</button>
             </div>
         </div>`,
     );
+    const control = document.querySelector(
+        ".meal-photo-capture [data-photo-capture]",
+    );
+    if (!control) return;
+    control.addEventListener("photo-capture:change", () => {
+        void submitMealPhoto();
+    });
+    // Open the camera straight away. The packaged shell enhances
+    // the control from a MutationObserver (a microtask), so click on
+    // the next frame — its handler is in place by then; on the web
+    // the shared capture wiring takes the same click. If the
+    // auto-open is refused or unavailable, both buttons are already
+    // on screen for a manual tap.
+    requestAnimationFrame(() => {
+        if (!control.isConnected) return;
+        control.querySelector('[data-capture-action="camera"]')?.click();
+    });
 }
 
 async function submitMealPhoto() {
+    // One estimate in flight per dialog; the capture control can
+    // deliver repeatedly (camera restore, a re-pick) and a second
+    // submission would double-post the same photo.
+    if (mealPhotoCapture.submitting) return;
     const status = document.getElementById("meal-photo-status");
-    const submit = document.getElementById("meal-photo-submit");
     const input = document.getElementById("meal-photo-file");
     const file = input?.files?.[0];
     const say = (message) => {
         if (status) status.textContent = message;
     };
     if (!file) return say("Take or choose a meal photo first.");
-    // Photo-flow P7: shrink the frame client-side before upload —
-    // the vision pass needs none of a phone camera's megapixels, and
-    // every megabyte is upload time on a mobile connection.
-    say("Preparing photo…");
-    // Time the on-device prepare so the split between client prep
-    // and server work is visible in the [meal_photo] receive log —
-    // Nov 11's ~10 s perceived lag was nearly all this step while
-    // the server answered in 276 ms. Reported as client_prepare_ms;
-    // the server only ever logs it, never acts on it.
-    const prepareStartedAt = Date.now();
-    const prepared = await downscaleImageFile(file);
-    const clientPrepareMs = Math.max(0, Date.now() - prepareStartedAt);
-    if (prepared.size > 8 * 1024 * 1024) {
-        return say("That photo is over the 8 MB limit — choose a smaller one.");
-    }
-    const form = new FormData();
-    form.append("file", prepared);
-    form.append("client_prepare_ms", String(clientPrepareMs));
-    form.append(
-        "meal_type",
-        document.getElementById("meal-photo-meal-type")?.value || "lunch",
-    );
-    // Photo-flow P6: a photo is taken when it is taken — stamp NOW,
-    // not a synthetic date slot; the server defaults to now as well.
-    form.append("logged_at", new Date().toISOString());
-    if (mealPhotoCapture.idempotencyKey) {
-        form.append("idempotency_key", mealPhotoCapture.idempotencyKey);
-    }
-    if (submit) submit.disabled = true;
-    // Photo-flow P7: real staged progress instead of one static
-    // line — the wait stays, the silence goes.
-    say("Sending photo…");
-    const stageTimers = [
-        setTimeout(() => say("Identifying foods and portions…"), 2500),
-        setTimeout(() => say("Looking up nutrition…"), 6500),
-        setTimeout(
-            () =>
-                say(
-                    "Still working — this photo is taking a little longer than usual.",
-                ),
-            12000,
-        ),
-    ];
+    // Clear the input so picking the SAME photo again later still
+    // fires a change event (a held value would silently swallow it).
+    input.value = "";
+    mealPhotoCapture.submitting = true;
     try {
-        const result = await api("/api/app/meal-photo", {
-            method: "POST",
-            body: form,
-        });
-        await openMealDraft(result.draft.id);
+        // Photo-flow P7: shrink the frame client-side before upload —
+        // the vision pass needs none of a phone camera's megapixels, and
+        // every megabyte is upload time on a mobile connection.
+        say("Preparing photo…");
+        // Time the on-device prepare so the split between client prep
+        // and server work is visible in the [meal_photo] receive log —
+        // Nov 11's ~10 s perceived lag was nearly all this step while
+        // the server answered in 276 ms. Reported as client_prepare_ms;
+        // the server only ever logs it, never acts on it.
+        const prepareStartedAt = Date.now();
+        const prepared = await downscaleImageFile(file);
+        const clientPrepareMs = Math.max(0, Date.now() - prepareStartedAt);
+        if (prepared.size > 8 * 1024 * 1024) {
+            return say(
+                "That photo is over the 8 MB limit — choose a smaller one.",
+            );
+        }
+        const form = new FormData();
+        form.append("file", prepared);
+        form.append("client_prepare_ms", String(clientPrepareMs));
+        // Photo-flow audit (2026-11-12): the slot follows the local
+        // time of day in the user's timezone (an evening photo is
+        // dinner, not the old hard-coded lunch); the review's Meal
+        // details select remains the place to change it.
+        form.append(
+            "meal_type",
+            defaultMealType(new Date(), state.bootstrap?.profile?.timezone),
+        );
+        // Photo-flow P6: a photo is taken when it is taken — stamp NOW,
+        // not a synthetic date slot; the server defaults to now as well.
+        form.append("logged_at", new Date().toISOString());
+        if (mealPhotoCapture.idempotencyKey) {
+            form.append("idempotency_key", mealPhotoCapture.idempotencyKey);
+        }
+        // Photo-flow P7: real staged progress instead of one static
+        // line — the wait stays, the silence goes.
+        say("Sending photo…");
+        const stageTimers = [
+            setTimeout(() => say("Identifying foods and portions…"), 2500),
+            setTimeout(() => say("Looking up nutrition…"), 6500),
+            setTimeout(
+                () =>
+                    say(
+                        "Still working — this photo is taking a little longer than usual.",
+                    ),
+                12000,
+            ),
+        ];
+        try {
+            const result = await api("/api/app/meal-photo", {
+                method: "POST",
+                body: form,
+            });
+            await openMealDraft(result.draft.id);
+        } finally {
+            for (const timer of stageTimers) clearTimeout(timer);
+        }
     } catch (error) {
-        if (submit) submit.disabled = false;
         say(error.message || "The photo estimate failed. Nothing was logged.");
     } finally {
-        for (const timer of stageTimers) clearTimeout(timer);
+        mealPhotoCapture.submitting = false;
     }
 }
 
@@ -7055,7 +7236,6 @@ async function handleAction(button) {
     if (action === "add-meal") return openMealComposer();
     if (action === "start-meal-draft") return openMealDraftComposer();
     if (action === "log-by-photo") return openMealPhotoDialog();
-    if (action === "submit-meal-photo") return submitMealPhoto();
     if (action === "meal-photo-manual") return openMealComposer();
     if (action === "new-cook") return openCookCreate();
     if (action === "add-cook-dish") {
@@ -7253,11 +7433,32 @@ async function handleAction(button) {
         const draft = mealDraftReview.draft;
         const input = document.getElementById("meal-draft-add-text-input");
         const text = input?.value?.trim();
+        const statusLine = document.getElementById(
+            "meal-draft-add-text-status",
+        );
         if (!draft || !text) {
-            toast("Type what else you had first.", "error");
+            // Said in place: a toast would be painted under the
+            // modal dialog and never seen.
+            mealDraftReview.addTextMessage = "Type what else you had first.";
+            if (statusLine)
+                statusLine.textContent = mealDraftReview.addTextMessage;
+            input?.focus();
             return;
         }
+        // Photo-flow audit (2026-11-12): the revision can chain
+        // several model calls server-side (seconds), and the only
+        // feedback used to be a silently disabled button. The
+        // working state is set in the DOM directly — a re-render
+        // here would discard the typed text if the request fails —
+        // and every outcome (applied, no-change, failure) lands on
+        // the status line inside the dialog.
+        mealDraftReview.addTextWorking = true;
+        mealDraftReview.addTextMessage = null;
         button.disabled = true;
+        button.textContent = "Adding…";
+        button.setAttribute("aria-busy", "true");
+        input.disabled = true;
+        if (statusLine) statusLine.textContent = "Adding to draft…";
         try {
             const result = await api(
                 `/api/app/meal-drafts/${encodeURIComponent(draft.id)}/add-text`,
@@ -7272,14 +7473,29 @@ async function handleAction(button) {
             );
             mealDraftReview.addTextMessage =
                 result.add?.message || "Draft updated.";
+            mealDraftReview.addTextWorking = false;
             renderMealDraftReview(result.draft);
             if (result.add?.status === "added") {
                 toast("Added to the draft.");
             } else if (result.add?.status === "updated") {
                 toast("Draft updated.");
             }
-        } finally {
-            button.disabled = false;
+        } catch (error) {
+            mealDraftReview.addTextWorking = false;
+            mealDraftReview.addTextMessage =
+                error.message ||
+                "That couldn't be added — the draft is unchanged. Try again.";
+            // No re-render: the typed text stays in the input so the
+            // user can retry without retyping.
+            if (button.isConnected) {
+                button.disabled = false;
+                button.textContent = "Add to draft";
+                button.removeAttribute("aria-busy");
+            }
+            if (input.isConnected) input.disabled = false;
+            if (statusLine?.isConnected) {
+                statusLine.textContent = mealDraftReview.addTextMessage;
+            }
         }
         return;
     }
@@ -7339,9 +7555,20 @@ async function handleAction(button) {
         button.disabled = true;
         try {
             const saved = await saveDraftChanges();
+            mealDraftReview.actionNote = null;
             mealDraftReview.suppressSnapshot = true;
             renderMealDraftReview(saved);
             toast("Draft saved.");
+        } catch (error) {
+            // Photo-flow audit (2026-11-12): a failed save used to
+            // die into a toast the modal dialog paints over — the
+            // user saw the button re-enable and nothing else. The
+            // failure is now stated in the review, in place; no
+            // re-render, so the edits stay exactly as typed.
+            mealDraftReview.actionNote =
+                error.message ||
+                "Your changes couldn't be saved — the draft is unchanged. Try again.";
+            showDraftActionNoteInPlace();
         } finally {
             refreshDraftSaveBar();
         }
@@ -7396,62 +7623,66 @@ async function handleAction(button) {
             "[data-draft-question-answer]",
         )?.value;
         if (!draft || !answer?.trim()) {
-            toast("Enter an answer or correction first.", "error");
+            mealDraftReview.actionNote = "Enter an answer or correction first.";
+            showDraftActionNoteInPlace();
             return;
         }
-        const result = await api(
-            `/api/app/meal-drafts/${encodeURIComponent(draft.id)}/questions/${encodeURIComponent(button.dataset.questionId)}/answer`,
-            {
-                method: "POST",
-                body: JSON.stringify({
-                    expected_version: draft.version,
-                    answer,
-                }),
-                keepPrevious: true,
-            },
-        );
-        renderMealDraftReview(result.draft);
-        toast("Draft question answered.");
+        button.disabled = true;
+        try {
+            const result = await api(
+                `/api/app/meal-drafts/${encodeURIComponent(draft.id)}/questions/${encodeURIComponent(button.dataset.questionId)}/answer`,
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        expected_version: draft.version,
+                        answer,
+                    }),
+                    keepPrevious: true,
+                },
+            );
+            mealDraftReview.actionNote = null;
+            renderMealDraftReview(result.draft);
+            toast("Draft question answered.");
+        } catch (error) {
+            // Photo-flow audit (2026-11-12): answer failures are
+            // exactly what stranded Michael's draft on 2026-11-12 —
+            // the 400s surfaced only as toasts under the modal. The
+            // error now lands in the review itself, in place, with
+            // the typed answer untouched.
+            mealDraftReview.actionNote =
+                error.message ||
+                "That answer couldn't be saved — the question is still open. Try again.";
+            showDraftActionNoteInPlace();
+            if (button.isConnected) button.disabled = false;
+        }
         return;
     }
     if (action === "confirm-meal-draft") {
-        if (!mealDraftReview.draft) return;
-        // Photo-flow P4: confirming is also a save — unsaved edits
-        // commit first, so the logged meal is the one on screen,
-        // never the stale server copy.
-        if (draftHasUnsavedChanges()) {
-            await saveDraftChanges();
-        }
+        return confirmMealDraftFromReview(button, { accepted: false });
+    }
+    if (action === "confirm-meal-draft-accept") {
+        // The in-place acceptance step's primary action: the user
+        // has now explicitly accepted the open assumptions.
+        mealDraftReview.confirmAcceptPending = false;
+        return confirmMealDraftFromReview(button, { accepted: true });
+    }
+    if (action === "dismiss-confirm-accept") {
+        // Back to reviewing: swap the actions row back in place —
+        // no re-render, so typed answers and edits survive.
+        mealDraftReview.confirmAcceptPending = false;
         const draft = mealDraftReview.draft;
-        const accepted = Boolean(
-            document.querySelector("[data-draft-accept-assumptions]")?.checked,
-        );
-        if (
-            draft.questions.some((question) => question.status === "open") &&
-            !accepted
-        ) {
-            toast(
-                "Answer the open questions or accept the remaining assumptions.",
-                "error",
+        const actions = document.querySelector(".meal-draft-actions");
+        if (draft && actions) {
+            actions.innerHTML = mealDraftActionsMarkup(
+                draft.questions.filter(
+                    (question) => question.status === "open",
+                ),
             );
-            return;
+            actions
+                .querySelector('[data-action="confirm-meal-draft"]')
+                ?.focus();
         }
-        const result = await api(
-            `/api/app/meal-drafts/${encodeURIComponent(draft.id)}/confirm`,
-            {
-                method: "POST",
-                body: JSON.stringify({
-                    expected_version: draft.version,
-                    confirmed: true,
-                    accept_remaining_assumptions: accepted,
-                }),
-                keepPrevious: true,
-            },
-        );
-        closeAppDialog();
-        toast("Meal confirmed and logged.");
-        await renderRoute();
-        return result;
+        return;
     }
     if (action === "cancel-meal-draft") {
         // S6 slice 1 defect fix: abandoning used to gate on the native
@@ -7481,7 +7712,7 @@ async function handleAction(button) {
         const openQuestions = draft.questions.filter(
             (question) => question.status === "open",
         );
-        actions.innerHTML = `<button class="button button-primary" type="button" data-action="confirm-meal-draft">${openQuestions.length ? "Confirm and accept assumptions" : "Confirm and log meal"}</button><button class="button button-quiet" type="button" data-action="cancel-meal-draft">Abandon draft</button>`;
+        actions.innerHTML = mealDraftActionsMarkup(openQuestions);
         actions.querySelector('[data-action="cancel-meal-draft"]')?.focus();
         return;
     }

@@ -1037,6 +1037,18 @@ export function createAppRouter(): Hono {
             "Cache-Control": "no-cache",
         }),
     );
+    app.get("/meal-slot.js", async (c) =>
+        c.body(await Bun.file("./public/meal-slot.js").text(), 200, {
+            "Content-Type": "text/javascript; charset=utf-8",
+            "Cache-Control": "no-cache",
+        }),
+    );
+    app.get("/meal-draft-confirm.js", async (c) =>
+        c.body(await Bun.file("./public/meal-draft-confirm.js").text(), 200, {
+            "Content-Type": "text/javascript; charset=utf-8",
+            "Cache-Control": "no-cache",
+        }),
+    );
     app.get("/feature-nav.js", async (c) =>
         c.body(await Bun.file("./public/feature-nav.js").text(), 200, {
             "Content-Type": "text/javascript; charset=utf-8",
