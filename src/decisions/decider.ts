@@ -33,6 +33,11 @@ export interface DecisionsDeciderDependencies {
     fetcher?: DecisionsFetcher;
     /** Test/drill seam: supply a config instead of reading the env. */
     config?: DecisionsConfig | null;
+    /** Log/timeout seat label. Defaults to S2's "decider"; seat B2
+     * (src/decisions/match.ts) passes "match" so its engagements are
+     * distinguishable in the Decisions logs while riding the exact
+     * same adapter, state shape, and chain. */
+    seat?: "decider" | "match";
 }
 
 function buildDeciderQuestions(
@@ -147,8 +152,11 @@ export async function chooseCandidatesViaDecisions(
     const chunkResults = await Promise.all(
         chunks.map(async (chunk) => {
             const call = await callDecisionsWithFallback(config, {
-                seat: "decider",
-                timeoutMs: config.deciderTimeoutMs,
+                seat: dependencies.seat ?? "decider",
+                timeoutMs:
+                    dependencies.seat === "match"
+                        ? config.matchTimeoutMs
+                        : config.deciderTimeoutMs,
                 includeImageHeader: false,
                 fetcher: dependencies.fetcher,
                 state: buildDeciderState(chunk),
