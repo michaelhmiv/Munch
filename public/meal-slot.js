@@ -10,9 +10,11 @@
  * time as the fallback), and the choice stays editable on the draft
  * review — this module only picks the starting value.
  *
- * Boundaries (local wall-clock):
- *   05:00–10:59 breakfast · 11:00–14:59 lunch · 15:00–16:59 snack
- *   17:00–21:59 dinner · 22:00–04:59 snack
+ * Boundaries (local wall-clock), per the owner's ruling of
+ * 2026-11-12 (design-authority addendum):
+ *   00:00–09:59 breakfast · 10:00–14:59 lunch · 15:00–23:59 dinner
+ * "Snack" stays a manual choice in the type list; it is never a
+ * time-of-day default.
  */
 
 export const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"];
@@ -21,11 +23,9 @@ export const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"];
 export function mealTypeForLocalHour(hour) {
     if (!Number.isFinite(hour)) return "lunch";
     const h = ((Math.trunc(hour) % 24) + 24) % 24;
-    if (h >= 5 && h < 11) return "breakfast";
-    if (h >= 11 && h < 15) return "lunch";
-    if (h >= 15 && h < 17) return "snack";
-    if (h >= 17 && h < 22) return "dinner";
-    return "snack";
+    if (h < 10) return "breakfast";
+    if (h < 15) return "lunch";
+    return "dinner";
 }
 
 /**
