@@ -287,3 +287,71 @@ describe("ADS DEMO override (Michael, 2026-11-12) — test builds only", () => {
         );
     });
 });
+
+describe("In-flow banner placement — the banner lives in the Today slot (Amendment D law)", () => {
+    test("the web layer measures the slot and forwards its rect with the placement sync", async () => {
+        const app = await readRepoFile("public/app.js");
+        expect(app).toContain("measureTodayAdSlotRect");
+        expect(app).toContain("getBoundingClientRect()");
+        expect(app).toContain(
+            "slotRect: visible ? measureTodayAdSlotRect() : null",
+        );
+        // Scroll/resize tracking keeps the native banner glued to the
+        // in-flow slot as Today scrolls.
+        expect(app).toContain(
+            'window.addEventListener("scroll", scheduleAdPlacementSync',
+        );
+        expect(app).toContain(
+            'window.addEventListener("resize", scheduleAdPlacementSync)',
+        );
+    });
+
+    test("Android positions the banner at the slot rect — never bottom-anchored, never WebView-padding", async () => {
+        const source = await readRepoFile("mobile/android/MunchAdsPlugin.java");
+        expect(source).toContain('call.getObject("slotRect")');
+        expect(source).toContain("Gravity.TOP | Gravity.LEFT");
+        expect(source).not.toContain("Gravity.BOTTOM");
+        // The banner consumes no WebView space: the DOM slot is the
+        // reserve, so the plugin must not pad the WebView for it.
+        expect(source).not.toContain("setPadding");
+        // The WebView's own offset inside the activity frame is part
+        // of the glue math.
+        expect(source).toContain("getLocationOnScreen");
+        expect(source).toContain("positionBanner");
+    });
+
+    test("iOS positions the banner at the slot rect — no bottom anchor, no WebView shrink", async () => {
+        const source = await readRepoFile("mobile/ios/MunchAdsPlugin.swift");
+        expect(source).toContain('call.getObject("slotRect")');
+        expect(source).not.toContain("shrinkWebViewForBanner");
+        expect(source).not.toContain("webViewFrameBeforeBanner");
+        expect(source).not.toContain("safeAreaInsets.bottom");
+    });
+
+    test("the demo override moves nothing: placement never branches on the demo state", async () => {
+        const java = await readRepoFile("mobile/android/MunchAdsPlugin.java");
+        // Exactly one layout-params construction in the whole plugin:
+        // demo and production share the single placement path, and the
+        // positioning body references neither the demo state nor any
+        // ad unit.
+        expect(java.split("new FrameLayout.LayoutParams").length - 1).toBe(1);
+        const positionStart = java.indexOf("private void positionBanner()");
+        const positionEnd = java.indexOf("private void hideBanner()");
+        expect(positionStart).toBeGreaterThan(-1);
+        expect(positionEnd).toBeGreaterThan(positionStart);
+        const positionBody = java.slice(positionStart, positionEnd);
+        expect(positionBody).not.toContain("demoActive");
+        expect(positionBody).not.toContain("TEST_BANNER_AD_UNIT_ID");
+        expect(positionBody).not.toContain("munch_admob_banner_unit_id");
+
+        const swift = await readRepoFile("mobile/ios/MunchAdsPlugin.swift");
+        const layoutStart = swift.indexOf("private func layoutBanner()");
+        const layoutEnd = swift.indexOf("private func hideBanner()");
+        expect(layoutStart).toBeGreaterThan(-1);
+        expect(layoutEnd).toBeGreaterThan(layoutStart);
+        const layoutBody = swift.slice(layoutStart, layoutEnd);
+        expect(layoutBody).not.toContain("demo");
+        expect(layoutBody).not.toContain("testBannerAdUnitID");
+        expect(layoutBody).not.toContain("storeBannerAdUnitID");
+    });
+});

@@ -36,12 +36,16 @@ public class MunchAdsPlugin extends Plugin {
     private boolean demoActive = false;
     private boolean adsInitialized = false;
     private AdView bannerView;
-    private View webView;
-    private int webViewPaddingLeft;
-    private int webViewPaddingTop;
-    private int webViewPaddingRight;
-    private int webViewPaddingBottom;
-    private int bannerHeightPx;
+    // In-flow slot geometry (Amendment D placement law): the web layer
+    // measures the Today slot's viewport rect in CSS pixels and forwards
+    // it as slotRect with every placement sync. The banner is glued to
+    // exactly that rect — it is never bottom-anchored. Until the first
+    // rect arrives the banner is held back entirely.
+    private boolean slotRectKnown = false;
+    private double slotRectX;
+    private double slotRectY;
+    private double slotRectWidth;
+    private double slotRectHeight;
 
     @Override
     public void load() {
@@ -94,6 +98,19 @@ public class MunchAdsPlugin extends Plugin {
             : getContext().getString(R.string.munch_admob_banner_unit_id);
         bannerRequested = visible && (demoActive || (adsEnabled && !adFree)) && adUnitId != null && !adUnitId.isBlank();
 
+        // The slot rect rides the same call (CSS pixels, viewport-
+        // relative). A rect-less sync never clears a known rect — the
+        // web layer syncs once before Today's DOM exists — but a fresh
+        // rect repositions a live banner immediately.
+        JSObject slotRect = call.getObject("slotRect");
+        if (slotRect != null) {
+            slotRectX = slotRect.optDouble("x", 0.0);
+            slotRectY = slotRect.optDouble("y", 0.0);
+            slotRectWidth = slotRect.optDouble("width", 0.0);
+            slotRectHeight = slotRect.optDouble("height", 0.0);
+            slotRectKnown = true;
+        }
+
         if (!bannerRequested) {
             runOnUiThread(this::hideBanner);
             call.resolve();
@@ -101,6 +118,7 @@ public class MunchAdsPlugin extends Plugin {
         }
 
         call.resolve();
+        if (bannerView != null) runOnUiThread(this::positionBanner);
         if (consentRefreshComplete) runOnUiThread(this::showConsentThenBanner);
     }
 
@@ -166,12 +184,18 @@ public class MunchAdsPlugin extends Plugin {
         Activity activity = getActivity();
         if (activity == null || !bannerRequested) return;
         activity.runOnUiThread(() -> {
-            if (!bannerRequested || bannerView != null) return;
+            if (!bannerRequested) return;
+            if (bannerView != null) {
+                positionBanner();
+                return;
+            }
+            // No slot rect yet: the banner is created only once its
+            // in-flow home is known — never at a guessed position.
+            if (!slotRectKnown) return;
             View root = activity.findViewById(android.R.id.content);
             if (!(root instanceof FrameLayout)) return;
             FrameLayout frame = (FrameLayout) root;
-            View currentWebView = getBridge() == null ? null : getBridge().getWebView();
-            if (currentWebView == null) return;
+            if (getBridge() == null || getBridge().getWebView() == null) return;
 
             AdView adView = new AdView(activity);
             adView.setAdSize(AdSize.BANNER);
@@ -179,27 +203,14 @@ public class MunchAdsPlugin extends Plugin {
                 ? TEST_BANNER_AD_UNIT_ID
                 : getContext().getString(R.string.munch_admob_banner_unit_id));
             adView.setBackgroundColor(Color.WHITE);
-            int width = AdSize.BANNER.getWidthInPixels(activity);
-            bannerHeightPx = AdSize.BANNER.getHeightInPixels(activity);
             FrameLayout.LayoutParams layout = new FrameLayout.LayoutParams(
-                width,
-                bannerHeightPx,
-                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL
-            );
-
-            webView = currentWebView;
-            webViewPaddingLeft = webView.getPaddingLeft();
-            webViewPaddingTop = webView.getPaddingTop();
-            webViewPaddingRight = webView.getPaddingRight();
-            webViewPaddingBottom = webView.getPaddingBottom();
-            webView.setPadding(
-                webViewPaddingLeft,
-                webViewPaddingTop,
-                webViewPaddingRight,
-                webViewPaddingBottom + bannerHeightPx
+                AdSize.BANNER.getWidthInPixels(activity),
+                AdSize.BANNER.getHeightInPixels(activity),
+                Gravity.TOP | Gravity.LEFT
             );
             bannerView = adView;
             frame.addView(adView, layout);
+            positionBanner();
             // Privacy ruling (Michael, Nov 11): non-personalized ads
             // ONLY. The "npa" extra tells AdMob to serve contextual
             // ads and never to build the request on the device's
@@ -216,26 +227,58 @@ public class MunchAdsPlugin extends Plugin {
         });
     }
 
+    // Glues the banner to the web layer's slot rect: CSS pixels become
+    // physical pixels through the display density, the WebView's own
+    // offset inside the activity frame (status bar etc.) is added, and
+    // the fixed-size banner centers inside the slot. The banner shows
+    // only while the slot is FULLY inside the WebView viewport — a
+    // partially scrolled slot hides it rather than letting it paint
+    // over app chrome (above all the bottom navigation).
+    private void positionBanner() {
+        Activity activity = getActivity();
+        if (activity == null || bannerView == null) return;
+        View root = activity.findViewById(android.R.id.content);
+        View currentWebView = getBridge() == null ? null : getBridge().getWebView();
+        if (!(root instanceof FrameLayout) || currentWebView == null) return;
+        if (!slotRectKnown) {
+            bannerView.setVisibility(View.GONE);
+            return;
+        }
+        float density = getContext().getResources().getDisplayMetrics().density;
+        int slotXPx = Math.round((float) slotRectX * density);
+        int slotYPx = Math.round((float) slotRectY * density);
+        int slotWidthPx = Math.round((float) slotRectWidth * density);
+        int slotHeightPx = Math.round((float) slotRectHeight * density);
+        int[] webViewLocation = new int[2];
+        currentWebView.getLocationOnScreen(webViewLocation);
+        int[] rootLocation = new int[2];
+        root.getLocationOnScreen(rootLocation);
+        int bannerWidthPx = AdSize.BANNER.getWidthInPixels(activity);
+        int bannerHeightPx = AdSize.BANNER.getHeightInPixels(activity);
+        FrameLayout.LayoutParams layout =
+            (FrameLayout.LayoutParams) bannerView.getLayoutParams();
+        layout.leftMargin = webViewLocation[0] - rootLocation[0]
+            + slotXPx + Math.max(0, (slotWidthPx - bannerWidthPx) / 2);
+        layout.topMargin = webViewLocation[1] - rootLocation[1]
+            + slotYPx + Math.max(0, (slotHeightPx - bannerHeightPx) / 2);
+        bannerView.setLayoutParams(layout);
+        boolean slotFullyVisible = slotXPx >= 0
+            && slotYPx >= 0
+            && slotXPx + slotWidthPx <= currentWebView.getWidth()
+            && slotYPx + slotHeightPx <= currentWebView.getHeight();
+        bannerView.setVisibility(slotFullyVisible ? View.VISIBLE : View.GONE);
+    }
+
     private void hideBanner() {
         Activity activity = getActivity();
         if (activity != null && !activity.isFinishing()) {
             ViewGroup parent = bannerView == null ? null : (ViewGroup) bannerView.getParent();
             if (parent != null) parent.removeView(bannerView);
-            if (webView != null) {
-                webView.setPadding(
-                    webViewPaddingLeft,
-                    webViewPaddingTop,
-                    webViewPaddingRight,
-                    webViewPaddingBottom
-                );
-            }
         }
         if (bannerView != null) {
             bannerView.destroy();
             bannerView = null;
         }
-        webView = null;
-        bannerHeightPx = 0;
     }
 
     private void runOnUiThread(Runnable action) {
