@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
+import { defaultMealType } from "./meal-slot.js";
 
 // Cross-work slice 4 (§4) — "From my pantry" on the log flows.
 // The dialog builders are extracted from app.js and executed with
@@ -8,6 +9,15 @@ import { runInNewContext } from "node:vm";
 // assertions run on the real templates, not on copies of them.
 
 const appSource = readFileSync(new URL("./app.js", import.meta.url), "utf8");
+
+// Main's recipe-log dialog renders its meal-type select through
+// mealTypeOptionsHtml(defaultMealType(...)) (meal-slot law): the
+// harness supplies the real helper chunk and the real
+// defaultMealType so assertions run on the shipped templates.
+const mealTypeHelpers = appSource.slice(
+    appSource.indexOf("const MEAL_TYPE_OPTIONS"),
+    appSource.indexOf("function number("),
+);
 
 function escapeHtml(value: unknown): string {
     return String(value ?? "")
@@ -27,11 +37,16 @@ test("recipe log dialog separates servings cooked from servings eaten", () => {
         number: (value: unknown, digits = 0) =>
             String(Number(Number(value ?? 0).toFixed(digits))),
         featureFlags: () => ({ pantry: true }),
+        defaultMealType,
+        state: { bootstrap: { profile: { timezone: "UTC" } } },
         openDialog: (_title: string, html: string) => {
             body = html;
         },
     };
-    runInNewContext(`${chunk}\nthis.__open = openRecipeLog;`, context);
+    runInNewContext(
+        `${mealTypeHelpers}\n${chunk}\nthis.__open = openRecipeLog;`,
+        context,
+    );
     const open = context.__open as (
         id: string,
         rev: string,
@@ -64,11 +79,16 @@ test("pantry module off hides the option entirely", () => {
         number: (value: unknown, digits = 0) =>
             String(Number(Number(value ?? 0).toFixed(digits))),
         featureFlags: () => ({ pantry: false }),
+        defaultMealType,
+        state: { bootstrap: { profile: { timezone: "UTC" } } },
         openDialog: (_title: string, html: string) => {
             body = html;
         },
     };
-    runInNewContext(`${chunk}\nthis.__open = openRecipeLog;`, context);
+    runInNewContext(
+        `${mealTypeHelpers}\n${chunk}\nthis.__open = openRecipeLog;`,
+        context,
+    );
     (context.__open as (id: string, rev: string) => void)("r", "rev");
     expect(body).not.toContain("from_pantry");
     expect(body).not.toContain("servings_cooked");
