@@ -1,3 +1,8 @@
+import {
+    reviewShortfallContradictions,
+    type ShortfallCheckDependencies,
+    type ShortfallContradictionFlag,
+} from "../decisions/shortfall-check.js";
 import { getFeatureModules } from "../feature-modules-repository.js";
 import {
     getGroceryList,
@@ -235,6 +240,12 @@ export function computePlanShortfall(
 export interface ShortfallItemWithFlag extends ShortfallItem {
     on_list: boolean;
     pantry_flag: PantryFlag;
+    /** C2 contradiction seat: present only when the seat flagged this
+     * row and the contradiction persisted after one deterministic
+     * recompute. Absent on every row in the seat's disabled /
+     * fail-open / consistent outcomes — the rundown is then exactly
+     * as it was before the seat existed. */
+    contradiction_flag?: ShortfallContradictionFlag;
 }
 
 export interface PlanShortfallResult {
@@ -254,6 +265,8 @@ export async function getPlanShortfall(input: {
     startDate: string;
     endDate: string;
     scope: InventoryScope;
+    /** C2 seat seam (tests/drills); production reads the env config. */
+    shortfallCheck?: ShortfallCheckDependencies;
 }): Promise<PlanShortfallResult> {
     const base = { start: input.startDate, end: input.endDate };
     const flags = await getFeatureModules(input.userId);
@@ -301,10 +314,12 @@ export async function getPlanShortfall(input: {
         scope: input.scope,
         includePurchased: false,
     });
-    return {
-        enabled: true,
-        ...base,
-        items: computePlanShortfall(meals, pantry.items).map((item) => {
+    // The deterministic assembly, as a closure so the C2 seat can
+    // recompute it ONCE on demand (audit §2 C2: a found contradiction
+    // is recomputed once deterministically; only a persistent one is
+    // surfaced). Pure over the snapshots already loaded above.
+    const buildItems = (): ShortfallItemWithFlag[] =>
+        computePlanShortfall(meals, pantry.items).map((item) => {
             const onList = isOnGroceryList(
                 { name: item.name, unit: item.need_unit },
                 openList.items,
@@ -329,6 +344,21 @@ export async function getPlanShortfall(input: {
                     pantry_name: match?.pantry_name ?? null,
                 },
             };
-        }),
+        });
+    // C2 — plan/shortfall contradiction check: one batched Jev call
+    // over the rows + their flags (seat flag
+    // MUNCH_JEV_SHORTFALL_CHECK_ENABLED; fail-open — with the seat
+    // off or the chain down this returns buildItems() untouched).
+    // The seat reviews consistency only; it never changes shortfall
+    // semantics, never drops a row, and never adds to a list (#283).
+    const reviewed = await reviewShortfallContradictions(
+        buildItems(),
+        buildItems,
+        input.shortfallCheck ?? {},
+    );
+    return {
+        enabled: true,
+        ...base,
+        items: reviewed.rows,
     };
 }

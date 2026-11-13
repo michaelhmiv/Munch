@@ -38,6 +38,11 @@ export interface DecisionsConfig {
     deciderTimeoutMs: number;
     gateEnabled: boolean;
     deciderEnabled: boolean;
+    /** C2 shortfall-contradiction seat (audit §2 C2). Optional so
+     * existing config literals in sibling seats/tests stay valid;
+     * `decisionsConfig()` always populates both fields. */
+    shortfallCheckEnabled?: boolean;
+    shortfallCheckTimeoutMs?: number;
 }
 
 type FlagState = "on" | "off" | "unset";
@@ -118,6 +123,16 @@ export function decisionsConfig(
             master,
             flagState(env.MUNCH_JEV_DECIDER_ENABLED),
         ),
+        shortfallCheckEnabled: seatEnabled(
+            master,
+            flagState(env.MUNCH_JEV_SHORTFALL_CHECK_ENABLED),
+        ),
+        shortfallCheckTimeoutMs: boundedInteger(
+            env.MUNCH_JEV_SHORTFALL_CHECK_TIMEOUT_MS,
+            2_000,
+            100,
+            15_000,
+        ),
     };
 }
 
@@ -132,6 +147,10 @@ export function decisionsConfig(
  */
 export interface DecisionModelThresholds {
     gateFoodMin: number;
+    /** C2: minimum p(contradiction) at or above which a shortfall row
+     * is recomputed and, if the contradiction persists, surfaced.
+     * Calibrated per model from the C2 eval — never borrowed. */
+    shortfallContradictionMin?: number;
 }
 
 export const DECISION_MODEL_THRESHOLDS: Record<
@@ -142,11 +161,22 @@ export const DECISION_MODEL_THRESHOLDS: Record<
     // 0.98; headline negatives median 0.01 with two warm outliers that
     // still pass by design (a menu at 0.38, the receipt fixture at 0.60
     // — it routes to the receipt flow). 0 false rejects at 0.10.
-    "typesafe/jev-1.14": { gateFoodMin: 0.1 },
+    // C2 eval (2026-11-13, scripts/shortfall-contradiction-eval.ts;
+    // 6 rundowns x 2 repeats, 42 rows/model): Jev planted
+    // contradictions scored p >= 0.97, consistent rows p <= 0.07 —
+    // 0.5 sits in the empty middle of the distribution.
+    "typesafe/jev-1.14": { gateFoodMin: 0.1, shortfallContradictionMin: 0.5 },
     // Bake-off: positives min 0.90 / median 0.99; negatives ALL ≤ 0.011
     // — the widest separation of the three, so 0.10 transfers with the
     // most headroom. 0/30 false rejects, 8/8 negatives rejected.
-    "perplexity/pplx-decider-v1.2": { gateFoodMin: 0.1 },
+    // C2 eval (same run as the Jev entry above): pplx planted
+    // contradictions scored p >= 0.99, consistent rows p <= 0.007 —
+    // 0.5 is again the empty middle; thresholds were NOT borrowed
+    // across models, the two distributions independently support it.
+    "perplexity/pplx-decider-v1.2": {
+        gateFoodMin: 0.1,
+        shortfallContradictionMin: 0.5,
+    },
     // Bake-off: positives min 0.84 / median 0.99; hottest negative 0.071
     // — 0.10 sits above it, but with the thinnest margin of the three;
     // watch the production logs before ever lowering this.
@@ -160,4 +190,27 @@ export function gateFoodThresholdForModel(model: string): number {
     return (
         DECISION_MODEL_THRESHOLDS[model]?.gateFoodMin ?? DEFAULT_GATE_FOOD_MIN
     );
+}
+
+/** C2 standard contradiction threshold for any unlisted slug. The
+ * listed models' values are calibrated from the C2 eval
+ * (scripts/shortfall-contradiction-eval.ts); see the eval report in
+ * the seat's PR for the per-model distributions they rest on. */
+export const DEFAULT_SHORTFALL_CONTRADICTION_MIN = 0.5;
+
+export function shortfallContradictionThresholdForModel(model: string): number {
+    return (
+        DECISION_MODEL_THRESHOLDS[model]?.shortfallContradictionMin ??
+        DEFAULT_SHORTFALL_CONTRADICTION_MIN
+    );
+}
+
+/** Whether the C2 seat is enabled on a resolved config. The field is
+ * optional on the interface (additive seat); absence means off. */
+export function shortfallCheckEnabled(config: DecisionsConfig): boolean {
+    return config.shortfallCheckEnabled === true;
+}
+
+export function shortfallCheckTimeoutMs(config: DecisionsConfig): number {
+    return config.shortfallCheckTimeoutMs ?? 2_000;
 }

@@ -2,9 +2,13 @@ import { describe, expect, test } from "bun:test";
 import {
     decisionsConfig,
     gateFoodThresholdForModel,
+    shortfallCheckEnabled,
+    shortfallCheckTimeoutMs,
+    shortfallContradictionThresholdForModel,
     DEFAULT_DECIDER_FALLBACK_MODELS,
     DEFAULT_DECIDER_MODEL,
     DEFAULT_GATE_FOOD_MIN,
+    DEFAULT_SHORTFALL_CONTRADICTION_MIN,
 } from "./config.js";
 
 const KEY = { OPENROUTER_API_KEY: "test-key" };
@@ -114,6 +118,56 @@ describe("decisionsConfig timeouts (brief defaults 1500 / 2000)", () => {
             MUNCH_JEV_GATE_TIMEOUT_MS: "5",
         });
         expect(floored!.gateTimeoutMs).toBe(100);
+    });
+});
+
+describe("C2 shortfall-check seat flag (MUNCH_JEV_SHORTFALL_CHECK_ENABLED)", () => {
+    test("defaults off; master on enables; explicit seat off wins", () => {
+        expect(shortfallCheckEnabled(decisionsConfig({ ...KEY })!)).toBe(false);
+        expect(
+            shortfallCheckEnabled(
+                decisionsConfig({ ...KEY, MUNCH_JEV_ENABLED: "true" })!,
+            ),
+        ).toBe(true);
+        expect(
+            shortfallCheckEnabled(
+                decisionsConfig({
+                    ...KEY,
+                    MUNCH_JEV_ENABLED: "true",
+                    MUNCH_JEV_SHORTFALL_CHECK_ENABLED: "false",
+                })!,
+            ),
+        ).toBe(false);
+        expect(
+            shortfallCheckEnabled(
+                decisionsConfig({
+                    ...KEY,
+                    MUNCH_JEV_SHORTFALL_CHECK_ENABLED: "true",
+                })!,
+            ),
+        ).toBe(true);
+    });
+
+    test("timeout defaults to 2000ms and is bounded", () => {
+        expect(shortfallCheckTimeoutMs(decisionsConfig({ ...KEY })!)).toBe(2_000);
+        expect(
+            shortfallCheckTimeoutMs(
+                decisionsConfig({
+                    ...KEY,
+                    MUNCH_JEV_SHORTFALL_CHECK_TIMEOUT_MS: "900",
+                })!,
+            ),
+        ).toBe(900);
+    });
+
+    test("per-model contradiction thresholds are calibrated entries, with the standard default", () => {
+        expect(shortfallContradictionThresholdForModel("typesafe/jev-1.14")).toBe(0.5);
+        expect(
+            shortfallContradictionThresholdForModel("perplexity/pplx-decider-v1.2"),
+        ).toBe(0.5);
+        expect(shortfallContradictionThresholdForModel("example/unknown-1")).toBe(
+            DEFAULT_SHORTFALL_CONTRADICTION_MIN,
+        );
     });
 });
 

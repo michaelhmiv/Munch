@@ -302,6 +302,55 @@ test("a none row flags Not in pantry and keeps its Add", () => {
     expect(body).toContain('data-action="shortfall-add"');
 });
 
+test("a persistent C2 contradiction surfaces as a double-check note; rows without one render exactly as before", () => {
+    const flaggedItem = {
+        ...sampleItem,
+        on_list: false,
+        pantry_flag: {
+            state: "have",
+            pantry_item_id: "inv-9",
+            pantry_name: "Sandwich bread",
+        },
+        contradiction_flag: {
+            model: "typesafe/jev-1.14",
+            probability: 0.97,
+            threshold: 0.5,
+        },
+    };
+    const render = (item: unknown) => {
+        let body = "";
+        const context: Record<string, unknown> = {
+            escapeHtml,
+            formatRecipeQuantity,
+            state: { shortfall: { enabled: true, items: [item] } },
+            openDialog: (_t: string, b: string) => {
+                body = b;
+            },
+        };
+        runInNewContext(
+            `${dialogChunk()}\nthis.__open = openShortfallDialog;`,
+            context,
+        );
+        (context.__open as () => void)();
+        return body;
+    };
+    const flagged = render(flaggedItem);
+    expect(flagged).toContain("shortfall-contradiction");
+    expect(flagged).toContain("disagree");
+    // The row, its flag, and its Add action are unchanged by the note.
+    expect(flagged).toContain('data-action="shortfall-add"');
+    const plain = render({
+        ...sampleItem,
+        on_list: false,
+        pantry_flag: {
+            state: "none",
+            pantry_item_id: null,
+            pantry_name: null,
+        },
+    });
+    expect(plain).not.toContain("shortfall-contradiction");
+});
+
 test("the shortfall endpoint is read-only (no grocery writes server-side)", () => {
     const start = routesSource.indexOf('"/api/app/planning/shortfall"');
     expect(start).toBeGreaterThan(-1);

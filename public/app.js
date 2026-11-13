@@ -4615,6 +4615,13 @@ function shortfallRowMarkup(item, index) {
             ? "Pantry: none"
             : `Pantry: ~${shortfallQty(item.have_quantity, item.need_unit)}${item.need_unit ? ` ${escapeHtml(item.need_unit)}` : ""}`;
     const need = `need ~${shortfallQty(item.short_quantity, item.need_unit)}${item.need_unit ? ` ${escapeHtml(item.need_unit)}` : ""}`;
+    // C2: a persistent contradiction between this row and its pantry
+    // flag (flagged by the shortfall-check seat, recomputed once
+    // server-side) is surfaced as a plain double-check note — the row
+    // itself, its flag, and its Add action are unchanged.
+    const contradiction = item.contradiction_flag
+        ? `<span class="shortfall-contradiction">This row and its pantry flag disagree — worth a double-check before you buy.</span>`
+        : "";
     // The presence flag rides beside the row's own pantry line and
     // stays a separate channel: the flag reports presence, the row
     // reports quantity. A row already on the list shows the "listed"
@@ -4624,7 +4631,7 @@ function shortfallRowMarkup(item, index) {
         : item.added
           ? `<button class="button button-secondary button-small" type="button" disabled>Added</button>`
           : `<button class="button button-secondary button-small" type="button" data-action="shortfall-add" data-index="${index}">Add</button>`;
-    return `<div class="shortfall-row"><div class="shortfall-row-main"><strong>${escapeHtml(item.name)}</strong><span>${need} · ${reasons} · ${pantry}</span>${pantryFlagMarkup(item.pantry_flag)}</div>${action}</div>`;
+    return `<div class="shortfall-row"><div class="shortfall-row-main"><strong>${escapeHtml(item.name)}</strong><span>${need} · ${reasons} · ${pantry}</span>${pantryFlagMarkup(item.pantry_flag)}${contradiction}</div>${action}</div>`;
 }
 
 function openShortfallDialog() {
