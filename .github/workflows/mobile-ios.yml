@@ -132,7 +132,7 @@ jobs:
         run: bun run mobile:web
       - name: Synchronize Capacitor iOS project
         run: npx cap sync ios
-      - name: Configure iOS native shell (ads plugin + AdMob wiring)
+      - name: Configure iOS native shell (first-party + ads plugins)
         run: bun scripts/configure-mobile-ios.ts
       - name: Verify native project is reproducible
         run: git diff --exit-code -- ios package.json bun.lock
@@ -188,7 +188,7 @@ jobs:
           cp scripts/ios-smoke/stub-runtime.js .mobile-web/mobile-runtime.js
       - name: Synchronize Capacitor iOS project
         run: npx cap sync ios
-      - name: Configure iOS native shell (ads plugin + AdMob wiring)
+      - name: Configure iOS native shell (first-party + ads plugins)
         run: bun scripts/configure-mobile-ios.ts
       - name: Verify the fixture runtime is what got packaged
         run: |
@@ -387,7 +387,7 @@ jobs:
         run: bun run mobile:web
       - name: Synchronize Capacitor iOS project
         run: npx cap sync ios
-      - name: Configure iOS native shell (ads plugin + AdMob wiring)
+      - name: Configure iOS native shell (first-party + ads plugins)
         run: bun scripts/configure-mobile-ios.ts
 
       - name: Generate signing material with the App Store Connect API
@@ -539,6 +539,26 @@ jobs:
                   "attributes": {"capabilityType": "ASSOCIATED_DOMAINS"},
                   "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle_id}}}}})
               print("Enabled Associated Domains capability on the bundle ID")
+
+          # The app declares the Sign in with Apple entitlement
+          # (ios/App/App/App.entitlements — com.apple.developer.applesignin),
+          # so the bundle ID must carry the matching capability or the
+          # profile minted below lacks the entitlement and the archive
+          # rejects it — the same failure shape PR #248 fixed for
+          # Associated Domains. Enable it idempotently BEFORE minting:
+          # enabling a capability invalidates existing profiles, and the
+          # passes below delete and re-create the CI profile anyway.
+          capabilities = call("GET", f"/bundleIds/{bundle_id}/bundleIdCapabilities").get("data", [])
+          if any(cap.get("attributes", {}).get("capabilityType") == "APPLE_ID_AUTH"
+                 for cap in capabilities):
+              print("Sign in with Apple capability already enabled on the bundle ID")
+          else:
+              call("POST", "/bundleIdCapabilities", payload={"data": {
+                  "type": "bundleIdCapabilities",
+                  "attributes": {"capabilityType": "APPLE_ID_AUTH"},
+                  "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle_id}}}}})
+              print("Enabled Sign in with Apple capability on the bundle ID")
+
 
           profiles = call("GET", "/profiles?filter[name]=Munch%20App%20Store%20CI&limit=50").get("data", [])
           for profile in profiles:

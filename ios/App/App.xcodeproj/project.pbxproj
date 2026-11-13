@@ -19,6 +19,9 @@
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
+		51DF00000000000000000002 /* MunchSecureSessionPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51DF00000000000000000001 /* MunchSecureSessionPlugin.swift */; };
+		51DF00000000000000000004 /* MunchAppleSignInPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51DF00000000000000000003 /* MunchAppleSignInPlugin.swift */; };
+		51DF00000000000000000006 /* MunchBridgeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51DF00000000000000000005 /* MunchBridgeViewController.swift */; };
 		51DE00000000000000000005 /* MunchSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51DE00000000000000000004 /* MunchSmokeTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -35,6 +38,9 @@
 		51DE00000000000000000020 /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		51DF00000000000000000001 /* MunchSecureSessionPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MunchSecureSessionPlugin.swift; sourceTree = "<group>"; };
+		51DF00000000000000000003 /* MunchAppleSignInPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MunchAppleSignInPlugin.swift; sourceTree = "<group>"; };
+		51DF00000000000000000005 /* MunchBridgeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MunchBridgeViewController.swift; sourceTree = "<group>"; };
 		51DE00000000000000000002 /* AppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		51DE00000000000000000004 /* MunchSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MunchSmokeTests.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
@@ -84,6 +90,9 @@
 			isa = PBXGroup;
 			children = (
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
+				51DF00000000000000000001 /* MunchSecureSessionPlugin.swift */,
+				51DF00000000000000000003 /* MunchAppleSignInPlugin.swift */,
+				51DF00000000000000000005 /* MunchBridgeViewController.swift */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				AD5A00012F3C4D5E8F000002 /* MunchAdsPlugin.swift */,
@@ -224,6 +233,9 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				AD5A00012F3C4D5E8F000001 /* MunchAdsPlugin.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
+				51DF00000000000000000002 /* MunchSecureSessionPlugin.swift in Sources */,
+				51DF00000000000000000004 /* MunchAppleSignInPlugin.swift in Sources */,
+				51DF00000000000000000006 /* MunchBridgeViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

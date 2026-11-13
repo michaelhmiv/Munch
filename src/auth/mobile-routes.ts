@@ -6,6 +6,7 @@ import {
 } from "./auth.js";
 import { getBetterAuthRuntimeConfig } from "./config.js";
 import {
+    appleSignInConfigured,
     googleAndroidSignInConfigured,
     googleIosSignInConfigured,
     googleWebSignInConfigured,
@@ -168,6 +169,24 @@ export function createMobileAuthRouter(): Hono {
                         : null,
                 },
             },
+        });
+    });
+
+    router.get("/mobile/auth/apple-config", (c) => {
+        const config = getBetterAuthRuntimeConfig();
+        // The packaged iOS flow is native end to end: ASAuthorization
+        // runs against the app's own bundle ID, so unlike the Google
+        // endpoint there is no public client identifier to hand out —
+        // the only state the caller (`mobile/runtime.js`) needs is
+        // whether the server can verify an Apple ID token at all, which
+        // is exactly `appleSignInConfigured`: the full MUNCH_APPLE_*
+        // set (Services ID, key ID, team ID, private key) present. A
+        // partial set never reaches here — the config parser refuses it
+        // (fail closed), so the packaged app can never be told Apple
+        // sign-in is ready when the provider is not registered.
+        privateResponse(c);
+        return c.json({
+            configured: appleSignInConfigured(config),
         });
     });
 

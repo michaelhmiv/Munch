@@ -177,6 +177,14 @@ export async function isGoogleSignInAvailable() {
     return false;
 }
 
+export async function signInWithApple() {
+    throw new Error("Apple sign-in is unavailable in the iOS smoke fixture");
+}
+
+export async function isAppleSignInAvailable() {
+    return false;
+}
+
 // --- Native capability surfaces the shell probes (mirrors the web e2e stub) ---
 
 export async function getInstalledPlayBillingConfig() {
