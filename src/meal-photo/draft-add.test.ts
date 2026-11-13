@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { FoodCandidate } from "../food-providers/types.js";
+import { parsedItemsFromModelParse } from "./draft-add-parse.js";
 import {
     planPreparationUpdate,
     resolveDraftAdd,
@@ -187,8 +188,159 @@ describe("resolveDraftAdd — (b) an ungrounded add gets labelled Model estimate
     });
 });
 
+describe("resolveDraftAdd — production replay 2026-11-13: 'I added butter' on an apple photo draft", () => {
+    // The production shape: butter IS in the catalog, but the picked
+    // candidate carries only a per-100 g portion — a VOLUME quantity
+    // (1 tbsp, the stated default portion for a quantity-less add)
+    // cannot resolve against it, so grounding falls to the labelled
+    // estimate step, which prices the tbsp fine. Before the gate fix,
+    // the weak (quantity-less) parse converted that successful
+    // estimate into a draft question and added nothing.
+    const per100gOnlyButterSearch: DraftAddDeps["search"] = async (query) => {
+        if (query.includes("butter")) {
+            return {
+                candidates: [
+                    candidate({
+                        portions: [
+                            {
+                                id: "100g",
+                                amount: 100,
+                                unit: "g",
+                                label: "100 g",
+                                gramWeight: 100,
+                                nutrients: {
+                                    calories: 717,
+                                    protein_g: 0.85,
+                                    carbs_g: 0.06,
+                                    fat_g: 81.1,
+                                },
+                            },
+                        ],
+                    }),
+                ],
+                failures: [],
+            };
+        }
+        return { candidates: [], failures: [] };
+    };
+    const butterEstimate: DraftAddDeps["estimateNutrients"] = async (
+        requests,
+    ) => {
+        expect(requests).toHaveLength(1);
+        expect(requests[0]?.name).toBe("butter");
+        expect(requests[0]?.quantity).toBe(1);
+        expect(requests[0]?.unit).toBe("tbsp");
+        return new Map([
+            [
+                "item:0",
+                {
+                    nutrients: {
+                        calories: 102,
+                        protein_g: 0.1,
+                        carbs_g: 0,
+                        fat_g: 11.5,
+                    },
+                },
+            ],
+        ]);
+    };
+
+    test("deterministic path: 'I added butter' → butter lands as a labelled estimate, totals move, no question", async () => {
+        let modelParseCalls = 0;
+        const resolution = await resolveDraftAdd("I added butter", {
+            search: per100gOnlyButterSearch,
+            estimateNutrients: butterEstimate,
+            parseWithModel: async () => {
+                modelParseCalls += 1;
+                throw new Error("fallback must not fire");
+            },
+        });
+        expect(modelParseCalls).toBe(0);
+        expect(resolution.kind).toBe("ready");
+        if (resolution.kind !== "ready") return;
+        expect(resolution.parseSource).toBe("deterministic");
+        const [added] = resolution.grounded;
+        expect(added?.grounded).toBe(false);
+        expect(added?.estimated).toBe(true);
+        expect(added?.draftItem.sourceType).toBe("model_estimate");
+        expect(added?.draftItem.nutrients.calories).toBe(102);
+        expect(added?.question).toBeNull();
+        // The default-portion assumption is stated on the item.
+        expect(
+            added?.draftItem.assumptions.some(
+                (assumption) =>
+                    assumption.includes("Quantity assumed") &&
+                    assumption.includes("1 tbsp"),
+            ),
+        ).toBe(true);
+        expect(
+            added?.draftItem.sourceSnapshot?.draft_add_quantity_assumed,
+        ).toBe(true);
+        const total =
+            EXISTING_DRAFT_CALORIES +
+            resolution.grounded.reduce(
+                (sum, entry) => sum + (entry.draftItem.nutrients.calories ?? 0),
+                0,
+            );
+        expect(total).toBe(264 + 35 + 102);
+        expect(mealPhotoItemIsComplete(added!)).toBe(true);
+    });
+
+    test("model path: 'I added butter to the apple' (deterministic refuses; Ember parses, no amount) → same landing", async () => {
+        const resolution = await resolveDraftAdd(
+            "I added butter to the apple",
+            {
+                search: per100gOnlyButterSearch,
+                estimateNutrients: butterEstimate,
+                parseWithModel: async () =>
+                    parsedItemsFromModelParse({
+                        items: [
+                            {
+                                name: "butter",
+                                quantity: null,
+                                unit: null,
+                                assumptions: [],
+                            },
+                        ],
+                        replaces: null,
+                        preparation: null,
+                    }),
+            },
+        );
+        expect(resolution.kind).toBe("ready");
+        if (resolution.kind !== "ready") return;
+        expect(resolution.parseSource).toBe("model");
+        const [added] = resolution.grounded;
+        expect(added?.estimated).toBe(true);
+        expect(added?.draftItem.nutrients.calories).toBe(102);
+        expect(added?.question).toBeNull();
+        const total =
+            EXISTING_DRAFT_CALORIES +
+            resolution.grounded.reduce(
+                (sum, entry) => sum + (entry.draftItem.nutrients.calories ?? 0),
+                0,
+            );
+        expect(total).toBe(264 + 35 + 102);
+    });
+
+    test("control: 'I added a good bit of butter' against the same unresolvable pick → also lands (strong parse, unchanged)", async () => {
+        const resolution = await resolveDraftAdd(
+            "I added a good bit of butter",
+            {
+                search: per100gOnlyButterSearch,
+                estimateNutrients: butterEstimate,
+            },
+        );
+        expect(resolution.kind).toBe("ready");
+        if (resolution.kind !== "ready") return;
+        const [added] = resolution.grounded;
+        expect(added?.estimated).toBe(true);
+        expect(added?.draftItem.nutrients.calories).toBe(102);
+    });
+});
+
 describe("resolveDraftAdd — (c) ambiguous/unparseable adds never silently add", () => {
-    test("weak parse (bare name) that cannot ground → question outcome, even when an estimate exists", async () => {
+    test("weak parse (bare name) that cannot ground, but the estimate step prices it → added as a labelled Model estimate", async () => {
         const resolution = await resolveDraftAdd("added qwixle", {
             search: async () => ({ candidates: [], failures: [] }),
             estimateNutrients: async () =>
@@ -205,6 +357,23 @@ describe("resolveDraftAdd — (c) ambiguous/unparseable adds never silently add"
                         },
                     ],
                 ]),
+        });
+        expect(resolution.kind).toBe("ready");
+        if (resolution.kind !== "ready") return;
+        const [added] = resolution.grounded;
+        expect(added?.grounded).toBe(false);
+        expect(added?.estimated).toBe(true);
+        expect(added?.draftItem.sourceType).toBe("model_estimate");
+        expect(added?.draftItem.nutrients.calories).toBe(50);
+        expect(mealPhotoItemIsComplete(added!)).toBe(true);
+    });
+
+    test("weak parse (bare name) with NO usable nutrition — estimate fails → question outcome (the genuinely blocking case)", async () => {
+        const resolution = await resolveDraftAdd("added qwixle", {
+            search: async () => ({ candidates: [], failures: [] }),
+            estimateNutrients: async () => {
+                throw new Error("estimate unavailable");
+            },
         });
         expect(resolution.kind).toBe("question");
         if (resolution.kind !== "question") return;
