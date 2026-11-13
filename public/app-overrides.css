@@ -3481,22 +3481,51 @@ dialog .guided-grocery-row input[type="checkbox"] {
     color: #5d5344;
 }
 
-/* "Already have it": the presence-only Pantry flag. A quiet pill in
-   the green-tint family — a fact on the row, not a warning: no
-   danger ink, no gold, no iconography. It survives shopping mode
-   unchanged (the mode grows type and padding, the flag just rides). */
-.groceries-view .grocery-pantry-badge {
-    display: inline-block;
+/* The pantry-presence flag (three-state system, Nov 13): ONE
+   component on every surface — grocery rows, recipe ingredients,
+   the shortfall rundown, the guided-plan preview — in the pill
+   grammar of the badge it extends (1px 8px padding, 999px radius,
+   12px/600, line-height 1.5). State rides fill, mark, and word at
+   once; the flag reports presence only, never an amount, and
+   "none" is a quiet outline — no danger ink anywhere on this
+   component. It survives shopping mode unchanged (the mode grows
+   type and padding, the flag just rides). */
+.pantry-flag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     margin-left: 8px;
     padding: 1px 8px;
     border-radius: 999px;
-    background: #eef4ea;
-    color: #2b2620;
+    border: 1px solid transparent;
     font-size: 12px;
     font-weight: 600;
     line-height: 1.5;
     white-space: nowrap;
     vertical-align: 2px;
+}
+
+.pantry-flag svg {
+    width: 11px;
+    height: 11px;
+    flex: none;
+    display: block;
+}
+
+.pantry-flag-have {
+    background: #eef4ea;
+    color: #2b2620;
+}
+
+.pantry-flag-none {
+    background: transparent;
+    border-color: #d8cdb6;
+    color: #5d5344;
+}
+
+.pantry-flag-listed {
+    background: #ece4cf;
+    color: #2b2620;
 }
 
 /* Edit / Remove ride the row as compact 44px actions (the mock's

@@ -3,10 +3,10 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { formatRecipeQuantity } from "./quantity-format.js";
 
-// "Already have it" client grammar, exercised on the real functions
-// lifted out of app.js: the presence badge on grocery rows (both
-// list modes render through groceryItemRowMarkup) and the add-time
-// run-out prompt with its once-per-session guard.
+// Pantry-presence flag client grammar, exercised on the real
+// functions lifted out of app.js: the three-state flag on grocery
+// rows (both list modes render through groceryItemRowMarkup) and
+// the add-time run-out prompt with its once-per-session guard.
 const source = readFileSync(new URL("./app.js", import.meta.url), "utf8");
 
 function extract(name: string): string {
@@ -14,6 +14,12 @@ function extract(name: string): string {
         new RegExp(`function ${name}\\([\\s\\S]*?\\n\\}`),
     );
     if (!match) throw new Error(`app.js function not found: ${name}`);
+    return match[0];
+}
+
+function extractConst(name: string): string {
+    const match = source.match(new RegExp(`const ${name} = \`[^\`]*\`;`));
+    if (!match) throw new Error(`app.js const not found: ${name}`);
     return match[0];
 }
 
@@ -25,6 +31,10 @@ runInNewContext(
     [
         extract("escapeHtml"),
         extract("number"),
+        extractConst("PANTRY_FLAG_CHECK_SVG"),
+        extractConst("PANTRY_FLAG_CIRCLE_SVG"),
+        extractConst("PANTRY_FLAG_BASKET_SVG"),
+        extract("pantryFlagMarkup"),
         extract("groceryPantryBadgeMarkup"),
         extract("pantryRunOutPromptKey"),
         extract("shouldShowPantryRunOutPrompt"),
@@ -34,6 +44,7 @@ runInNewContext(
     context,
 );
 
+const flagMarkup = context.pantryFlagMarkup as (flag: unknown) => string;
 const badgeMarkup = context.groceryPantryBadgeMarkup as (
     item: unknown,
 ) => string;
@@ -63,36 +74,103 @@ const matchedItem = {
     purchased_at: null,
     version: 3,
     pantry_match: { pantry_item_id: "pantry-milk", pantry_name: "Milk" },
+    pantry_flag: {
+        state: "have",
+        pantry_item_id: "pantry-milk",
+        pantry_name: "Milk",
+    },
 };
-const plainItem = { ...matchedItem, grocery_item_id: "g2", pantry_match: null };
+const noneItem = {
+    ...matchedItem,
+    grocery_item_id: "g2",
+    name: "Flour",
+    pantry_match: null,
+    pantry_flag: { state: "none", pantry_item_id: null, pantry_name: null },
+};
+const moduleOffItem = { ...noneItem, grocery_item_id: "g3", pantry_flag: null };
+const plainItem = {
+    ...matchedItem,
+    grocery_item_id: "g4",
+    pantry_match: null,
+    pantry_flag: null,
+};
 
-describe("presence badge", () => {
-    test("a matched row carries the badge; an unmatched row does not", () => {
-        expect(rowMarkup(matchedItem, "personal", true)).toContain(
-            "In your pantry",
-        );
-        expect(rowMarkup(plainItem, "personal", true)).not.toContain(
-            "grocery-pantry-badge",
-        );
+describe("presence flag", () => {
+    test("a matched row carries the have flag with its pantry identity", () => {
+        const row = rowMarkup(matchedItem, "personal", true);
+        expect(row).toContain("pantry-flag pantry-flag-have");
+        expect(row).toContain("In your pantry");
+        expect(row).toContain('data-pantry-item-id="pantry-milk"');
+        expect(row).toContain("<svg");
     });
 
-    test("the badge renders on read-only rows too (shopping mode shares the row markup)", () => {
+    test("an unmatched row now says so explicitly — the none flag", () => {
+        const row = rowMarkup(noneItem, "personal", true);
+        expect(row).toContain("pantry-flag pantry-flag-none");
+        expect(row).toContain("Not in pantry");
+        expect(row).not.toContain("pantry-flag-have");
+    });
+
+    test("the flag renders on read-only rows too (shopping mode shares the row markup)", () => {
         expect(rowMarkup(matchedItem, "personal", false)).toContain(
             "In your pantry",
         );
-    });
-
-    test("the badge is exactly the factual flag — no amount, no verdict", () => {
-        const badge = badgeMarkup(matchedItem);
-        expect(badge).toContain(">In your pantry<");
-        expect(badge).not.toMatch(/\d/);
-        expect(badge.toLowerCase()).not.toMatch(
-            /caution|warning|already have|don'?t need|covered|enough|⚠|!/,
+        expect(rowMarkup(noneItem, "personal", false)).toContain(
+            "Not in pantry",
         );
     });
 
-    test("no badge markup at all without a pantry match", () => {
-        expect(badgeMarkup(plainItem)).toBe("");
+    test("module off renders no flag at all — null is not none", () => {
+        expect(badgeMarkup(moduleOffItem)).toBe("");
+        expect(rowMarkup(moduleOffItem, "personal", true)).not.toContain(
+            "pantry-flag",
+        );
+    });
+
+    test("the flag is exactly the factual statement — no amount, no verdict", () => {
+        const badge = badgeMarkup(matchedItem);
+        const text = badge.replace(/<[^>]*>/g, "");
+        expect(text).toBe("In your pantry");
+        expect(text).not.toMatch(/\d/);
+        expect(text.toLowerCase()).not.toMatch(
+            /caution|warning|already have|don'?t need|covered|enough|⚠|!/,
+        );
+        const noneText = badgeMarkup(noneItem).replace(/<[^>]*>/g, "");
+        expect(noneText).toBe("Not in pantry");
+        expect(noneText.toLowerCase()).not.toMatch(
+            /caution|warning|missing|⚠|!/,
+        );
+    });
+
+    test("every state carries a mark — svg, never a character glyph", () => {
+        for (const state of ["have", "none", "listed"] as const) {
+            const markup = flagMarkup({
+                state,
+                pantry_item_id: state === "have" ? "p1" : null,
+                pantry_name: null,
+            });
+            expect(markup).toContain("<svg");
+            expect(markup).toContain(
+                `pantry-flag-${state === "have" ? "have" : state}`,
+            );
+        }
+        expect(
+            flagMarkup({
+                state: "listed",
+                pantry_item_id: null,
+                pantry_name: null,
+            }),
+        ).toContain("On your list");
+        expect(flagMarkup(null)).toBe("");
+        expect(flagMarkup(undefined)).toBe("");
+    });
+
+    test("legacy payloads without the flag field fall back to badge semantics", () => {
+        const legacyMatched: Record<string, unknown> = { ...matchedItem };
+        delete legacyMatched.pantry_flag;
+        expect(badgeMarkup(legacyMatched)).toContain("In your pantry");
+        const legacyUnmatched = { ...legacyMatched, pantry_match: null };
+        expect(badgeMarkup(legacyUnmatched)).toBe("");
         expect(badgeMarkup({})).toBe("");
     });
 });

@@ -21,7 +21,10 @@ import {
     computeWeeklyDigest,
     computeWeekInWords,
 } from "../insights.js";
-import { attachPantryMatchesForScope } from "../inventory/grocery-pantry.js";
+import {
+    attachPantryFlagsForScope,
+    attachPantryMatchesForScope,
+} from "../inventory/grocery-pantry.js";
 import { getNutritionProvenanceAnalysis } from "../nutrition-provenance.js";
 import { withUserDatabase } from "../platform/database.js";
 import {
@@ -1138,10 +1141,34 @@ export async function getRecipeWorkspace(
     const canRead =
         capabilities.personalRecipesRead || capabilities.householdRead;
     if (!canRead) return { available: false, recipe: null };
-    return {
-        available: true,
-        recipe: await getRecipe(userId, recipeId, revisionId),
-    };
+    const recipe = await getRecipe(userId, recipeId, revisionId);
+    if (!recipe) return { available: true, recipe: null };
+    // Pantry-presence flags on the ingredient rows (owner ruling,
+    // Nov 13): the detail view shows, before any tap, which
+    // ingredients the user already has, lacks, or already has on the
+    // grocery list — computed against the recipe's own scope from the
+    // same snapshot the grocery add itself consults, so the flags
+    // and the add can never disagree. Pantry module off → every
+    // ingredient carries `pantry_flag: null` and no flag renders.
+    const scope =
+        recipe.ownership.type === "household"
+            ? {
+                  type: "household" as const,
+                  householdId: recipe.ownership.household_id,
+              }
+            : { type: "personal" as const };
+    const openList = await getGroceryList({
+        userId,
+        scope,
+        includePurchased: false,
+    });
+    const ingredients = await attachPantryFlagsForScope({
+        userId,
+        scope,
+        items: recipe.ingredients,
+        openItems: openList.items,
+    });
+    return { available: true, recipe: { ...recipe, ingredients } };
 }
 
 export async function getHouseholdWorkspace(userId: string) {
