@@ -7,9 +7,19 @@ import {
 import {
     bestInventoryMatch,
     convertInventoryQuantity,
+    inventoryIdentityScore,
     type IngredientRequirement,
     type InventoryMatchableItem,
 } from "./matching.js";
+import {
+    decisionsConfig,
+    type DecisionsConfig,
+} from "../decisions/config.js";
+import type { DecisionsFetcher } from "../decisions/client.js";
+import {
+    drawdownAnomalyFlagged,
+    reviewDrawdownAnomaly,
+} from "../decisions/drawdown-review.js";
 import {
     getPantry,
     reconcilePantry,
@@ -79,6 +89,128 @@ export interface DrawdownLine {
     via: "deterministic" | "ai" | null;
     /** Data-shaped skip reason ("not in pantry", "no amount recorded"). */
     reason: string | null;
+    /** Seat B4 accountability trail, present only when this line's
+     * draw was an anomaly the Jev seat engaged on (see
+     * `detectDrawdownAnomalies`). The draw itself is never changed
+     * by the review — fail-open is the draw standing as computed. */
+    jev_review?: {
+        status: "checked" | "flagged" | "unchecked";
+        anomaly: DrawdownAnomalyKind;
+        model: string | null;
+        p_match_correct: number | null;
+        p_quantity_plausible: number | null;
+    } | null;
+}
+
+export type DrawdownAnomalyKind =
+    | "draw_exceeds_stock"
+    | "approximate_remainder_flip";
+
+/**
+ * One anomalous draw, aggregated per pantry item across every line
+ * that drew it. Detection is deterministic and narrow (seat B4):
+ *
+ * - `draw_exceeds_stock`: the total requested draw against EXACT
+ *   stock exceeds what was recorded. (The plan clamps the applied
+ *   draw to stock, so the anomaly lives in the request, not the
+ *   applied line.)
+ * - `approximate_remainder_flip`: the draw leaves an APPROXIMATE
+ *   item's estimated remainder in the nearly-gone categories
+ *   (under 30% left — `estimateRemainder`'s "a little left" /
+ *   "likely gone"), a category flip the approximate record cannot
+ *   prove.
+ *
+ * #283's law is preserved, not weakened: presence-only stock is
+ * never an anomaly (a presence record can never prove a shortfall),
+ * and an item with no recorded quantity is skipped entirely.
+ */
+export interface DrawdownAnomaly {
+    /** Index (into requirements/lines) of the first line drawing
+     * the item — the line the review annotation lands on. */
+    index: number;
+    kind: DrawdownAnomalyKind;
+    ingredient: string;
+    /** The recipe amount as logged (pre-conversion). */
+    ingredientQuantity: number | null;
+    ingredientUnit: string | null;
+    /** Total requested draw, converted into the item's unit. */
+    requestedQuantity: number;
+    requestedUnit: string | null;
+    pantryItemId: string;
+    pantryName: string;
+    recordedQuantity: number;
+    recordedUnit: string | null;
+    quantityMode: InventoryMatchableItem["quantity_mode"];
+    identityScore: number;
+}
+
+export function detectDrawdownAnomalies(
+    requirements: DrawdownRequirement[],
+    pantryItems: PantryItem[],
+    lines: DrawdownLine[],
+): DrawdownAnomaly[] {
+    const byId = new Map(pantryItems.map((item) => [item.id, item]));
+    const totals = new Map<
+        string,
+        { total: number; firstIndex: number; ingredient: string }
+    >();
+    lines.forEach((line, index) => {
+        if (line.status !== "applied" || !line.pantry_item_id) return;
+        const item = byId.get(line.pantry_item_id);
+        if (!item || item.quantity == null) return;
+        // #283: presence-only stock can never prove a shortfall.
+        if (item.quantity_mode === "presence_only") return;
+        const req = requirements[index];
+        if (!req || req.quantity == null || !(req.quantity > 0)) return;
+        const converted = convertInventoryQuantity(
+            req.quantity,
+            req.unit,
+            item.unit,
+        );
+        if (converted == null) return;
+        const entry = totals.get(item.id) ?? {
+            total: 0,
+            firstIndex: index,
+            ingredient: req.name,
+        };
+        entry.total += converted;
+        totals.set(item.id, entry);
+    });
+    const anomalies: DrawdownAnomaly[] = [];
+    for (const [itemId, entry] of totals) {
+        const item = byId.get(itemId)!;
+        const recorded = item.quantity!;
+        let kind: DrawdownAnomalyKind | null = null;
+        if (item.quantity_mode === "exact" && entry.total > recorded + 1e-9) {
+            kind = "draw_exceeds_stock";
+        } else if (
+            item.quantity_mode === "approximate" &&
+            entry.total > 0 &&
+            (recorded - entry.total) / recorded < 0.3
+        ) {
+            kind = "approximate_remainder_flip";
+        }
+        if (!kind) continue;
+        const req = requirements[entry.firstIndex]!;
+        anomalies.push({
+            index: entry.firstIndex,
+            kind,
+            ingredient: entry.ingredient,
+            ingredientQuantity: req.quantity ?? null,
+            ingredientUnit: req.unit ?? null,
+            requestedQuantity: round3(entry.total),
+            requestedUnit: item.unit ?? null,
+            pantryItemId: item.id,
+            pantryName: item.name,
+            recordedQuantity: recorded,
+            recordedUnit: item.unit ?? null,
+            quantityMode: item.quantity_mode,
+            identityScore: inventoryIdentityScore(item, {
+                name: entry.ingredient,
+            }),
+        });
+    }
+    return anomalies.sort((a, b) => a.index - b.index);
 }
 
 export type DrawdownSummary =
@@ -889,6 +1021,10 @@ export interface ApplyPantryDrawdownDependencies {
     reconcileFn?: typeof reconcilePantry;
     aiConfig?: DrawdownAiConfig | null;
     fetcher?: DrawdownAiDependencies["fetcher"];
+    /** Seat B4 test/drill seam: supply a Decisions config instead of
+     * reading the env. */
+    jevConfig?: DecisionsConfig | null;
+    jevFetcher?: DecisionsFetcher;
 }
 
 /**
@@ -954,6 +1090,55 @@ export async function applyPantryDrawdown(
             plan,
             input.requirements,
         );
+        // Seat B4 (draw-down anomaly review): anomaly-only, fail-open.
+        // The review annotates the affected line and logs its verdict;
+        // it never changes an operation — the draw stands as computed
+        // in every outcome, including a down chain (`unchecked`).
+        const anomalies = detectDrawdownAnomalies(
+            input.requirements,
+            pantry.items,
+            lines,
+        );
+        if (anomalies.length > 0) {
+            const jevConfig =
+                dependencies.jevConfig !== undefined
+                    ? dependencies.jevConfig
+                    : decisionsConfig();
+            if (jevConfig?.drawdownReviewEnabled) {
+                for (const anomaly of anomalies.slice(0, 8)) {
+                    const line = lines[anomaly.index]!;
+                    try {
+                        const review = await reviewDrawdownAnomaly(
+                            anomaly,
+                            jevConfig,
+                            { fetcher: dependencies.jevFetcher },
+                        );
+                        const flagged = drawdownAnomalyFlagged(review);
+                        line.jev_review = {
+                            status: flagged ? "flagged" : "checked",
+                            anomaly: anomaly.kind,
+                            model: review.model,
+                            p_match_correct: review.pMatchCorrect,
+                            p_quantity_plausible: review.pQuantityPlausible,
+                        };
+                        console.info(
+                            `[decisions] seat=drawdown_review verdict=${flagged ? "flagged" : "checked"} anomaly=${anomaly.kind} p_match_correct=${review.pMatchCorrect} p_quantity_plausible=${review.pQuantityPlausible} model=${review.model}`,
+                        );
+                    } catch (error) {
+                        line.jev_review = {
+                            status: "unchecked",
+                            anomaly: anomaly.kind,
+                            model: null,
+                            p_match_correct: null,
+                            p_quantity_plausible: null,
+                        };
+                        console.info(
+                            `[decisions] seat=drawdown_review status=unchecked anomaly=${anomaly.kind} reason=${error instanceof Error ? error.message.slice(0, 200) : String(error)}`,
+                        );
+                    }
+                }
+            }
+        }
         if (operations.length > 0) {
             await reconcileFn({
                 userId: input.userId,
