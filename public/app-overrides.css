@@ -6319,7 +6319,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 .cal-day.is-range-start,
 .cal-day.is-range-end {
     background: #2e5b34;
-    color: #fffdf7;
+    color: #fffdf8;
     position: relative;
 }
 
@@ -6333,12 +6333,12 @@ dialog .guided-grocery-row input[type="checkbox"] {
 
 .cal-day.is-range-start .cal-day-num,
 .cal-day.is-range-end .cal-day-num {
-    color: #fffdf7;
+    color: #fffdf8;
 }
 
 .cal-day.is-range-start .cal-dot,
 .cal-day.is-range-end .cal-dot {
-    background: #fffdf7;
+    background: #fffdf8;
 }
 
 .cal-day.is-in-range {
@@ -6405,13 +6405,13 @@ dialog .guided-grocery-row input[type="checkbox"] {
 .button-secondary.range-toggle[aria-pressed="true"] {
     background: #176b3a;
     border-color: #176b3a;
-    color: #fffdf7;
+    color: #fffdf8;
 }
 
 .button-secondary.range-toggle[aria-pressed="true"]:hover {
     background: #0b3d24;
     border-color: #0b3d24;
-    color: #fffdf7;
+    color: #fffdf8;
 }
 
 /* Range-mode Today (approved rendering frames 3/4/6): the range bar
@@ -6538,7 +6538,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .day-tag.today {
-    color: #8a6d3b;
+    color: #176b3a;
 }
 
 .range-day.lvl-month .range-day-name {

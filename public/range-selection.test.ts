@@ -191,7 +191,7 @@ describe("Range toggle pressed state — QC-gate F1 (PR #277)", () => {
         expect(pressed, "the pressed-state rule exists").not.toBeNull();
         expect(pressed![1]).toContain("background: #176b3a");
         expect(pressed![1]).toContain("border-color: #176b3a");
-        expect(pressed![1]).toContain("color: #fffdf7");
+        expect(pressed![1]).toContain("color: #fffdf8");
         // The off state stays the direction-C secondary the class
         // already carries: transparent fill, rule border, ink text.
         const secondary = css.match(/\.button-secondary\s*\{([^}]*)\}/);
