@@ -412,6 +412,22 @@ async function api(path, options = {}) {
     });
 }
 
+// The native banner renders INSIDE the in-flow Today slot (Amendment D
+// placement law): the web layer measures the slot's viewport geometry
+// and forwards it with every placement sync, and the native plugins
+// glue the banner to exactly that rect — never a bottom-anchored
+// overlay. A visible sync with no slot on screen forwards slotRect:
+// null and the plugins hold the banner back until a rect arrives.
+function measureTodayAdSlotRect() {
+    const slot = document.querySelector('[data-testid="today-ad-slot"]');
+    if (!slot) return null;
+    const rect = slot.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+}
+
+let lastAdPayloadKey = null;
+
 function syncAndroidAdPlacement() {
     if (typeof window.MunchAds?.setBannerVisible !== "function") return;
     // ADS DEMO (test distributions only): the packaged runtime carries
@@ -437,12 +453,23 @@ function syncAndroidAdPlacement() {
         adFree,
         adsEnabled,
     });
-    void window.MunchAds.setBannerVisible({
+    const payload = {
         visible,
         adFree: adFree !== false,
         adsEnabled: adsEnabled === true,
         demoTestAds: demoTestBuild,
-    }).catch(() => {});
+        slotRect: visible ? measureTodayAdSlotRect() : null,
+    };
+    // Scroll/resize re-syncs fire constantly while Today scrolls; the
+    // native side is stateful, so an unchanged payload (same gates,
+    // same slot geometry) is a no-op — skip the bridge hop. A failed
+    // hop clears the key so the next sync retries.
+    const payloadKey = JSON.stringify(payload);
+    if (payloadKey === lastAdPayloadKey) return;
+    lastAdPayloadKey = payloadKey;
+    void window.MunchAds.setBannerVisible(payload).catch(() => {
+        if (lastAdPayloadKey === payloadKey) lastAdPayloadKey = null;
+    });
 }
 
 // S6 slice 1: the app's single ad slot (Amendment D final placement
@@ -5310,6 +5337,25 @@ new MutationObserver(syncAndroidAdPlacement).observe(dialog, {
     attributes: true,
     attributeFilter: ["open"],
 });
+
+// In-flow slot tracking: the slot scrolls with the page, so its
+// geometry reaches the native banner only if placement re-syncs on
+// scroll and viewport resize. rAF-throttled, and the sync itself
+// dedupes unchanged payloads, so a settled page costs no bridge
+// traffic.
+let adPlacementSyncFrame = null;
+function scheduleAdPlacementSync() {
+    if (adPlacementSyncFrame !== null) return;
+    adPlacementSyncFrame = requestAnimationFrame(() => {
+        adPlacementSyncFrame = null;
+        syncAndroidAdPlacement();
+    });
+}
+window.addEventListener("scroll", scheduleAdPlacementSync, {
+    capture: true,
+    passive: true,
+});
+window.addEventListener("resize", scheduleAdPlacementSync);
 
 const webImportFields = [
     { key: "logged_at", label: "Date", required: true },

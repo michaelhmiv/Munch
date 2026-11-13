@@ -8,7 +8,7 @@ import UserMessagingPlatform
 ///
 /// Same JS bridge surface as Android (plugin name "MunchAds", called through
 /// mobile/runtime.js): setBannerVisible({visible, adFree, adsEnabled,
-/// demoTestAds}) and showPrivacyOptions(). The server flag
+/// demoTestAds, slotRect}) and showPrivacyOptions().
 /// MUNCH_ADS_ENABLED stays the only product switch (see src/ads-config.ts);
 /// this plugin only decides whether a banner may be loaded for the state
 /// the web layer forwards.
@@ -36,7 +36,13 @@ public class MunchAdsPlugin: CAPPlugin, CAPBridgedPlugin {
     private static let testBannerAdUnitID = "ca-app-pub-3940256099942544/2934735716"
 
     private var bannerView: BannerView?
-    private var webViewFrameBeforeBanner: CGRect?
+    /// In-flow slot geometry (Amendment D placement law): the web layer
+    /// measures the Today slot's viewport rect in CSS pixels — points,
+    /// in WKWebView terms — and forwards it as slotRect with every
+    /// placement sync. The banner is glued to exactly that rect; it is
+    /// never bottom-anchored. Until the first rect arrives the banner
+    /// is held back entirely.
+    private var slotRect: CGRect?
     private var bannerRequested = false
     private var consentRefreshComplete = false
     private var consentFormActive = false
@@ -84,6 +90,19 @@ public class MunchAdsPlugin: CAPPlugin, CAPBridgedPlugin {
         let adFree = call.getBool("adFree", true)
         let adsEnabled = call.getBool("adsEnabled", false)
         let demoTestAds = call.getBool("demoTestAds", false)
+        // The slot rect rides the same call. A rect-less sync never
+        // clears a known rect — the web layer syncs once before
+        // Today's DOM exists — but a fresh rect repositions a live
+        // banner immediately (see layoutBanner).
+        let rectObject = call.getObject("slotRect")
+        if let rectObject = rectObject,
+            let x = (rectObject["x"] as? NSNumber)?.doubleValue,
+            let y = (rectObject["y"] as? NSNumber)?.doubleValue,
+            let width = (rectObject["width"] as? NSNumber)?.doubleValue,
+            let height = (rectObject["height"] as? NSNumber)?.doubleValue
+        {
+            slotRect = CGRect(x: x, y: y, width: width, height: height)
+        }
         // Demo override (Michael, 2026-11-12): a test build may show the
         // TEST banner even for a Premium (adFree) account so he can judge
         // the slot. Honored only in non-store distributions — a production
@@ -97,6 +116,9 @@ public class MunchAdsPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         call.resolve()
+        if bannerView != nil {
+            DispatchQueue.main.async { self.layoutBanner() }
+        }
         if consentRefreshComplete {
             DispatchQueue.main.async { self.showConsentThenBanner() }
         }
@@ -185,8 +207,15 @@ public class MunchAdsPlugin: CAPPlugin, CAPBridgedPlugin {
     /// Must run on the main queue.
     private func loadBannerView() {
         guard let viewController = bridge?.viewController,
-            let webView = bridge?.webView
+            bridge?.webView != nil
         else { return }
+        // No slot rect yet: the banner is created only once its
+        // in-flow home is known — never at a guessed position. A later
+        // sync carrying the rect re-enters through setBannerVisible.
+        guard slotRect != nil else {
+            bannerView?.isHidden = true
+            return
+        }
         if bannerView == nil {
             let banner = BannerView(adSize: AdSizeBanner)
             banner.adUnitID = bannerAdUnitID
@@ -195,9 +224,7 @@ public class MunchAdsPlugin: CAPPlugin, CAPBridgedPlugin {
             bannerView = banner
             viewController.view.addSubview(banner)
         }
-        shrinkWebViewForBanner(webView: webView, hostView: viewController.view)
-        layoutBanner(hostView: viewController.view)
-        bannerView?.isHidden = false
+        layoutBanner()
         // Non-personalized ONLY: the "npa" = "1" extra rides every request,
         // the iOS form of Android's AdMobAdapter network extra (PR #255).
         let request = Request()
@@ -207,39 +234,39 @@ public class MunchAdsPlugin: CAPPlugin, CAPBridgedPlugin {
         bannerView?.load(request)
     }
 
-    /// Anchors the banner bottom-center above the safe area and shrinks the
-    /// web view by the consumed height — the iOS mirror of Android's
-    /// WebView bottom padding, so app content (incl. the bottom nav) is
-    /// never hidden behind the banner.
-    private func shrinkWebViewForBanner(webView: UIView, hostView: UIView) {
-        if webViewFrameBeforeBanner == nil {
-            webViewFrameBeforeBanner = webView.frame
+    /// Glues the banner to the web layer's slot rect: the fixed-size
+    /// banner centers inside the slot, offset by the WebView's own
+    /// origin in the host view. The banner shows only while the slot
+    /// is FULLY inside the WebView viewport — a partially scrolled
+    /// slot hides it rather than letting it paint over app chrome
+    /// (above all the bottom navigation).
+    private func layoutBanner() {
+        guard let bannerView = bannerView,
+            let webView = bridge?.webView
+        else { return }
+        guard let rect = slotRect else {
+            bannerView.isHidden = true
+            return
         }
-        guard let original = webViewFrameBeforeBanner else { return }
-        let consumed = AdSizeBanner.size.height + hostView.safeAreaInsets.bottom
-        var frame = original
-        frame.size.height = max(0, original.height - consumed)
-        webView.frame = frame
-    }
-
-    private func layoutBanner(hostView: UIView) {
-        guard let bannerView = bannerView else { return }
         let size = AdSizeBanner.size
         bannerView.frame = CGRect(
-            x: (hostView.bounds.width - size.width) / 2,
-            y: hostView.bounds.height - hostView.safeAreaInsets.bottom - size.height,
+            x: webView.frame.minX + rect.minX
+                + max(0, (rect.width - size.width) / 2),
+            y: webView.frame.minY + rect.minY
+                + max(0, (rect.height - size.height) / 2),
             width: size.width,
             height: size.height
         )
+        let slotFullyVisible =
+            rect.minX >= 0 && rect.minY >= 0
+            && rect.maxX <= webView.bounds.width
+            && rect.maxY <= webView.bounds.height
+        bannerView.isHidden = !slotFullyVisible
     }
 
     /// Must run on the main queue.
     private func hideBanner() {
         bannerView?.removeFromSuperview()
         bannerView = nil
-        if let original = webViewFrameBeforeBanner, let webView = bridge?.webView {
-            webView.frame = original
-        }
-        webViewFrameBeforeBanner = nil
     }
 }
