@@ -14,6 +14,28 @@ import {
 import { attachPantryFlagsForScope } from "../inventory/grocery-pantry.js";
 import { dateOnlyString } from "../tz.js";
 import { formatRecipeQuantity } from "../quantity-format.js";
+import {
+    effectiveRecipeYields,
+    estimateRecipeYield,
+    normalizeYieldUnit,
+    resolveRecipePortion,
+    validateYield,
+    type EffectiveRecipeYields,
+    type RecipePortionRecord,
+    type RecipePortionSpec,
+    type RecipeYield,
+    type RecipeYieldSlots,
+    type YieldFamily,
+} from "./recipe-yield.js";
+
+export type {
+    EffectiveRecipeYields,
+    RecipePortionRecord,
+    RecipePortionSpec,
+    RecipeYield,
+    RecipeYieldSlots,
+    YieldFamily,
+} from "./recipe-yield.js";
 import type {
     StructuredMealInput,
     StructuredMealInsertResult,
@@ -59,6 +81,10 @@ export interface RecipeIngredientInput {
 export interface RecipeInput {
     name: string;
     servings: number;
+    /** Set total yield, volume slot (unit logging, 2026-11-13). */
+    yieldVolume?: RecipeYield | null;
+    /** Set total yield, weight slot (unit logging, 2026-11-13). */
+    yieldWeight?: RecipeYield | null;
     description?: string;
     instructions: string[];
     preparationMinutes?: number;
@@ -109,7 +135,12 @@ export interface LoggedRecipeResult {
     recipeId: string;
     recipeRevisionId: string;
     recipeRevisionNumber: number;
+    /** Servings equivalent of the logged portion (the input itself for servings mode). */
     servingsConsumed: number;
+    /** What was actually entered, with its yield snapshot (unit logging). */
+    portion: RecipePortionRecord;
+    /** The share of the whole recipe the meal represents (6dp). */
+    share: number;
 }
 
 function normalizeName(value: string): string {
@@ -145,6 +176,12 @@ export function validateRecipe(recipe: RecipeInput): void {
     }
     if (!Number.isFinite(recipe.servings) || recipe.servings <= 0) {
         throw new Error("Recipe servings must be positive");
+    }
+    if (recipe.yieldVolume != null) {
+        validateYield("volume", recipe.yieldVolume);
+    }
+    if (recipe.yieldWeight != null) {
+        validateYield("weight", recipe.yieldWeight);
     }
     if (
         !Array.isArray(recipe.instructions) ||
@@ -367,6 +404,10 @@ async function insertRecipeRevision(
             source_type,
             source_title,
             source_url,
+            yield_volume_quantity,
+            yield_volume_unit,
+            yield_weight_quantity,
+            yield_weight_unit,
             calories_total,
             protein_g_total,
             carbs_g_total,
@@ -396,6 +437,10 @@ async function insertRecipeRevision(
             ${input.recipe.sourceType},
             ${input.recipe.sourceTitle?.trim() || null},
             ${input.recipe.sourceUrl?.trim() || null},
+            ${input.recipe.yieldVolume?.quantity ?? null},
+            ${input.recipe.yieldVolume ? (normalizeYieldUnit(input.recipe.yieldVolume.unit) ?? input.recipe.yieldVolume.unit) : null},
+            ${input.recipe.yieldWeight?.quantity ?? null},
+            ${input.recipe.yieldWeight ? (normalizeYieldUnit(input.recipe.yieldWeight.unit) ?? input.recipe.yieldWeight.unit) : null},
             ${calculation.totals.calories ?? null},
             ${calculation.totals.protein_g ?? null},
             ${calculation.totals.carbs_g ?? null},
@@ -563,6 +608,8 @@ export async function getRecipe(
                 revision.description, revision.instructions,
                 revision.preparation_minutes, revision.cooking_minutes,
                 revision.source_type, revision.source_title, revision.source_url,
+                revision.yield_volume_quantity, revision.yield_volume_unit,
+                revision.yield_weight_quantity, revision.yield_weight_unit,
                 revision.yield_estimate,
                 revision.nutrition_status,
                 revision.calories_total, revision.protein_g_total,
@@ -594,6 +641,64 @@ export async function getRecipe(
             where recipe_revision_id = ${String(recipe.revision_id)}
             order by position
         `;
+        const mappedIngredients = ingredients.map((ingredient) => ({
+            id: String(ingredient.id),
+            position: Number(ingredient.position),
+            name: String(ingredient.name),
+            quantity:
+                ingredient.quantity == null
+                    ? null
+                    : Number(ingredient.quantity),
+            unit: ingredient.unit == null ? null : String(ingredient.unit),
+            preparation:
+                ingredient.preparation == null
+                    ? null
+                    : String(ingredient.preparation),
+            optional: Boolean(ingredient.optional),
+            gram_weight:
+                ingredient.gram_weight == null
+                    ? null
+                    : Number(ingredient.gram_weight),
+            nutrients: nutrientsFromRow(ingredient, ""),
+            provider:
+                ingredient.provider == null
+                    ? null
+                    : String(ingredient.provider),
+            provider_food_id:
+                ingredient.provider_food_id == null
+                    ? null
+                    : String(ingredient.provider_food_id),
+            source_type: String(ingredient.source_type),
+            source_url:
+                ingredient.source_url == null
+                    ? null
+                    : String(ingredient.source_url),
+            confidence:
+                ingredient.confidence == null
+                    ? null
+                    : Number(ingredient.confidence),
+            source_snapshot:
+                ingredient.source_snapshot &&
+                typeof ingredient.source_snapshot === "object"
+                    ? (ingredient.source_snapshot as Record<string, unknown>)
+                    : {},
+        }));
+        const storedYields: RecipeYieldSlots = {
+            volume:
+                recipe.yield_volume_quantity == null
+                    ? null
+                    : {
+                          quantity: Number(recipe.yield_volume_quantity),
+                          unit: String(recipe.yield_volume_unit),
+                      },
+            weight:
+                recipe.yield_weight_quantity == null
+                    ? null
+                    : {
+                          quantity: Number(recipe.yield_weight_quantity),
+                          unit: String(recipe.yield_weight_unit),
+                      },
+        };
         return {
             id: String(recipe.id),
             name: String(recipe.name),
@@ -608,6 +713,12 @@ export async function getRecipe(
             revision_id: String(recipe.revision_id),
             revision_number: Number(recipe.revision_number),
             servings: Number(recipe.servings),
+            yields: storedYields,
+            yield_estimates: estimateRecipeYield(mappedIngredients),
+            effective_yields: effectiveRecipeYields(
+                storedYields,
+                mappedIngredients,
+            ),
             description:
                 recipe.description == null ? null : String(recipe.description),
             instructions: recipe.instructions,
@@ -635,51 +746,7 @@ export async function getRecipe(
             nutrition_status: String(recipe.nutrition_status),
             nutrition_total: nutrientsFromRow(recipe, "_total"),
             nutrition_per_serving: nutrientsFromRow(recipe, "_per_serving"),
-            ingredients: ingredients.map((ingredient) => ({
-                id: String(ingredient.id),
-                position: Number(ingredient.position),
-                name: String(ingredient.name),
-                quantity:
-                    ingredient.quantity == null
-                        ? null
-                        : Number(ingredient.quantity),
-                unit: ingredient.unit == null ? null : String(ingredient.unit),
-                preparation:
-                    ingredient.preparation == null
-                        ? null
-                        : String(ingredient.preparation),
-                optional: Boolean(ingredient.optional),
-                gram_weight:
-                    ingredient.gram_weight == null
-                        ? null
-                        : Number(ingredient.gram_weight),
-                nutrients: nutrientsFromRow(ingredient, ""),
-                provider:
-                    ingredient.provider == null
-                        ? null
-                        : String(ingredient.provider),
-                provider_food_id:
-                    ingredient.provider_food_id == null
-                        ? null
-                        : String(ingredient.provider_food_id),
-                source_type: String(ingredient.source_type),
-                source_url:
-                    ingredient.source_url == null
-                        ? null
-                        : String(ingredient.source_url),
-                confidence:
-                    ingredient.confidence == null
-                        ? null
-                        : Number(ingredient.confidence),
-                source_snapshot:
-                    ingredient.source_snapshot &&
-                    typeof ingredient.source_snapshot === "object"
-                        ? (ingredient.source_snapshot as Record<
-                              string,
-                              unknown
-                          >)
-                        : {},
-            })),
+            ingredients: mappedIngredients,
             created_at: new Date(String(recipe.created_at)).toISOString(),
             updated_at: new Date(String(recipe.updated_at)).toISOString(),
         };
@@ -878,6 +945,43 @@ export async function updateRecipe(input: {
         }
 
         const nextRevisionNumber = Number(current.current_revision_number) + 1;
+        // Yield slots carry forward when an edit omits them (the
+        // edit-in-place form has no yield fields); an explicit null
+        // still clears a slot. Setting or correcting a yield on its
+        // own never reaches this path — see setRecipeYield.
+        if (
+            resolvedRecipe.yieldVolume === undefined ||
+            resolvedRecipe.yieldWeight === undefined
+        ) {
+            const yieldRows = await tx<Array<Record<string, unknown>>>`
+                select yield_volume_quantity, yield_volume_unit,
+                    yield_weight_quantity, yield_weight_unit
+                from munch.recipe_revisions
+                where recipe_id = ${input.recipeId}
+                  and revision_number = ${Number(current.current_revision_number)}
+            `;
+            const prior = yieldRows[0];
+            if (prior) {
+                if (resolvedRecipe.yieldVolume === undefined) {
+                    resolvedRecipe.yieldVolume =
+                        prior.yield_volume_quantity != null
+                            ? {
+                                  quantity: Number(prior.yield_volume_quantity),
+                                  unit: String(prior.yield_volume_unit),
+                              }
+                            : null;
+                }
+                if (resolvedRecipe.yieldWeight === undefined) {
+                    resolvedRecipe.yieldWeight =
+                        prior.yield_weight_quantity != null
+                            ? {
+                                  quantity: Number(prior.yield_weight_quantity),
+                                  unit: String(prior.yield_weight_unit),
+                              }
+                            : null;
+                }
+            }
+        }
         const revision = await insertRecipeRevision(tx, {
             userId: input.userId,
             recipeId: input.recipeId,
@@ -907,6 +1011,83 @@ export async function updateRecipe(input: {
     });
 }
 
+export interface SetRecipeYieldResult {
+    recipeId: string;
+    revisionId: string;
+    revisionNumber: number;
+    family: YieldFamily;
+    yield: RecipeYield | null;
+}
+
+/**
+ * Set or clear one yield slot on the recipe's CURRENT revision, in
+ * place (owner ruling, 2026-11-13): a yield-only edit never creates a
+ * revision and never bumps the recipe version, because nothing about
+ * the recipe's food changed — and meals already logged keep the yield
+ * snapshot they were figured from, so history cannot be rewritten by
+ * a correction. Edit permission is the recipe's owner scope, exactly
+ * like updateRecipe; archived recipes refuse.
+ */
+export async function setRecipeYield(input: {
+    userId: string;
+    scope: PlanningScope;
+    recipeId: string;
+    family: YieldFamily;
+    yield: RecipeYield | null;
+}): Promise<SetRecipeYieldResult> {
+    if (input.yield != null) validateYield(input.family, input.yield);
+    const normalizedUnit =
+        input.yield == null
+            ? null
+            : (normalizeYieldUnit(input.yield.unit) ?? input.yield.unit);
+    return withUserDatabase(input.userId, async (tx) => {
+        const owner = ownerValues(input.scope, input.userId);
+        const currentRows = await tx<Array<Record<string, unknown>>>`
+            select id, current_revision_number, archived_at
+            from munch.recipes
+            where id = ${input.recipeId}
+              and personal_owner_user_id is not distinct from ${owner.personalOwnerUserId}
+              and household_id is not distinct from ${owner.householdId}
+            for update
+        `;
+        const current = currentRows[0];
+        if (!current) throw new Error("Recipe was not found or is unavailable");
+        if (current.archived_at != null) {
+            throw new Error("Archived recipes cannot be edited");
+        }
+        const quantity = input.yield?.quantity ?? null;
+        const rows =
+            input.family === "volume"
+                ? await tx<Array<{ id: string }>>`
+                      update munch.recipe_revisions
+                      set yield_volume_quantity = ${quantity},
+                          yield_volume_unit = ${normalizedUnit}
+                      where recipe_id = ${input.recipeId}
+                        and revision_number = ${Number(current.current_revision_number)}
+                      returning id
+                  `
+                : await tx<Array<{ id: string }>>`
+                      update munch.recipe_revisions
+                      set yield_weight_quantity = ${quantity},
+                          yield_weight_unit = ${normalizedUnit}
+                      where recipe_id = ${input.recipeId}
+                        and revision_number = ${Number(current.current_revision_number)}
+                      returning id
+                  `;
+        if (!rows[0]) throw new Error("Recipe revision was not updated");
+        return {
+            recipeId: input.recipeId,
+            revisionId: String(rows[0].id),
+            revisionNumber: Number(current.current_revision_number),
+            family: input.family,
+            yield:
+                input.yield == null
+                    ? null
+                    : { quantity: input.yield.quantity, unit: normalizedUnit! },
+        };
+    });
+}
+
 const CORE_NUTRIENT_KEYS = [
     "calories",
     "protein_g",
@@ -924,10 +1105,12 @@ function ingredientHasCoreNutrition(ingredient: {
 
 type StoredRecipe = NonNullable<Awaited<ReturnType<typeof getRecipe>>>;
 
-function recipeInputFromStored(stored: StoredRecipe): RecipeInput {
+export function recipeInputFromStored(stored: StoredRecipe): RecipeInput {
     return {
         name: stored.name,
         servings: stored.servings,
+        yieldVolume: stored.yields.volume,
+        yieldWeight: stored.yields.weight,
         description: stored.description ?? undefined,
         instructions: Array.isArray(stored.instructions)
             ? (stored.instructions as string[])
@@ -1096,6 +1279,7 @@ function recipeItemSourceSnapshot(
     ingredient: NonNullable<
         Awaited<ReturnType<typeof getRecipe>>
     >["ingredients"][number],
+    portionRecord?: RecipePortionRecord,
 ) {
     return {
         recipe_id: recipe.id,
@@ -1105,14 +1289,24 @@ function recipeItemSourceSnapshot(
         recipe_ingredient_snapshot: ingredient.source_snapshot,
         recipe_nutrition_total: recipe.nutrition_total,
         recipe_nutrition_per_serving: recipe.nutrition_per_serving,
+        // The portion this meal was logged as (unit logging): what was
+        // entered, the share it resolved to, and the yield snapshot it
+        // was figured from. Absent for non-log construction paths.
+        ...(portionRecord ? { recipe_portion: portionRecord } : {}),
     } satisfies Record<string, unknown>;
 }
 
-export function recipeMealItems(
+/**
+ * Scale a recipe revision's ingredients by an explicit share of the
+ * whole recipe — the single meal-construction path behind every
+ * recipe-log surface. Servings logging is the special case
+ * share = servings / recipe.servings.
+ */
+export function recipeMealItemsForShare(
     recipe: NonNullable<Awaited<ReturnType<typeof getRecipe>>>,
-    servingsConsumed: number,
+    factor: number,
+    portionRecord?: RecipePortionRecord,
 ): StructuredMealItemInput[] {
-    const factor = servingsConsumed / recipe.servings;
     return recipe.ingredients.map((ingredient) => {
         const quantity =
             ingredient.quantity == null
@@ -1141,25 +1335,52 @@ export function recipeMealItems(
             providerFoodId: ingredient.provider_food_id ?? undefined,
             sourceUrl: ingredient.source_url ?? undefined,
             confidence: ingredient.confidence ?? undefined,
-            sourceSnapshot: recipeItemSourceSnapshot(recipe, ingredient),
+            sourceSnapshot: recipeItemSourceSnapshot(
+                recipe,
+                ingredient,
+                portionRecord,
+            ),
         };
     });
+}
+
+export function recipeMealItems(
+    recipe: NonNullable<Awaited<ReturnType<typeof getRecipe>>>,
+    servingsConsumed: number,
+): StructuredMealItemInput[] {
+    return recipeMealItemsForShare(recipe, servingsConsumed / recipe.servings);
 }
 
 export async function logRecipe(input: {
     userId: string;
     recipeId: string;
     recipeRevisionId?: string;
-    servingsConsumed: number;
+    /**
+     * Servings eaten — the original portion form. Mutually exclusive
+     * with `portion`; exactly one of the two must be given.
+     */
+    servingsConsumed?: number;
+    /**
+     * Unit-logging portion (servings | amount | fraction), resolved
+     * through the one shared share computation in recipe-yield.ts.
+     */
+    portion?: RecipePortionSpec;
     mealType: "breakfast" | "lunch" | "dinner" | "snack";
     loggedAt?: string;
     notes?: string;
     plannedMealId?: string;
     idempotencyKey: string;
 }): Promise<LoggedRecipeResult> {
+    if (input.servingsConsumed !== undefined && input.portion !== undefined) {
+        throw new Error("Pass either servings_consumed or a portion, not both");
+    }
+    if (input.servingsConsumed === undefined && input.portion === undefined) {
+        throw new Error("A recipe portion is required");
+    }
     if (
-        !Number.isFinite(input.servingsConsumed) ||
-        input.servingsConsumed <= 0
+        input.servingsConsumed !== undefined &&
+        (!Number.isFinite(input.servingsConsumed) ||
+            input.servingsConsumed <= 0)
     ) {
         throw new Error("Recipe servings consumed must be positive");
     }
@@ -1173,8 +1394,20 @@ export async function logRecipe(input: {
     );
     if (!recipe) throw new Error("Recipe was not found or is unavailable");
 
+    const portionSpec: RecipePortionSpec =
+        input.portion ??
+        ({ mode: "servings", servings: input.servingsConsumed! } as const);
+    const resolved = resolveRecipePortion(
+        {
+            servings: recipe.servings,
+            yields: recipe.yields,
+            ingredients: recipe.ingredients,
+        },
+        portionSpec,
+    );
+
     const mealInput: StructuredMealInput = {
-        description: `${recipe.name} (${formatQuantity(input.servingsConsumed)} serving${input.servingsConsumed === 1 ? "" : "s"})`,
+        description: `${recipe.name} (${resolved.label})`,
         mealType: input.mealType,
         loggedAt: input.loggedAt,
         notes: input.notes,
@@ -1182,13 +1415,19 @@ export async function logRecipe(input: {
         sourceRecipeId: recipe.id,
         sourceRecipeRevisionId: recipe.revision_id,
         sourcePlannedMealId: input.plannedMealId,
-        items: recipeMealItems(recipe, input.servingsConsumed),
+        items: recipeMealItemsForShare(
+            recipe,
+            resolved.factor,
+            resolved.record,
+        ),
     };
     const result = {
         recipeId: recipe.id,
         recipeRevisionId: recipe.revision_id,
         recipeRevisionNumber: recipe.revision_number,
-        servingsConsumed: input.servingsConsumed,
+        servingsConsumed: resolved.record.servings_equivalent,
+        portion: resolved.record,
+        share: resolved.record.share,
     };
 
     if (!input.plannedMealId) {

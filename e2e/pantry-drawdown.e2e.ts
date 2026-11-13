@@ -154,7 +154,10 @@ test("recipe log draws the pantry down by servings cooked, logs only servings ea
         await page.screenshot({
             path: `${CAPTURE_DIR}/recipe-log-from-pantry.png`,
         });
-        await dialog.getByRole("button", { name: "Log meal" }).click();
+        // The submit carries the entered portion since unit logging
+        // ("Log 1 serving", per the approved picker renderings), so
+        // target it by its stable attribute, not its label.
+        await dialog.locator("[data-log-submit]").click();
 
         // Confirmation: the draw-down summary, data-shaped rows.
         await expect(dialog.locator("h2")).toHaveText("Pantry draw-down");

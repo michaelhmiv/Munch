@@ -149,12 +149,21 @@ import {
     saveRecipe,
     saveRecipeAndPlan,
     scheduleRecipe,
+    setRecipeYield,
     updateGroceryItem,
     updateRecipe,
     type GroceryItemInput,
     type PlanningScope,
     type RecipeInput,
+    type RecipePortionSpec,
+    type RecipeYield,
+    type YieldFamily,
 } from "../planning/repository.js";
+import {
+    isYieldUnit,
+    parseFractionSpec,
+    yieldUnitFamily,
+} from "../planning/recipe-yield.js";
 import { validateTz } from "../tz.js";
 import { isPlausibleWeightGrams, isWeightUnit, toGrams } from "../units.js";
 import {
@@ -655,6 +664,67 @@ function draftText(
     return value.trim() || null;
 }
 
+/**
+ * A set yield from a request body: `{ quantity, unit }`, or null to
+ * clear the slot, or undefined when the field is absent (leave the
+ * stored yield untouched on full-form saves that predate yields).
+ */
+function recipeYieldFromBody(
+    value: unknown,
+    family: YieldFamily,
+): RecipeYield | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    const body = recordValue(value, "Recipe yield");
+    const quantity = positiveNumber(body.quantity);
+    const unit = typeof body.unit === "string" ? body.unit.trim() : "";
+    if (!quantity || !unit || !isYieldUnit(unit)) {
+        throw new Error("Recipe yield quantity and unit are invalid");
+    }
+    if (yieldUnitFamily(unit) !== family) {
+        throw new Error(`Recipe ${family} yield needs a ${family} unit`);
+    }
+    return { quantity, unit };
+}
+
+/**
+ * The unit-logging portion from a request body:
+ * `{ mode: "servings", servings }` |
+ * `{ mode: "amount", amount, unit }` |
+ * `{ mode: "fraction", numerator, denominator }` (or value).
+ */
+function recipePortionFromBody(value: unknown): RecipePortionSpec {
+    const body = recordValue(value, "Recipe portion");
+    if (body.mode === "servings") {
+        const servings = positiveNumber(body.servings);
+        if (!servings) throw new Error("Servings are required");
+        return { mode: "servings", servings };
+    }
+    if (body.mode === "amount") {
+        const amount = positiveNumber(body.amount);
+        const unit = typeof body.unit === "string" ? body.unit.trim() : "";
+        if (!amount || !unit || !isYieldUnit(unit)) {
+            throw new Error("Amount and a measure unit are required");
+        }
+        return { mode: "amount", amount, unit };
+    }
+    if (body.mode === "fraction") {
+        return parseFractionSpec({
+            value:
+                typeof body.value === "number" || typeof body.value === "string"
+                    ? body.value
+                    : undefined,
+            numerator:
+                typeof body.numerator === "number" ? body.numerator : undefined,
+            denominator:
+                typeof body.denominator === "number"
+                    ? body.denominator
+                    : undefined,
+        });
+    }
+    throw new Error("Recipe portion mode is invalid");
+}
+
 export function recipeInputFromBody(value: unknown): RecipeInput {
     const body = recordValue(value, "Recipe");
     const name = typeof body.name === "string" ? body.name : "";
@@ -678,6 +748,8 @@ export function recipeInputFromBody(value: unknown): RecipeInput {
     return {
         name,
         servings,
+        yieldVolume: recipeYieldFromBody(body.yield_volume, "volume"),
+        yieldWeight: recipeYieldFromBody(body.yield_weight, "weight"),
         description:
             typeof body.description === "string" ? body.description : undefined,
         instructions,
@@ -2463,13 +2535,56 @@ export function createAppRouter(): Hono {
         return privateJson(c, { recipe: result });
     });
 
+    // Yield-only edit (unit logging): set or correct one yield slot
+    // on the current revision in place — no new revision, no version
+    // bump. Edit permission matches the recipe PATCH route.
+    app.post("/api/app/recipes/:id/yield", requireSameOrigin, async (c) => {
+        const userId = c.get("munchUserId");
+        const current = await getRecipe(userId, c.req.param("id")!);
+        if (!current) throw new Error("Recipe not found");
+        const body = recordValue(await c.req.json(), "Recipe yield");
+        const family = body.family;
+        if (family !== "volume" && family !== "weight") {
+            throw new Error("Yield family must be volume or weight");
+        }
+        const yieldValue = recipeYieldFromBody(body.yield, family);
+        if (yieldValue === undefined) {
+            throw new Error("Yield is required (null clears the slot)");
+        }
+        const capabilities = await resolveRequestMunchCapabilities(c, userId);
+        const result = await setRecipeYield({
+            userId,
+            scope: recipeScopeForCapabilities(current, capabilities, true),
+            recipeId: current.id,
+            family,
+            yield: yieldValue,
+        });
+        return privateJson(c, {
+            result,
+            recipe: await getRecipe(userId, current.id),
+        });
+    });
+
     app.post("/api/app/recipes/:id/log", requireSameOrigin, async (c) => {
         const userId = c.get("munchUserId");
         const current = await getRecipe(userId, c.req.param("id")!);
         if (!current) throw new Error("Recipe not found");
         const body = recordValue(await c.req.json(), "Recipe log");
+        // Unit logging: a portion object (servings | amount | fraction)
+        // or the legacy servings_consumed field — exactly one form.
         const servingsConsumed = positiveNumber(body.servings_consumed);
-        if (!servingsConsumed) throw new Error("Serving amount is required");
+        const portion =
+            body.portion === undefined
+                ? undefined
+                : recipePortionFromBody(body.portion);
+        if (servingsConsumed && portion) {
+            throw new Error(
+                "Pass either servings_consumed or a portion, not both",
+            );
+        }
+        if (!servingsConsumed && !portion) {
+            throw new Error("Serving amount is required");
+        }
         const capabilities = await resolveRequestMunchCapabilities(c, userId);
         recipeScopeForCapabilities(current, capabilities, false);
         const result = await logRecipe({
@@ -2480,6 +2595,7 @@ export function createAppRouter(): Hono {
                     ? body.recipe_revision_id
                     : undefined,
             servingsConsumed,
+            portion,
             mealType: mealType(body.meal_type),
             loggedAt:
                 typeof body.logged_at === "string" ? body.logged_at : undefined,
@@ -2504,8 +2620,13 @@ export function createAppRouter(): Hono {
             if (result.deduplicated) {
                 drawdown = { status: "already_applied", lines: [] };
             } else {
+                // Draw-down "servings cooked" is its own fact; when
+                // the cook didn't state it, fall back to the logged
+                // portion's servings equivalent (result field), never
+                // to a raw request field a unit log may not carry.
                 const servingsCooked =
-                    positiveNumber(body.servings_cooked) ?? servingsConsumed;
+                    positiveNumber(body.servings_cooked) ??
+                    result.servingsConsumed;
                 const scope: InventoryScope =
                     current.ownership.type === "household"
                         ? {

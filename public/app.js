@@ -771,15 +771,68 @@ function weightMetricDetail(entries, unit) {
     return `${rows || `<p class="metric-detail-empty">No weight entries yet today.</p>`}<div class="auth-actions metric-detail-actions"><button class="button button-secondary button-small" type="button" data-action="add-weight">Add weight</button></div>`;
 }
 
-function mealItems(items) {
+/** The share as a short fraction for card lines ("1/12"); integers stay whole. */
+function shareFractionShort(share) {
+    if (!(share > 0)) return "0";
+    for (let d = 1; d <= 16; d += 1) {
+        const n = Math.round(share * d);
+        if (n > 0 && Math.abs(n / d - share) < 1e-6) {
+            const divisor = gcdInt(n, d);
+            return d / divisor === 1
+                ? String(n / divisor)
+                : `${n / divisor}/${d / divisor}`;
+        }
+    }
+    return String(Number(share.toFixed(3)));
+}
+
+/** What the user entered, as it reads on a logged meal ("1 cup", "1/4"). */
+function portionEnteredText(portion) {
+    if (portion.mode === "amount" && portion.entered_amount != null) {
+        return yieldAmountText(portion.entered_amount, portion.entered_unit);
+    }
+    if (portion.mode === "fraction") {
+        if (
+            portion.fraction_numerator === 1 &&
+            portion.fraction_denominator === 1
+        )
+            return "the whole recipe";
+        if (portion.fraction_numerator != null)
+            return `${portion.fraction_numerator}/${portion.fraction_denominator}`;
+        return shareFractionShort(portion.share);
+    }
+    return null;
+}
+
+function mealItems(items, meal) {
     if (!items?.length)
         return `<div class="food-items"><div class="food-row"><div><strong>Legacy aggregate entry</strong><small>Item-level details were not recorded for this meal.</small></div></div></div>`;
-    return `<div class="food-items">${items
-        .map(
-            (item) =>
-                `<div class="food-row"><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.portionLabel || (item.quantity ? `${number(item.quantity, 2)} serving` : "Portion not recorded"))}</small><div class="demo-source-row">${sourceBadge(item.sourceType)}${confidenceBadge(item.confidence)}</div>${item.assumptions?.length ? `<small>Assumptions: ${escapeHtml(item.assumptions.join("; "))}</small>` : ""}</div><strong>${item.calories == null ? "—" : `${number(item.calories)} kcal`}</strong></div>`,
-        )
-        .join("")}</div>`;
+    const row = (item) =>
+        `<div class="food-row"><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.portionLabel || (item.quantity ? `${number(item.quantity, 2)} serving` : "Portion not recorded"))}</small><div class="demo-source-row">${sourceBadge(item.sourceType)}${confidenceBadge(item.confidence)}</div>${item.assumptions?.length ? `<small>Assumptions: ${escapeHtml(item.assumptions.join("; "))}</small>` : ""}</div><strong>${item.calories == null ? "—" : `${number(item.calories)} kcal`}</strong></div>`;
+    const portion = meal?.recipePortion;
+    if (!portion) {
+        return `<div class="food-items">${items.map(row).join("")}</div>`;
+    }
+    // Unit-logged recipe meal (owner ruling, 2026-11-13): the card's
+    // visible rows are the top three ingredients by calorie
+    // contribution (share-scaled kcal, descending); the opened meal
+    // keeps the full list in recipe order. The "+ N more" count is
+    // computed from the real ingredient count.
+    const sorted = [...items].sort(
+        (a, b) => (b.calories ?? -1) - (a.calories ?? -1),
+    );
+    const visible = sorted.slice(0, 3);
+    const moreCount = items.length - visible.length;
+    const entered = portionEnteredText(portion);
+    const portionLine =
+        portion.mode === "servings" || !entered
+            ? ""
+            : `<p class="meal-portion-line">${escapeHtml(entered)} · ${escapeHtml(shareFractionShort(portion.share))} of the recipe</p>`;
+    const more =
+        moreCount > 0
+            ? `<div class="food-row meal-more-row"><div><small>+ ${moreCount} more ingredient${moreCount === 1 ? "" : "s"}, each scaled to ${escapeHtml(shareFractionShort(portion.share))}</small></div></div>`
+            : "";
+    return `${portionLine}<div class="food-items">${visible.map(row).join("")}${more}</div>`;
 }
 
 function waterEntryRows(entries) {
@@ -826,7 +879,7 @@ function mealCard(meal) {
     );
     mealTypesById.set(String(meal.id), meal.meal_type || "snack");
     const type = meal.meal_type || "snack";
-    return `<article class="meal-card" data-meal-id="${escapeHtml(meal.id)}"><div class="meal-card-head"><div><h4>${escapeHtml(mealDisplayName(meal))}</h4><div class="meal-meta"><span>${escapeHtml(formatTime(meal.logged_at))}</span><span>${escapeHtml(type)}</span>${meal.notes ? `<span>${escapeHtml(meal.notes)}</span>` : ""}</div></div><strong>${meal.calories == null ? "—" : `${number(meal.calories)} kcal`}</strong></div><div class="meal-macros"><span class="macro-chip">Protein ${number(meal.protein_g, 1)}g</span><span class="macro-chip">Carbs ${number(meal.carbs_g, 1)}g</span><span class="macro-chip">Fat ${number(meal.fat_g, 1)}g</span>${meal.fiber_g == null ? "" : `<span class="macro-chip">Fiber ${number(meal.fiber_g, 1)}g</span>`}${meal.sugar_g == null ? "" : `<span class="macro-chip">Sugar ${number(meal.sugar_g, 1)}g</span>`}</div>${mealItems(meal.items)}<div class="auth-actions"><button class="button button-secondary button-small" data-action="view-meal-details" data-id="${escapeHtml(meal.id)}">View details</button><button class="button button-secondary button-small" data-action="edit-meal" data-id="${escapeHtml(meal.id)}">Edit</button><button class="button button-quiet button-small" data-action="duplicate-meal" data-id="${escapeHtml(meal.id)}">Duplicate</button><button class="button button-quiet button-small" data-action="delete-meal" data-id="${escapeHtml(meal.id)}">Delete</button></div></article>`;
+    return `<article class="meal-card" data-meal-id="${escapeHtml(meal.id)}"><div class="meal-card-head"><div><h4>${escapeHtml(mealDisplayName(meal))}</h4><div class="meal-meta"><span>${escapeHtml(formatTime(meal.logged_at))}</span><span>${escapeHtml(type)}</span>${meal.notes ? `<span>${escapeHtml(meal.notes)}</span>` : ""}</div></div><strong>${meal.calories == null ? "—" : `${number(meal.calories)} kcal`}</strong></div><div class="meal-macros"><span class="macro-chip">Protein ${number(meal.protein_g, 1)}g</span><span class="macro-chip">Carbs ${number(meal.carbs_g, 1)}g</span><span class="macro-chip">Fat ${number(meal.fat_g, 1)}g</span>${meal.fiber_g == null ? "" : `<span class="macro-chip">Fiber ${number(meal.fiber_g, 1)}g</span>`}${meal.sugar_g == null ? "" : `<span class="macro-chip">Sugar ${number(meal.sugar_g, 1)}g</span>`}</div>${mealItems(meal.items, meal)}<div class="auth-actions"><button class="button button-secondary button-small" data-action="view-meal-details" data-id="${escapeHtml(meal.id)}">View details</button><button class="button button-secondary button-small" data-action="edit-meal" data-id="${escapeHtml(meal.id)}">Edit</button><button class="button button-quiet button-small" data-action="duplicate-meal" data-id="${escapeHtml(meal.id)}">Duplicate</button><button class="button button-quiet button-small" data-action="delete-meal" data-id="${escapeHtml(meal.id)}">Delete</button></div></article>`;
 }
 
 function groupedMeals(meals) {
@@ -2928,7 +2981,18 @@ function recipeFormMarkup(mode, recipe = null, options = {}) {
           : imported
             ? "Save imported recipe"
             : "Create recipe";
-    return `<form id="${formId}" class="auth-form"${editing ? ` data-id="${escapeHtml(recipe.id)}" data-version="${escapeHtml(recipe.version)}"` : ""}><div class="meal-composer-grid"><label class="field"><span>Recipe name</span><input name="name" value="${escapeHtml(recipe?.name || "")}" maxlength="200" required /></label><label class="field"><span>Servings</span><input name="servings" type="number" min="0.01" step="0.01" value="${escapeHtml(recipe?.servings ?? 2)}" required /></label></div>${scopeOptions}<label class="field"><span>Description</span><textarea name="description" rows="2" maxlength="2000" placeholder="What is this recipe for?">${escapeHtml(recipe?.description || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Prep time (minutes)</span><input name="preparation_minutes" type="number" min="0" step="1" value="${escapeHtml(recipe?.preparation_minutes ?? "")}" /></label><label class="field"><span>Cook time (minutes)</span><input name="cooking_minutes" type="number" min="0" step="1" value="${escapeHtml(recipe?.cooking_minutes ?? "")}" /></label></div><section class="recipe-editor-section"><div class="panel-title"><div><h3>Ingredients</h3><span>Search verified foods or add your own.</span></div><button class="button button-secondary button-small" type="button" data-action="add-recipe-ingredient">Add ingredient</button></div><div class="meal-composer-search"><div class="meal-composer-search-row"><input class="input" id="recipe-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><span class="tiny">Food search facts are stored with this revision.</span></div><div id="recipe-food-results" class="meal-food-results"></div></div><div id="recipe-ingredients" class="meal-selected-items"></div></section><label class="field"><span>Instructions</span><textarea name="instructions" rows="6" maxlength="20000" placeholder="One step per line" required>${escapeHtml(recipe?.instructions?.join("\n") || "")}</textarea><small class="tiny">Put each instruction on its own line.</small></label><div class="meal-composer-grid"><label class="field"><span>Source title</span><input name="source_title" maxlength="500" value="${escapeHtml(sourceTitle)}" placeholder="Optional cookbook, site, or note" /></label>${sourceTypeField}</div>${sourceUrlField}${planSectionOn ? recipePlanSectionMarkup(planEnabled) : ""}<button class="button button-primary" type="submit">${submitLabel}</button></form>`;
+    // Unit logging (2026-11-13): optional set yields, one slot per
+    // measure family. Empty amount = no set yield (Amount logging
+    // then runs on the labeled ingredient estimate).
+    const yieldUnitOptions = (units, selected) =>
+        units
+            .map(
+                (unit) =>
+                    `<option value="${unit}"${unit === selected ? " selected" : ""}>${unit}</option>`,
+            )
+            .join("");
+    const yieldFields = `<div class="meal-composer-grid"><div class="field"><span>Total yield — volume (optional)</span><div class="yield-edit-row"><input name="yield_volume_quantity" type="number" min="0" step="any" value="${escapeHtml(recipe?.yields?.volume?.quantity ?? "")}" /><select name="yield_volume_unit">${yieldUnitOptions(YIELD_VOLUME_UNITS, recipe?.yields?.volume?.unit || "cup")}</select></div></div><div class="field"><span>Total yield — weight (optional)</span><div class="yield-edit-row"><input name="yield_weight_quantity" type="number" min="0" step="any" value="${escapeHtml(recipe?.yields?.weight?.quantity ?? "")}" /><select name="yield_weight_unit">${yieldUnitOptions(YIELD_WEIGHT_UNITS, recipe?.yields?.weight?.unit || "g")}</select></div></div></div>`;
+    return `<form id="${formId}" class="auth-form"${editing ? ` data-id="${escapeHtml(recipe.id)}" data-version="${escapeHtml(recipe.version)}"` : ""}><div class="meal-composer-grid"><label class="field"><span>Recipe name</span><input name="name" value="${escapeHtml(recipe?.name || "")}" maxlength="200" required /></label><label class="field"><span>Servings</span><input name="servings" type="number" min="0.01" step="0.01" value="${escapeHtml(recipe?.servings ?? 2)}" required /></label></div>${yieldFields}${scopeOptions}<label class="field"><span>Description</span><textarea name="description" rows="2" maxlength="2000" placeholder="What is this recipe for?">${escapeHtml(recipe?.description || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Prep time (minutes)</span><input name="preparation_minutes" type="number" min="0" step="1" value="${escapeHtml(recipe?.preparation_minutes ?? "")}" /></label><label class="field"><span>Cook time (minutes)</span><input name="cooking_minutes" type="number" min="0" step="1" value="${escapeHtml(recipe?.cooking_minutes ?? "")}" /></label></div><section class="recipe-editor-section"><div class="panel-title"><div><h3>Ingredients</h3><span>Search verified foods or add your own.</span></div><button class="button button-secondary button-small" type="button" data-action="add-recipe-ingredient">Add ingredient</button></div><div class="meal-composer-search"><div class="meal-composer-search-row"><input class="input" id="recipe-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><span class="tiny">Food search facts are stored with this revision.</span></div><div id="recipe-food-results" class="meal-food-results"></div></div><div id="recipe-ingredients" class="meal-selected-items"></div></section><label class="field"><span>Instructions</span><textarea name="instructions" rows="6" maxlength="20000" placeholder="One step per line" required>${escapeHtml(recipe?.instructions?.join("\n") || "")}</textarea><small class="tiny">Put each instruction on its own line.</small></label><div class="meal-composer-grid"><label class="field"><span>Source title</span><input name="source_title" maxlength="500" value="${escapeHtml(sourceTitle)}" placeholder="Optional cookbook, site, or note" /></label>${sourceTypeField}</div>${sourceUrlField}${planSectionOn ? recipePlanSectionMarkup(planEnabled) : ""}<button class="button button-primary" type="submit">${submitLabel}</button></form>`;
 }
 
 function renderRecipeIngredients() {
@@ -3114,6 +3178,14 @@ function syncRecipeComposerFromDom() {
     });
 }
 
+function recipeYieldFromValues(values, prefix) {
+    const quantity = values[`${prefix}_quantity`];
+    if (quantity === "" || quantity == null) return undefined;
+    const parsed = Number(quantity);
+    if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+    return { quantity: parsed, unit: values[`${prefix}_unit`] || undefined };
+}
+
 function recipePayloadFromForm(values) {
     syncRecipeComposerFromDom();
     const instructions = String(values.instructions || "")
@@ -3123,6 +3195,8 @@ function recipePayloadFromForm(values) {
     return {
         name: values.name,
         servings: Number(values.servings),
+        yield_volume: recipeYieldFromValues(values, "yield_volume"),
+        yield_weight: recipeYieldFromValues(values, "yield_weight"),
         description: values.description || undefined,
         instructions,
         preparation_minutes:
@@ -3513,7 +3587,20 @@ function recipeDetailBodyMarkup(recipe) {
                     `<li><span class="recipe-step-number">${index + 1}.</span> ${escapeHtml(instruction)}</li>`,
             )
             .join("") || "<li>No instructions recorded.</li>";
-    return `<div class="recipe-detail"><p class="recipe-meta">${number(recipe.servings, 3)} servings · revision ${number(recipe.revision_number)} · ${escapeHtml(recipe.nutrition_status)} nutrition</p><div class="auth-actions recipe-detail-actions">${recipeDetailActionsHtml}</div>${recipeNutritionPanelMarkup(recipe)}<div class="recipe-section-head"><h3>Ingredients</h3>${recipeGroceriesButtonMarkup(recipe)}</div><ul class="food-items recipe-ingredients">${ingredients}</ul><h3 class="spacer-top">Instructions</h3><ol class="recipe-instructions">${instructions}</ol><p class="tiny spacer-top">Every ingredient includes the source snapshot used to calculate this revision. Editing creates a new revision; historical logs stay pinned.</p></div>`;
+    // Unit logging: the effective yield rides the meta line, the
+    // estimate always labeled — never presented as measured.
+    const detailYield = [
+        recipe.effective_yields?.volume,
+        recipe.effective_yields?.weight,
+    ]
+        .filter(Boolean)
+        .map((entry) =>
+            entry.source === "estimated"
+                ? `yield ~${yieldAmountText(entry.quantity, entry.unit)} (estimated)`
+                : `yield ${yieldAmountText(entry.quantity, entry.unit)}`,
+        )
+        .join(" · ");
+    return `<div class="recipe-detail"><p class="recipe-meta">${number(recipe.servings, 3)} servings${detailYield ? ` · ${escapeHtml(detailYield)}` : ""} · revision ${number(recipe.revision_number)} · ${escapeHtml(recipe.nutrition_status)} nutrition</p><div class="auth-actions recipe-detail-actions">${recipeDetailActionsHtml}</div>${recipeNutritionPanelMarkup(recipe)}<div class="recipe-section-head"><h3>Ingredients</h3>${recipeGroceriesButtonMarkup(recipe)}</div><ul class="food-items recipe-ingredients">${ingredients}</ul><h3 class="spacer-top">Instructions</h3><ol class="recipe-instructions">${instructions}</ol><p class="tiny spacer-top">Every ingredient includes the source snapshot used to calculate this revision. Editing creates a new revision; historical logs stay pinned.</p></div>`;
 }
 
 function renderRecipeDetail(recipe, editing = false) {
@@ -3746,6 +3833,554 @@ async function openRecipe(id) {
     renderRecipeDetail(data.recipe, false);
 }
 
+/* ---------- Recipe unit logging — the portion picker (2026-11-13) ----------
+   One picker for every in-app recipe log surface (recipe detail
+   Log, Log as planned, cook completion): Servings | Amount |
+   Fraction, all resolved by the server's one share computation.
+   Amount runs on the recipe's effective yield for the unit's
+   family — the set yield when one exists, otherwise the
+   ingredient estimate, always labeled "(estimated)" — and Adjust
+   corrects it through POST /recipes/:id/yield, which edits the
+   current revision in place (no new revision, history untouched).
+   The last-used mode is remembered across opens. */
+const RECIPE_LOG_MODE_KEY = "munch.recipe-log-mode";
+const YIELD_VOLUME_UNITS = [
+    "cup",
+    "tbsp",
+    "tsp",
+    "fl oz",
+    "ml",
+    "l",
+    "pint",
+    "quart",
+];
+const YIELD_WEIGHT_UNITS = ["g", "kg", "oz", "lb"];
+const YIELD_UNIT_TO_BASE = {
+    cup: 236.5882365,
+    tbsp: 236.5882365 / 16,
+    tsp: 236.5882365 / 48,
+    "fl oz": 236.5882365 / 8,
+    ml: 1,
+    l: 1000,
+    pint: 236.5882365 * 2,
+    quart: 236.5882365 * 4,
+    g: 1,
+    kg: 1000,
+    oz: 28.349523125,
+    lb: 453.59237,
+};
+const YIELD_UNIT_FAMILY = {
+    cup: "volume",
+    tbsp: "volume",
+    tsp: "volume",
+    "fl oz": "volume",
+    ml: "volume",
+    l: "volume",
+    pint: "volume",
+    quart: "volume",
+    g: "weight",
+    kg: "weight",
+    oz: "weight",
+    lb: "weight",
+};
+const recipePortionPickers = new WeakMap();
+
+function rememberedRecipeLogMode() {
+    try {
+        const value = localStorage.getItem(RECIPE_LOG_MODE_KEY);
+        return ["servings", "amount", "fraction"].includes(value)
+            ? value
+            : "servings";
+    } catch {
+        return "servings";
+    }
+}
+
+function rememberRecipeLogMode(mode) {
+    try {
+        localStorage.setItem(RECIPE_LOG_MODE_KEY, mode);
+    } catch {
+        // Storage unavailable: the picker simply opens in Servings.
+    }
+}
+
+function gcdInt(a, b) {
+    return b ? gcdInt(b, a % b) : a;
+}
+
+/** The share as a plain fraction whenever one fits ("1/12"), else a percent. */
+function shareLabelText(share) {
+    if (!(share > 0)) return "0";
+    if (Math.abs(share - 1) < 0.001) return "the whole recipe";
+    let best = null;
+    for (let d = 1; d <= 192; d += 1) {
+        const n = Math.round(share * d);
+        if (n <= 0) continue;
+        const err = Math.abs(share - n / d);
+        if (!best || err < best.err - 1e-12) best = { n, d, err };
+    }
+    if (best && best.err <= 1e-4) {
+        const divisor = gcdInt(best.n, best.d);
+        const rn = best.n / divisor;
+        const rd = best.d / divisor;
+        if (rd === 1) return String(rn);
+        const whole = Math.floor(rn / rd);
+        const rest = rn - whole * rd;
+        if (whole > 0)
+            return rest > 0 ? `${whole} ${rest}/${rd}` : String(whole);
+        return `${rn}/${rd}`;
+    }
+    return `${Number((share * 100).toFixed(2))}%`;
+}
+
+/** Plain quantities in recipe-fraction style (the rendering's fmtQty). */
+function plainFractionText(value) {
+    if (!Number.isFinite(value) || value <= 0) return "0";
+    let whole = Math.floor(value);
+    const remainder = value - whole;
+    let best = { num: 0, den: 1, err: remainder };
+    for (const den of [2, 3, 4, 8, 16]) {
+        const num = Math.round(remainder * den);
+        const err = Math.abs(remainder - num / den);
+        if (err < best.err - 1e-12) best = { num, den, err };
+    }
+    if (best.num === best.den) {
+        whole += 1;
+        best = { num: 0, den: 1, err: 0 };
+    }
+    if (best.num > 0) {
+        const divisor = gcdInt(best.num, best.den);
+        return `${whole > 0 ? `${whole} ` : ""}${best.num / divisor}/${best.den / divisor}`;
+    }
+    if (whole > 0) return String(whole);
+    return String(Number(value.toFixed(4)));
+}
+
+function yieldUnitDisplay(unit, quantity) {
+    if (quantity !== 1) {
+        if (unit === "cup") return "cups";
+        if (unit === "pint") return "pints";
+        if (unit === "quart") return "quarts";
+    }
+    return unit;
+}
+
+function yieldAmountText(quantity, unit) {
+    const text =
+        formatRecipeQuantity(quantity, unit) ?? plainFractionText(quantity);
+    return `${text} ${yieldUnitDisplay(unit, quantity)}`;
+}
+
+function portionPickerContext(recipe) {
+    return {
+        recipeId: recipe.id,
+        revisionNumber: recipe.revision_number,
+        servings: Number(recipe.servings) || 1,
+        totals: recipe.nutrition_total || {},
+        nutritionStatus: recipe.nutrition_status,
+        yields: {
+            volume: recipe.effective_yields?.volume || null,
+            weight: recipe.effective_yields?.weight || null,
+        },
+    };
+}
+
+function recipePortionPickerMarkup(ctx, startMode) {
+    const hasNutrition = ctx.totals?.calories != null;
+    const modeButton = (mode, label) =>
+        `<button class="mode-btn" type="button" role="tab" data-mode="${mode}" aria-selected="${mode === startMode ? "true" : "false"}">${label}</button>`;
+    const panelAttrs = (mode) =>
+        `data-panel="${mode}"${mode === startMode ? "" : " hidden"}`;
+    const fractionChip = (num, den, label) =>
+        `<button class="frac-chip" type="button" data-num="${num}" data-den="${den}" aria-pressed="${num === 1 && den === 4 ? "true" : "false"}">${label}</button>`;
+    return `<div class="recipe-portion-picker">
+        <div class="mode-switch" role="tablist" aria-label="How much did you eat?">${modeButton("servings", "Servings")}${modeButton("amount", "Amount")}${modeButton("fraction", "Fraction")}</div>
+        <div class="mode-panel" ${panelAttrs("servings")}>
+            <div class="field"><span class="field-label">Servings eaten</span>
+                <div class="servings-row">
+                    <span class="stepper-group">
+                        <button class="stepper-btn" type="button" data-step="-0.5" aria-label="Fewer servings">&minus;</button>
+                        <input class="picker-input stepper-input" name="servings_consumed" type="number" min="0.01" step="0.01" value="1" inputmode="decimal" aria-label="Servings eaten" required />
+                        <button class="stepper-btn" type="button" data-step="0.5" aria-label="More servings">+</button>
+                    </span>
+                    <span class="equiv-inline" data-equiv="servings"></span>
+                </div>
+            </div>
+        </div>
+        <div class="mode-panel" ${panelAttrs("amount")}>
+            <p class="yield-line"><span data-yield-text></span><button class="button button-quiet button-small" type="button" data-yield-adjust>Adjust</button></p>
+            <div class="yield-adjust" data-yield-adjust-row hidden>
+                <span class="field-label">Total yield</span>
+                <div class="amount-row">
+                    <input class="picker-input" data-yield-qty type="number" min="0" step="any" inputmode="decimal" aria-label="Total yield amount" />
+                    <select class="picker-select" data-yield-unit aria-label="Total yield unit">${[...YIELD_VOLUME_UNITS, ...YIELD_WEIGHT_UNITS].map((unit) => `<option value="${escapeHtml(unit)}">${escapeHtml(unit)}</option>`).join("")}</select>
+                    <button class="button button-primary button-small" type="button" data-yield-save>Save yield</button>
+                </div>
+            </div>
+            <div class="field"><span class="field-label">How much did you eat?</span>
+                <div class="amount-row">
+                    <input class="picker-input" data-amount type="number" min="0" step="any" value="1" inputmode="decimal" aria-label="Amount eaten" />
+                    <select class="picker-select" data-amount-unit aria-label="Unit"></select>
+                    <span class="equiv-inline" data-equiv="amount"></span>
+                </div>
+            </div>
+        </div>
+        <div class="mode-panel" ${panelAttrs("fraction")}>
+            <div class="field"><span class="field-label">What share of the whole recipe?</span></div>
+            <div class="chip-row" role="group" aria-label="Fraction of the recipe">
+                ${fractionChip(1, 4, "1/4")}${fractionChip(1, 3, "1/3")}${fractionChip(1, 2, "1/2")}${fractionChip(1, 1, "Whole recipe")}
+                <span class="equiv-inline" data-equiv="fraction"></span>
+            </div>
+        </div>
+        ${
+            hasNutrition
+                ? `<p class="portion-nutrition-label" data-tiles-label></p>
+        <div class="portion-tiles">
+            <div class="portion-tile"><span class="portion-tile-label">Calories</span><span class="portion-tile-value"><span data-tile="calories"></span><small> kcal</small></span><span class="portion-tile-sub" data-tile-sub></span></div>
+            <div class="portion-tile"><span class="portion-tile-label">Protein</span><span class="portion-tile-value"><span data-tile="protein_g"></span><small> g</small></span><span class="portion-tile-sub">whole recipe ${number(ctx.totals.protein_g, 1)} g</span></div>
+            <div class="portion-tile"><span class="portion-tile-label">Carbohydrates</span><span class="portion-tile-value"><span data-tile="carbs_g"></span><small> g</small></span><span class="portion-tile-sub">whole recipe ${number(ctx.totals.carbs_g, 1)} g</span></div>
+            <div class="portion-tile"><span class="portion-tile-label">Fat</span><span class="portion-tile-value"><span data-tile="fat_g"></span><small> g</small></span><span class="portion-tile-sub">whole recipe ${number(ctx.totals.fat_g, 1)} g</span></div>
+        </div>
+        <button type="button" class="portion-micros-toggle" data-micros-toggle aria-expanded="false"><span>Micronutrients</span><span aria-hidden="true">▾</span></button>
+        <div class="portion-micros" data-micros hidden>
+            <div class="portion-micro-row"><span>Fiber</span><span data-tile="fiber_g"></span></div>
+            <div class="portion-micro-row"><span>Sugar</span><span data-tile="sugar_g"></span></div>
+            <div class="portion-micro-row"><span>Sodium</span><span data-tile="sodium_mg"></span></div>
+        </div>
+        <p class="portion-math" data-math></p>`
+                : ""
+        }
+    </div>`;
+}
+
+function wireRecipePortionPicker(form, ctx, options = {}) {
+    const root = form.querySelector(".recipe-portion-picker");
+    if (!root) return;
+    const initialFamily = ctx.yields.volume
+        ? "volume"
+        : ctx.yields.weight
+          ? "weight"
+          : "volume";
+    const state = {
+        mode: options.startMode || "servings",
+        servings: options.initialServings ?? 1,
+        amount: 1,
+        unit: null,
+        family: initialFamily,
+        fraction: { value: 0.25, numerator: 1, denominator: 4 },
+    };
+    const servingsInput = root.querySelector('[name="servings_consumed"]');
+    const amountInput = root.querySelector("[data-amount]");
+    const unitSelect = root.querySelector("[data-amount-unit]");
+    const yieldText = root.querySelector("[data-yield-text]");
+    const adjustRow = root.querySelector("[data-yield-adjust-row]");
+    const yieldQtyInput = root.querySelector("[data-yield-qty]");
+    const yieldUnitSelect = root.querySelector("[data-yield-unit]");
+    const submitButton = form.querySelector("[data-log-submit]");
+
+    if (options.initialServings != null) {
+        servingsInput.value = String(options.initialServings);
+        state.servings = options.initialServings;
+    }
+
+    const activeYield = () => ctx.yields[state.family] || null;
+
+    function rebuildUnitOptions() {
+        const families = ["volume", "weight"].filter(
+            (family) => ctx.yields[family],
+        );
+        const units = families.length
+            ? families.flatMap((family) =>
+                  family === "volume" ? YIELD_VOLUME_UNITS : YIELD_WEIGHT_UNITS,
+              )
+            : YIELD_VOLUME_UNITS;
+        unitSelect.innerHTML = units
+            .map(
+                (unit) =>
+                    `<option value="${escapeHtml(unit)}">${escapeHtml(unit)}</option>`,
+            )
+            .join("");
+        if (!units.includes(state.unit)) {
+            state.unit =
+                units.find(
+                    (unit) => YIELD_UNIT_FAMILY[unit] === state.family,
+                ) ?? units[0];
+        }
+        unitSelect.value = state.unit;
+        state.family = YIELD_UNIT_FAMILY[state.unit];
+    }
+
+    function currentShare() {
+        if (state.mode === "servings") return state.servings / ctx.servings;
+        if (state.mode === "fraction") return state.fraction.value;
+        const familyYield = activeYield();
+        if (!familyYield || !(state.amount > 0)) return 0;
+        return (
+            (state.amount * YIELD_UNIT_TO_BASE[state.unit]) /
+            (familyYield.quantity * YIELD_UNIT_TO_BASE[familyYield.unit])
+        );
+    }
+
+    function portionLabel() {
+        if (state.mode === "servings") {
+            return `${plainFractionText(state.servings)} serving${state.servings === 1 ? "" : "s"}`;
+        }
+        if (state.mode === "fraction") {
+            const { numerator, denominator } = state.fraction;
+            if (numerator === 1 && denominator === 1) return "the whole recipe";
+            return `${numerator}/${denominator} of the recipe`;
+        }
+        return yieldAmountText(state.amount, state.unit);
+    }
+
+    function render() {
+        root.querySelectorAll(".mode-btn").forEach((button) => {
+            button.setAttribute(
+                "aria-selected",
+                button.dataset.mode === state.mode ? "true" : "false",
+            );
+        });
+        root.querySelectorAll(".mode-panel").forEach((panel) => {
+            panel.hidden = panel.dataset.panel !== state.mode;
+        });
+        const familyYield = activeYield();
+        if (familyYield) {
+            yieldText.innerHTML =
+                familyYield.source === "estimated"
+                    ? `Estimated yield <strong>~${escapeHtml(yieldAmountText(familyYield.quantity, familyYield.unit))}</strong> · from the ingredients`
+                    : `Yield: <strong>${escapeHtml(yieldAmountText(familyYield.quantity, familyYield.unit))}</strong>`;
+        } else {
+            yieldText.textContent = "No yield recorded";
+        }
+        amountInput.disabled = !familyYield;
+        unitSelect.disabled = !familyYield;
+        const share = currentShare();
+        const servingsEquiv = root.querySelector('[data-equiv="servings"]');
+        if (servingsEquiv) {
+            const servingsShareValue = state.servings / ctx.servings;
+            servingsEquiv.textContent = familyYield
+                ? `= ${yieldAmountText(servingsShareValue * familyYield.quantity, familyYield.unit)} of the recipe`
+                : `= ${shareLabelText(servingsShareValue)} of the recipe`;
+        }
+        const amountEquiv = root.querySelector('[data-equiv="amount"]');
+        if (amountEquiv) {
+            amountEquiv.textContent = familyYield
+                ? `= ${yieldAmountText((state.amount * YIELD_UNIT_TO_BASE[state.unit]) / YIELD_UNIT_TO_BASE[familyYield.unit], familyYield.unit)} of ${yieldAmountText(familyYield.quantity, familyYield.unit)}`
+                : "";
+        }
+        const fractionEquiv = root.querySelector('[data-equiv="fraction"]');
+        if (fractionEquiv) {
+            fractionEquiv.textContent = familyYield
+                ? `= ${yieldAmountText(state.fraction.value * familyYield.quantity, familyYield.unit)} of the recipe`
+                : `= ${shareLabelText(state.fraction.value)} of the recipe`;
+        }
+        const tilesLabel = root.querySelector("[data-tiles-label]");
+        if (tilesLabel) {
+            tilesLabel.textContent = `Nutrition · for ${portionLabel()}`;
+            const setTile = (key, text) => {
+                const node = root.querySelector(`[data-tile="${key}"]`);
+                if (node) node.textContent = text;
+            };
+            setTile("calories", number((ctx.totals.calories || 0) * share));
+            setTile(
+                "protein_g",
+                number((ctx.totals.protein_g || 0) * share, 1),
+            );
+            setTile("carbs_g", number((ctx.totals.carbs_g || 0) * share, 1));
+            setTile("fat_g", number((ctx.totals.fat_g || 0) * share, 1));
+            setTile(
+                "fiber_g",
+                `${number((ctx.totals.fiber_g || 0) * share, 1)} g`,
+            );
+            setTile(
+                "sugar_g",
+                `${number((ctx.totals.sugar_g || 0) * share, 1)} g`,
+            );
+            setTile(
+                "sodium_mg",
+                `${number((ctx.totals.sodium_mg || 0) * share)} mg`,
+            );
+            const sub = root.querySelector("[data-tile-sub]");
+            if (sub) {
+                const label = shareLabelText(share);
+                sub.textContent =
+                    label === "the whole recipe"
+                        ? "all of the recipe"
+                        : `${label} of the recipe`;
+            }
+            const math = root.querySelector("[data-math]");
+            if (math) {
+                math.innerHTML = `Whole recipe <strong>${escapeHtml(number(ctx.totals.calories))} kcal</strong> &times; <strong>${escapeHtml(shareLabelText(share))}</strong> — every ingredient scales by the same share, from revision ${escapeHtml(ctx.revisionNumber)} exactly as saved.`;
+            }
+        }
+        if (submitButton && !options.keepSubmitLabel) {
+            submitButton.textContent = `Log ${portionLabel()}`;
+        }
+    }
+
+    root.querySelectorAll(".mode-btn").forEach((button) => {
+        button.addEventListener("click", () => {
+            state.mode = button.dataset.mode;
+            rememberRecipeLogMode(state.mode);
+            render();
+        });
+    });
+    root.querySelectorAll("[data-step]").forEach((button) => {
+        button.addEventListener("click", () => {
+            const next = Math.max(
+                0.25,
+                Math.round(
+                    ((Number(servingsInput.value) || 0) +
+                        Number(button.dataset.step)) *
+                        4,
+                ) / 4,
+            );
+            servingsInput.value = String(next);
+            state.servings = next;
+            render();
+        });
+    });
+    servingsInput.addEventListener("input", () => {
+        state.servings = Number(servingsInput.value) || 0;
+        render();
+    });
+    amountInput.addEventListener("input", () => {
+        state.amount = Number(amountInput.value) || 0;
+        render();
+    });
+    unitSelect.addEventListener("change", () => {
+        state.unit = unitSelect.value;
+        state.family = YIELD_UNIT_FAMILY[state.unit];
+        render();
+    });
+    root.querySelectorAll(".frac-chip").forEach((chip) => {
+        chip.addEventListener("click", () => {
+            root.querySelectorAll(".frac-chip").forEach((other) => {
+                other.setAttribute("aria-pressed", "false");
+            });
+            chip.setAttribute("aria-pressed", "true");
+            const numerator = Number(chip.dataset.num);
+            const denominator = Number(chip.dataset.den);
+            state.fraction = {
+                value: numerator / denominator,
+                numerator,
+                denominator,
+            };
+            render();
+        });
+    });
+    const microsToggle = root.querySelector("[data-micros-toggle]");
+    if (microsToggle) {
+        microsToggle.addEventListener("click", () => {
+            const panel = root.querySelector("[data-micros]");
+            const open = panel.hasAttribute("hidden");
+            if (open) {
+                panel.removeAttribute("hidden");
+            } else {
+                panel.setAttribute("hidden", "");
+            }
+            microsToggle.setAttribute("aria-expanded", open ? "true" : "false");
+        });
+    }
+    root.querySelector("[data-yield-adjust]")?.addEventListener("click", () => {
+        if (adjustRow.hasAttribute("hidden")) {
+            const familyYield = activeYield();
+            yieldQtyInput.value = familyYield
+                ? String(familyYield.quantity)
+                : "";
+            yieldUnitSelect.value = familyYield
+                ? familyYield.unit
+                : state.unit || "cup";
+            adjustRow.removeAttribute("hidden");
+        } else {
+            adjustRow.setAttribute("hidden", "");
+        }
+    });
+    root.querySelector("[data-yield-save]")?.addEventListener(
+        "click",
+        async (event) => {
+            const quantity = Number(yieldQtyInput.value);
+            const unit = yieldUnitSelect.value;
+            if (!(quantity > 0) || !unit) {
+                toast("Enter the total yield first.", "error");
+                return;
+            }
+            const button = event.currentTarget;
+            button.disabled = true;
+            try {
+                const data = await api(
+                    `/api/app/recipes/${encodeURIComponent(ctx.recipeId)}/yield`,
+                    {
+                        method: "POST",
+                        body: JSON.stringify({
+                            family: YIELD_UNIT_FAMILY[unit],
+                            yield: { quantity, unit },
+                        }),
+                    },
+                );
+                const fresh = portionPickerContext(data.recipe);
+                ctx.yields = fresh.yields;
+                state.family = YIELD_UNIT_FAMILY[unit];
+                state.unit = unit;
+                rebuildUnitOptions();
+                adjustRow.setAttribute("hidden", "");
+                toast("Yield saved.");
+                render();
+            } catch (error) {
+                toast(error.message || "Yield could not be saved.", "error");
+            } finally {
+                button.disabled = false;
+            }
+        },
+    );
+
+    recipePortionPickers.set(form, () => {
+        if (state.mode === "servings") {
+            return state.servings > 0
+                ? { mode: "servings", servings: state.servings }
+                : null;
+        }
+        if (state.mode === "amount") {
+            return activeYield() && state.amount > 0
+                ? { mode: "amount", amount: state.amount, unit: state.unit }
+                : null;
+        }
+        return {
+            mode: "fraction",
+            numerator: state.fraction.numerator,
+            denominator: state.fraction.denominator,
+        };
+    });
+
+    rebuildUnitOptions();
+    render();
+}
+
+/** The request body portion fields for a log submit (picker-first). */
+function recipeLogPortionBody(form, values) {
+    const spec = recipePortionPickers.get(form)?.();
+    if (spec?.mode === "amount") {
+        return {
+            portion: { mode: "amount", amount: spec.amount, unit: spec.unit },
+        };
+    }
+    if (spec?.mode === "fraction") {
+        return {
+            portion: {
+                mode: "fraction",
+                numerator: spec.numerator,
+                denominator: spec.denominator,
+            },
+        };
+    }
+    if (spec?.mode === "servings") {
+        return { servings_consumed: spec.servings };
+    }
+    // No picker (recipe payload unavailable when the dialog opened):
+    // the legacy servings field stands alone, exactly as before.
+    return { servings_consumed: Number(values.servings_consumed) };
+}
+
 // Log as planned (connection option #1): one tap on a meal planned
 // for today opens this confirm step — the saved recipe exactly as
 // planned, servings editable — and the server links the log back to
@@ -3780,7 +4415,7 @@ function plannedLogButton(meal, label) {
     return `<button class="button button-secondary button-small" type="button" data-action="log-as-planned" data-planned-meal-id="${escapeHtml(meal.planned_meal_id)}" data-recipe-id="${escapeHtml(meal.recipe_id)}" data-revision-id="${escapeHtml(meal.recipe_revision_id)}" data-name="${escapeHtml(meal.recipe_name)}" data-servings="${escapeHtml(String(meal.servings))}" data-slot="${escapeHtml(meal.meal_slot || "")}">${escapeHtml(label)}</button>`;
 }
 
-function openPlannedLog(meal) {
+async function openPlannedLog(meal) {
     const plannedSlot = ["breakfast", "lunch", "dinner", "snack"].includes(
         meal.meal_slot,
     )
@@ -3797,16 +4432,42 @@ function openPlannedLog(meal) {
                 `<option value="${value}"${value === plannedSlot ? " selected" : ""}>${label}</option>`,
         )
         .join("");
+    // Brief §2.6: the planned form opens in Servings mode prefilled
+    // with the plan's servings (the plan's own fact), switchable to
+    // Amount/Fraction like every other log surface. The picker needs
+    // the recipe's yields and totals, so it fetches the same payload
+    // the detail view uses; if that fails, the form falls back to
+    // the servings field alone, exactly as before.
+    let recipe = null;
+    try {
+        const data = await api(
+            `/api/app/recipes/${encodeURIComponent(meal.recipe_id)}`,
+        );
+        recipe = data.recipe;
+    } catch {
+        recipe = null;
+    }
+    const picker = recipe
+        ? recipePortionPickerMarkup(portionPickerContext(recipe), "servings")
+        : `<label>Servings eaten<input name="servings_consumed" type="number" min="0.001" step="any" value="${escapeHtml(String(meal.servings))}" required /></label>`;
     openDialog(
         `Log ${meal.recipe_name} as planned`,
         `<form id="planned-log-form" class="auth-form" data-id="${escapeHtml(meal.recipe_id)}" data-revision="${escapeHtml(meal.recipe_revision_id)}" data-planned-meal-id="${escapeHtml(meal.planned_meal_id)}">
             <p>Use the saved ingredients and nutrition exactly as stored. Choose how much you ate.</p>
-            <label>Servings eaten<input name="servings_consumed" type="number" min="0.001" step="any" value="${escapeHtml(String(meal.servings))}" required /></label>
+            ${picker}
             <label>Meal<select name="meal_type">${slotOptions}</select></label>
             <label>Notes<textarea name="notes" rows="2" maxlength="2000"></textarea></label>
-            <button class="button button-primary" type="submit">Log meal</button>
+            <button class="button button-primary" type="submit" data-log-submit>Log meal</button>
         </form>`,
     );
+    if (recipe) {
+        const form = dialog.querySelector("#planned-log-form");
+        wireRecipePortionPicker(form, portionPickerContext(recipe), {
+            startMode: "servings",
+            initialServings: meal.servings,
+            keepSubmitLabel: true,
+        });
+    }
 }
 
 function planCardActions(meal) {
@@ -3819,7 +4480,7 @@ function planCardActions(meal) {
         : `${viewButton}${swapButton}`;
 }
 
-function openRecipeLog(id, revisionId, options = {}) {
+async function openRecipeLog(id, revisionId, options = {}) {
     // Cross-work §4: "From my pantry" — servings cooked drive the
     // pantry draw-down, servings eaten drive the logged nutrition,
     // and the two stay visibly separate. The option exists only
@@ -3831,12 +4492,33 @@ function openRecipeLog(id, revisionId, options = {}) {
     const pantryFields = pantryOn
         ? `<label class="checkbox-row"><input type="checkbox" name="from_pantry" ${fromPantryDefault ? "checked" : ""} /> From my pantry</label><label class="field" data-cooked-field ${fromPantryDefault ? "" : "hidden"}><span>Servings cooked</span><input name="servings_cooked" type="number" min="0.01" step="0.01" value="1" /></label>`
         : "";
+    // The portion picker needs the recipe's yields and totals; it
+    // opens in the last-used mode. If the payload cannot load, the
+    // form falls back to the servings field alone, exactly as before.
+    let recipe = null;
+    try {
+        const data = await api(`/api/app/recipes/${encodeURIComponent(id)}`);
+        recipe = data.recipe;
+    } catch {
+        recipe = null;
+    }
+    const startMode = recipe ? rememberedRecipeLogMode() : "servings";
+    const picker = recipe
+        ? recipePortionPickerMarkup(portionPickerContext(recipe), startMode)
+        : `<label class="field"><span>Servings eaten</span><input name="servings_consumed" type="number" min="0.01" step="0.01" value="1" required /></label>`;
     openDialog(
         "Log saved recipe",
-        `<form id="recipe-log-form" class="auth-form" data-id="${escapeHtml(id)}" data-revision="${escapeHtml(revisionId || "")}"><p>Use the saved ingredients and nutrition exactly as stored. Choose how much you ate.</p>${pantryFields}<label class="field"><span>Servings eaten</span><input name="servings_consumed" type="number" min="0.01" step="0.01" value="1" required /></label><label class="field"><span>Meal type</span><select name="meal_type">${mealTypeOptionsHtml(
+        `<form id="recipe-log-form" class="auth-form" data-id="${escapeHtml(id)}" data-revision="${escapeHtml(revisionId || "")}"><p>Use the saved ingredients and nutrition exactly as stored. Choose how much you ate.</p>${pantryFields}${picker}<label class="field"><span>Meal type</span><select name="meal_type">${mealTypeOptionsHtml(
             defaultMealType(new Date(), state.bootstrap?.profile?.timezone),
-        )}</select></label><label class="field"><span>Notes</span><input name="notes" maxlength="4000" placeholder="Optional" /></label><button class="button button-primary" type="submit">Log meal</button></form>`,
+        )}</select></label><label class="field"><span>Notes</span><input name="notes" maxlength="4000" placeholder="Optional" /></label><button class="button button-primary" type="submit" data-log-submit>Log meal</button></form>`,
     );
+    if (recipe) {
+        wireRecipePortionPicker(
+            dialog.querySelector("#recipe-log-form"),
+            portionPickerContext(recipe),
+            { startMode },
+        );
+    }
 }
 
 // Cross-work §4 confirmation: the draw-down summary rides the log
@@ -11033,7 +11715,7 @@ document.addEventListener("submit", async (event) => {
                 {
                     method: "POST",
                     body: JSON.stringify({
-                        servings_consumed: Number(values.servings_consumed),
+                        ...recipeLogPortionBody(form, values),
                         servings_cooked: fromPantry
                             ? Number(values.servings_cooked)
                             : undefined,
@@ -11059,7 +11741,7 @@ document.addEventListener("submit", async (event) => {
                 {
                     method: "POST",
                     body: JSON.stringify({
-                        servings_consumed: Number(values.servings_consumed),
+                        ...recipeLogPortionBody(form, values),
                         meal_type: values.meal_type,
                         notes: values.notes || undefined,
                         recipe_revision_id: form.dataset.revision || undefined,

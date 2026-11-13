@@ -32,6 +32,7 @@ import {
     getMealPlan,
     getRecipe,
     searchRecipes,
+    type RecipePortionRecord,
 } from "../planning/repository.js";
 import { getAdsConfig } from "../ads-config.js";
 import {
@@ -127,6 +128,13 @@ export interface AppMealItem {
 
 export interface AppMeal extends Meal {
     items: AppMealItem[];
+    /**
+     * The unit-logging portion record of a recipe meal (what was
+     * entered, its share, and its yield snapshot), read from the
+     * first item's source snapshot. Null for non-recipe meals and
+     * for recipe logs predating unit logging.
+     */
+    recipePortion: RecipePortionRecord | null;
 }
 
 function numeric(value: unknown): number | null {
@@ -136,7 +144,7 @@ function numeric(value: unknown): number | null {
 async function listMealItems(
     userId: string,
     mealIds: string[],
-): Promise<AppMealItem[]> {
+): Promise<Array<AppMealItem & { recipePortion: RecipePortionRecord | null }>> {
     if (mealIds.length === 0) return [];
     const idJson = JSON.stringify(mealIds);
     return withUserDatabase(userId, async (tx) => {
@@ -146,7 +154,8 @@ async function listMealItems(
                 calories, protein_g, carbs_g, fat_g, fiber_g, sugar_g, alcohol_g,
                 sodium_mg, saturated_fat_g, cholesterol_mg, potassium_mg,
                 source_type, provider, provider_food_id, source_url,
-                source_updated_at, confidence, assumptions
+                source_updated_at, confidence, assumptions,
+                source_snapshot -> 'recipe_portion' as recipe_portion
             from munch.meal_items
             where meal_id in (
                 select value::uuid
@@ -155,6 +164,12 @@ async function listMealItems(
             order by meal_id, position
         `;
         return rows.map((row) => ({
+            recipePortion:
+                row.recipe_portion &&
+                typeof row.recipe_portion === "object" &&
+                !Array.isArray(row.recipe_portion)
+                    ? (row.recipe_portion as RecipePortionRecord)
+                    : null,
             id: String(row.id),
             mealId: String(row.meal_id),
             position: Number(row.position),
@@ -199,14 +214,20 @@ async function attachItems(userId: string, meals: Meal[]): Promise<AppMeal[]> {
         meals.map((meal) => meal.id),
     );
     const byMeal = new Map<string, AppMealItem[]>();
+    const portionByMeal = new Map<string, RecipePortionRecord>();
     for (const item of items) {
+        const { recipePortion, ...appItem } = item;
         const group = byMeal.get(item.mealId) ?? [];
-        group.push(item);
+        group.push(appItem);
         byMeal.set(item.mealId, group);
+        if (recipePortion && !portionByMeal.has(item.mealId)) {
+            portionByMeal.set(item.mealId, recipePortion);
+        }
     }
     return meals.map((meal) => ({
         ...meal,
         items: byMeal.get(meal.id) ?? [],
+        recipePortion: portionByMeal.get(meal.id) ?? null,
     }));
 }
 

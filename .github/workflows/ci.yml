@@ -178,6 +178,8 @@ jobs:
         run: bun scripts/recipe-planning-smoke.ts
       - name: Exercise Log as planned logging, dedupe, evening prompt, and module gate
         run: bun scripts/log-as-planned-smoke.ts
+      - name: Exercise recipe unit logging shares, yields, snapshots, and cross-family refusal
+        run: bun scripts/recipe-unit-logging-smoke.ts
       - name: Exercise guided nutrition, goal history, plan review, groceries, swaps, and RLS
         run: bun scripts/guided-nutrition-smoke.ts
       - name: Exercise Cooks persistence, media, timeline, RLS, and side-effect boundaries
