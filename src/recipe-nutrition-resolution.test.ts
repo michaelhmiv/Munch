@@ -113,6 +113,15 @@ const fixtures: Record<string, FoodCandidate[]> = {
         candidate({
             id: "168894",
             name: "Wheat flour, white, all-purpose, enriched, bleached",
+            nutrientsPer100g: {
+                calories: 364,
+                protein_g: 10.3,
+                carbs_g: 76.3,
+                fat_g: 0.98,
+                fiber_g: 2.7,
+                sugar_g: 0.27,
+                sodium_mg: 2,
+            },
             portions: [
                 onePortion("83944", "1 cup", 125, {
                     calories: 455,
@@ -555,5 +564,370 @@ describe("recipe nutrition resolution", () => {
             info.mockRestore();
             warn.mockRestore();
         }
+    });
+
+    test("rejects the guideline portion that priced 3 cups of milk at 183 g", async () => {
+        // Production shape (Nov 2026 mac & cheese save): the milk
+        // candidate's guideline reference portion was listed FIRST
+        // and its label mentions "cup", so the old label match priced
+        // 3 cups at 61 g each — 111.63 kcal for what is really ~450.
+        const resolution = await resolveRecipeNutrition(
+            {
+                name: "Milk regression",
+                servings: 1,
+                ingredients: [{ name: "Whole milk", quantity: 3, unit: "cup" }],
+            },
+            {
+                foodSearch: {
+                    async search(query) {
+                        if (query === "Whole milk") {
+                            return {
+                                candidates: [
+                                    candidate({
+                                        id: "2705385",
+                                        name: "Milk, whole",
+                                        nutrientsPer100g: {
+                                            calories: 61,
+                                            protein_g: 3.27,
+                                            carbs_g: 4.63,
+                                            fat_g: 3.2,
+                                            fiber_g: 0,
+                                            sugar_g: 4.81,
+                                            sodium_mg: 38,
+                                        },
+                                        portions: [
+                                            onePortion(
+                                                "290519",
+                                                "Guideline amount per cup of hot cereal",
+                                                61,
+                                                {
+                                                    calories: 37.21,
+                                                    protein_g: 2,
+                                                    carbs_g: 2.83,
+                                                    fat_g: 1.95,
+                                                    fiber_g: 0,
+                                                    sugar_g: 2.93,
+                                                    sodium_mg: 23.18,
+                                                },
+                                            ),
+                                            onePortion("290515", "1 cup", 244, {
+                                                calories: 148.84,
+                                                protein_g: 7.98,
+                                                carbs_g: 11.3,
+                                                fat_g: 7.81,
+                                                fiber_g: 0,
+                                                sugar_g: 11.74,
+                                                sodium_mg: 92.72,
+                                            }),
+                                        ],
+                                    }),
+                                ],
+                                totalResults: 1,
+                            };
+                        }
+                        return { candidates: [], totalResults: 0 };
+                    },
+                },
+            },
+        );
+
+        expect(resolution.unresolved).toBe(0);
+        expect(resolution.providerMatches).toBe(1);
+        const milk = resolution.recipe.ingredients[0]!;
+        expect(milk.provider_food_id).toBe("2705385");
+        expect(milk.gram_weight).toBe(732);
+        expect(milk.nutrients?.calories).toBe(446.52);
+        expect(milk.nutrients!.calories).toBeGreaterThanOrEqual(400);
+        expect(milk.nutrients!.calories).toBeLessThanOrEqual(500);
+        const snapshot = (
+            milk.source_snapshot as {
+                automatic_nutrition: Record<string, unknown>;
+            }
+        ).automatic_nutrition;
+        expect(snapshot.portion_id).toBe("290515");
+        expect(snapshot.implied_grams_per_unit).toBe(244);
+        expect(snapshot.assumptions).not.toContain(
+            'Used provider portion "Guideline amount per cup of hot cereal" to interpret 3 cup.',
+        );
+    });
+
+    test("resolves tablespoons of flour through the cup portion by volume ratio", async () => {
+        const resolution = await resolveRecipeNutrition(
+            {
+                name: "Flour regression",
+                servings: 1,
+                ingredients: [
+                    { name: "all-purpose flour", quantity: 4, unit: "tbsp" },
+                ],
+            },
+            {
+                foodSearch: {
+                    async search(query) {
+                        const candidates = fixtures[query.toLowerCase()] ?? [];
+                        return { candidates, totalResults: candidates.length };
+                    },
+                },
+            },
+        );
+
+        expect(resolution.unresolved).toBe(0);
+        const flour = resolution.recipe.ingredients[0]!;
+        expect(flour.nutrients?.calories).toBe(113.75);
+        expect(flour.nutrients!.calories).toBeGreaterThanOrEqual(100);
+        expect(flour.nutrients!.calories).toBeLessThanOrEqual(125);
+        expect(flour.gram_weight).toBe(31.25);
+        const snapshot = (
+            flour.source_snapshot as {
+                automatic_nutrition: Record<string, unknown>;
+            }
+        ).automatic_nutrition;
+        expect(snapshot.portion_id).toBe("83944");
+        expect(snapshot.implied_grams_per_unit).toBe(7.81);
+    });
+
+    test("still accepts an assumed portion inside the sane range", async () => {
+        const resolution = await resolveRecipeNutrition(
+            {
+                name: "Control",
+                servings: 1,
+                ingredients: [{ name: "milk", quantity: 2, unit: "cup" }],
+            },
+            {
+                foodSearch: {
+                    async search(query) {
+                        const candidates = fixtures[query.toLowerCase()] ?? [];
+                        return { candidates, totalResults: candidates.length };
+                    },
+                },
+            },
+        );
+
+        expect(resolution.unresolved).toBe(0);
+        const milk = resolution.recipe.ingredients[0]!;
+        expect(milk.nutrients?.calories).toBe(297.68);
+        expect(milk.gram_weight).toBe(488);
+        const snapshot = (
+            milk.source_snapshot as {
+                automatic_nutrition: Record<string, unknown>;
+            }
+        ).automatic_nutrition;
+        expect(snapshot.resolution).toBe("assumed_provider_match");
+        expect(snapshot.portion_id).toBe("290515");
+        expect(snapshot.implied_grams_per_unit).toBe(244);
+    });
+
+    test("falls to the next portion when the first implies an insane weight", async () => {
+        // The first "1 cup" portion claims 12 g — an implied weight
+        // no cup of juice can have. The gate refuses it and the sane
+        // 248 g cup portion on the same candidate prices the juice.
+        const badCup = onePortion("oj-bad-cup", "1 cup", 12, {
+            calories: 5.4,
+            protein_g: 0.08,
+            carbs_g: 1.25,
+            fat_g: 0.02,
+            fiber_g: 0.02,
+            sugar_g: 1.01,
+            sodium_mg: 0.12,
+        });
+        const goodCup = onePortion("oj-cup", "1 cup", 248, {
+            calories: 111.6,
+            protein_g: 1.74,
+            carbs_g: 25.79,
+            fat_g: 0.5,
+            fiber_g: 0.5,
+            sugar_g: 20.83,
+            sodium_mg: 2.48,
+        });
+        const resolution = await resolveRecipeNutrition(
+            {
+                name: "Juice portions",
+                servings: 1,
+                ingredients: [
+                    { name: "orange juice", quantity: 2, unit: "cup" },
+                ],
+            },
+            {
+                foodSearch: {
+                    async search(query) {
+                        if (query === "orange juice") {
+                            return {
+                                candidates: [
+                                    candidate({
+                                        id: "92007",
+                                        name: "Orange juice, raw",
+                                        nutrientsPer100g: {
+                                            calories: 45,
+                                            protein_g: 0.7,
+                                            carbs_g: 10.4,
+                                            fat_g: 0.2,
+                                            fiber_g: 0.2,
+                                            sugar_g: 8.4,
+                                            sodium_mg: 1,
+                                        },
+                                        portions: [badCup, goodCup],
+                                    }),
+                                ],
+                                totalResults: 1,
+                            };
+                        }
+                        return { candidates: [], totalResults: 0 };
+                    },
+                },
+            },
+        );
+
+        expect(resolution.unresolved).toBe(0);
+        const juice = resolution.recipe.ingredients[0]!;
+        expect(juice.nutrients?.calories).toBe(223.2);
+        expect(juice.gram_weight).toBe(496);
+        const snapshot = (
+            juice.source_snapshot as {
+                automatic_nutrition: {
+                    portion_id: string;
+                    rejected_portions: {
+                        portion_id: string;
+                        implied_grams_per_unit: number | null;
+                        reason: string;
+                    }[];
+                };
+            }
+        ).automatic_nutrition;
+        expect(snapshot.portion_id).toBe("oj-cup");
+        expect(snapshot.rejected_portions).toHaveLength(1);
+        expect(snapshot.rejected_portions[0]!.portion_id).toBe("oj-bad-cup");
+        expect(snapshot.rejected_portions[0]!.implied_grams_per_unit).toBe(12);
+        expect(snapshot.rejected_portions[0]!.reason).toBe(
+            "implied_grams_per_cup_out_of_range",
+        );
+    });
+
+    test("leaves the ingredient unresolved when the only portion is insane", async () => {
+        const badCup = onePortion("oj-bad-cup", "1 cup", 12, {
+            calories: 5.4,
+            protein_g: 0.08,
+            carbs_g: 1.25,
+            fat_g: 0.02,
+            fiber_g: 0.02,
+            sugar_g: 1.01,
+            sodium_mg: 0.12,
+        });
+        const resolution = await resolveRecipeNutrition(
+            {
+                name: "Juice unresolved",
+                servings: 1,
+                ingredients: [
+                    { name: "orange juice", quantity: 2, unit: "cup" },
+                ],
+            },
+            {
+                foodSearch: {
+                    async search(query) {
+                        if (query === "orange juice") {
+                            return {
+                                candidates: [
+                                    candidate({
+                                        id: "92007",
+                                        name: "Orange juice, raw",
+                                        portions: [badCup],
+                                    }),
+                                ],
+                                totalResults: 1,
+                            };
+                        }
+                        return { candidates: [], totalResults: 0 };
+                    },
+                },
+            },
+        );
+
+        expect(resolution.unresolved).toBe(1);
+        const juice = resolution.recipe.ingredients[0]!;
+        expect(juice.nutrients).toBeUndefined();
+        const snapshot = (
+            juice.source_snapshot as {
+                automatic_nutrition: {
+                    reason: string;
+                    rejected_portions: { portion_id: string }[];
+                };
+            }
+        ).automatic_nutrition;
+        expect(snapshot.reason).toBe("no_compatible_provider_portion");
+        expect(snapshot.rejected_portions).toHaveLength(1);
+        expect(snapshot.rejected_portions[0]!.portion_id).toBe("oj-bad-cup");
+    });
+
+    test("tries the next candidate when the top candidate's portions are all insane", async () => {
+        const resolution = await resolveRecipeNutrition(
+            {
+                name: "Juice candidates",
+                servings: 1,
+                ingredients: [
+                    { name: "apple juice", quantity: 1, unit: "cup" },
+                ],
+            },
+            {
+                foodSearch: {
+                    async search(query) {
+                        if (query === "apple juice") {
+                            return {
+                                candidates: [
+                                    candidate({
+                                        id: "bad-top",
+                                        name: "Apple juice",
+                                        portions: [
+                                            onePortion(
+                                                "aj-bad-cup",
+                                                "1 cup",
+                                                12,
+                                                {
+                                                    calories: 5.4,
+                                                    protein_g: 0.1,
+                                                    carbs_g: 1.3,
+                                                    fat_g: 0.02,
+                                                    fiber_g: 0.02,
+                                                    sugar_g: 1.1,
+                                                    sodium_mg: 0.1,
+                                                },
+                                            ),
+                                        ],
+                                    }),
+                                    candidate({
+                                        id: "good-second",
+                                        name: "Apple juice, unsweetened",
+                                        nutrientsPer100g: {
+                                            calories: 45,
+                                            protein_g: 0.7,
+                                            carbs_g: 10.4,
+                                            fat_g: 0.2,
+                                            fiber_g: 0.2,
+                                            sugar_g: 8.4,
+                                            sodium_mg: 1,
+                                        },
+                                        portions: [
+                                            onePortion("aj-cup", "1 cup", 248, {
+                                                calories: 111.6,
+                                                protein_g: 1.74,
+                                                carbs_g: 25.79,
+                                                fat_g: 0.5,
+                                                fiber_g: 0.5,
+                                                sugar_g: 20.83,
+                                                sodium_mg: 2.48,
+                                            }),
+                                        ],
+                                    }),
+                                ],
+                                totalResults: 2,
+                            };
+                        }
+                        return { candidates: [], totalResults: 0 };
+                    },
+                },
+            },
+        );
+
+        expect(resolution.unresolved).toBe(0);
+        const juice = resolution.recipe.ingredients[0]!;
+        expect(juice.provider_food_id).toBe("good-second");
+        expect(juice.nutrients?.calories).toBe(111.6);
     });
 });

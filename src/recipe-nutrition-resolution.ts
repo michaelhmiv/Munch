@@ -4,6 +4,10 @@ import {
     type FoodSearchService,
 } from "./food-providers/service.js";
 import { scaleNutrients } from "./food-providers/nutrients.js";
+import {
+    isNonHeadlinePortion,
+    portionNaturalRank,
+} from "./food-providers/portions.js";
 import type {
     FoodCandidate,
     FoodPortion,
@@ -32,7 +36,7 @@ const COUNT_UNITS = new Set([
     "slice",
 ]);
 const MIN_CANDIDATE_SCORE = 0.52;
-const RESOLVER_VERSION = 1;
+const RESOLVER_VERSION = 2;
 
 export type RecipeNutrientFacts = Partial<
     Record<(typeof SUPPORTED_NUTRIENTS)[number], number>
@@ -103,6 +107,10 @@ type PortionResolution = {
     portionLabel: string;
     factor: number;
     assumption?: string;
+    /** For volume resolutions: the gram weight one requested unit
+     * implies under the chosen portion (density × unit volume) — the
+     * number the sanity gate judged, kept for later review. */
+    impliedGramsPerUnit?: number;
 };
 
 function normalizeText(value: string): string {
@@ -289,10 +297,10 @@ function candidateScore(query: string, candidate: FoodCandidate): number {
     );
 }
 
-function chooseCandidate(
+function rankCandidates(
     query: string,
     candidates: FoodCandidate[],
-): FoodCandidate | undefined {
+): FoodCandidate[] {
     return candidates
         .map((candidate) => ({
             candidate,
@@ -302,14 +310,15 @@ function chooseCandidate(
             ({ candidate, score }) =>
                 score >= MIN_CANDIDATE_SCORE && candidate.confidence >= 0.75,
         )
-        .sort((left, right) => right.score - left.score)[0]?.candidate;
+        .sort((left, right) => right.score - left.score)
+        .map(({ candidate }) => candidate);
 }
 
 function portionText(portion: FoodPortion): string {
     return normalizeText(`${portion.unit} ${portion.label}`);
 }
 
-function portionForUnit(
+function portionForUnitIn(
     portions: FoodPortion[],
     unit: string,
 ): FoodPortion | undefined {
@@ -337,26 +346,261 @@ function portionForUnit(
     return undefined;
 }
 
+function portionForUnit(
+    portions: FoodPortion[],
+    unit: string,
+): FoodPortion | undefined {
+    // Non-headline portions (USDA "guideline amount" / "quantity not
+    // specified" rows) are reference amounts for another food context,
+    // never a portion anyone eats — portions.ts ranks them last for
+    // the same reason. They may only win when nothing else matches.
+    const headline = portions.filter(
+        (portion) => !isNonHeadlinePortion(portion),
+    );
+    if (headline.length === portions.length) {
+        return portionForUnitIn(portions, unit);
+    }
+    return portionForUnitIn(headline, unit) ?? portionForUnitIn(portions, unit);
+}
+
+/** Exact millilitres per volume unit — mirrors the table in
+ * src/meal-photo/grounding.ts so both resolvers convert identically. */
+const VOLUME_TO_ML: Record<string, number> = {
+    ml: 1,
+    l: 1_000,
+    tsp: 4.92892159,
+    tbsp: 14.7867648,
+    "fl oz": 29.5735296,
+    cup: 236.5882365,
+    pint: 473.176473,
+    quart: 946.352946,
+    gallon: 3785.41178,
+};
+
+/**
+ * Sanity envelope for volume resolution. A portion used to interpret
+ * a volume quantity implies a density (its gram weight over its
+ * volume); ordinary foods sit between whipped toppings (~0.25 g/ml)
+ * and honey (~1.4 g/ml). Outside [MIN, MAX] the portion data is
+ * wrong for this food — the resolver must refuse it and try the next
+ * portion/candidate rather than silently scale a bad number into a
+ * saved recipe (the Nov 2026 mac-and-cheese save priced 3 cups of
+ * milk at 183 g this way). For liquid-like foods — the candidate
+ * carries a fluid-ounce portion, or any anchor already sits near
+ * water's density — a cup is additionally held to the conventional
+ * liquid cup weight: 150–350 g.
+ */
+const MIN_PLAUSIBLE_DENSITY_G_PER_ML = 0.06;
+const MAX_PLAUSIBLE_DENSITY_G_PER_ML = 2.0;
+const LIQUID_CUP_MIN_GRAMS = 150;
+const LIQUID_CUP_MAX_GRAMS = 350;
+
+function volumeUnitKey(unit: string): string | undefined {
+    const normalized = normalizeUnit(unit);
+    if (normalized in VOLUME_TO_ML) return normalized;
+    if (normalized === "fluid ounce") return "fl oz";
+    return undefined;
+}
+
+function parseLabelAmount(text: string): number | undefined {
+    let total = 0;
+    for (const part of text.trim().split(/\s+/)) {
+        const fraction = part.match(/^(\d+)\/(\d+)$/);
+        if (fraction) {
+            const denominator = Number(fraction[2]);
+            if (denominator === 0) return undefined;
+            total += Number(fraction[1]) / denominator;
+        } else if (/^\d+(?:\.\d+)?$/.test(part)) {
+            total += Number(part);
+        } else {
+            return undefined;
+        }
+    }
+    return total > 0 ? total : undefined;
+}
+
+/**
+ * The volume denomination a portion itself declares — from its unit
+ * when the unit is a volume unit, else from a leading "<amount>
+ * <volume unit>" in its label ("1 cup", "1/2 cup", "8 fl oz").
+ * Portions whose labels merely MENTION a volume word ("Guideline
+ * amount per cup of hot cereal") declare nothing and return
+ * undefined.
+ */
+function portionVolumeDenomination(
+    portion: FoodPortion,
+): { amount: number; unit: string } | undefined {
+    const byUnit = volumeUnitKey(portion.unit);
+    if (byUnit && portion.amount > 0) {
+        return { amount: portion.amount, unit: byUnit };
+    }
+    const labelMatch = portion.label
+        .trim()
+        .match(
+            /^(\d+(?:\.\d+)?(?:\s+\d+\/\d+)?|\d+\/\d+)\s*(cups?|tablespoons?|tbsp|teaspoons?|tsp|fl\.?\s*oz|milliliters?|millilitres?|ml|liters?|litres?|l|pints?|quarts?|gallons?)\b/i,
+        );
+    if (!labelMatch) return undefined;
+    const amount = parseLabelAmount(labelMatch[1]!);
+    const unit = volumeUnitKey(
+        labelMatch[2]!.replace(/\s+/g, " ").replace(/\./g, ""),
+    );
+    if (amount === undefined || !unit) return undefined;
+    return { amount, unit };
+}
+
+/**
+ * A portion the sanity gate refused, recorded so the saved
+ * ingredient's snapshot shows WHY a portion was not used — the
+ * outcome stays inspectable without re-deriving the decision.
+ */
+type RejectedPortion = {
+    portion_id: string;
+    portion_label: string;
+    implied_grams_per_unit: number | null;
+    reason: string;
+};
+
+type PortionAttempt = {
+    resolution: PortionResolution | null;
+    rejectedPortions: RejectedPortion[];
+};
+
+type VolumeAnchor = {
+    portion: FoodPortion;
+    denomination: { amount: number; unit: string };
+    density: number;
+    gramsPerRequestedUnit: number;
+    gramWeight: number;
+};
+
+/**
+ * Volume resolution through the candidate's own measured portions.
+ * Each portion with a gram weight and a volume denomination anchors
+ * an exact ml-ratio conversion (the same approach meal-photo
+ * grounding takes: a volume converts to a volume portion, never to a
+ * serving count). Anchors are tried in preference order — portions
+ * denominated in the requested unit first, then the most natural —
+ * and each must pass the sanity gate. Non-headline reference
+ * portions anchor only when no headline anchor exists. Returns null
+ * when no anchor passes: an insane portion is refused, never
+ * silently accepted.
+ */
+function resolveVolumePortion(
+    ingredient: RecipeNutritionIngredientPayload,
+    candidate: FoodCandidate,
+    unit: string,
+    quantity: number,
+): PortionAttempt {
+    const mlPerRequestedUnit = VOLUME_TO_ML[unit]!;
+    const anchors: VolumeAnchor[] = [];
+    for (const portion of candidate.portions) {
+        if (!(portion.amount > 0)) continue;
+        if (portion.gramWeight === undefined || !(portion.gramWeight > 0)) {
+            continue;
+        }
+        const denomination = portionVolumeDenomination(portion);
+        if (!denomination) continue;
+        const portionMl =
+            denomination.amount * VOLUME_TO_ML[denomination.unit]!;
+        if (!(portionMl > 0)) continue;
+        const density = portion.gramWeight / portionMl;
+        anchors.push({
+            portion,
+            denomination,
+            density,
+            gramsPerRequestedUnit: density * mlPerRequestedUnit,
+            gramWeight: portion.gramWeight,
+        });
+    }
+    if (anchors.length === 0) return { resolution: null, rejectedPortions: [] };
+
+    const headline = anchors.filter(
+        (anchor) => !isNonHeadlinePortion(anchor.portion),
+    );
+    const pool = headline.length > 0 ? headline : anchors;
+    const liquidLike =
+        pool.some((anchor) => anchor.denomination.unit === "fl oz") ||
+        pool.some((anchor) => anchor.density >= 0.85 && anchor.density <= 1.15);
+    const ordered = [...pool].sort((left, right) => {
+        const leftOwn = left.denomination.unit === unit ? 0 : 1;
+        const rightOwn = right.denomination.unit === unit ? 0 : 1;
+        if (leftOwn !== rightOwn) return leftOwn - rightOwn;
+        return (
+            portionNaturalRank(left.portion) - portionNaturalRank(right.portion)
+        );
+    });
+
+    const rejectedPortions: RejectedPortion[] = [];
+    for (const anchor of ordered) {
+        const grams = anchor.gramsPerRequestedUnit;
+        const insane =
+            unit === "cup" && liquidLike
+                ? grams < LIQUID_CUP_MIN_GRAMS || grams > LIQUID_CUP_MAX_GRAMS
+                : anchor.density < MIN_PLAUSIBLE_DENSITY_G_PER_ML ||
+                  anchor.density > MAX_PLAUSIBLE_DENSITY_G_PER_ML;
+        if (insane) {
+            rejectedPortions.push({
+                portion_id: anchor.portion.id,
+                portion_label: anchor.portion.label,
+                implied_grams_per_unit: Number(grams.toFixed(2)),
+                reason:
+                    unit === "cup" && liquidLike
+                        ? "implied_grams_per_cup_out_of_range"
+                        : "implied_density_out_of_range",
+            });
+            continue;
+        }
+        const factor =
+            (quantity * mlPerRequestedUnit) /
+            (anchor.denomination.amount *
+                VOLUME_TO_ML[anchor.denomination.unit]!);
+        const scaled = supportedNutrients(
+            scaleNutrients(anchor.portion.nutrients, factor),
+        );
+        if (!hasCoreNutrition(scaled)) continue;
+        return {
+            resolution: {
+                gramWeight: Number((anchor.gramWeight * factor).toFixed(2)),
+                nutrients: scaled,
+                portionId: anchor.portion.id,
+                portionLabel: anchor.portion.label,
+                factor,
+                impliedGramsPerUnit: Number(grams.toFixed(2)),
+                assumption:
+                    normalizeUnit(anchor.portion.unit) !== unit
+                        ? `Used provider portion "${anchor.portion.label}" to interpret ${quantity} ${ingredient.unit ?? unit}.`
+                        : undefined,
+            },
+            rejectedPortions,
+        };
+    }
+    return { resolution: null, rejectedPortions };
+}
+
 function resolvePortion(
     ingredient: RecipeNutritionIngredientPayload,
     candidate: FoodCandidate,
-): PortionResolution | null {
+): PortionAttempt {
     const quantity = ingredient.quantity;
     if (ingredient.gram_weight !== undefined && candidate.nutrientsPer100g) {
         return {
-            gramWeight: ingredient.gram_weight,
-            nutrients: supportedNutrients(
-                scaleNutrients(
-                    candidate.nutrientsPer100g,
-                    ingredient.gram_weight / 100,
+            resolution: {
+                gramWeight: ingredient.gram_weight,
+                nutrients: supportedNutrients(
+                    scaleNutrients(
+                        candidate.nutrientsPer100g,
+                        ingredient.gram_weight / 100,
+                    ),
                 ),
-            ),
-            portionId: "100g",
-            portionLabel: `${ingredient.gram_weight} g`,
-            factor: ingredient.gram_weight / 100,
+                portionId: "100g",
+                portionLabel: `${ingredient.gram_weight} g`,
+                factor: ingredient.gram_weight / 100,
+            },
+            rejectedPortions: [],
         };
     }
-    if (quantity === undefined) return null;
+    if (quantity === undefined)
+        return { resolution: null, rejectedPortions: [] };
 
     const unit = normalizeUnit(ingredient.unit);
     const weightGrams =
@@ -371,37 +615,65 @@ function resolvePortion(
                   : null;
     if (weightGrams !== null && candidate.nutrientsPer100g) {
         return {
-            gramWeight: Number(weightGrams.toFixed(2)),
-            nutrients: supportedNutrients(
-                scaleNutrients(candidate.nutrientsPer100g, weightGrams / 100),
-            ),
-            portionId: "100g",
-            portionLabel: `${Number(weightGrams.toFixed(2))} g`,
-            factor: weightGrams / 100,
+            resolution: {
+                gramWeight: Number(weightGrams.toFixed(2)),
+                nutrients: supportedNutrients(
+                    scaleNutrients(
+                        candidate.nutrientsPer100g,
+                        weightGrams / 100,
+                    ),
+                ),
+                portionId: "100g",
+                portionLabel: `${Number(weightGrams.toFixed(2))} g`,
+                factor: weightGrams / 100,
+            },
+            rejectedPortions: [],
         };
     }
 
+    const volumeKey = volumeUnitKey(ingredient.unit ?? "");
+    if (volumeKey) {
+        const attempt = resolveVolumePortion(
+            ingredient,
+            candidate,
+            volumeKey,
+            quantity,
+        );
+        if (attempt.resolution || attempt.rejectedPortions.length > 0) {
+            return attempt;
+        }
+        // No volume anchors at all — fall through to the legacy pick
+        // (a portion without a gram weight carries its own panel and
+        // makes no implied-weight claim to validate).
+    }
+
     const portion = portionForUnit(candidate.portions, unit);
-    if (!portion || !Number.isFinite(portion.amount) || portion.amount <= 0)
-        return null;
+    if (!portion || !Number.isFinite(portion.amount) || portion.amount <= 0) {
+        return { resolution: null, rejectedPortions: [] };
+    }
     const factor = quantity / portion.amount;
     const scaled = supportedNutrients(
         scaleNutrients(portion.nutrients, factor),
     );
-    if (!hasCoreNutrition(scaled)) return null;
+    if (!hasCoreNutrition(scaled)) {
+        return { resolution: null, rejectedPortions: [] };
+    }
     return {
-        gramWeight:
-            portion.gramWeight === undefined
-                ? undefined
-                : Number((portion.gramWeight * factor).toFixed(2)),
-        nutrients: scaled,
-        portionId: portion.id,
-        portionLabel: portion.label,
-        factor,
-        assumption:
-            unit && normalizeUnit(portion.unit) !== unit
-                ? `Used provider portion \"${portion.label}\" to interpret ${quantity} ${ingredient.unit ?? unit}.`
-                : undefined,
+        resolution: {
+            gramWeight:
+                portion.gramWeight === undefined
+                    ? undefined
+                    : Number((portion.gramWeight * factor).toFixed(2)),
+            nutrients: scaled,
+            portionId: portion.id,
+            portionLabel: portion.label,
+            factor,
+            assumption:
+                unit && normalizeUnit(portion.unit) !== unit
+                    ? `Used provider portion "${portion.label}" to interpret ${quantity} ${ingredient.unit ?? unit}.`
+                    : undefined,
+        },
+        rejectedPortions: [],
     };
 }
 
@@ -481,7 +753,8 @@ async function resolveIngredient(
     const plan = searchPlan(ingredient);
     try {
         const search = await foodSearch.search(plan.query, 8);
-        const selected = chooseCandidate(plan.query, search.candidates);
+        const ranked = rankCandidates(plan.query, search.candidates);
+        const selected = ranked[0];
         if (!selected) {
             return {
                 ingredient: {
@@ -500,8 +773,30 @@ async function resolveIngredient(
                 kind: "unresolved",
             };
         }
-        const portion = resolvePortion(ingredient, selected);
-        if (!portion || !hasCoreNutrition(portion.nutrients)) {
+        // Try each defensible candidate in score order: a candidate
+        // whose portions cannot sanely price the quantity (the sanity
+        // gate) must not sink the ingredient when a lower-ranked
+        // candidate can.
+        let portion: PortionResolution | null = null;
+        let chosen: FoodCandidate | undefined;
+        let chosenRejected: RejectedPortion[] = [];
+        let primaryRejected: RejectedPortion[] = [];
+        for (const candidate of ranked) {
+            const attempt = resolvePortion(ingredient, candidate);
+            if (candidate === selected) {
+                primaryRejected = attempt.rejectedPortions;
+            }
+            if (
+                attempt.resolution &&
+                hasCoreNutrition(attempt.resolution.nutrients)
+            ) {
+                chosen = candidate;
+                portion = attempt.resolution;
+                chosenRejected = attempt.rejectedPortions;
+                break;
+            }
+        }
+        if (!chosen || !portion) {
             return {
                 ingredient: {
                     ...ingredient,
@@ -514,6 +809,7 @@ async function resolveIngredient(
                             provider: selected.provider,
                             provider_food_id: selected.providerFoodId,
                             reason: "no_compatible_provider_portion",
+                            rejected_portions: primaryRejected,
                         },
                     },
                 },
@@ -532,11 +828,11 @@ async function resolveIngredient(
                     ...portion.nutrients,
                     ...(ingredient.nutrients ?? {}),
                 },
-                provider: selected.attribution.label,
-                provider_food_id: selected.providerFoodId,
-                source_type: selected.provider,
-                source_url: selected.attribution.url ?? ingredient.source_url,
-                confidence: Math.min(selected.confidence, confidenceCap),
+                provider: chosen.attribution.label,
+                provider_food_id: chosen.providerFoodId,
+                source_type: chosen.provider,
+                source_url: chosen.attribution.url ?? ingredient.source_url,
+                confidence: Math.min(chosen.confidence, confidenceCap),
                 source_snapshot: {
                     ...(ingredient.source_snapshot ?? {}),
                     automatic_nutrition: {
@@ -547,14 +843,17 @@ async function resolveIngredient(
                                 : "provider_match",
                         estimated: true,
                         query: plan.query,
-                        provider: selected.provider,
-                        provider_food_id: selected.providerFoodId,
-                        provider_food_name: selected.name,
-                        provider_data_kind: selected.dataKind,
+                        provider: chosen.provider,
+                        provider_food_id: chosen.providerFoodId,
+                        provider_food_name: chosen.name,
+                        provider_data_kind: chosen.dataKind,
                         portion_id: portion.portionId,
                         portion_label: portion.portionLabel,
                         portion_factor: Number(portion.factor.toFixed(6)),
                         gram_weight: portion.gramWeight ?? null,
+                        implied_grams_per_unit:
+                            portion.impliedGramsPerUnit ?? null,
+                        rejected_portions: chosenRejected,
                         assumptions,
                     },
                 },
