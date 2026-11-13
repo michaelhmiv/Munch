@@ -138,11 +138,10 @@ if ((homepage.match(/href="\/connect"/g) ?? []).length < 3) {
         "homepage must link to /connect from nav, body, and footer (found fewer than 3)",
     );
 }
-if (!homepage.includes("7-day free trial")) {
-    fail("homepage pricing is missing the 7-day free trial");
-}
-if (homepage.toLowerCase().includes("seven-day trial")) {
-    fail('homepage carries stale trial wording ("seven-day trial")');
+if (/\btrial\b/i.test(homepage)) {
+    fail(
+        "homepage carries trial wording (the free trial was removed, 2026-11-13)",
+    );
 }
 if (!homepage.includes("$2.99")) {
     fail("homepage does not state the canonical $2.99 price");

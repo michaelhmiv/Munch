@@ -3,9 +3,14 @@ export const PRODUCT_CONFIG = Object.freeze({
     publicBaseUrl: "https://munch.business",
     premiumPriceMonthlyCents: 299,
     householdMemberPriceMonthlyCents: 200,
-    // The 7-day free trial is live: it is set on the Stripe price, so
-    // checkout code never passes trial parameters itself.
-    trialEnabled: true,
+    // No free trial is offered (Michael, 2026-11-13: "no 7 day free
+    // trial anymore — so much free stuff is offered now"). Checkout
+    // never passed trial parameters itself; the trial previously lived
+    // as a default on the Stripe price and is removed there separately.
+    // Subscriptions already trialing when the offer ended are
+    // grandfathered: entitlement code still honors the "trialing"
+    // status until each existing trial runs out.
+    trialEnabled: false,
     freeTierEnabled: true,
     freeHistoryDays: 30,
     householdMemberLimit: 6,

@@ -9,31 +9,27 @@ function normalizedText(source: string): string {
         .trim();
 }
 
-if (!PRODUCT_CONFIG.trialEnabled) {
+if (PRODUCT_CONFIG.trialEnabled) {
     errors.push(
-        "PRODUCT_CONFIG.trialEnabled must remain true (the 7-day free trial is live on the Stripe price)",
+        "PRODUCT_CONFIG.trialEnabled must remain false (the free trial was removed, Michael, 2026-11-13)",
     );
 }
 if (!PRODUCT_CONFIG.freeTierEnabled) {
     errors.push("The permanent Free tier must remain enabled");
 }
 
-// The 7-day free trial is a settled product fact (PRODUCT.md, ruled
-// 2026-11-09: "The 7-day free trial and the permanent free tier are
-// unchanged"). The trial lives on the Stripe price, so checkout code
-// still never sets trial params, and PRODUCT_CONFIG.trialEnabled is
-// true because the trial is real. The two Persuade marketing surfaces
-// — the homepage and /connect — may state that fact; trial language
-// stays forbidden on every other public page (app, auth, help, legal).
-const trialFactSurfaces = new Set(["public/index.html", "public/connect.html"]);
-
+// No free trial is offered (Michael, 2026-11-13, superseding the
+// 2026-11-09 settled fact). The trial previously lived as a default
+// on the Stripe price; checkout code never set trial params, and
+// PRODUCT_CONFIG.trialEnabled is false because the trial is gone.
+// Trial language is forbidden on every public page — no exceptions.
+// (Subscriptions already trialing at removal are grandfathered in the
+// entitlement layer; that is status handling, not an offer, and it
+// never renders as public-page copy.)
 const publicHtml = new Bun.Glob("public/**/*.html");
 for await (const path of publicHtml.scan({ cwd: "." })) {
     const source = await Bun.file(path).text();
-    if (
-        !trialFactSurfaces.has(path) &&
-        /\btrial\b/i.test(normalizedText(source))
-    ) {
+    if (/\btrial\b/i.test(normalizedText(source))) {
         errors.push(`${path}: contains user-facing trial language`);
     }
     if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(source)) {

@@ -9,7 +9,7 @@ import { expect, test } from "@playwright/test";
 const MARKETING_MARKER = "Prefer to tap it in yourself";
 const PASTE_OPENING = "Connect me to Munch, my nutrition tracker.";
 
-test("homepage serves the flagship with the paste block and trial", async ({
+test("homepage serves the flagship with the paste block and no trial offer", async ({
     request,
 }) => {
     const response = await request.get("/");
@@ -17,7 +17,7 @@ test("homepage serves the flagship with the paste block and trial", async ({
     const body = await response.text();
     expect(body).toContain(PASTE_OPENING);
     expect(body).toContain("Persistent nutrition for your AI");
-    expect(body).toContain("7-day free trial");
+    expect(body.toLowerCase()).not.toContain("trial");
     expect(body).toContain('href="/connect"');
     expect(body).not.toContain('href="/connect/sign-in');
 });
