@@ -49,10 +49,14 @@ DENSITIES = [
 ]
 
 # The adaptive foreground canvas is 108dp; the guaranteed-visible safe
-# zone is the centered 66dp circle. The mark's art occupies ~57% x ~64%
-# of its own canvas, so the mark canvas is placed at 90% of the
-# foreground canvas: art lands at ~51% x ~58%, inside the safe zone.
-FOREGROUND_MARK_FRACTION = 0.90
+# zone is the centered 66dp circle (radius 33% of canvas). What matters
+# is not the art's bounding box but its farthest pixel from center: the
+# leaf tip, measured at 37.1% of the (centered) mark canvas. Placing the
+# mark canvas at 86% of the foreground canvas puts every art pixel at
+# <= 0.86 x 37.1% = 31.9% radius — inside the safe zone with margin.
+# (At the old 90% the leaf tip sat at 36.8% radius and launchers whose
+# mask approaches the safe circle clipped it; audit 2026-11-13.)
+FOREGROUND_MARK_FRACTION = 0.86
 
 # Splash: mark canvas sized against the canvas' smaller dimension.
 SPLASH_MARK_FRACTION = 0.36
