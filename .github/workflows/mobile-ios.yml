@@ -548,6 +548,13 @@ jobs:
           # Associated Domains. Enable it idempotently BEFORE minting:
           # enabling a capability invalidates existing profiles, and the
           # passes below delete and re-create the CI profile anyway.
+          # The create call must carry the capability's configuration:
+          # without a settings entry the ASC API rejects it with 409
+          # ENTITY_ERROR "Please select at least one configuration for
+          # Sign In with Apple." (run 43412841511). Per Apple's
+          # CapabilitySetting / CapabilityOption references, the setting
+          # key is APPLE_ID_AUTH_APP_CONSENT, and enabling this bundle
+          # ID as the primary App ID is its PRIMARY_APP_CONSENT option.
           capabilities = call("GET", f"/bundleIds/{bundle_id}/bundleIdCapabilities").get("data", [])
           if any(cap.get("attributes", {}).get("capabilityType") == "APPLE_ID_AUTH"
                  for cap in capabilities):
@@ -555,7 +562,13 @@ jobs:
           else:
               call("POST", "/bundleIdCapabilities", payload={"data": {
                   "type": "bundleIdCapabilities",
-                  "attributes": {"capabilityType": "APPLE_ID_AUTH"},
+                  "attributes": {
+                      "capabilityType": "APPLE_ID_AUTH",
+                      "settings": [{
+                          "key": "APPLE_ID_AUTH_APP_CONSENT",
+                          "options": [{"key": "PRIMARY_APP_CONSENT", "enabled": True}],
+                      }],
+                  },
                   "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bundle_id}}}}})
               print("Enabled Sign in with Apple capability on the bundle ID")
 
