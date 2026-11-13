@@ -2205,8 +2205,8 @@ test.beforeAll(async () => {
                     "/api/app/meal-drafts/fixture-photo-draft/items/",
                 )
             ) {
-                // Photo-flow P4: the review's single Save changes
-                // PATCHes dirty items here; record the body so the
+                // Simplified review: Confirm PATCHes dirty items
+                // here before confirming; record the body so the
                 // test can assert the edited values were committed,
                 // and answer with the merged draft, version bumped.
                 const chunks: Buffer[] = [];
@@ -3303,7 +3303,7 @@ test("meal.photoLog runs end to end in the packaged bundle", async ({
     ).toBe(true);
 });
 
-test("photo-flow P4: one Save changes commits draft edits; unsaved edits survive other actions", async ({
+test("simplified review: Confirm commits draft edits; unsaved edits survive other actions", async ({
     page,
 }) => {
     lastDraftItemPatch = null;
@@ -3313,8 +3313,15 @@ test("photo-flow P4: one Save changes commits draft edits; unsaved edits survive
         "Fixture rice bowl",
     );
 
-    // P3: item editors start collapsed — the fields stay hidden
-    // until the item's row is tapped open.
+    // The simplified review's whole inventory: totals strip, plain
+    // rows, one note box, one Confirm — and none of the struck
+    // sections (no Questions, no Save changes, no Meal details).
+    await expect(page.locator(".meal-draft-totals")).toBeVisible();
+    await expect(page.locator("[data-draft-savebar]")).toHaveCount(0);
+    await expect(page.locator("#meal-draft-food-search")).toHaveCount(0);
+
+    // Item editors start collapsed — the fields stay hidden until
+    // the item's row is tapped open.
     const editor = page.locator('[data-draft-item-index="0"]');
     await expect(
         editor.locator('[data-draft-field="gram_weight"]'),
@@ -3324,31 +3331,12 @@ test("photo-flow P4: one Save changes commits draft edits; unsaved edits survive
         editor.locator('[data-draft-field="gram_weight"]'),
     ).toBeVisible();
 
-    // P4: an edit marks the draft dirty, and the ONE Save changes
-    // action commits it — the item PATCH carries the edited value
-    // and the draft version it was made against.
-    await editor.locator('[data-draft-field="gram_weight"]').fill("250");
-    await expect(page.locator("[data-draft-save-note]")).toHaveText(
-        "Unsaved changes",
-    );
-    await page.locator('[data-action="save-draft-all"]').click();
-    await expect(page.locator("[data-draft-save-note]")).toHaveText(
-        "All changes saved.",
-    );
-    expect(lastDraftItemPatch?.path).toBe(
-        "/api/app/meal-drafts/fixture-photo-draft/items/fixture-item-rice",
-    );
-    const patchBody = lastDraftItemPatch?.body as {
-        expected_version?: number;
-        item?: { gram_weight?: number };
-    };
-    expect(patchBody?.expected_version).toBe(1);
-    expect(patchBody?.item?.gram_weight).toBe(250);
-
-    // The two-save trap, closed: edit again, then trigger a full
+    // Edits are local until Confirm: edit, then trigger a full
     // re-render via another action (add-text answers with a fresh
-    // server draft) — the unsaved quantity is still in the editor
-    // afterwards, still marked unsaved.
+    // server draft) — the unsaved values are still in the editor
+    // afterwards (the two-save trap stays closed without a Save
+    // button: the snapshot machinery, not a second save, keeps them).
+    await editor.locator('[data-draft-field="gram_weight"]').fill("250");
     await editor.locator('[data-draft-field="quantity"]').fill("2");
     await page
         .locator("#meal-draft-add-text-input")
@@ -3358,9 +3346,31 @@ test("photo-flow P4: one Save changes commits draft edits; unsaved edits survive
     await expect(editor.locator('[data-draft-field="quantity"]')).toHaveValue(
         "2",
     );
-    await expect(page.locator("[data-draft-save-note]")).toHaveText(
-        "Unsaved changes",
+    await expect(
+        editor.locator('[data-draft-field="gram_weight"]'),
+    ).toHaveValue("250");
+
+    // Confirm IS the save: the item PATCH carrying both edits goes
+    // out first, then the confirm logs the meal.
+    await page.locator('[data-action="confirm-meal-draft"]').click();
+    await expect(page.locator("#toast-region")).toContainText(
+        "Meal confirmed and logged.",
     );
+    expect(lastDraftItemPatch?.path).toBe(
+        "/api/app/meal-drafts/fixture-photo-draft/items/fixture-item-rice",
+    );
+    const patchBody = lastDraftItemPatch?.body as {
+        expected_version?: number;
+        item?: { gram_weight?: number; quantity?: number };
+    };
+    expect(patchBody?.item?.gram_weight).toBe(250);
+    expect(patchBody?.item?.quantity).toBe(2);
+    expect(
+        observedRequest(
+            "POST",
+            "/api/app/meal-drafts/fixture-photo-draft/confirm",
+        ),
+    ).toBe(true);
 });
 
 test("photo-flow P2: a preparation statement updates the draft in place", async ({

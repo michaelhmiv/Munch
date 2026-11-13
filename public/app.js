@@ -121,6 +121,9 @@ const mealDraftReview = {
     // need to say must be said here, in the dialog itself.
     addTextWorking: false,
     actionNote: null,
+    // Simplified review (2026-11-12 approval): while a note is being
+    // applied, the review renders its re-analyzing state from this.
+    addTextBusy: null,
     // Photo-flow P4 (one coherent save model): unsaved edits are
     // tracked explicitly, survive re-renders via a DOM snapshot, and
     // are committed by the single Save changes action.
@@ -5602,7 +5605,12 @@ function draftItemEditor(item, index) {
         item.id ?? `index:${index}`,
     );
     const calories = item.nutrients?.calories;
-    return `<article class="meal-draft-item meal-composer-item" data-draft-item-index="${index}"><div class="meal-composer-item-head meal-draft-item-head"><button class="meal-draft-item-toggle" type="button" data-action="toggle-draft-item" data-index="${index}" aria-expanded="${expanded}"><span class="meal-draft-item-summary"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.portion_label || "")}${calories != null ? ` · ${number(calories)} kcal` : ""}</small></span><span class="meal-draft-item-chevron" aria-hidden="true">${expanded ? "▾" : "▸"}</span></button><small class="meal-draft-item-badges">${sourceBadge(item.source_type)} ${confidenceBadge(item.confidence)}</small><button class="button button-quiet button-small" type="button" data-action="remove-draft-item" data-index="${index}">Remove</button></div><div class="meal-draft-item-fields" ${expanded ? "" : "hidden"}><div class="meal-composer-grid"><label class="field"><span>Name</span><input data-draft-field="name" value="${escapeHtml(item.name)}" maxlength="500" required /></label>${portionField}<label class="field"><span>Quantity</span><input data-draft-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity ?? 1)}" /></label><label class="field"><span>Gram weight</span><input data-draft-field="gram_weight" type="number" min="0.01" step="0.1" value="${escapeHtml(item.gram_weight ?? "")}" /></label></div><div class="meal-composer-nutrients">${nutrientFields}</div><details class="food-audit"><summary>Provenance and assumptions</summary><div class="food-audit-body"><div>${sourceBadge(item.source_type)} ${escapeHtml(item.provider || "Source snapshot preserved")}</div>${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noreferrer">View source</a>` : ""}${item.assumptions?.length ? `<div>Assumptions: ${escapeHtml(item.assumptions.join("; "))}</div>` : ""}</div></details></div></article>`;
+    // Simplified review (owner-approved 2026-11-12): the row IS the
+    // item — name, portion, kcal — tapping it opens the quantity/unit
+    // editor below; swiping it left (or Remove inside the editor)
+    // removes it. Badges and provenance live inside the editor, off
+    // the row's surface.
+    return `<article class="meal-draft-item" data-draft-item-index="${index}"><button class="meal-draft-item-toggle" type="button" data-action="toggle-draft-item" data-index="${index}" aria-expanded="${expanded}"><span class="meal-draft-item-summary"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.portion_label || "")}</small></span><span class="meal-draft-item-kcal">${calories != null ? `${number(calories)} kcal` : ""}</span><span class="meal-draft-item-chevron" aria-hidden="true">${expanded ? "▾" : "▸"}</span></button><div class="meal-draft-item-fields" ${expanded ? "" : "hidden"}><div class="meal-composer-grid"><label class="field"><span>Name</span><input data-draft-field="name" value="${escapeHtml(item.name)}" maxlength="500" required /></label>${portionField}<label class="field"><span>Quantity</span><input data-draft-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity ?? 1)}" /></label><label class="field"><span>Gram weight</span><input data-draft-field="gram_weight" type="number" min="0.01" step="0.1" value="${escapeHtml(item.gram_weight ?? "")}" /></label></div><div class="meal-composer-nutrients">${nutrientFields}</div><details class="food-audit"><summary>Provenance and assumptions</summary><div class="food-audit-body"><div>${sourceBadge(item.source_type)} ${confidenceBadge(item.confidence)}</div><div>${escapeHtml(item.provider || "Source snapshot preserved")}</div>${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noreferrer">View source</a>` : ""}${item.assumptions?.length ? `<div>Assumptions: ${escapeHtml(item.assumptions.join("; "))}</div>` : ""}</div></details><button class="button button-quiet meal-draft-item-remove" type="button" data-action="remove-draft-item" data-index="${index}">Remove</button></div></article>`;
 }
 
 function draftManualEditor(item, index) {
@@ -5780,21 +5788,22 @@ async function saveDraftChanges() {
         const detailsRoot = root?.querySelector("[data-draft-details]");
         const field = (name) =>
             detailsRoot?.querySelector(`[data-draft-field="${name}"]`);
-        const loggedAt = field("logged_at")?.value;
+        // Simplified review: meal type is the one editable detail on
+        // the surface; description, logged-at and notes are display
+        // values now and round-trip unchanged (the PATCH contract
+        // still requires them).
         const result = await api(
             `/api/app/meal-drafts/${mealDraftReview.draft.id}`,
             {
                 method: "PATCH",
                 body: JSON.stringify({
                     expected_version: mealDraftReview.draft.version,
-                    description: field("description")?.value.trim() || null,
+                    description: mealDraftReview.draft.description ?? null,
                     meal_type:
                         field("meal_type")?.value ||
                         mealDraftReview.draft.meal_type,
-                    logged_at: loggedAt
-                        ? new Date(loggedAt).toISOString()
-                        : mealDraftReview.draft.logged_at,
-                    notes: field("notes")?.value.trim() || null,
+                    logged_at: mealDraftReview.draft.logged_at,
+                    notes: mealDraftReview.draft.notes ?? null,
                 }),
                 keepPrevious: true,
             },
@@ -5806,16 +5815,47 @@ async function saveDraftChanges() {
     return mealDraftReview.draft;
 }
 
-/**
- * The review's closing actions. With questions still open the
- * primary button reads "Confirm and accept assumptions" — the
- * labelled click IS the acceptance (photo-draft audit, 2026-11-12);
- * the Questions section's checkbox is the other acceptance path.
- * Both render paths (full review render, post-abandon-ask rebuild)
- * use this one helper so the two can never drift apart.
- */
-function mealDraftActionsMarkup(openQuestions) {
-    return `<button class="button button-primary" type="button" data-action="confirm-meal-draft">${openQuestions.length ? "Confirm and accept assumptions" : "Confirm and log meal"}</button><button class="button button-quiet" type="button" data-action="cancel-meal-draft">Abandon draft</button>`;
+// Simplified review (owner-approved 2026-11-12): a blocking question
+// is one the photo pipeline raised because an item has NO nutrition
+// values (blocking.ts owns the key contract server-side); it is the
+// only question that may interrupt this surface, as one line above
+// the note box. Every other open question is accepted as shown when
+// the user confirms.
+const DRAFT_BLOCKING_QUESTION_PREFIX = "photo_estimate_missing_";
+
+function openBlockingQuestionItemNames(draft) {
+    const names = [];
+    for (const question of draft.questions) {
+        if (
+            question.status !== "open" ||
+            !question.question_key?.startsWith(DRAFT_BLOCKING_QUESTION_PREFIX)
+        ) {
+            continue;
+        }
+        const item = question.item_id
+            ? draft.items.find((record) => record.id === question.item_id)
+            : undefined;
+        names.push(item?.name ?? "One food");
+    }
+    return names;
+}
+
+/** A horizontal swipe left past this many px on a review row removes it. */
+function draftSwipeRemoves(startX, endX) {
+    return startX - endX >= 64;
+}
+
+/** "Thu, Nov 12 · 6:42 PM" in the profile timezone — the review's meta line. */
+function draftLoggedLabel(value) {
+    if (!value) return "Time not recorded";
+    const timezone = state.bootstrap?.profile?.timezone || undefined;
+    const date = new Intl.DateTimeFormat("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        timeZone: timezone,
+    }).format(new Date(value));
+    return `${date} · ${formatTime(value)}`;
 }
 
 function renderMealDraftReview(draft) {
@@ -5828,17 +5868,15 @@ function renderMealDraftReview(draft) {
     const scrollTop = scrollHost?.scrollTop ?? 0;
     mealDraftReview.draft = draft;
     if (!root) return;
-    const openQuestions = draft.questions.filter(
-        (question) => question.status === "open",
-    );
     const totals = draft.totals || {};
     const editable = [
         "open",
         "awaiting_answers",
         "awaiting_confirmation",
     ].includes(draft.status);
-    const dirty = draftHasUnsavedChanges();
-    root.innerHTML = `<div class="meal-draft-review"><div class="panel-title"><div><span class="section-kicker">${escapeHtml(draft.status.replaceAll("_", " "))}</span><h3>${escapeHtml(draft.description || "Meal draft")}</h3></div><span>Version ${draft.version}</span></div><p class="tiny">${draft.expires_at ? `Expires ${escapeHtml(formatTime(draft.expires_at))}` : ""} ${draft.source_mode ? `· Source: ${escapeHtml(draft.source_mode)}` : ""}</p><div class="summary-grid">${metricCard("Calories", totals.calories, " kcal", null, true)}${metricCard("Protein", totals.protein_g, "g", null)}${metricCard("Carbs", totals.carbs_g, "g", null)}${metricCard("Fat", totals.fat_g, "g", null)}</div>${editable && draft.source_mode === "photo" ? `<section class="meal-draft-section meal-draft-add-text"><div class="panel-title"><h4>Anything else to add?</h4></div><label class="field"><span class="sr-only">Anything else to add?</span><input class="input meal-draft-add-text-input" id="meal-draft-add-text-input" type="text" placeholder="I added a good bit of butter…" maxlength="500" autocomplete="off" ${mealDraftReview.addTextWorking ? "disabled" : ""} /></label><button class="button button-secondary meal-draft-add-text-button" type="button" data-action="add-draft-text" ${mealDraftReview.addTextWorking ? "disabled" : ""}>${mealDraftReview.addTextWorking ? "Adding…" : "Add to draft"}</button><p class="tiny meal-draft-add-text-message" id="meal-draft-add-text-status" role="status">${mealDraftReview.addTextWorking ? "Adding to draft…" : escapeHtml(mealDraftReview.addTextMessage ?? "")}</p></section>` : ""}${editable ? `<section class="meal-draft-section" data-draft-details><div class="panel-title"><h4>Meal details</h4></div><div class="meal-composer-grid"><label class="field"><span>Description</span><input data-draft-field="description" value="${escapeHtml(draft.description || "")}" maxlength="2000" /></label><label class="field"><span>Meal type</span><select data-draft-field="meal_type"><option value="breakfast" ${draft.meal_type === "breakfast" ? "selected" : ""}>Breakfast</option><option value="lunch" ${draft.meal_type === "lunch" ? "selected" : ""}>Lunch</option><option value="dinner" ${draft.meal_type === "dinner" ? "selected" : ""}>Dinner</option><option value="snack" ${draft.meal_type === "snack" ? "selected" : ""}>Snack</option></select></label><label class="field"><span>Logged at</span><input data-draft-field="logged_at" type="datetime-local" value="${escapeHtml(draftDateTimeValue(draft.logged_at))}" /></label></div><label class="field"><span>Notes</span><textarea data-draft-field="notes" rows="2" maxlength="4000">${escapeHtml(draft.notes || "")}</textarea></label></section>` : ""}<section class="meal-draft-section"><div class="panel-title"><h4>Foods and provenance</h4><span>${draft.items.length} item${draft.items.length === 1 ? "" : "s"}</span></div>${draft.items.map(draftItemEditor).join("") || `<p class="tiny">No foods are in this draft yet.</p>`}${mealDraftReview.pendingManual.map(draftManualEditor).join("")}</section>${editable ? `<section class="meal-draft-section meal-composer-search"><div class="panel-title"><h4>Add another food</h4><button class="button button-secondary button-small" type="button" data-action="add-draft-manual">Add manual food</button></div><div class="meal-composer-search-row"><input class="input" id="meal-draft-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><input class="input" id="meal-draft-food-barcode" inputmode="numeric" placeholder="Barcode" aria-label="Food barcode" /><button class="button button-secondary" type="button" data-action="lookup-draft-food-barcode">Look up</button></div><div id="meal-draft-food-results" class="meal-food-results"></div></section>` : ""}${openQuestions.length ? `<section class="meal-draft-section"><div class="panel-title"><h4>Questions</h4><span>${openQuestions.length} open</span></div>${openQuestions.map((question) => `<div class="meal-draft-question" data-draft-question-id="${escapeHtml(question.id)}"><strong>${escapeHtml(question.prompt)}</strong><div class="meal-composer-search-row"><input class="input" data-draft-question-answer placeholder="Answer or correction" maxlength="2000" /><button class="button button-secondary button-small" type="button" data-action="answer-meal-draft-question" data-question-id="${escapeHtml(question.id)}">Save answer</button></div></div>`).join("")}<label class="checkbox-row"><input type="checkbox" data-draft-accept-assumptions /> Accept the remaining assumptions as shown</label></section>` : ""}${mealDraftReview.actionNote ? `<p class="meal-draft-action-note" data-draft-action-note role="alert">${escapeHtml(mealDraftReview.actionNote)}</p>` : ""}${editable ? `<div class="meal-draft-savebar" data-draft-savebar><span data-draft-save-note class="${dirty ? "meal-draft-dirty" : "meal-draft-saved"}">${dirty ? "Unsaved changes" : escapeHtml(mealDraftReview.savedMessage ?? "")}</span><button class="button button-primary" type="button" data-action="save-draft-all" ${dirty ? "" : "disabled"}>Save changes</button></div>` : ""}<div class="auth-actions meal-draft-actions">${editable ? mealDraftActionsMarkup(openQuestions) : `<p class="tiny">This draft is ${escapeHtml(draft.status)}.</p>`}</div></div>`;
+    const busyText = mealDraftReview.addTextBusy;
+    const blockingNames = editable ? openBlockingQuestionItemNames(draft) : [];
+    root.innerHTML = `<div class="meal-draft-review">${draft.description ? `<p class="meal-draft-desc">${escapeHtml(draft.description)}</p>` : ""}<div class="meal-draft-meta" data-draft-details><span>${escapeHtml(draftLoggedLabel(draft.logged_at))}</span>${editable ? `<select class="meal-draft-mealtype" data-draft-field="meal_type" aria-label="Meal type">${mealTypeOptionsHtml(draft.meal_type)}</select>` : `<span>${escapeHtml(draft.meal_type)}</span>`}</div>${busyText ? `<div class="meal-draft-status" role="status"><span class="meal-draft-spinner" aria-hidden="true"></span><span class="meal-draft-status-text"><strong>Re-analyzing your meal</strong><small>Your note: “${escapeHtml(busyText)}”</small></span></div>` : ""}<div class="meal-draft-totals${busyText ? " meal-draft-dim" : ""}"><div class="meal-draft-total meal-draft-total-lead"><span>Calories</span><strong>${number(totals.calories)} <small>kcal</small></strong></div><div class="meal-draft-total"><span>Protein</span><strong>${number(totals.protein_g)} g</strong></div><div class="meal-draft-total"><span>Carbs</span><strong>${number(totals.carbs_g)} g</strong></div><div class="meal-draft-total"><span>Fat</span><strong>${number(totals.fat_g)} g</strong></div></div><div class="meal-draft-items${busyText ? " meal-draft-dim" : ""}">${draft.items.map(draftItemEditor).join("") || `<p class="tiny">No foods are in this draft yet.</p>`}${mealDraftReview.pendingManual.map(draftManualEditor).join("")}</div>${blockingNames.length ? `<p class="meal-draft-blocker">${escapeHtml(blockingNames.join(", "))} ${blockingNames.length === 1 ? "has" : "have"} no nutrition values yet. Tap the row to add values, or swipe left to remove.</p>` : ""}${editable && draft.source_mode === "photo" ? `<section class="meal-draft-notebox meal-draft-add-text"><label class="field"><span>Anything else to add?</span><input class="input meal-draft-add-text-input" id="meal-draft-add-text-input" type="text" placeholder="I added a good bit of butter…" maxlength="500" autocomplete="off" value="${busyText ? escapeHtml(busyText) : ""}" ${busyText ? "disabled" : ""} /></label><button class="button button-secondary meal-draft-add-text-button" type="button" data-action="add-draft-text" ${busyText ? "disabled" : ""}>Add to draft</button>${mealDraftReview.addTextMessage ? `<p class="tiny meal-draft-add-text-message" role="status">${escapeHtml(mealDraftReview.addTextMessage)}</p>` : ""}</section>` : ""}${editable ? `<div class="meal-draft-actions"><button class="button button-primary meal-draft-confirm" type="button" data-action="confirm-meal-draft" ${busyText ? "disabled" : ""}>Confirm and log meal</button><button class="button button-quiet" type="button" data-action="cancel-meal-draft" ${busyText ? "disabled" : ""}>Abandon draft</button></div>` : `<p class="tiny">This draft is ${escapeHtml(draft.status.replaceAll("_", " "))}.</p>`}</div>`;
     applyDraftUnsavedEdits(snapshot, draft);
     if (scrollHost) scrollHost.scrollTop = scrollTop;
 }
@@ -6680,22 +6718,56 @@ function setButtonBusy(button, busy, busyLabel) {
  * (no message yet), so the WORKING state is visible from the first
  * click, not only after the answer comes back.
  */
-function setAddTextStatus(message) {
-    const section = document.querySelector(".meal-draft-add-text");
-    if (!section) return;
-    let line = section.querySelector(".meal-draft-add-text-message");
-    if (!message) {
-        if (line && !mealDraftReview.addTextMessage) line.remove();
-        return;
-    }
-    if (!line) {
-        line = document.createElement("p");
-        line.className = "tiny meal-draft-add-text-message";
-        line.setAttribute("role", "status");
-        section.appendChild(line);
-    }
-    line.textContent = message;
+/**
+ * Ask to remove a draft item (inline confirmation, never a native
+ * dialog). Shared by the editor's Remove button and the row's
+ * swipe-left gesture on the simplified review.
+ */
+function requestRemoveDraftItem(index, anchor) {
+    const draft = mealDraftReview.draft;
+    if (!draft || !anchor) return;
+    const record = draft.items[index];
+    if (!record) return;
+    showInlineConfirm(anchor, {
+        note: `Remove ${record.name} from this draft?`,
+        confirmLabel: "Yes, remove item",
+        confirmAction: "confirm-remove-draft-item",
+        confirmAttrs: { index: String(index) },
+        dismissLabel: "Keep item",
+        destructive: true,
+    });
 }
+
+// Swipe-left on a review row removes the item (owner-approved
+// simplified review, 2026-11-12): the gesture arms only on the row's
+// toggle head — never inside the expanded editor's fields — and
+// lands on the same inline confirmation as the Remove button.
+let draftSwipeArm = null;
+document.addEventListener(
+    "touchstart",
+    (event) => {
+        const toggle = event.target.closest?.(".meal-draft-item-toggle");
+        draftSwipeArm = toggle
+            ? {
+                  item: toggle.closest("[data-draft-item-index]"),
+                  startX: event.touches[0].clientX,
+              }
+            : null;
+    },
+    { passive: true },
+);
+document.addEventListener(
+    "touchend",
+    (event) => {
+        if (!draftSwipeArm?.item) return;
+        const { item, startX } = draftSwipeArm;
+        draftSwipeArm = null;
+        if (draftSwipeRemoves(startX, event.changedTouches[0].clientX)) {
+            requestRemoveDraftItem(Number(item.dataset.draftItemIndex), item);
+        }
+    },
+    { passive: true },
+);
 
 async function handleAction(button) {
     const action = button.dataset.action;
@@ -7435,13 +7507,15 @@ async function handleAction(button) {
             return;
         }
         // Working state FIRST (photo-draft audit, 2026-11-12): the
-        // click must visibly land — busy button plus a standing
-        // status line — before the request goes out, and the result
-        // (addTextMessage, rendered into the section on success)
-        // stays on screen after. Previously the only signal was a
-        // silently disabled button and a transient toast.
-        setButtonBusy(button, true, "Adding…");
-        setAddTextStatus("Adding to draft…");
+        // click must visibly land before the request goes out. The
+        // review re-renders in its re-analyzing state (status block
+        // echoing the note, totals and items dimmed, controls inert —
+        // the owner-approved frame), and the result message stays on
+        // screen after. Previously the only signal was a silently
+        // disabled button and a transient toast.
+        mealDraftReview.addTextMessage = null;
+        mealDraftReview.addTextBusy = text;
+        renderMealDraftReview(draft);
         try {
             const result = await api(
                 `/api/app/meal-drafts/${encodeURIComponent(draft.id)}/add-text`,
@@ -7454,6 +7528,7 @@ async function handleAction(button) {
                     keepPrevious: true,
                 },
             );
+            mealDraftReview.addTextBusy = null;
             mealDraftReview.addTextMessage =
                 result.add?.message || "Draft updated.";
             mealDraftReview.addTextWorking = false;
@@ -7464,20 +7539,9 @@ async function handleAction(button) {
                 toast("Draft updated.");
             }
         } catch (error) {
-            mealDraftReview.addTextWorking = false;
-            mealDraftReview.addTextMessage =
-                error.message ||
-                "That couldn't be added — the draft is unchanged. Try again.";
-            // No re-render: the typed text stays in the input so the
-            // user can retry without retyping, and the failure lands
-            // on the status line inside the dialog (a toast would be
-            // painted under the modal). The busy state hands the
-            // button back in the finally below.
-            if (statusLine?.isConnected) {
-                statusLine.textContent = mealDraftReview.addTextMessage;
-            }
-        } finally {
-            setButtonBusy(button, false);
+            mealDraftReview.addTextBusy = null;
+            renderMealDraftReview(mealDraftReview.draft);
+            throw error;
         }
         return;
     }
@@ -7564,19 +7628,7 @@ async function handleAction(button) {
         // UX fix wave F4: inline confirmation instead of the native
         // window.confirm() (same pattern and rationale as delete-meal
         // below). The first click only asks; nothing is sent yet.
-        const draft = mealDraftReview.draft;
-        if (!draft) return;
-        const index = Number(button.dataset.index);
-        const record = draft.items[index];
-        if (!record) return;
-        showInlineConfirm(button, {
-            note: `Remove ${record.name} from this draft?`,
-            confirmLabel: "Yes, remove item",
-            confirmAction: "confirm-remove-draft-item",
-            confirmAttrs: { index: String(index) },
-            dismissLabel: "Keep item",
-            destructive: true,
-        });
+        requestRemoveDraftItem(Number(button.dataset.index), button);
         return;
     }
     if (action === "confirm-remove-draft-item") {
@@ -7647,7 +7699,13 @@ async function handleAction(button) {
     }
     if (action === "confirm-meal-draft") {
         if (!mealDraftReview.draft) return;
-        setButtonBusy(button, true, "Logging meal…");
+        // Saving state (owner-approved frame 3): the primary stays
+        // full-strength, carrying a spinner and "Logging…" while the
+        // request is out; the original label returns on failure.
+        const originalLabel = button.innerHTML;
+        button.disabled = true;
+        button.setAttribute("aria-busy", "true");
+        button.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span>Logging…`;
         try {
             // Photo-flow P4: confirming is also a save — unsaved edits
             // commit first, so the logged meal is the one on screen,
@@ -7659,20 +7717,16 @@ async function handleAction(button) {
             const hasOpenQuestions = draft.questions.some(
                 (question) => question.status === "open",
             );
-            // Acceptance has TWO honest paths and this click is one
-            // of them: with questions open the button itself reads
-            // "Confirm and accept assumptions", so the click IS the
-            // acceptance it labels. The checkbox in the Questions
-            // section is the other path. (Photo-draft audit,
-            // 2026-11-12: previously the handler demanded the
-            // checkbox even when the labelled button was clicked —
-            // the click returned after a toast and NO request was
-            // sent, which reads exactly like "save doesn't save".)
-            const accepted =
-                Boolean(
-                    document.querySelector("[data-draft-accept-assumptions]")
-                        ?.checked,
-                ) || hasOpenQuestions;
+            // Simplified review (2026-11-12): there is no Questions
+            // section and no assumptions checkbox anymore — confirming
+            // accepts the non-blocking questions exactly as shown
+            // (that acceptance is what this click means), while a
+            // genuinely blocking question (an item with no nutrition)
+            // still refuses server-side with its actionable message.
+            // (Before the audit fix, the handler demanded a checkbox
+            // even when this button was clicked — the click returned
+            // after a toast and NO request was sent, which reads
+            // exactly like "save doesn't save".)
             const result = await api(
                 `/api/app/meal-drafts/${encodeURIComponent(draft.id)}/confirm`,
                 {
@@ -7680,7 +7734,7 @@ async function handleAction(button) {
                     body: JSON.stringify({
                         expected_version: draft.version,
                         confirmed: true,
-                        accept_remaining_assumptions: accepted,
+                        accept_remaining_assumptions: hasOpenQuestions,
                     }),
                     keepPrevious: true,
                 },
@@ -7701,7 +7755,9 @@ async function handleAction(button) {
             showDraftActionNoteInPlace();
             return;
         } finally {
-            setButtonBusy(button, false);
+            button.innerHTML = originalLabel;
+            button.disabled = false;
+            button.removeAttribute("aria-busy");
         }
     }
     if (action === "cancel-meal-draft") {
@@ -7729,10 +7785,7 @@ async function handleAction(button) {
         const draft = mealDraftReview.draft;
         const actions = document.querySelector(".meal-draft-actions");
         if (!draft || !actions) return;
-        const openQuestions = draft.questions.filter(
-            (question) => question.status === "open",
-        );
-        actions.innerHTML = mealDraftActionsMarkup(openQuestions);
+        actions.innerHTML = `<button class="button button-primary meal-draft-confirm" type="button" data-action="confirm-meal-draft">Confirm and log meal</button><button class="button button-quiet" type="button" data-action="cancel-meal-draft">Abandon draft</button>`;
         actions.querySelector('[data-action="cancel-meal-draft"]')?.focus();
         return;
     }
