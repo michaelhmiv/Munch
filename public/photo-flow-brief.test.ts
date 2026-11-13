@@ -35,9 +35,11 @@ const context: Record<string, unknown> = {
     state: { bootstrap: { profile: {} } },
 };
 runInNewContext(
-    [optionsConst, extract("mealTypeOptionsHtml"), extract("setButtonBusy")].join(
-        "\n",
-    ),
+    [
+        optionsConst,
+        extract("mealTypeOptionsHtml"),
+        extract("setButtonBusy"),
+    ].join("\n"),
     context,
 );
 
@@ -60,7 +62,8 @@ const setButtonBusy = context.setButtonBusy as (
 ) => void;
 
 describe("defaultMealType — owner time bands (America/New_York)", () => {
-    const at = (iso: string) => defaultMealType(new Date(iso), "America/New_York");
+    const at = (iso: string) =>
+        defaultMealType(new Date(iso), "America/New_York");
     test("midnight to 10:00 is breakfast", () => {
         expect(at("2026-11-12T05:00:00Z")).toBe("breakfast"); // 00:00 EST
         expect(at("2026-11-12T14:59:00Z")).toBe("breakfast"); // 09:59 EST
@@ -79,7 +82,9 @@ describe("defaultMealType — owner time bands (America/New_York)", () => {
 describe("mealTypeOptionsHtml", () => {
     test("marks exactly the requested type selected", () => {
         const html = mealTypeOptionsHtml("dinner");
-        expect(html).toContain('<option value="dinner" selected>Dinner</option>');
+        expect(html).toContain(
+            '<option value="dinner" selected>Dinner</option>',
+        );
         expect(html).not.toContain('<option value="lunch" selected>');
         expect(html).not.toContain('<option value="breakfast" selected>');
     });
@@ -94,7 +99,9 @@ describe("mealTypeOptionsHtml", () => {
 describe("meal-type pre-fill wiring", () => {
     test("no hardcoded lunch pre-fill survives anywhere in app.js", () => {
         expect(source).not.toContain('<option value="lunch" selected>');
-        expect(source).not.toContain('<option value="lunch" selected>Lunch</option>');
+        expect(source).not.toContain(
+            '<option value="lunch" selected>Lunch</option>',
+        );
     });
     test("the photo flow stamps the time-of-day default at submit", () => {
         // The capture dialog carries no meal-type select (camera-first
@@ -194,7 +201,9 @@ describe("draft button-flow wiring (audit fixes)", () => {
             'if (action === "confirm-meal-draft")',
             'if (action === "cancel-meal-draft")',
         );
-        expect(confirm).toContain('setButtonBusy(button, true, "Logging meal…")');
+        expect(confirm).toContain(
+            'setButtonBusy(button, true, "Logging meal…")',
+        );
         // The dead-click gate is gone: no early return demanding the
         // checkbox after the "Confirm and accept assumptions" click.
         expect(confirm).not.toContain(

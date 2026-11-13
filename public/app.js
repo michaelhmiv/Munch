@@ -3380,8 +3380,8 @@ function openRecipeLog(id, revisionId) {
     openDialog(
         "Log saved recipe",
         `<form id="recipe-log-form" class="auth-form" data-id="${escapeHtml(id)}" data-revision="${escapeHtml(revisionId || "")}"><p>Use the saved ingredients and nutrition exactly as stored. Choose how much you ate.</p><label class="field"><span>Servings consumed</span><input name="servings_consumed" type="number" min="0.01" step="0.01" value="1" required /></label><label class="field"><span>Meal type</span><select name="meal_type">${mealTypeOptionsHtml(
-                defaultMealType(new Date(), state.bootstrap?.profile?.timezone),
-            )}</select></label><label class="field"><span>Notes</span><input name="notes" maxlength="4000" placeholder="Optional" /></label><button class="button button-primary" type="submit">Log meal</button></form>`,
+            defaultMealType(new Date(), state.bootstrap?.profile?.timezone),
+        )}</select></label><label class="field"><span>Notes</span><input name="notes" maxlength="4000" placeholder="Optional" /></label><button class="button button-primary" type="submit">Log meal</button></form>`,
     );
 }
 
@@ -3389,8 +3389,8 @@ function openRecipePlan(id) {
     openDialog(
         "Add recipe to meal plan",
         `<form id="recipe-plan-form" class="auth-form" data-id="${escapeHtml(id)}"><label class="field"><span>Date</span><input name="planned_date" type="date" value="${escapeHtml(state.date)}" required /></label><label class="field"><span>Meal slot</span><select name="meal_slot">${mealTypeOptionsHtml(
-                defaultMealType(new Date(), state.bootstrap?.profile?.timezone),
-            )}</select></label><label class="field"><span>Servings planned</span><input name="servings" type="number" min="0.01" step="0.01" value="1" required /></label><button class="button button-primary" type="submit">Add to plan</button></form>`,
+            defaultMealType(new Date(), state.bootstrap?.profile?.timezone),
+        )}</select></label><label class="field"><span>Servings planned</span><input name="servings" type="number" min="0.01" step="0.01" value="1" required /></label><button class="button button-primary" type="submit">Add to plan</button></form>`,
     );
 }
 
@@ -3517,8 +3517,11 @@ async function openGuidedPlanner() {
         .map(
             (date) =>
                 `<div class="meal-card guided-plan-row" data-guided-date="${date}"><div class="meal-card-head"><strong>${escapeHtml(formatDate(date, { weekday: true }))}</strong><label class="field"><span>Saved recipe</span><select class="input" name="recipe_choice">${recipeOptions}</select></label></div><div class="form-grid"><label class="field"><span>Meal slot</span><select class="input" name="meal_slot">${mealTypeOptionsHtml(
-                defaultMealType(new Date(), state.bootstrap?.profile?.timezone),
-            )}</select></label><label class="field"><span>Servings</span><input class="input" name="servings" type="number" min="0.25" max="50" step="0.25" value="${escapeHtml(context.preferences.servings || 1)}" /></label></div></div>`,
+                    defaultMealType(
+                        new Date(),
+                        state.bootstrap?.profile?.timezone,
+                    ),
+                )}</select></label><label class="field"><span>Servings</span><input class="input" name="servings" type="number" min="0.25" max="50" step="0.25" value="${escapeHtml(context.preferences.servings || 1)}" /></label></div></div>`,
         )
         .join("");
     const existingPlanNote = currentPlan.length
@@ -6526,8 +6529,8 @@ function openMealComposer() {
     openDialog(
         "Add meal",
         `<form id="meal-form" class="auth-form"><input type="hidden" name="logged_at" value="${escapeHtml(`${state.date}T12:00:00.000Z`)}" /><label class="field"><span>Meal name</span><input name="description" value="Meal" maxlength="500" required /></label><label class="field"><span>Meal type</span><select name="meal_type">${mealTypeOptionsHtml(
-                defaultMealType(new Date(), state.bootstrap?.profile?.timezone),
-            )}</select></label><section class="meal-composer-search"><div class="panel-title"><h3>Find foods</h3><span>Verified, saved, and recent</span></div><div id="meal-usuals" class="meal-usuals" hidden></div><div class="meal-composer-search-row"><input class="input" id="meal-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><input class="input" id="meal-food-barcode" inputmode="numeric" placeholder="Barcode" aria-label="Food barcode" /><button class="button button-secondary" type="button" data-action="lookup-food-barcode">Look up</button></div><div id="meal-food-results" class="meal-food-results"></div></section><section><div class="panel-title"><h3>Selected foods</h3><button class="button button-secondary button-small" type="button" data-action="add-manual-food">Add manual food</button></div><div id="meal-selected-items" class="meal-selected-items"></div></section><label class="field"><span>Notes</span><textarea name="notes" rows="2" maxlength="4000" placeholder="Optional"></textarea></label><button class="button button-primary" type="submit">Log meal</button></form>`,
+            defaultMealType(new Date(), state.bootstrap?.profile?.timezone),
+        )}</select></label><section class="meal-composer-search"><div class="panel-title"><h3>Find foods</h3><span>Verified, saved, and recent</span></div><div id="meal-usuals" class="meal-usuals" hidden></div><div class="meal-composer-search-row"><input class="input" id="meal-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><input class="input" id="meal-food-barcode" inputmode="numeric" placeholder="Barcode" aria-label="Food barcode" /><button class="button button-secondary" type="button" data-action="lookup-food-barcode">Look up</button></div><div id="meal-food-results" class="meal-food-results"></div></section><section><div class="panel-title"><h3>Selected foods</h3><button class="button button-secondary button-small" type="button" data-action="add-manual-food">Add manual food</button></div><div id="meal-selected-items" class="meal-selected-items"></div></section><label class="field"><span>Notes</span><textarea name="notes" rows="2" maxlength="4000" placeholder="Optional"></textarea></label><button class="button button-primary" type="submit">Log meal</button></form>`,
     );
     renderMealComposerItems();
     searchMealFoods("");
@@ -6538,8 +6541,8 @@ function openMealDraftComposer() {
     openDialog(
         "Start meal draft",
         `<form id="meal-draft-create-form" class="auth-form"><p class="tiny">Create a reviewable draft when the meal needs clarification or a nutrition check before it is logged.</p><input type="hidden" name="source_mode" value="text" /><input type="hidden" name="logged_at" value="${escapeHtml(`${state.date}T12:00:00.000Z`)}" /><label class="field"><span>What are you logging?</span><input name="description" maxlength="2000" placeholder="Chicken burrito, restaurant dinner…" required /></label><label class="field"><span>Meal type</span><select name="meal_type">${mealTypeOptionsHtml(
-                defaultMealType(new Date(), state.bootstrap?.profile?.timezone),
-            )}</select></label><label class="field"><span>Notes or context</span><textarea name="notes" rows="3" maxlength="4000" placeholder="Optional details, uncertainty, or corrections"></textarea></label><button class="button button-primary" type="submit">Start reviewable draft</button></form>`,
+            defaultMealType(new Date(), state.bootstrap?.profile?.timezone),
+        )}</select></label><label class="field"><span>Notes or context</span><textarea name="notes" rows="3" maxlength="4000" placeholder="Optional details, uncertainty, or corrections"></textarea></label><button class="button button-primary" type="submit">Start reviewable draft</button></form>`,
     );
 }
 
