@@ -3276,6 +3276,15 @@ test("meal.photoLog runs end to end in the packaged bundle", async ({
     await expect(page.locator("#meal-photo-submit")).toHaveCount(0);
     await expect(page.locator("#meal-photo-meal-type")).toHaveCount(0);
 
+    // Multi-photo (2026-11-12): the review carries this session's
+    // photo strip — the captured photo as a removable chip, with
+    // room under the cap of 3 to add another angle before
+    // confirming. (The pre-audit dialog-accumulation assertions
+    // died with the form dialog they described; the strip is the
+    // multi-photo surface in the camera-first flow.)
+    await expect(page.locator(".meal-draft-photos")).toContainText("Photo 1");
+    await expect(page.locator("#meal-draft-photo-file")).toBeAttached();
+
     // Conversational add-to-draft (Amendment E) inside the same review.
     await expect(page.locator("#meal-draft-add-text-input")).toBeVisible();
     await page
