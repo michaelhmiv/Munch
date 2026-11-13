@@ -53,6 +53,7 @@ const document = {
     getElementById: (id) => (id === "meal-draft-review" ? rootStub : null),
     querySelector: () => null,
 };
+var mealPhotoCapture = { session: null };
 const draftNutrientFields = [];
 const draftNutrientLabel = (key) => key;
 const draftPortionField = () => "";

@@ -124,6 +124,9 @@ const mealDraftReview = {
     // Simplified review (2026-11-12 approval): while a note is being
     // applied, the review renders its re-analyzing state from this.
     addTextBusy: null,
+    // Multi-photo (2026-11-12): true while the draft is being
+    // re-estimated from a changed session photo set.
+    photoBusy: false,
     // Photo-flow P4 (one coherent save model): unsaved edits are
     // tracked explicitly, survive re-renders via a DOM snapshot, and
     // are committed by the single Save changes action.
@@ -5875,8 +5878,17 @@ function renderMealDraftReview(draft) {
         "awaiting_confirmation",
     ].includes(draft.status);
     const busyText = mealDraftReview.addTextBusy;
+    const photoBusy = mealDraftReview.photoBusy;
     const blockingNames = editable ? openBlockingQuestionItemNames(draft) : [];
-    root.innerHTML = `<div class="meal-draft-review">${draft.description ? `<p class="meal-draft-desc">${escapeHtml(draft.description)}</p>` : ""}<div class="meal-draft-meta" data-draft-details><span>${escapeHtml(draftLoggedLabel(draft.logged_at))}</span>${editable ? `<select class="meal-draft-mealtype" data-draft-field="meal_type" aria-label="Meal type">${mealTypeOptionsHtml(draft.meal_type)}</select>` : `<span>${escapeHtml(draft.meal_type)}</span>`}</div>${busyText ? `<div class="meal-draft-status" role="status"><span class="meal-draft-spinner" aria-hidden="true"></span><span class="meal-draft-status-text"><strong>Re-analyzing your meal</strong><small>Your note: “${escapeHtml(busyText)}”</small></span></div>` : ""}<div class="meal-draft-totals${busyText ? " meal-draft-dim" : ""}"><div class="meal-draft-total meal-draft-total-lead"><span>Calories</span><strong>${number(totals.calories)} <small>kcal</small></strong></div><div class="meal-draft-total"><span>Protein</span><strong>${number(totals.protein_g)} g</strong></div><div class="meal-draft-total"><span>Carbs</span><strong>${number(totals.carbs_g)} g</strong></div><div class="meal-draft-total"><span>Fat</span><strong>${number(totals.fat_g)} g</strong></div></div><div class="meal-draft-items${busyText ? " meal-draft-dim" : ""}">${draft.items.map(draftItemEditor).join("") || `<p class="tiny">No foods are in this draft yet.</p>`}${mealDraftReview.pendingManual.map(draftManualEditor).join("")}</div>${blockingNames.length ? `<p class="meal-draft-blocker">${escapeHtml(blockingNames.join(", "))} ${blockingNames.length === 1 ? "has" : "have"} no nutrition values yet. Tap the row to add values, or swipe left to remove.</p>` : ""}${editable && draft.source_mode === "photo" ? `<section class="meal-draft-notebox meal-draft-add-text"><label class="field"><span>Anything else to add?</span><input class="input meal-draft-add-text-input" id="meal-draft-add-text-input" type="text" placeholder="I added a good bit of butter…" maxlength="500" autocomplete="off" value="${busyText ? escapeHtml(busyText) : ""}" ${busyText ? "disabled" : ""} /></label><button class="button button-secondary meal-draft-add-text-button" type="button" data-action="add-draft-text" ${busyText ? "disabled" : ""}>Add to draft</button>${mealDraftReview.addTextMessage ? `<p class="tiny meal-draft-add-text-message" role="status">${escapeHtml(mealDraftReview.addTextMessage)}</p>` : ""}</section>` : ""}${editable ? `<div class="meal-draft-actions"><button class="button button-primary meal-draft-confirm" type="button" data-action="confirm-meal-draft" ${busyText ? "disabled" : ""}>Confirm and log meal</button><button class="button button-quiet" type="button" data-action="cancel-meal-draft" ${busyText ? "disabled" : ""}>Abandon draft</button></div>` : `<p class="tiny">This draft is ${escapeHtml(draft.status.replaceAll("_", " "))}.</p>`}</div>`;
+    // Multi-photo session strip: only for the draft this session's
+    // photos produced (a pending draft reopened later has no Files).
+    const photoSession =
+        editable &&
+        draft.source_mode === "photo" &&
+        mealPhotoCapture.session?.draftId === draft.id
+            ? mealPhotoCapture.session
+            : null;
+    root.innerHTML = `<div class="meal-draft-review">${draft.description ? `<p class="meal-draft-desc">${escapeHtml(draft.description)}</p>` : ""}<div class="meal-draft-meta" data-draft-details><span>${escapeHtml(draftLoggedLabel(draft.logged_at))}</span>${editable ? `<select class="meal-draft-mealtype" data-draft-field="meal_type" aria-label="Meal type">${mealTypeOptionsHtml(draft.meal_type)}</select>` : `<span>${escapeHtml(draft.meal_type)}</span>`}</div>${busyText || photoBusy ? `<div class="meal-draft-status" role="status"><span class="meal-draft-spinner" aria-hidden="true"></span><span class="meal-draft-status-text"><strong>Re-analyzing your meal</strong>${busyText ? `<small>Your note: “${escapeHtml(busyText)}”</small>` : ""}</span></div>` : ""}<div class="meal-draft-totals${busyText || photoBusy ? " meal-draft-dim" : ""}"><div class="meal-draft-total meal-draft-total-lead"><span>Calories</span><strong>${number(totals.calories)} <small>kcal</small></strong></div><div class="meal-draft-total"><span>Protein</span><strong>${number(totals.protein_g)} g</strong></div><div class="meal-draft-total"><span>Carbs</span><strong>${number(totals.carbs_g)} g</strong></div><div class="meal-draft-total"><span>Fat</span><strong>${number(totals.fat_g)} g</strong></div></div><div class="meal-draft-items${busyText || photoBusy ? " meal-draft-dim" : ""}">${draft.items.map(draftItemEditor).join("") || `<p class="tiny">No foods are in this draft yet.</p>`}${mealDraftReview.pendingManual.map(draftManualEditor).join("")}</div>${photoSession ? `<div class="meal-draft-photos">${photoSession.files.map((file, i) => `<span class="meal-draft-photo-chip">Photo ${i + 1}<button class="button button-quiet button-small" type="button" data-action="remove-draft-photo" data-index="${i}" aria-label="Remove photo ${i + 1}">Remove</button></span>`).join("")}${photoSession.files.length < 3 ? photoCaptureMarkup({ inputId: "meal-draft-photo-file", label: "Add another photo", multiple: true }) : ""}</div>` : ""}${blockingNames.length ? `<p class="meal-draft-blocker">${escapeHtml(blockingNames.join(", "))} ${blockingNames.length === 1 ? "has" : "have"} no nutrition values yet. Tap the row to add values, or swipe left to remove.</p>` : ""}${editable && draft.source_mode === "photo" ? `<section class="meal-draft-notebox meal-draft-add-text"><label class="field"><span>Anything else to add?</span><input class="input meal-draft-add-text-input" id="meal-draft-add-text-input" type="text" placeholder="I added a good bit of butter…" maxlength="500" autocomplete="off" value="${busyText ? escapeHtml(busyText) : ""}" ${busyText || photoBusy ? "disabled" : ""} /></label><button class="button button-secondary meal-draft-add-text-button" type="button" data-action="add-draft-text" ${busyText || photoBusy ? "disabled" : ""}>Add to draft</button>${mealDraftReview.addTextMessage ? `<p class="tiny meal-draft-add-text-message" role="status">${escapeHtml(mealDraftReview.addTextMessage)}</p>` : ""}</section>` : ""}${editable ? `<div class="meal-draft-actions"><button class="button button-primary meal-draft-confirm" type="button" data-action="confirm-meal-draft" ${busyText || photoBusy ? "disabled" : ""}>Confirm and log meal</button><button class="button button-quiet" type="button" data-action="cancel-meal-draft" ${busyText || photoBusy ? "disabled" : ""}>Abandon draft</button></div>` : `<p class="tiny">This draft is ${escapeHtml(draft.status.replaceAll("_", " "))}.</p>`}</div>`;
     applyDraftUnsavedEdits(snapshot, draft);
     if (scrollHost) scrollHost.scrollTop = scrollTop;
 }
@@ -6029,7 +6041,15 @@ async function openMealDraft(id) {
     searchDraftFoods("");
 }
 
-const mealPhotoCapture = { idempotencyKey: null, submitting: false };
+const mealPhotoCapture = {
+    idempotencyKey: null,
+    submitting: false,
+    // Multi-photo session (2026-11-12): the prepared photo Files of
+    // the draft currently under review, held ONLY for this session —
+    // photos are never retained server-side, so removing one here
+    // re-runs the estimate with the rest and replaces the draft.
+    session: null,
+};
 
 async function openMealPhotoDialog() {
     mealPhotoCapture.idempotencyKey = `web-meal-photo:${crypto.randomUUID()}`;
@@ -6044,7 +6064,8 @@ async function openMealPhotoDialog() {
     openDialog(
         "Log by photo",
         `<div class="meal-photo-capture">
-            <div class="field">${photoCaptureMarkup({ inputId: "meal-photo-file", label: "Meal photo" })}</div>
+            <p class="meal-photo-lede">Photos are processed transiently — never kept. Up to 3 photos of the same meal; different angles count once.</p>
+            <div class="field">${photoCaptureMarkup({ inputId: "meal-photo-file", label: "Meal photo", multiple: true })}</div>
             <p class="tiny meal-photo-status" id="meal-photo-status" role="alert"></p>
             <div class="auth-actions">
                 <button class="button button-secondary" type="button" data-action="meal-photo-manual">Log manually instead</button>
@@ -6073,15 +6094,18 @@ async function openMealPhotoDialog() {
 async function submitMealPhoto() {
     // One estimate in flight per dialog; the capture control can
     // deliver repeatedly (camera restore, a re-pick) and a second
-    // submission would double-post the same photo.
+    // submission would double-post the same photos.
     if (mealPhotoCapture.submitting) return;
     const status = document.getElementById("meal-photo-status");
     const input = document.getElementById("meal-photo-file");
-    const file = input?.files?.[0];
+    const selected = [...(input?.files ?? [])];
     const say = (message) => {
         if (status) status.textContent = message;
     };
-    if (!file) return say("Take or choose a meal photo first.");
+    if (!selected.length) return say("Take or choose a meal photo first.");
+    if (selected.length > 3) {
+        return say("Up to 3 photos per meal.");
+    }
     // Clear the input so picking the SAME photo again later still
     // fires a change event (a held value would silently swallow it).
     input.value = "";
@@ -6089,23 +6113,30 @@ async function submitMealPhoto() {
     try {
         // Photo-flow P7: shrink the frame client-side before upload —
         // the vision pass needs none of a phone camera's megapixels, and
-        // every megabyte is upload time on a mobile connection.
-        say("Preparing photo…");
+        // every megabyte is upload time on a mobile connection. The
+        // per-photo prepare pipeline is unchanged for multi-photo
+        // (2026-11-12): each frame is downscaled and EXIF-stripped on
+        // its own, exactly as the single-photo flow always did.
+        say(selected.length > 1 ? "Preparing photos…" : "Preparing photo…");
         // Time the on-device prepare so the split between client prep
         // and server work is visible in the [meal_photo] receive log —
         // Nov 11's ~10 s perceived lag was nearly all this step while
         // the server answered in 276 ms. Reported as client_prepare_ms;
         // the server only ever logs it, never acts on it.
         const prepareStartedAt = Date.now();
-        const prepared = await downscaleImageFile(file);
-        const clientPrepareMs = Math.max(0, Date.now() - prepareStartedAt);
-        if (prepared.size > 8 * 1024 * 1024) {
-            return say(
-                "That photo is over the 8 MB limit — choose a smaller one.",
-            );
+        const preparedFiles = [];
+        for (const file of selected) {
+            const prepared = await downscaleImageFile(file);
+            if (prepared.size > 8 * 1024 * 1024) {
+                return say(
+                    "One photo is over the 8 MB limit — choose a smaller one.",
+                );
+            }
+            preparedFiles.push(prepared);
         }
+        const clientPrepareMs = Math.max(0, Date.now() - prepareStartedAt);
         const form = new FormData();
-        form.append("file", prepared);
+        for (const prepared of preparedFiles) form.append("file", prepared);
         form.append("client_prepare_ms", String(clientPrepareMs));
         // Photo-flow audit (2026-11-12): the slot follows the local
         // time of day in the user's timezone (an evening photo is
@@ -6140,6 +6171,13 @@ async function submitMealPhoto() {
                 method: "POST",
                 body: form,
             });
+            // Multi-photo session (2026-11-12): the prepared files
+            // stay with this session's review so a photo can be
+            // removed (or another added) before confirming.
+            mealPhotoCapture.session = {
+                draftId: result.draft.id,
+                files: preparedFiles,
+            };
             await openMealDraft(result.draft.id);
         } finally {
             for (const timer of stageTimers) clearTimeout(timer);
@@ -6151,6 +6189,78 @@ async function submitMealPhoto() {
     }
 }
 
+async function reestimateDraftPhotos(files) {
+    const draft = mealDraftReview.draft;
+    const session = mealPhotoCapture.session;
+    if (!draft || !session || session.draftId !== draft.id) return;
+    mealDraftReview.photoBusy = true;
+    renderMealDraftReview(draft);
+    const form = new FormData();
+    for (const file of files) form.append("file", file);
+    form.append("meal_type", draft.meal_type);
+    form.append("logged_at", draft.logged_at);
+    form.append("client_prepare_ms", "0");
+    try {
+        const result = await api("/api/app/meal-photo", {
+            method: "POST",
+            body: form,
+        });
+        mealPhotoCapture.session = { draftId: result.draft.id, files };
+        await api(
+            `/api/app/meal-drafts/${encodeURIComponent(draft.id)}/cancel`,
+            {
+                method: "POST",
+                body: JSON.stringify({
+                    expected_version: draft.version,
+                    confirm: true,
+                }),
+                keepPrevious: true,
+            },
+        ).catch(() => {
+            // The replacement already exists; a lingering superseded
+            // draft is a Today-list nuisance, never a wrong log.
+        });
+        mealDraftReview.photoBusy = false;
+        renderMealDraftReview(result.draft);
+        toast("Draft updated from your photos.");
+    } catch (error) {
+        mealDraftReview.photoBusy = false;
+        renderMealDraftReview(mealDraftReview.draft);
+        toast(
+            error.message || "The photo estimate failed. Draft unchanged.",
+            "error",
+        );
+    }
+}
+
+/** Prepare and add photos picked in the review's own capture control. */
+async function addDraftPhotos(rawFiles) {
+    const session = mealPhotoCapture.session;
+    if (!session) return;
+    const room = 3 - session.files.length;
+    if (room <= 0) {
+        toast("Up to 3 photos per meal.", "error");
+        return;
+    }
+    const prepared = [];
+    for (const file of rawFiles.slice(0, room)) {
+        prepared.push(await downscaleImageFile(file));
+    }
+    if (rawFiles.length > room) {
+        toast("Up to 3 photos per meal — extra photos were left off.");
+    }
+    await reestimateDraftPhotos([...session.files, ...prepared]);
+}
+
+// The review's Add-another-photo control reports through the shared
+// capture event; every other control on the page ignores this
+// listener (their flows read files at submit time, as before).
+document.addEventListener("photo-capture:change", (event) => {
+    const control = event.detail?.control;
+    if (!control?.querySelector?.("#meal-draft-photo-file")) return;
+    const files = event.detail?.files ?? [];
+    if (files.length) void addDraftPhotos(files);
+});
 function foodTitle(food) {
     return [food.brand, food.name].filter(Boolean).join(" — ") || "Food";
 }
@@ -7545,6 +7655,38 @@ async function handleAction(button) {
         }
         return;
     }
+    if (action === "remove-draft-photo") {
+        // Multi-photo (2026-11-12): removing a photo re-estimates
+        // from the rest; removing the LAST one cancels the draft
+        // and returns to the capture sheet — there is no meal left
+        // to review without a photo.
+        const draft = mealDraftReview.draft;
+        const session = mealPhotoCapture.session;
+        if (!draft || !session || session.draftId !== draft.id) return;
+        const remaining = session.files.filter(
+            (_file, i) => i !== Number(button.dataset.index),
+        );
+        if (remaining.length) {
+            await reestimateDraftPhotos(remaining);
+        } else {
+            await api(
+                `/api/app/meal-drafts/${encodeURIComponent(draft.id)}/cancel`,
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                        expected_version: draft.version,
+                        confirm: true,
+                    }),
+                    keepPrevious: true,
+                },
+            );
+            mealPhotoCapture.session = null;
+            closeAppDialog();
+            toast("Draft cancelled — no photos left.");
+            await openMealPhotoDialog();
+        }
+        return;
+    }
     if (action === "add-draft-manual") {
         mealDraftReview.pendingManual.push({
             name: "",
@@ -7740,6 +7882,7 @@ async function handleAction(button) {
                 },
             );
             mealDraftReview.actionNote = null;
+            mealPhotoCapture.session = null;
             closeAppDialog();
             toast("Meal confirmed and logged.");
             await renderRoute();
@@ -7804,6 +7947,7 @@ async function handleAction(button) {
                 keepPrevious: true,
             },
         );
+        mealPhotoCapture.session = null;
         closeAppDialog();
         toast("Meal draft abandoned.");
         await renderRoute();

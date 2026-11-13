@@ -2,8 +2,10 @@ import { describe, expect, test } from "bun:test";
 import {
     chooseMealPhotoCandidates,
     identifyMealPhoto,
+    identifyMealPhotoFromImages,
     mealPhotoVisionConfig,
     MealPhotoNoFoodError,
+    MULTI_PHOTO_DEDUPE_INSTRUCTION,
     type MealPhotoVisionConfig,
 } from "./vision.js";
 
@@ -204,5 +206,75 @@ describe("chooseMealPhotoCandidates", () => {
         );
         expect(choices.has("item:0")).toBe(false);
         expect(choices.get("item:1")?.candidateId).toBe("usda:2");
+    });
+});
+
+describe("identifyMealPhotoFromImages (multi-photo, 2026-11-12)", () => {
+    const photo = (byte: number) => ({
+        mimeType: "image/jpeg",
+        bytes: new Uint8Array([byte]),
+    });
+
+    test("one call carries every photo as its own image part, with the light dedupe instruction", async () => {
+        let body: Record<string, any> = {};
+        let calls = 0;
+        const result = await identifyMealPhotoFromImages(
+            [photo(1), photo(2), photo(3)],
+            config,
+            {
+                fetcher: async (_url, init) => {
+                    calls += 1;
+                    body = JSON.parse(String(init?.body ?? "{}"));
+                    return envelope(oneItem);
+                },
+            },
+        );
+        expect(result.items).toHaveLength(1);
+        expect(calls).toBe(1);
+        const content = body.messages?.[1]?.content as any[];
+        expect(content[0]?.type).toBe("text");
+        expect(content[0]?.text).toContain(MULTI_PHOTO_DEDUPE_INSTRUCTION);
+        const images = content.filter((part) => part.type === "image_url");
+        expect(images).toHaveLength(3);
+        expect(String(images[0]?.image_url?.url)).toStartWith(
+            "data:image/jpeg;base64,",
+        );
+    });
+
+    test("a single photo keeps the un-steered prompt and one image part", async () => {
+        let body: Record<string, any> = {};
+        await identifyMealPhotoFromImages([photo(9)], config, {
+            fetcher: async (_url, init) => {
+                body = JSON.parse(String(init?.body ?? "{}"));
+                return envelope(oneItem);
+            },
+        });
+        const content = body.messages?.[1]?.content as any[];
+        expect(content[0]?.text).not.toContain(MULTI_PHOTO_DEDUPE_INSTRUCTION);
+        expect(
+            content.filter((part) => part.type === "image_url"),
+        ).toHaveLength(1);
+    });
+
+    test("the cap is enforced before any provider call", async () => {
+        let calls = 0;
+        await expect(
+            identifyMealPhotoFromImages(
+                [photo(1), photo(2), photo(3), photo(4)],
+                config,
+                {
+                    fetcher: async () => {
+                        calls += 1;
+                        return envelope(oneItem);
+                    },
+                },
+            ),
+        ).rejects.toThrow("between 1 and 3");
+        expect(calls).toBe(0);
+        await expect(
+            identifyMealPhotoFromImages([], config, {
+                fetcher: async () => envelope(oneItem),
+            }),
+        ).rejects.toThrow("between 1 and 3");
     });
 });

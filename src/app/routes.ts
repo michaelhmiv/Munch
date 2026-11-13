@@ -58,9 +58,10 @@ import { addTextToPhotoDraft } from "../meal-photo/draft-add.js";
 import { parseDraftAddTextWithModel } from "../meal-photo/draft-add-parse.js";
 import { createMealPhotoDraft } from "../meal-photo/pipeline.js";
 import {
-    identifyMealPhoto,
+    identifyMealPhotoFromImages,
     mealPhotoVisionConfig,
     MealPhotoNoFoodError,
+    MAX_MEAL_PHOTOS,
 } from "../meal-photo/vision.js";
 import { decisionsConfig } from "../decisions/config.js";
 import { evaluateMealPhotoGate } from "../decisions/gate.js";
@@ -1763,13 +1764,26 @@ export function createAppRouter(): Hono {
                 503,
             );
         }
-        const form = await c.req.parseBody();
-        const uploaded = form.file;
-        if (
-            !uploaded ||
-            typeof uploaded !== "object" ||
-            typeof (uploaded as File).arrayBuffer !== "function"
-        ) {
+        // Multi-photo (2026-11-12): one meal may carry up to
+        // MAX_MEAL_PHOTOS photos under the repeated `file` field
+        // (or `files`); { all: true } groups repeats into arrays,
+        // and every other field read in this handler goes through
+        // formField so single values keep working.
+        const form = await c.req.parseBody({ all: true });
+        const formField = (value: unknown): unknown =>
+            Array.isArray(value) ? value[0] : value;
+        const isUpload = (value: unknown): value is File =>
+            Boolean(
+                value &&
+                typeof value === "object" &&
+                typeof (value as File).arrayBuffer === "function",
+            );
+        const files = [form.file, form.files]
+            .flatMap((value) =>
+                value == null ? [] : Array.isArray(value) ? value : [value],
+            )
+            .filter(isUpload);
+        if (files.length === 0) {
             return privateJsonStatus(
                 c,
                 {
@@ -1780,31 +1794,45 @@ export function createAppRouter(): Hono {
                 400,
             );
         }
-        const file = uploaded as File;
-        if (!/^image\/(jpeg|png|webp)$/i.test(file.type)) {
+        if (files.length > MAX_MEAL_PHOTOS) {
             return privateJsonStatus(
                 c,
                 {
                     error: "meal_photo_invalid_image",
-                    message: "Meal photo must be JPEG, PNG, or WebP.",
+                    message: `Up to ${MAX_MEAL_PHOTOS} photos per meal — remove one and try again.`,
                     manual_entry_available: true,
                 },
                 400,
             );
         }
-        if (file.size < 1 || file.size > 8 * 1024 * 1024) {
-            return privateJsonStatus(
-                c,
-                {
-                    error: "meal_photo_invalid_image",
-                    message: "Meal photo must be between 1 byte and 8 MB.",
-                    manual_entry_available: true,
-                },
-                400,
-            );
+        for (const file of files) {
+            if (!/^image\/(jpeg|png|webp)$/i.test(file.type)) {
+                return privateJsonStatus(
+                    c,
+                    {
+                        error: "meal_photo_invalid_image",
+                        message: "Meal photo must be JPEG, PNG, or WebP.",
+                        manual_entry_available: true,
+                    },
+                    400,
+                );
+            }
+            if (file.size < 1 || file.size > 8 * 1024 * 1024) {
+                return privateJsonStatus(
+                    c,
+                    {
+                        error: "meal_photo_invalid_image",
+                        message: "Meal photo must be between 1 byte and 8 MB.",
+                        manual_entry_available: true,
+                    },
+                    400,
+                );
+            }
         }
         const mealTypeValue =
-            typeof form.meal_type === "string" ? form.meal_type : undefined;
+            typeof formField(form.meal_type) === "string"
+                ? (formField(form.meal_type) as string)
+                : undefined;
         const mealType =
             mealTypeValue === "breakfast" ||
             mealTypeValue === "lunch" ||
@@ -1813,9 +1841,18 @@ export function createAppRouter(): Hono {
                 ? mealTypeValue
                 : undefined;
         try {
-            const bytes = new Uint8Array(await file.arrayBuffer());
+            const images = await Promise.all(
+                files.map(async (file) => ({
+                    mimeType: file.type,
+                    bytes: new Uint8Array(await file.arrayBuffer()),
+                })),
+            );
+            const totalBytes = images.reduce(
+                (sum, image) => sum + image.bytes.byteLength,
+                0,
+            );
             console.info(
-                `[meal_photo] phase=receive status=success bytes=${bytes.byteLength} duration_ms=${Math.max(0, Date.now() - requestStartedAt)}${clientPrepareMsLogField(form.client_prepare_ms)}`,
+                `[meal_photo] phase=receive status=success bytes=${totalBytes} photo_count=${images.length} duration_ms=${Math.max(0, Date.now() - requestStartedAt)}${clientPrepareMsLogField(formField(form.client_prepare_ms))}`,
             );
             // S1 front-door gate (model-integration brief): one
             // Decisions-API call before the Ember identifier. Ships
@@ -1824,20 +1861,25 @@ export function createAppRouter(): Hono {
             // as MealPhotoNoFoodError so the catch below serializes it
             // exactly like an identifier no-food result.
             const decisionsCfg = decisionsConfig();
-            if (decisionsCfg?.gateEnabled) {
+            const firstImage = images[0];
+            if (decisionsCfg?.gateEnabled && firstImage) {
+                // The gate is a front-door food/non-food check on
+                // the MEAL; it reads the first photo only — later
+                // photos are angles of the same meal, and one Jev
+                // call per meal keeps the door cheap.
                 const gate = await evaluateMealPhotoGate(
-                    { mimeType: file.type, bytes },
+                    {
+                        mimeType: firstImage.mimeType,
+                        bytes: firstImage.bytes,
+                    },
                     decisionsCfg,
                 );
                 if (gate.action === "no_food") {
                     throw new MealPhotoNoFoodError();
                 }
             }
-            const vision = await identifyMealPhoto(
-                {
-                    mimeType: file.type,
-                    bytes,
-                },
+            const vision = await identifyMealPhotoFromImages(
+                images,
                 visionConfig,
             );
             const draftStartedAt = Date.now();
@@ -1847,8 +1889,8 @@ export function createAppRouter(): Hono {
                 vision,
                 mealType,
                 loggedAt:
-                    typeof form.logged_at === "string"
-                        ? form.logged_at
+                    typeof formField(form.logged_at) === "string"
+                        ? (formField(form.logged_at) as string)
                         : undefined,
                 groundingDeps: {
                     search: (query, limit) => foodSearch.search(query, limit),
@@ -1868,6 +1910,7 @@ export function createAppRouter(): Hono {
                 draft: serializeMealDraftForApp(result.draft),
                 transient_media: true,
                 photo_retained: false,
+                photo_count: images.length,
                 grounding: {
                     items: result.grounded.length,
                     provider_grounded: result.groundedCount,

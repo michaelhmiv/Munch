@@ -168,6 +168,24 @@ export function mealPhotoVisionConfig(
 
 const IDENTIFY_PROMPT = `Identify the foods and drinks visibly present in this meal photo and estimate the portion of each that will be eaten. Return only JSON with an items array. For each visible item give: name (a concise generic food name, including the cooking method in the name only when it is part of the food's identity), cooking_method (grilled, fried, steamed, raw, etc. when evident, otherwise null), quantity and unit (your best estimate of the amount shown — use g for weighed solids, ml for drinks, cup/tbsp/piece/slice/bar for countable servings), portion_confidence (0 to 1; use below 0.7 whenever the amount is genuinely uncertain, partially eaten, poorly lit, or hidden under sauce), and assumptions (explicit guesses you had to make, e.g. "assumed skinless", "assumed 1 tbsp oil in pan"; empty array when none). Do NOT report any nutrition values — no calories, protein, carbs, fat, or any other nutrient numbers; Munch looks nutrition up itself. If the photo shows no food or is too blurry to identify anything, return an empty items array. Count partially eaten food at the amount remaining, not the amount originally served.`;
 
+/**
+ * Multi-photo steering (owner ruling, 2026-11-12): LIGHT — these
+ * two sentences and nothing more. Appended only when the meal
+ * carries more than one photo. The same evening's eval verified
+ * zero double-counting across its multi-photo cases with exactly
+ * this instruction and a single identify call, so no server-side
+ * dedupe machinery exists or is wanted.
+ */
+export const MULTI_PHOTO_DEDUPE_INSTRUCTION = `The photos show ONE meal, possibly from several angles. If the same food appears in more than one photo, report it once with its total amount — never double-count it; use continuity of the plate and table across the photos to tell the same food from a different one, and report genuinely different foods as separate items.`;
+
+export interface MealPhotoImage {
+    mimeType: string;
+    bytes: Uint8Array;
+}
+
+/** Owner cap (2026-11-12): one meal is at most three photos. */
+export const MAX_MEAL_PHOTOS = 3;
+
 function responseText(value: unknown): string | undefined {
     if (typeof value === "string") return value;
     if (!Array.isArray(value)) return undefined;
@@ -237,24 +255,46 @@ async function postCompletion(
  * retry when output stays unparseable (the caller refunds and shows a
  * failure state — never a partial silent log).
  */
-export async function identifyMealPhoto(
-    input: { mimeType: string; bytes: Uint8Array },
+/**
+ * Identify ONE meal from up to MAX_MEAL_PHOTOS photos in a SINGLE
+ * Ember call — the chat-completions content array carries one
+ * image part per photo, so the model itself reconciles angles into
+ * one item list. No per-photo calls and no deterministic merge:
+ * a merge built outside the model could double-count a portion
+ * the model can see is the same food.
+ */
+export async function identifyMealPhotoFromImages(
+    images: MealPhotoImage[],
     config = mealPhotoVisionConfig(),
     dependencies: MealPhotoVisionDependencies = {},
 ): Promise<MealPhotoVisionResult> {
     if (!config) throw new Error("Meal photo vision is not configured");
-    if (!/^image\/(jpeg|png|webp)$/i.test(input.mimeType)) {
-        throw new Error("Meal photo must be JPEG, PNG, or WebP");
+    if (images.length < 1 || images.length > MAX_MEAL_PHOTOS) {
+        throw new Error(
+            `Meal photos must number between 1 and ${MAX_MEAL_PHOTOS}`,
+        );
     }
-    if (
-        input.bytes.byteLength < 1 ||
-        input.bytes.byteLength > 8 * 1024 * 1024
-    ) {
-        throw new Error("Meal photo must be between 1 byte and 8 MB");
+    for (const image of images) {
+        if (!/^image\/(jpeg|png|webp)$/i.test(image.mimeType)) {
+            throw new Error("Meal photo must be JPEG, PNG, or WebP");
+        }
+        if (
+            image.bytes.byteLength < 1 ||
+            image.bytes.byteLength > 8 * 1024 * 1024
+        ) {
+            throw new Error("Meal photo must be between 1 byte and 8 MB");
+        }
     }
     const startedAt = Date.now();
     const fetcher = dependencies.fetcher ?? fetch;
-    const imageUrl = `data:${input.mimeType};base64,${Buffer.from(input.bytes).toString("base64")}`;
+    // Extension point: a size-reference prompt hint was A/B-tested
+    // on 2026-11-12 and NOT adopted (Ember already uses in-frame
+    // references unprompted). If a future eval reverses that, its
+    // sentence composes into this prompt — nowhere else.
+    const prompt =
+        images.length > 1
+            ? `${IDENTIFY_PROMPT} ${MULTI_PHOTO_DEDUPE_INSTRUCTION}`
+            : IDENTIFY_PROMPT;
     const requestBody = {
         model: config.model,
         temperature: 0,
@@ -279,8 +319,13 @@ export async function identifyMealPhoto(
             {
                 role: "user",
                 content: [
-                    { type: "text", text: IDENTIFY_PROMPT },
-                    { type: "image_url", image_url: { url: imageUrl } },
+                    { type: "text", text: prompt },
+                    ...images.map((image) => ({
+                        type: "image_url",
+                        image_url: {
+                            url: `data:${image.mimeType};base64,${Buffer.from(image.bytes).toString("base64")}`,
+                        },
+                    })),
                 ],
             },
         ],
@@ -364,6 +409,15 @@ export async function identifyMealPhoto(
     throw lastParseError instanceof Error
         ? lastParseError
         : new Error("Meal photo vision returned unusable output");
+}
+
+/** Single-photo identification (the original S3 entry point). */
+export async function identifyMealPhoto(
+    input: MealPhotoImage,
+    config = mealPhotoVisionConfig(),
+    dependencies: MealPhotoVisionDependencies = {},
+): Promise<MealPhotoVisionResult> {
+    return identifyMealPhotoFromImages([input], config, dependencies);
 }
 
 // ---------------------------------------------------------------------------

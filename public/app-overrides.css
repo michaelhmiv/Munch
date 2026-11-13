@@ -7412,3 +7412,21 @@ dialog:has(
 .meal-draft-confirm {
     width: 100%;
 }
+
+/* Multi-photo session strip (2026-11-12): the session's photos,
+   each removable, plus the add-another capture control under the
+   cap. Session-only — a reopened pending draft shows no strip. */
+.meal-draft-photos {
+    display: grid;
+    gap: 8px;
+}
+
+.meal-draft-photo-chip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 44px;
+    border-top: 1px solid var(--ink-100);
+    padding-top: 6px;
+    font-size: 13.5px;
+}
