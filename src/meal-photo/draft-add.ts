@@ -42,9 +42,18 @@ import type { MealPhotoVisionItem } from "./vision.js";
  * LOW CONFIDENCE = QUESTION, NEVER A SILENT ADD:
  * - Unparseable text (both parsers resolve nothing) → honest no-add
  *   response in the review; the draft is unchanged.
- * - A weak parse (bare food name, defaulted portion) that grounding
- *   cannot resolve to a provider candidate → a draft QUESTION, not an
- *   estimated item: the parse never earned an estimate.
+ * - A weak parse (bare food name, defaulted portion) whose item ends
+ *   with NO usable nutrition — grounding found no provider candidate
+ *   AND the estimate step produced nothing → a draft QUESTION: there
+ *   is nothing to add. But a weak parse whose item carries labelled
+ *   model-estimate values IS added, exactly like a strong parse's
+ *   estimate: the quantity is the parse's stated default-portion
+ *   assumption and the values are the pipeline's labelled estimate,
+ *   both shown on the item for review (production incident
+ *   2026-11-13: "I added butter" on an apple photo draft punted to a
+ *   question even though butter priced out fine as an estimate —
+ *   the approved review design adds a plainly named food with a
+ *   stated assumption instead of punting).
  * - A grounded pick that shares no name token with what the user
  *   typed is not a match at all → draft question, nothing added.
  * - A strong parse that stays ungrounded follows the photo pipeline:
@@ -258,9 +267,15 @@ export async function resolveDraftAdd(
 
     const grounded = await groundMealPhotoItems(items.map(toVisionItem), deps);
 
-    // Low-confidence gate: a weak parse that did not ground to a real
-    // candidate, or any pick sharing no name token with the typed
-    // food, becomes a draft question — nothing half-added.
+    // Low-confidence gate: a weak parse whose item carries NO usable
+    // nutrition (no provider candidate, and the estimate step
+    // produced nothing), or any pick sharing no name token with the
+    // typed food, becomes a draft question — nothing half-added. A
+    // weak parse WITH labelled estimate values is added: its quantity
+    // is the stated default-portion assumption, its values the
+    // pipeline's labelled estimate — the same posture a strong parse
+    // gets, and the one the approved review design promises for a
+    // plainly named food.
     const unresolvedNames: string[] = [];
     grounded.forEach((entry, index) => {
         const parsed = items[index]!;
@@ -268,7 +283,7 @@ export async function resolveDraftAdd(
             if (!pickSharesNameToken(parsed.name, entry)) {
                 unresolvedNames.push(parsed.name);
             }
-        } else if (!parsed.strongSignal) {
+        } else if (!parsed.strongSignal && !entry.estimated) {
             unresolvedNames.push(parsed.name);
         }
     });
