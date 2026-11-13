@@ -9,6 +9,10 @@ import { defaultMealType as slotDefaultMealType } from "./meal-slot.js";
 // the real functions lifted out of app.js, plus wiring assertions
 // on the handlers themselves.
 const source = readFileSync(new URL("./app.js", import.meta.url), "utf8");
+const captureNativeSource = readFileSync(
+    new URL("../mobile/capture-native.js", import.meta.url),
+    "utf8",
+);
 
 function extract(name: string): string {
     const match = source.match(
@@ -129,11 +133,62 @@ describe("meal-type pre-fill wiring", () => {
 });
 
 describe("Log by photo opens the camera", () => {
-    test("the dialog triggers the capture control's camera action on open", () => {
+    test("the entry handler invokes the pre-mounted capture control synchronously, with no dialog first", () => {
+        const action = sliceBetween(
+            'if (action === "log-by-photo")',
+            'if (action === "meal-photo-manual")',
+        );
+        expect(action).toContain("startMealPhotoCapture()");
+        expect(action).not.toContain("openMealPhotoDialog");
+
+        const start = sliceBetween(
+            "function startMealPhotoCapture",
+            "function openMealPhotoProcessingDialog",
+        );
+        expect(start).toContain('data-capture-action="camera"');
+        expect(start).toContain("cameraButton.click()");
+        expect(start).not.toContain("openDialog");
+        expect(start).not.toContain("requestAnimationFrame");
+    });
+
+    test("the permanent entry control is hidden, delivers files to submit, and cancellation opens only the fallback sheet", () => {
+        const install = sliceBetween(
+            "function installMealPhotoEntryCapture",
+            "function startMealPhotoCapture",
+        );
+        expect(install).toContain("host.hidden = true");
+        expect(install).toContain('inputId: "meal-photo-entry-file"');
+        expect(install).toContain("submitMealPhoto(files)");
+        expect(install).toContain('"photo-capture:cancel"');
+        expect(install).toContain("autoOpenCamera: false");
+        expect(source).toContain(
+            "installMealPhotoEntryCapture();\nrenderRoute();",
+        );
+
+        const submit = sliceBetween(
+            "async function submitMealPhoto",
+            "async function reestimateDraftPhotos",
+        );
+        expect(submit).toContain("sourceFiles");
+        expect(submit).toContain("openMealPhotoProcessingDialog()");
+    });
+
+    test("the native enhancer reports a cancelled capture to the entry control", () => {
+        expect(captureNativeSource).toContain(
+            'PHOTO_CAPTURE_CANCEL_EVENT = "photo-capture:cancel"',
+        );
+        expect(captureNativeSource).toContain(
+            "notifyCaptureCancelled(control)",
+        );
+    });
+
+    test("the fallback sheet does not auto-open the camera unless a caller asks", () => {
         const dialog = sliceBetween(
             "async function openMealPhotoDialog",
             "async function submitMealPhoto",
         );
+        expect(dialog).toContain("autoOpenCamera = true");
+        expect(dialog).toContain("if (!autoOpenCamera) return;");
         expect(dialog).toContain('data-capture-action="camera"');
         expect(dialog).toContain("requestAnimationFrame");
         expect(dialog).toContain(".click()");

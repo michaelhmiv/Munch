@@ -6395,6 +6395,7 @@ async function openMealDraft(id) {
 const mealPhotoCapture = {
     idempotencyKey: null,
     submitting: false,
+    entryControl: null,
     // Multi-photo session (2026-11-12): the prepared photo Files of
     // the draft currently under review, held ONLY for this session —
     // photos are never retained server-side, so removing one here
@@ -6402,7 +6403,56 @@ const mealPhotoCapture = {
     session: null,
 };
 
-async function openMealPhotoDialog() {
+function installMealPhotoEntryCapture() {
+    if (mealPhotoCapture.entryControl?.isConnected) return;
+    const host = document.createElement("div");
+    host.id = "meal-photo-entry-capture";
+    host.hidden = true;
+    host.innerHTML = photoCaptureMarkup({
+        inputId: "meal-photo-entry-file",
+        label: "Meal photo",
+        multiple: true,
+    });
+    host.addEventListener("photo-capture:change", (event) => {
+        const files = event.detail?.files ?? [];
+        if (files.length) void submitMealPhoto(files);
+    });
+    host.addEventListener("photo-capture:cancel", () => {
+        if (!mealPhotoCapture.submitting) {
+            void openMealPhotoDialog({ autoOpenCamera: false });
+        }
+    });
+    document.body.append(host);
+    mealPhotoCapture.entryControl = host.querySelector("[data-photo-capture]");
+}
+
+function startMealPhotoCapture() {
+    installMealPhotoEntryCapture();
+    mealPhotoCapture.idempotencyKey = `web-meal-photo:${crypto.randomUUID()}`;
+    mealPhotoCapture.submitting = false;
+    const cameraButton =
+        mealPhotoCapture.entryControl?.querySelector(
+            '[data-capture-action="camera"]',
+        ) ?? null;
+    if (!cameraButton) {
+        void openMealPhotoDialog({ autoOpenCamera: false });
+        return;
+    }
+    // No dialog, route render, or animation frame may intervene: this
+    // click is the Log by photo tap's own capture invocation.
+    cameraButton.click();
+}
+
+function openMealPhotoProcessingDialog() {
+    openDialog(
+        "Log by photo",
+        `<div class="meal-photo-capture">
+            <p class="tiny meal-photo-status" id="meal-photo-status" role="status"></p>
+        </div>`,
+    );
+}
+
+async function openMealPhotoDialog({ autoOpenCamera = true } = {}) {
     mealPhotoCapture.idempotencyKey = `web-meal-photo:${crypto.randomUUID()}`;
     mealPhotoCapture.submitting = false;
     // Photo-flow audit (2026-11-12): camera-first means the tap on
@@ -6420,6 +6470,7 @@ async function openMealPhotoDialog() {
             <p class="tiny meal-photo-status" id="meal-photo-status" role="alert"></p>
             <div class="auth-actions">
                 <button class="button button-secondary" type="button" data-action="meal-photo-manual">Log manually instead</button>
+                <button class="button button-quiet" type="button" data-action="close-dialog">Done</button>
             </div>
         </div>`,
     );
@@ -6430,36 +6481,58 @@ async function openMealPhotoDialog() {
     control.addEventListener("photo-capture:change", () => {
         void submitMealPhoto();
     });
-    // Open the camera straight away. The packaged shell enhances
-    // the control from a MutationObserver (a microtask), so click on
-    // the next frame — its handler is in place by then; on the web
-    // the shared capture wiring takes the same click. If the
-    // auto-open is refused or unavailable, both buttons are already
-    // on screen for a manual tap.
+    // This sheet is a fallback (a cancelled direct capture, or the
+    // return after removing a draft's last photo), not the Log by
+    // photo entry — that entry invokes its pre-mounted capture
+    // control directly. Only a caller that explicitly asks for an
+    // auto-open gets the next-frame camera click; a fallback sheet
+    // stays put so the user can choose the library or finish.
+    if (!autoOpenCamera) return;
     requestAnimationFrame(() => {
         if (!control.isConnected) return;
         control.querySelector('[data-capture-action="camera"]')?.click();
     });
 }
 
-async function submitMealPhoto() {
-    // One estimate in flight per dialog; the capture control can
-    // deliver repeatedly (camera restore, a re-pick) and a second
-    // submission would double-post the same photos.
+async function submitMealPhoto(sourceFiles = null) {
+    // One estimate in flight per capture; a control can deliver
+    // repeatedly (camera restore, a re-pick) and a second submission
+    // would double-post the same photos.
     if (mealPhotoCapture.submitting) return;
+    const fromEntry = Array.isArray(sourceFiles);
+    const input = document.getElementById(
+        fromEntry ? "meal-photo-entry-file" : "meal-photo-file",
+    );
+    const selected = [...(sourceFiles ?? input?.files ?? [])];
+    if (!selected.length) {
+        if (!fromEntry) {
+            const status = document.getElementById("meal-photo-status");
+            if (status)
+                status.textContent = "Take or choose a meal photo first.";
+        }
+        return;
+    }
+    if (selected.length > 3) {
+        if (!fromEntry) {
+            const status = document.getElementById("meal-photo-status");
+            if (status) status.textContent = "Up to 3 photos per meal.";
+        }
+        return;
+    }
+    // The camera has already returned when the entry control calls
+    // this — only now may a surface paint, and it carries progress
+    // rather than the pre-capture form.
+    if (fromEntry) openMealPhotoProcessingDialog();
     const status = document.getElementById("meal-photo-status");
-    const input = document.getElementById("meal-photo-file");
-    const selected = [...(input?.files ?? [])];
     const say = (message) => {
         if (status) status.textContent = message;
     };
-    if (!selected.length) return say("Take or choose a meal photo first.");
-    if (selected.length > 3) {
-        return say("Up to 3 photos per meal.");
-    }
     // Clear the input so picking the SAME photo again later still
     // fires a change event (a held value would silently swallow it).
-    input.value = "";
+    if (input) input.value = "";
+    if (!mealPhotoCapture.idempotencyKey) {
+        mealPhotoCapture.idempotencyKey = `web-meal-photo:${crypto.randomUUID()}`;
+    }
     mealPhotoCapture.submitting = true;
     try {
         // Photo-flow P7: shrink the frame client-side before upload —
@@ -7843,7 +7916,7 @@ async function handleAction(button) {
     }
     if (action === "add-meal") return openMealComposer();
     if (action === "start-meal-draft") return openMealDraftComposer();
-    if (action === "log-by-photo") return openMealPhotoDialog();
+    if (action === "log-by-photo") return startMealPhotoCapture();
     if (action === "meal-photo-manual") return openMealComposer();
     if (action === "new-cook") return openCookCreate();
     if (action === "add-cook-dish") {
@@ -8125,7 +8198,7 @@ async function handleAction(button) {
             mealPhotoCapture.session = null;
             closeAppDialog();
             toast("Draft cancelled — no photos left.");
-            await openMealPhotoDialog();
+            startMealPhotoCapture();
         }
         return;
     }
@@ -10299,4 +10372,5 @@ window.addEventListener("online", () => {
 // before the first render so the mode (and its Exit label) is
 // already in place when Groceries is the landing route.
 state.shoppingMode = readShoppingModePreference();
+installMealPhotoEntryCapture();
 renderRoute();

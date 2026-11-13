@@ -23,8 +23,9 @@ import {
  */
 
 const PENDING_KEY = "munch.pendingCapture";
-// Contract constant mirrored from public/photo-capture.js.
+// Contract constants mirrored from public/photo-capture.js.
 const PHOTO_CAPTURE_CHANGE_EVENT = "photo-capture:change";
+const PHOTO_CAPTURE_CANCEL_EVENT = "photo-capture:cancel";
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 function imageExtension(result) {
@@ -70,6 +71,15 @@ function surfaceStatus(control, message) {
         target = document.getElementById("status");
     }
     if (target) target.textContent = message;
+}
+
+function notifyCaptureCancelled(control) {
+    control.dispatchEvent(
+        new CustomEvent(PHOTO_CAPTURE_CANCEL_EVENT, {
+            bubbles: true,
+            detail: { control },
+        }),
+    );
 }
 
 function deliverFiles(control, files, { append = false } = {}) {
@@ -157,6 +167,7 @@ async function captureFrom(control, source) {
         }
         if (!files.length) {
             surfaceStatus(control, "");
+            notifyCaptureCancelled(control);
             return;
         }
         if (deliverFiles(control, files, { append: multiple })) {
@@ -168,6 +179,7 @@ async function captureFrom(control, source) {
         );
         if (/cancel/i.test(message)) {
             surfaceStatus(control, "");
+            notifyCaptureCancelled(control);
             return;
         }
         if (
