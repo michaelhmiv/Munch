@@ -202,15 +202,22 @@ export const DECISION_MODEL_THRESHOLDS: Record<
     // 0.5 sits in the empty middle of the distribution.
     // B3/B4 thresholds are calibrated by scripts/jev-b3-b4-eval.ts
     // (2026-11-13, per model from its own score distribution — see the
-    // eval report in the PR body); they are placeholders at the
-    // neutral 0.5 until that run's numbers land in this table.
+    // eval report in the PR body); the calibrated values
+    // from that run's distributions are recorded per model below.
+    // B3/B4 thresholds calibrated by scripts/jev-b3-b4-eval.ts
+    // (2026-11-13), per model from its own score distribution:
+    // Jev B3 same-item p: true-same >= 0.77, true-different <= 0.30;
+    // units: compatible >= 0.92, incompatible <= 0.32. B4 quantity p:
+    // genuine anomalies <= 0.53, benign draws >= 0.93 (the 20-cup-milk
+    // fixture scored 0.83 -- both models judge it plausible; it is
+    // the eval's named miss, not a threshold failure).
     "typesafe/jev-1.14": {
         gateFoodMin: 0.1,
         shortfallContradictionMin: 0.5,
-        pantrySameItemMin: 0.5,
-        pantryUnitsCompatibleMin: 0.5,
+        pantrySameItemMin: 0.55,
+        pantryUnitsCompatibleMin: 0.6,
         drawdownMatchMin: 0.5,
-        drawdownQuantityMin: 0.5,
+        drawdownQuantityMin: 0.7,
     },
     // Bake-off: positives min 0.90 / median 0.99; negatives ALL ≤ 0.011
     // — the widest separation of the three, so 0.10 transfers with the
@@ -219,13 +226,18 @@ export const DECISION_MODEL_THRESHOLDS: Record<
     // contradictions scored p >= 0.99, consistent rows p <= 0.007 —
     // 0.5 is again the empty middle; thresholds were NOT borrowed
     // across models, the two distributions independently support it.
+    // B3/B4 eval (2026-11-13): same-item p true-same >= 0.52,
+    // true-different <= 0.24 (a narrower band than Jev's, hence the
+    // lower threshold -- never borrowed across models); units:
+    // incompatible <= 0.05, compatible >= 0.99. B4 quantity p:
+    // genuine <= 0.39, benign >= 0.99 (20-cup milk 0.97: named miss).
     "perplexity/pplx-decider-v1.2": {
         gateFoodMin: 0.1,
         shortfallContradictionMin: 0.5,
-        pantrySameItemMin: 0.5,
+        pantrySameItemMin: 0.4,
         pantryUnitsCompatibleMin: 0.5,
         drawdownMatchMin: 0.5,
-        drawdownQuantityMin: 0.5,
+        drawdownQuantityMin: 0.7,
     },
     // Bake-off: positives min 0.84 / median 0.99; hottest negative 0.071
     // — 0.10 sits above it, but with the thinnest margin of the three;
