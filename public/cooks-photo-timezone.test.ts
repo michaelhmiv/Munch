@@ -51,6 +51,8 @@ test("cook details expose original photo and submit the cook timezone", () => {
     };
     const html = runInNewContext(
         fn("cookDetailActionsMarkup") +
+            fn("cookUpdateFormMarkup") +
+            fn("cookUpdateStripMarkup") +
             fn("cookDetailMarkup") +
             "; cookDetailMarkup(detail)",
         context,

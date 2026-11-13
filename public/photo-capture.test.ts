@@ -46,6 +46,26 @@ describe("photoCaptureMarkup", () => {
         expect(markup).toContain('name="photos"');
         expect(markup).toContain("multiple");
     });
+
+    test("compact contract: the camera button is the whole control", () => {
+        const markup = photoCaptureMarkup({
+            name: "photos",
+            multiple: true,
+            compact: true,
+        });
+        // Same hooks the web wiring and the native enhancer drive.
+        expect(markup).toContain("data-photo-capture");
+        expect(markup).toContain('data-capture-action="camera"');
+        expect(markup).toContain('aria-label="Take photo"');
+        expect(markup).toContain('name="photos"');
+        expect(markup).toContain("multiple");
+        expect(markup).toContain("hidden");
+        expect(markup).toContain("data-capture-files");
+        // No label, no library door, no second button.
+        expect(markup).not.toContain("photo-capture-label");
+        expect(markup).not.toContain('data-capture-action="library"');
+        expect(markup).not.toContain("Choose from library");
+    });
 });
 
 describe("fitWithinEdge (photo-flow P7 downscale math)", () => {
