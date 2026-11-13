@@ -23,6 +23,11 @@ import {
     type PurchaseLineInput,
 } from "./repository.js";
 import { previewInventoryImage } from "./vision.js";
+import { decisionsConfig } from "../decisions/config.js";
+import {
+    attachPantryIdentityReviews,
+    type PantryIdentityResolution,
+} from "../decisions/pantry-match.js";
 
 function privateJson(c: Context, data: unknown, status = 200) {
     return c.json(data, status as 200, {
@@ -488,10 +493,57 @@ export function createInventoryRouter(): Hono {
             mimeType: file.type,
             bytes: new Uint8Array(await file.arrayBuffer()),
         });
+        // Seat B3 (pantry identity review): grey-band pairs between a
+        // preview line and live stock are reviewed before the user
+        // confirms, so the confirm step can fold a line into the item
+        // it actually is. Best-effort and fail-open: any failure (seat
+        // off, chain down, pantry unavailable) returns the preview
+        // exactly as before, with no reviews attached.
+        let pantryIdentityReviews: Record<
+            number,
+            PantryIdentityResolution
+        > | null = null;
+        try {
+            const config = decisionsConfig();
+            if (config?.pantryMatchEnabled && preview.lines.length > 0) {
+                let scope: InventoryScope = { type: "personal" };
+                try {
+                    scope = scopeFromValue(
+                        form.scope,
+                        context.capabilities,
+                        false,
+                    );
+                } catch {
+                    scope = { type: "personal" };
+                }
+                const pantry = await getPantry({
+                    userId: context.userId,
+                    scope,
+                    limit: 200,
+                });
+                if (pantry.enabled) {
+                    const reviews = await attachPantryIdentityReviews(
+                        preview.lines,
+                        pantry.items,
+                        { config },
+                    );
+                    if (Object.keys(reviews).length > 0) {
+                        pantryIdentityReviews = reviews;
+                    }
+                }
+            }
+        } catch (error) {
+            console.info(
+                `[decisions] seat=pantry_match status=unchecked surface=scan_preview reason=${error instanceof Error ? error.message.slice(0, 200) : String(error)}`,
+            );
+        }
         return privateJson(c, {
             file_name: file.name.slice(0, 200),
             transient_media: true,
             preview,
+            ...(pantryIdentityReviews
+                ? { pantry_identity_reviews: pantryIdentityReviews }
+                : {}),
         });
     }
 

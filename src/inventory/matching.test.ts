@@ -5,6 +5,10 @@ import {
     convertInventoryQuantity,
     evaluateRecipeAvailability,
     normalizeInventoryName,
+    crossFamilyInventoryUnits,
+    greyBandMatchCandidates,
+    isPantryGreyBandScore,
+    type InventoryMatchableItem,
 } from "./matching.js";
 
 const inventory = [
@@ -98,5 +102,52 @@ describe("inventory matching", () => {
             inventory,
         );
         expect(result.readiness).toBe("likely_ready");
+    });
+});
+
+describe("grey band candidates (seat B3)", () => {
+    const mk = (
+        over: Partial<InventoryMatchableItem>,
+    ): InventoryMatchableItem => ({
+        id: "x",
+        name: "cheddar aged cheese",
+        normalized_name: "cheddar aged cheese",
+        quantity: 1,
+        unit: "cup",
+        quantity_mode: "exact",
+        stock_state: "available",
+        food_provider: null,
+        provider_food_id: null,
+        ...over,
+    });
+    test("band boundaries are inclusive at 0.50 and 0.75", () => {
+        expect(isPantryGreyBandScore(0.5)).toBe(true);
+        expect(isPantryGreyBandScore(0.75)).toBe(true);
+        expect(isPantryGreyBandScore(0.499)).toBe(false);
+        expect(isPantryGreyBandScore(0.751)).toBe(false);
+    });
+    test("grey candidates include unit-incompatible pairs (the seat must see them)", () => {
+        const candidates = greyBandMatchCandidates([mk({})], {
+            name: "cheddar cheese",
+            quantity: 1,
+            unit: "lb",
+        });
+        expect(candidates).toHaveLength(1);
+        expect(candidates[0]!.unitsCompatible).toBe(false);
+        expect(candidates[0]!.score).toBeCloseTo(0.667, 3);
+        // ...while bestInventoryMatch still refuses them, as today.
+        expect(
+            bestInventoryMatch([mk({})], {
+                name: "cheddar cheese",
+                unit: "lb",
+            }),
+        ).toBeNull();
+    });
+    test("cross-family detection is mass vs volume only", () => {
+        expect(crossFamilyInventoryUnits("lb", "cup")).toBe(true);
+        expect(crossFamilyInventoryUnits("ml", "kg")).toBe(true);
+        expect(crossFamilyInventoryUnits("lb", "oz")).toBe(false);
+        expect(crossFamilyInventoryUnits("count", "cup")).toBe(false);
+        expect(crossFamilyInventoryUnits(null, "cup")).toBe(false);
     });
 });

@@ -195,3 +195,34 @@ describe("per-model gate thresholds (calibrated, never borrowed)", () => {
         );
     });
 });
+
+describe("decisionsConfig B3/B4 seat flags", () => {
+    test("B3/B4 seats default off and follow the master like S1/S2", () => {
+        const off = decisionsConfig({ ...KEY });
+        expect(off!.pantryMatchEnabled).toBe(false);
+        expect(off!.drawdownReviewEnabled).toBe(false);
+        const on = decisionsConfig({ ...KEY, MUNCH_JEV_ENABLED: "true" });
+        expect(on!.pantryMatchEnabled).toBe(true);
+        expect(on!.drawdownReviewEnabled).toBe(true);
+    });
+    test("per-seat flags enable and kill independently", () => {
+        const b3 = decisionsConfig({
+            ...KEY,
+            MUNCH_JEV_PANTRY_MATCH_ENABLED: "true",
+        });
+        expect(b3!.pantryMatchEnabled).toBe(true);
+        expect(b3!.drawdownReviewEnabled).toBe(false);
+        const killed = decisionsConfig({
+            ...KEY,
+            MUNCH_JEV_ENABLED: "true",
+            MUNCH_JEV_DRAWDOWN_ENABLED: "false",
+        });
+        expect(killed!.pantryMatchEnabled).toBe(true);
+        expect(killed!.drawdownReviewEnabled).toBe(false);
+    });
+    test("B3/B4 timeouts are bounded with a 2s default", () => {
+        const config = decisionsConfig({ ...KEY });
+        expect(config!.pantryMatchTimeoutMs).toBe(2_000);
+        expect(config!.drawdownReviewTimeoutMs).toBe(2_000);
+    });
+});

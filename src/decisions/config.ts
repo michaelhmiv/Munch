@@ -43,6 +43,12 @@ export interface DecisionsConfig {
      * `decisionsConfig()` always populates both fields. */
     shortfallCheckEnabled?: boolean;
     shortfallCheckTimeoutMs?: number;
+    /** Seat B3 — pantry identity / duplicate review (audit §2). */
+    pantryMatchEnabled: boolean;
+    pantryMatchTimeoutMs: number;
+    /** Seat B4 — draw-down anomaly review (audit §2). */
+    drawdownReviewEnabled: boolean;
+    drawdownReviewTimeoutMs: number;
 }
 
 type FlagState = "on" | "off" | "unset";
@@ -133,6 +139,26 @@ export function decisionsConfig(
             100,
             15_000,
         ),
+        pantryMatchEnabled: seatEnabled(
+            master,
+            flagState(env.MUNCH_JEV_PANTRY_MATCH_ENABLED),
+        ),
+        pantryMatchTimeoutMs: boundedInteger(
+            env.MUNCH_JEV_PANTRY_MATCH_TIMEOUT_MS,
+            2_000,
+            100,
+            15_000,
+        ),
+        drawdownReviewEnabled: seatEnabled(
+            master,
+            flagState(env.MUNCH_JEV_DRAWDOWN_ENABLED),
+        ),
+        drawdownReviewTimeoutMs: boundedInteger(
+            env.MUNCH_JEV_DRAWDOWN_TIMEOUT_MS,
+            2_000,
+            100,
+            15_000,
+        ),
     };
 }
 
@@ -151,6 +177,15 @@ export interface DecisionModelThresholds {
      * is recomputed and, if the contradiction persists, surfaced.
      * Calibrated per model from the C2 eval — never borrowed. */
     shortfallContradictionMin?: number;
+    /** Seat B3: minimum p(same item) for a grey-band pair to merge. */
+    pantrySameItemMin?: number;
+    /** Seat B3: minimum p(units compatible) for a grey-band merge. */
+    pantryUnitsCompatibleMin?: number;
+    /** Seat B4: a reviewed draw is flagged when p(match correct)
+     * falls below this for the serving model. */
+    drawdownMatchMin?: number;
+    /** Seat B4: flagged when p(quantity plausible) falls below this. */
+    drawdownQuantityMin?: number;
 }
 
 export const DECISION_MODEL_THRESHOLDS: Record<
@@ -165,7 +200,25 @@ export const DECISION_MODEL_THRESHOLDS: Record<
     // 6 rundowns x 2 repeats, 42 rows/model): Jev planted
     // contradictions scored p >= 0.97, consistent rows p <= 0.07 —
     // 0.5 sits in the empty middle of the distribution.
-    "typesafe/jev-1.14": { gateFoodMin: 0.1, shortfallContradictionMin: 0.5 },
+    // B3/B4 thresholds are calibrated by scripts/jev-b3-b4-eval.ts
+    // (2026-11-13, per model from its own score distribution — see the
+    // eval report in the PR body); the calibrated values
+    // from that run's distributions are recorded per model below.
+    // B3/B4 thresholds calibrated by scripts/jev-b3-b4-eval.ts
+    // (2026-11-13), per model from its own score distribution:
+    // Jev B3 same-item p: true-same >= 0.77, true-different <= 0.30;
+    // units: compatible >= 0.92, incompatible <= 0.32. B4 quantity p:
+    // genuine anomalies <= 0.53, benign draws >= 0.93 (the 20-cup-milk
+    // fixture scored 0.83 -- both models judge it plausible; it is
+    // the eval's named miss, not a threshold failure).
+    "typesafe/jev-1.14": {
+        gateFoodMin: 0.1,
+        shortfallContradictionMin: 0.5,
+        pantrySameItemMin: 0.55,
+        pantryUnitsCompatibleMin: 0.6,
+        drawdownMatchMin: 0.5,
+        drawdownQuantityMin: 0.7,
+    },
     // Bake-off: positives min 0.90 / median 0.99; negatives ALL ≤ 0.011
     // — the widest separation of the three, so 0.10 transfers with the
     // most headroom. 0/30 false rejects, 8/8 negatives rejected.
@@ -173,9 +226,18 @@ export const DECISION_MODEL_THRESHOLDS: Record<
     // contradictions scored p >= 0.99, consistent rows p <= 0.007 —
     // 0.5 is again the empty middle; thresholds were NOT borrowed
     // across models, the two distributions independently support it.
+    // B3/B4 eval (2026-11-13): same-item p true-same >= 0.52,
+    // true-different <= 0.24 (a narrower band than Jev's, hence the
+    // lower threshold -- never borrowed across models); units:
+    // incompatible <= 0.05, compatible >= 0.99. B4 quantity p:
+    // genuine <= 0.39, benign >= 0.99 (20-cup milk 0.97: named miss).
     "perplexity/pplx-decider-v1.2": {
         gateFoodMin: 0.1,
         shortfallContradictionMin: 0.5,
+        pantrySameItemMin: 0.4,
+        pantryUnitsCompatibleMin: 0.5,
+        drawdownMatchMin: 0.5,
+        drawdownQuantityMin: 0.7,
     },
     // Bake-off: positives min 0.84 / median 0.99; hottest negative 0.071
     // — 0.10 sits above it, but with the thinnest margin of the three;
@@ -213,4 +275,35 @@ export function shortfallCheckEnabled(config: DecisionsConfig): boolean {
 
 export function shortfallCheckTimeoutMs(config: DecisionsConfig): number {
     return config.shortfallCheckTimeoutMs ?? 2_000;
+}
+
+/** Neutral default for the B3/B4 thresholds on any unlisted slug. */
+export const DEFAULT_PANTRY_REVIEW_MIN = 0.5;
+
+export function pantrySameItemThresholdForModel(model: string): number {
+    return (
+        DECISION_MODEL_THRESHOLDS[model]?.pantrySameItemMin ??
+        DEFAULT_PANTRY_REVIEW_MIN
+    );
+}
+
+export function pantryUnitsCompatibleThresholdForModel(model: string): number {
+    return (
+        DECISION_MODEL_THRESHOLDS[model]?.pantryUnitsCompatibleMin ??
+        DEFAULT_PANTRY_REVIEW_MIN
+    );
+}
+
+export function drawdownMatchThresholdForModel(model: string): number {
+    return (
+        DECISION_MODEL_THRESHOLDS[model]?.drawdownMatchMin ??
+        DEFAULT_PANTRY_REVIEW_MIN
+    );
+}
+
+export function drawdownQuantityThresholdForModel(model: string): number {
+    return (
+        DECISION_MODEL_THRESHOLDS[model]?.drawdownQuantityMin ??
+        DEFAULT_PANTRY_REVIEW_MIN
+    );
 }

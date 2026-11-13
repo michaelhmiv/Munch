@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
     applyPantryDrawdown,
+    detectDrawdownAnomalies,
     drawdownAiConfig,
     estimateRemainder,
     finalizeDrawdownPlan,
@@ -691,5 +692,107 @@ describe("applyPantryDrawdown", () => {
         expect(drawdownAiConfig({ OPENROUTER_API_KEY: "k" })?.model).toBe(
             "meta/muse-ember",
         );
+    });
+});
+
+describe("detectDrawdownAnomalies (seat B4 engagement)", () => {
+    const plan = (
+        reqs: Array<{
+            name: string;
+            quantity?: number | null;
+            unit?: string | null;
+        }>,
+        items: PantryItem[],
+    ) => {
+        const planned = planDeterministicDrawdown(reqs, items);
+        return finalizeDrawdownPlan(planned, reqs).lines;
+    };
+
+    test("a draw within exact stock is not an anomaly", () => {
+        const reqs = [{ name: "Rice", quantity: 2, unit: "cup" }];
+        expect(
+            detectDrawdownAnomalies(reqs, [RICE], plan(reqs, [RICE])),
+        ).toEqual([]);
+    });
+
+    test("a draw exactly equal to stock is not an anomaly", () => {
+        const reqs = [{ name: "Rice", quantity: 6, unit: "cup" }];
+        expect(
+            detectDrawdownAnomalies(reqs, [RICE], plan(reqs, [RICE])),
+        ).toEqual([]);
+    });
+
+    test("a requested draw above exact stock is an anomaly (the plan clamps, the request does not)", () => {
+        const reqs = [{ name: "Rice", quantity: 8, unit: "cup" }];
+        const anomalies = detectDrawdownAnomalies(
+            reqs,
+            [RICE],
+            plan(reqs, [RICE]),
+        );
+        expect(anomalies).toHaveLength(1);
+        expect(anomalies[0]).toMatchObject({
+            kind: "draw_exceeds_stock",
+            requestedQuantity: 8,
+            recordedQuantity: 6,
+            quantityMode: "exact",
+        });
+    });
+
+    test("draws from two lines aggregate against the one recorded stock", () => {
+        const reqs = [
+            { name: "Rice", quantity: 4, unit: "cup" },
+            { name: "Rice", quantity: 4, unit: "cup" },
+        ];
+        const anomalies = detectDrawdownAnomalies(
+            reqs,
+            [RICE],
+            plan(reqs, [RICE]),
+        );
+        expect(anomalies).toHaveLength(1);
+        expect(anomalies[0]!.requestedQuantity).toBe(8);
+        expect(anomalies[0]!.index).toBe(0);
+    });
+
+    test("#283: presence-only stock can never prove a shortfall — never an anomaly", () => {
+        const reqs = [{ name: "Salt", quantity: 2, unit: "tsp" }];
+        expect(
+            detectDrawdownAnomalies(reqs, [SALT], plan(reqs, [SALT])),
+        ).toEqual([]);
+        const countedPresence = item({
+            name: "Salt",
+            quantity: 5,
+            unit: "tsp",
+            quantity_mode: "presence_only",
+        });
+        const bigReqs = [{ name: "Salt", quantity: 99, unit: "tsp" }];
+        expect(
+            detectDrawdownAnomalies(
+                bigReqs,
+                [countedPresence],
+                plan(bigReqs, [countedPresence]),
+            ),
+        ).toEqual([]);
+    });
+
+    test("an approximate item flipped to nearly-gone is an anomaly; a moderate draw is not", () => {
+        const flipReqs = [{ name: "Chicken", quantity: 1.8, unit: "lb" }];
+        const flips = detectDrawdownAnomalies(
+            flipReqs,
+            [CHICKEN],
+            plan(flipReqs, [CHICKEN]),
+        );
+        expect(flips).toHaveLength(1);
+        expect(flips[0]!.kind).toBe("approximate_remainder_flip");
+        const okReqs = [{ name: "Chicken", quantity: 1, unit: "lb" }];
+        expect(
+            detectDrawdownAnomalies(okReqs, [CHICKEN], plan(okReqs, [CHICKEN])),
+        ).toEqual([]);
+    });
+
+    test("skipped lines never produce anomalies", () => {
+        const reqs = [{ name: "Saffron", quantity: 50, unit: "g" }];
+        expect(
+            detectDrawdownAnomalies(reqs, [RICE], plan(reqs, [RICE])),
+        ).toEqual([]);
     });
 });

@@ -25,7 +25,12 @@ export interface DecisionsFetcher {
 }
 
 export interface DecisionsCallOptions {
-    seat: "gate" | "decider" | "shortfall_check";
+    seat:
+        | "gate"
+        | "decider"
+        | "shortfall_check"
+        | "pantry_match"
+        | "drawdown_review";
     state: unknown;
     questions: Record<string, unknown>;
     timeoutMs: number;

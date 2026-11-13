@@ -153,6 +153,23 @@ export function inventoryIdentityScore(
     return union ? Math.min(0.8, intersection / union) : 0;
 }
 
+/** The identity score at or above which `bestInventoryMatch` merges. */
+export const INVENTORY_IDENTITY_THRESHOLD = 0.62;
+
+/**
+ * The pantry-identity grey band (Jev seat B3, jev-accountability-audit
+ * 2026-11-13 §2): identity scores in [0.50, 0.75] are neither a certain
+ * merge nor a certain non-match. Pairs landing in the band are the
+ * ones a decision model reviews; pairs above it merge deterministically
+ * and pairs below it never merge.
+ */
+export const PANTRY_GREY_BAND_MIN = 0.5;
+export const PANTRY_GREY_BAND_MAX = 0.75;
+
+export function isPantryGreyBandScore(score: number): boolean {
+    return score >= PANTRY_GREY_BAND_MIN && score <= PANTRY_GREY_BAND_MAX;
+}
+
 export function bestInventoryMatch(
     items: InventoryMatchableItem[],
     requirement: IngredientRequirement,
@@ -164,7 +181,73 @@ export function bestInventoryMatch(
         const score = inventoryIdentityScore(item, requirement);
         if (!best || score > best.score) best = { item, score };
     }
-    return best && best.score >= 0.62 ? best : null;
+    return best && best.score >= INVENTORY_IDENTITY_THRESHOLD ? best : null;
+}
+
+export interface InventoryMatchCandidate {
+    item: InventoryMatchableItem;
+    score: number;
+    /** Deterministic unit compatibility (the merge pre-filter
+     * `bestInventoryMatch` applies). Grey-band candidates keep
+     * incompatible pairs visible: unit compatibility is one of the
+     * two questions seat B3 asks, so the seat must see them. */
+    unitsCompatible: boolean;
+}
+
+/**
+ * Every non-depleted item scored against the requirement, best first,
+ * WITHOUT the unit-compatibility pre-filter and WITHOUT the identity
+ * threshold. This is the candidate surface seat B3 reviews; callers
+ * that want today's behaviour keep using `bestInventoryMatch`.
+ */
+export function inventoryMatchCandidates(
+    items: InventoryMatchableItem[],
+    requirement: IngredientRequirement,
+): InventoryMatchCandidate[] {
+    const candidates: InventoryMatchCandidate[] = [];
+    for (const item of items) {
+        if (item.stock_state === "depleted") continue;
+        const score = inventoryIdentityScore(item, requirement);
+        if (score <= 0) continue;
+        candidates.push({
+            item,
+            score,
+            unitsCompatible: compatibleInventoryUnits(
+                item.unit,
+                requirement.unit,
+            ),
+        });
+    }
+    return candidates.sort((a, b) => b.score - a.score);
+}
+
+/** The candidates whose identity score lands in the B3 grey band. */
+export function greyBandMatchCandidates(
+    items: InventoryMatchableItem[],
+    requirement: IngredientRequirement,
+): InventoryMatchCandidate[] {
+    return inventoryMatchCandidates(items, requirement).filter((candidate) =>
+        isPantryGreyBandScore(candidate.score),
+    );
+}
+
+/**
+ * True when the two units sit in different measurement families
+ * (mass vs volume). A merge across families can never be computed —
+ * `convertInventoryQuantity` returns null for the pair — so code
+ * forbids it outright; no model verdict can override arithmetic.
+ */
+export function crossFamilyInventoryUnits(
+    left?: string | null,
+    right?: string | null,
+): boolean {
+    const a = canonicalInventoryUnit(left);
+    const b = canonicalInventoryUnit(right);
+    if (!a || !b) return false;
+    return (
+        (MASS_UNITS.has(a) && VOLUME_UNITS.has(b)) ||
+        (VOLUME_UNITS.has(a) && MASS_UNITS.has(b))
+    );
 }
 
 export type RecipeReadiness =
