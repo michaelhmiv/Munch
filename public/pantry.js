@@ -1,5 +1,6 @@
 import { installOfflineBanner, requestJson as api } from "./app-api.js";
 import { installPhotoCapture } from "./photo-capture.js";
+import { formatRecipeQuantity } from "./quantity-format.js";
 import {
     applyFeatureNav,
     normalizeFeatureFlags,
@@ -101,7 +102,10 @@ function quantityLabel(item) {
     if (item.quantity == null)
         return item.stock_state === "low" ? "Low" : "On hand";
     const prefix = item.quantity_mode === "approximate" ? "≈ " : "";
-    return `${prefix}${Number(item.quantity).toLocaleString()}${item.unit ? ` ${item.unit}` : ""}`;
+    const quantity =
+        formatRecipeQuantity(item.quantity, item.unit) ??
+        Number(item.quantity).toLocaleString();
+    return `${prefix}${quantity}${item.unit ? ` ${item.unit}` : ""}`;
 }
 
 const LOCATION_LABELS = {

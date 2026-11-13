@@ -32,6 +32,7 @@ import {
     setPhotoCaptureFiles,
 } from "./photo-capture.js";
 import { defaultMealType } from "./meal-slot.js";
+import { formatRecipeQuantity } from "./quantity-format.js";
 import {
     ROUTE_FEATURE_MODULES,
     applyFeatureNav,
@@ -3455,7 +3456,7 @@ async function openRecipe(id) {
     const ingredients = recipe.ingredients
         .map((ingredient) => {
             const resolved = recipeIngredientResolved(ingredient);
-            return `<li class="recipe-ingredient-row"><span class="recipe-ingredient-main"><strong>${escapeHtml(ingredient.name)}</strong>${ingredient.quantity == null ? "" : ` — ${number(ingredient.quantity, 3)} ${escapeHtml(ingredient.unit || "")}`} ${sourceBadge(ingredient.source_type)}</span>${resolved ? `<strong class="recipe-ingredient-kcal">${number(ingredient.nutrients?.calories)} kcal</strong>` : `<span class="recipe-unresolved">Not resolved</span>`}</li>`;
+            return `<li class="recipe-ingredient-row"><span class="recipe-ingredient-main"><strong>${escapeHtml(ingredient.name)}</strong>${ingredient.quantity == null ? "" : ` — ${formatRecipeQuantity(ingredient.quantity, ingredient.unit) ?? number(ingredient.quantity, 3)} ${escapeHtml(ingredient.unit || "")}`} ${sourceBadge(ingredient.source_type)}</span>${resolved ? `<strong class="recipe-ingredient-kcal">${number(ingredient.nutrients?.calories)} kcal</strong>` : `<span class="recipe-unresolved">Not resolved</span>`}</li>`;
         })
         .join("");
     const perServing =
@@ -3599,7 +3600,7 @@ function drawdownSummaryMarkup(drawdown) {
                     : [
                           line.used_quantity == null
                               ? null
-                              : `−${number(line.used_quantity, 3)}${line.used_unit ? ` ${escapeHtml(line.used_unit)}` : ""}`,
+                              : `−${formatRecipeQuantity(line.used_quantity, line.used_unit) ?? number(line.used_quantity, 3)}${line.used_unit ? ` ${escapeHtml(line.used_unit)}` : ""}`,
                           escapeHtml(line.remainder_text || ""),
                       ]
                           .filter(Boolean)
@@ -3982,7 +3983,7 @@ async function previewGuidedGroceries() {
     const suggestions = preview.suggestions || [];
     openDialog(
         "Review grocery suggestions",
-        `<p>Select the items to add. This separate step will add only the checked items to your grocery list.</p>${suggestions.length ? `<div class="meal-groups">${suggestions.map((item) => `<label class="meal-card check-row guided-grocery-row"><input type="checkbox" data-guided-grocery-index="${item.index}" ${item.already_on_list ? "disabled" : "checked"} /><span><strong>${escapeHtml(item.name)}</strong><small>${item.quantity == null ? "Quantity unavailable" : `${number(item.quantity, 2)} ${escapeHtml(item.unit || "")}`} · ${escapeHtml((item.recipes || []).join(", "))}${item.already_on_list ? " · already on list" : ""}</small></span></label>`).join("")}</div>` : `<div class="empty-state"><div><h3>No quantity-based suggestions</h3><p>Ingredients without a known amount need manual entry.</p></div></div>`}<div class="auth-actions spacer-top"><button class="button button-primary" type="button" data-action="guided-grocery-commit" ${suggestions.length ? "" : "disabled"}>Add selected groceries</button></div><p class="tiny">This does not change pantry inventory or mark anything as eaten.</p>`,
+        `<p>Select the items to add. This separate step will add only the checked items to your grocery list.</p>${suggestions.length ? `<div class="meal-groups">${suggestions.map((item) => `<label class="meal-card check-row guided-grocery-row"><input type="checkbox" data-guided-grocery-index="${item.index}" ${item.already_on_list ? "disabled" : "checked"} /><span><strong>${escapeHtml(item.name)}</strong><small>${item.quantity == null ? "Quantity unavailable" : `${formatRecipeQuantity(item.quantity, item.unit) ?? number(item.quantity, 2)} ${escapeHtml(item.unit || "")}`} · ${escapeHtml((item.recipes || []).join(", "))}${item.already_on_list ? " · already on list" : ""}</small></span></label>`).join("")}</div>` : `<div class="empty-state"><div><h3>No quantity-based suggestions</h3><p>Ingredients without a known amount need manual entry.</p></div></div>`}<div class="auth-actions spacer-top"><button class="button button-primary" type="button" data-action="guided-grocery-commit" ${suggestions.length ? "" : "disabled"}>Add selected groceries</button></div><p class="tiny">This does not change pantry inventory or mark anything as eaten.</p>`,
     );
 }
 
@@ -4081,7 +4082,7 @@ function showPendingPantryRunOutPrompts() {
 }
 
 function groceryItemRowMarkup(item, scope, editable) {
-    const detail = `${item.quantity == null ? "" : ` · ${number(item.quantity, 2)} ${escapeHtml(item.unit || "")}`}${item.note ? ` · ${escapeHtml(item.note)}` : ""}${item.added_by ? ` · Added by ${escapeHtml(item.added_by)}` : ""}`;
+    const detail = `${item.quantity == null ? "" : ` · ${formatRecipeQuantity(item.quantity, item.unit) ?? number(item.quantity, 2)} ${escapeHtml(item.unit || "")}`}${item.note ? ` · ${escapeHtml(item.note)}` : ""}${item.added_by ? ` · Added by ${escapeHtml(item.added_by)}` : ""}`;
     return `<article class="grocery-item-row ${item.purchased_at ? "is-purchased" : ""}" data-grocery-item-id="${escapeHtml(item.grocery_item_id)}" data-quantity="${escapeHtml(item.quantity ?? "")}" data-unit="${escapeHtml(item.unit || "")}" data-note="${escapeHtml(item.note || "")}"><label class="grocery-check"><input class="grocery-check-input" type="checkbox" data-action="toggle-grocery-purchased" data-id="${escapeHtml(item.grocery_item_id)}" data-version="${escapeHtml(item.version)}" data-scope="${scope}" ${item.purchased_at ? "checked" : ""} ${editable ? "" : "disabled"} aria-label="${escapeHtml(item.name)} purchased" /></label><div class="grocery-item-main" data-action="toggle-grocery-by-name"><strong>${escapeHtml(item.name)}</strong><span class="grocery-item-detail">${detail}</span>${groceryPantryBadgeMarkup(item)}</div>${editable ? `<div class="grocery-item-actions"><button class="button button-secondary button-small" type="button" data-action="edit-grocery" data-id="${escapeHtml(item.grocery_item_id)}" data-version="${escapeHtml(item.version)}" data-scope="${scope}">Edit</button><button class="button button-quiet button-small" type="button" data-action="remove-grocery" data-id="${escapeHtml(item.grocery_item_id)}" data-version="${escapeHtml(item.version)}" data-scope="${scope}">Remove</button></div>` : ""}</article>`;
 }
 
@@ -4291,8 +4292,11 @@ function paintShortfallIndicator() {
     });
 }
 
-function shortfallQty(value) {
-    return String(Number(Number(value ?? 0).toFixed(2)));
+function shortfallQty(value, unit) {
+    return (
+        formatRecipeQuantity(value, unit) ??
+        String(Number(Number(value ?? 0).toFixed(2)))
+    );
 }
 
 function shortfallRowMarkup(item, index) {
@@ -4306,8 +4310,8 @@ function shortfallRowMarkup(item, index) {
     const pantry =
         item.pantry_state === "none"
             ? "Pantry: none"
-            : `Pantry: ~${shortfallQty(item.have_quantity)}${item.need_unit ? ` ${escapeHtml(item.need_unit)}` : ""}`;
-    const need = `need ~${shortfallQty(item.short_quantity)}${item.need_unit ? ` ${escapeHtml(item.need_unit)}` : ""}`;
+            : `Pantry: ~${shortfallQty(item.have_quantity, item.need_unit)}${item.need_unit ? ` ${escapeHtml(item.need_unit)}` : ""}`;
+    const need = `need ~${shortfallQty(item.short_quantity, item.need_unit)}${item.need_unit ? ` ${escapeHtml(item.need_unit)}` : ""}`;
     const action = item.added
         ? `<button class="button button-secondary button-small" type="button" disabled>Added</button>`
         : `<button class="button button-secondary button-small" type="button" data-action="shortfall-add" data-index="${index}">Add</button>`;
@@ -4562,7 +4566,7 @@ function cookModeIngredientLabel(ingredient) {
     if (typeof ingredient === "string") return ingredient;
     const parts = [
         ingredient.quantity != null
-            ? `${number(ingredient.quantity, 3)}${ingredient.unit ? ` ${ingredient.unit}` : ""}`
+            ? `${formatRecipeQuantity(ingredient.quantity, ingredient.unit) ?? number(ingredient.quantity, 3)}${ingredient.unit ? ` ${ingredient.unit}` : ""}`
             : "",
         ingredient.name || "Ingredient",
         ingredient.preparation ? `(${ingredient.preparation})` : "",

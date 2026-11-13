@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { defaultMealType } from "./meal-slot.js";
+import { formatRecipeQuantity } from "./quantity-format.js";
 
 // Cross-work slice 4 (§4) — "From my pantry" on the log flows.
 // The dialog builders are extracted from app.js and executed with
@@ -37,6 +38,7 @@ test("recipe log dialog separates servings cooked from servings eaten", () => {
         number: (value: unknown, digits = 0) =>
             String(Number(Number(value ?? 0).toFixed(digits))),
         featureFlags: () => ({ pantry: true }),
+        formatRecipeQuantity,
         defaultMealType,
         state: { bootstrap: { profile: { timezone: "UTC" } } },
         openDialog: (_title: string, html: string) => {
@@ -79,6 +81,7 @@ test("pantry module off hides the option entirely", () => {
         number: (value: unknown, digits = 0) =>
             String(Number(Number(value ?? 0).toFixed(digits))),
         featureFlags: () => ({ pantry: false }),
+        formatRecipeQuantity,
         defaultMealType,
         state: { bootstrap: { profile: { timezone: "UTC" } } },
         openDialog: (_title: string, html: string) => {
@@ -105,6 +108,7 @@ test("draw-down summary rows are data-shaped: used amount + remainder, skipped n
         number: (value: unknown, digits = 0) =>
             String(Number(Number(value ?? 0).toFixed(digits))),
         featureFlags: () => ({ pantry: true }),
+        formatRecipeQuantity,
         openDialog: () => {},
     };
     runInNewContext(
@@ -132,6 +136,14 @@ test("draw-down summary rows are data-shaped: used amount + remainder, skipped n
                 remainder_text: "likely gone",
             },
             {
+                ingredient: "Butter",
+                pantry_name: "Butter",
+                status: "applied",
+                used_quantity: 0.5,
+                used_unit: "cup",
+                remainder_text: "about half left",
+            },
+            {
                 ingredient: "Saffron",
                 pantry_name: null,
                 status: "skipped",
@@ -146,6 +158,9 @@ test("draw-down summary rows are data-shaped: used amount + remainder, skipped n
     expect(html).toContain("Rice");
     expect(html).toContain("−2 cup · about half left");
     expect(html).toContain("−1.5 lb · likely gone");
+    // Volume measures render as US recipe fractions (2026-11-13
+    // ruling); weights like the lb line above stay decimal.
+    expect(html).toContain("−1/2 cup · about half left");
     expect(html).toContain("Saffron");
     expect(html).toContain("Skipped · not in pantry");
 });

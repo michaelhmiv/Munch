@@ -11,6 +11,7 @@ import {
     insertStructuredMealInTransaction,
 } from "../structured-meals/repository.js";
 import { dateOnlyString } from "../tz.js";
+import { formatRecipeQuantity } from "../quantity-format.js";
 import type {
     StructuredMealInput,
     StructuredMealInsertResult,
@@ -260,7 +261,9 @@ export function scaleNutrients(
     return scaled;
 }
 
-function formatQuantity(value: number): string {
+function formatQuantity(value: number, unit?: string | null): string {
+    const fraction = formatRecipeQuantity(value, unit);
+    if (fraction != null) return fraction;
     return Number.isInteger(value)
         ? String(value)
         : String(Number(value.toFixed(3)));
@@ -1106,7 +1109,7 @@ export function recipeMealItems(
                 : Number((ingredient.quantity * factor).toFixed(3));
         const unit = ingredient.unit ?? undefined;
         const portionLabel = [
-            quantity === undefined ? undefined : formatQuantity(quantity),
+            quantity === undefined ? undefined : formatQuantity(quantity, unit),
             unit,
             ingredient.preparation ?? undefined,
         ]

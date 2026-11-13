@@ -1064,6 +1064,12 @@ export function createAppRouter(): Hono {
             "Cache-Control": "no-cache",
         }),
     );
+    app.get("/quantity-format.js", async (c) =>
+        c.body(await Bun.file("./public/quantity-format.js").text(), 200, {
+            "Content-Type": "text/javascript; charset=utf-8",
+            "Cache-Control": "no-cache",
+        }),
+    );
     app.get("/account-settings.css", async (c) =>
         c.body(await Bun.file("./public/account-settings.css").text(), 200, {
             "Content-Type": "text/css; charset=utf-8",
