@@ -7890,3 +7890,112 @@ a[data-route="groceries"] {
     color: var(--ink-mute, #5d5344);
     font-size: 13px;
 }
+
+/* ---------- Water bottle presets (Michael, 2026-11-13) ----------
+   The Add water dialog leads with a 3×2 grid of one-tap bottle
+   chips. Chips draw at an honest 54px (the tap area is the chip —
+   no overlay needed); the manual row below follows Direction C:
+   both controls drawn 31px, the unit select keeping the ≥44px tap
+   via the ::after overlay. Colors are the authority palette. */
+
+.preset-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.preset-chip {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    min-height: 54px;
+    padding: 7px 4px;
+    border-radius: 10px;
+    border: 1px solid #8a7c63;
+    background: transparent;
+    color: #2b2620;
+    font: inherit;
+    cursor: pointer;
+}
+
+.preset-chip .oz {
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.15;
+}
+
+.preset-chip .ml {
+    font-size: 12px;
+    color: #5d5344;
+    line-height: 1.2;
+}
+
+.form-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 22px;
+}
+
+.form-divider::before,
+.form-divider::after {
+    content: "";
+    flex: 1;
+    border-top: 1px solid #d8cdb6;
+}
+
+.form-divider span {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #5d5344;
+}
+
+dialog #water-form {
+    margin-top: 14px;
+}
+
+.amount-row {
+    display: flex;
+    gap: 8px;
+}
+
+.amount-row .amount-input {
+    flex: 0 0 auto;
+    width: 76px;
+    height: 31px;
+    min-height: 31px;
+    padding: 4px 12px;
+    border-radius: 10px;
+}
+
+.unit-select {
+    position: relative;
+    height: 31px;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    color: #2b2620;
+    background: #fff;
+    border: 1px solid #8a7c63;
+    border-radius: 10px;
+    padding: 0 6px;
+    cursor: pointer;
+}
+
+.unit-select::after {
+    content: "";
+    position: absolute;
+    inset: -7px -4px;
+}
+
+.convert-hint {
+    margin: 0;
+    font-size: 12.5px;
+    color: #5d5344;
+}

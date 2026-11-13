@@ -424,10 +424,7 @@ document.addEventListener(
         const button = event.target.closest("[data-action]");
         if (!button) return;
         const action = button.dataset.action;
-        if (
-            !action ||
-            !["edit-meal", "add-water", "add-weight"].includes(action)
-        ) {
+        if (!action || !["edit-meal", "add-weight"].includes(action)) {
             return;
         }
 
@@ -440,14 +437,6 @@ document.addEventListener(
             } catch (error) {
                 patchToast(error.message || "Could not load meal", "error");
             }
-            return;
-        }
-
-        if (action === "add-water") {
-            showPatchedDialog(
-                "Add water",
-                `<form id="water-form" class="auth-form"><label class="field"><span>Amount (milliliters)</span><input name="amount_ml" type="number" min="1" max="20000" value="350" inputmode="numeric" required /></label><label class="field"><span>Notes</span><input name="notes" placeholder="Optional" /></label><button class="button button-primary" type="submit">Add water</button></form>`,
-            );
             return;
         }
 

@@ -671,6 +671,72 @@ function mealMetricDetail(meals, field, unit, { groupByDay = false } = {}) {
     return `${rows}<div class="metric-detail-row metric-detail-total"><span>Total</span><strong>${escapeHtml(format(total))}</strong></div>`;
 }
 
+// Water bottle presets (Michael, 2026-11-13): most people drink from
+// a bottle, so the Add water dialog leads with one-tap chips for real
+// bottle sizes. A chip tap IS the log — it posts the converted ml to
+// the same endpoint the manual form uses, closes the dialog, and
+// confirms with the action toast's Undo (a real delete of the entry
+// just created). Storage stays amount_ml everywhere; ounces exist
+// only at this entry surface. "My bottle" was rejected — the six
+// presets suffice — and there is deliberately no flavored-drink
+// handoff: water entries stay hydration-only and Notes stays a
+// personal-reference label, never parsed.
+const WATER_ML_PER_FL_OZ = 29.5735;
+
+function waterOzToMl(oz) {
+    return Math.round(Number(oz) * WATER_ML_PER_FL_OZ);
+}
+
+function waterBottlePresets() {
+    return [12, 16.9, 20, 24, 32, 40].map((oz) => ({
+        oz,
+        ozLabel: String(oz),
+        ml: waterOzToMl(oz),
+    }));
+}
+
+// The manual form's stored amount: fl oz converts at the same rate
+// the chips use; ml stores the typed value (rounded — the endpoint
+// takes whole ml). Unusable input returns NaN so the endpoint's
+// validation answers, exactly as the typed-ml form behaved before.
+function waterFormAmountMl(amount, unit) {
+    if (amount === "" || amount == null) return NaN;
+    const value = Number(amount);
+    if (!Number.isFinite(value)) return NaN;
+    return unit === "oz" ? waterOzToMl(value) : Math.round(value);
+}
+
+function waterPresetChipsMarkup() {
+    const chips = waterBottlePresets()
+        .map(
+            (preset) =>
+                `<button class="preset-chip" type="button" data-action="water-preset" data-ml="${preset.ml}" data-oz-label="${preset.ozLabel}"><span class="oz">${preset.ozLabel} oz</span><span class="ml">${number(preset.ml)} ml</span></button>`,
+        )
+        .join("");
+    return `<div class="preset-grid" role="group" aria-label="Bottle sizes">${chips}</div>`;
+}
+
+function addWaterDialogMarkup() {
+    return `${waterPresetChipsMarkup()}<div class="form-divider"><span>Or enter an amount</span></div><form id="water-form" class="auth-form"><div class="field"><span>Amount</span><div class="amount-row"><input class="amount-input" name="amount" type="number" step="any" required value="12" /><select class="unit-select" name="unit" aria-label="Amount unit"><option value="ml">ml</option><option value="oz" selected>fl oz</option></select></div><p class="convert-hint">≈ ${number(waterOzToMl(12))} ml</p></div><label class="field"><span>Notes</span><input name="notes" placeholder="Optional" /></label><button class="button button-primary" type="submit">Add water</button></form>`;
+}
+
+// The live stored-ml hint under the manual amount row: visible only
+// in fl oz mode, always showing what will actually be stored.
+function updateWaterConvertHint(form) {
+    const hint = form?.querySelector?.(".convert-hint");
+    if (!hint) return;
+    const ml = waterFormAmountMl(
+        form.elements?.amount?.value,
+        form.elements?.unit?.value,
+    );
+    if (form.elements?.unit?.value === "oz" && Number.isFinite(ml)) {
+        hint.hidden = false;
+        hint.textContent = `≈ ${number(ml)} ml`;
+    } else {
+        hint.hidden = true;
+    }
+}
+
 // F8 via F2: the Water card's decomposition carries the day's entries
 // and the Add water action, so both live one tap from the top of
 // Today instead of below the entire Meals list.
@@ -9512,11 +9578,41 @@ async function handleAction(button) {
         openWeightEditor(button.dataset.id);
         return;
     }
-    if (action === "add-water") {
-        openDialog(
-            "Add water",
-            `<form id="water-form" class="auth-form"><label class="field"><span>Amount (milliliters)</span><input name="amount_ml" type="number" min="1" max="20000" value="350" required /></label><label class="field"><span>Notes</span><input name="notes" placeholder="Optional" /></label><button class="button button-primary" type="submit">Add water</button></form>`,
+    if (action === "water-preset") {
+        // One tap logs the whole bottle (see waterBottlePresets):
+        // post the chip's converted ml, close, refresh, and confirm
+        // with the action toast — Undo deletes the entry just made.
+        button.disabled = true;
+        const amountMl = Number(button.dataset.ml);
+        const result = await api("/api/app/water", {
+            method: "POST",
+            body: JSON.stringify({ amount_ml: amountMl }),
+            keepPrevious: true,
+        });
+        if (dialog.open) closeAppDialog();
+        await renderRoute();
+        const entryId = result?.entry?.id;
+        toastAction(
+            `Water added — ${button.dataset.ozLabel} oz (${number(amountMl)} ml).`,
+            "Undo",
+            async () => {
+                if (!entryId) return;
+                try {
+                    await api(`/api/app/water/${encodeURIComponent(entryId)}`, {
+                        method: "DELETE",
+                        keepPrevious: true,
+                    });
+                    toast("Water entry deleted.");
+                } catch (error) {
+                    toast(error.message || "Undo failed", "error");
+                }
+                await renderRoute();
+            },
         );
+        return;
+    }
+    if (action === "add-water") {
+        openDialog("Add water", addWaterDialogMarkup());
         return;
     }
     if (action === "add-weight") {
@@ -9814,6 +9910,14 @@ function markDraftFieldDirty(target) {
 document.addEventListener("change", async (event) => {
     markDraftFieldDirty(event.target);
     const target = event.target;
+    if (
+        target?.closest?.("#water-form") &&
+        (target.name === "amount" || target.name === "unit")
+    ) {
+        // Bottle presets: switching the unit shows/hides the hint.
+        updateWaterConvertHint(target.closest("form"));
+        return;
+    }
     if (target?.matches?.('#duplicate-meal-form [name="target_date"]')) {
         // Keep the quick-pick selected state truthful when the date is
         // typed or picked directly: a choice is highlighted only when
@@ -9907,6 +10011,13 @@ document.addEventListener("change", async (event) => {
 
 document.addEventListener("input", (event) => {
     markDraftFieldDirty(event.target);
+    if (
+        event.target.closest?.("#water-form") &&
+        (event.target.name === "amount" || event.target.name === "unit")
+    ) {
+        // Bottle presets: the stored-ml hint tracks the typed amount.
+        updateWaterConvertHint(event.target.closest("form"));
+    }
     if (event.target.id === "meal-food-search") {
         window.clearTimeout(mealComposer.searchTimer);
         mealComposer.searchTimer = window.setTimeout(
@@ -10714,7 +10825,10 @@ document.addEventListener("submit", async (event) => {
         if (form.id === "water-form") {
             await api("/api/app/water", {
                 method: "POST",
-                body: JSON.stringify(values),
+                body: JSON.stringify({
+                    amount_ml: waterFormAmountMl(values.amount, values.unit),
+                    notes: values.notes ?? "",
+                }),
                 keepPrevious: true,
             });
             toast("Water added.");
