@@ -35,6 +35,8 @@ import {
     deleteWeight,
     getPreferredWeightUnit,
     getNutritionGoals,
+    getRecentWater,
+    getRecentWeight,
     insertWater,
     insertWeight,
     updateMeal,
@@ -66,6 +68,7 @@ import {
 import { decisionsConfig } from "../decisions/config.js";
 import { evaluateMealPhotoGate } from "../decisions/gate.js";
 import { chooseCandidatesForMealPhoto } from "../decisions/decider.js";
+import { evaluateOutlierPrompt } from "../decisions/outlier.js";
 import { reviewRecipeResolution } from "../decisions/resolution-review.js";
 import { reviewRecipeYield } from "../decisions/yield-estimate.js";
 import type {
@@ -3681,6 +3684,15 @@ export function createAppRouter(): Hono {
         if (!Number.isInteger(amountMl) || amountMl <= 0 || amountMl > 20_000) {
             throw new Error("Invalid water amount");
         }
+        // C1: recent series is read BEFORE the insert so the median
+        // baseline never includes the entry being judged. A failure
+        // here must not fail the log — the seat is fail-open.
+        let recentWater: Awaited<ReturnType<typeof getRecentWater>> = [];
+        try {
+            recentWater = await getRecentWater(c.get("munchUserId"));
+        } catch {
+            recentWater = [];
+        }
         const result = await insertWater(c.get("munchUserId"), {
             amount_ml: amountMl,
             ...(typeof body.logged_at === "string"
@@ -3688,7 +3700,26 @@ export function createAppRouter(): Hono {
                 : {}),
             ...(typeof body.notes === "string" ? { notes: body.notes } : {}),
         });
-        return privateJson(c, result);
+        // The entry has saved exactly as it always has. C1 only ADDS
+        // an advisory soft prompt when the entry is a deterministic
+        // outlier AND the decision model reads it as a likely slip;
+        // it never blocks, edits, or removes the saved entry.
+        let outlierPrompt = null;
+        if (!result.deduplicated) {
+            const verdict = await evaluateOutlierPrompt({
+                kind: "water",
+                entry: {
+                    value: result.entry.amount_ml,
+                    logged_at: result.entry.logged_at,
+                },
+                recent: recentWater.map((entry) => ({
+                    value: entry.amount_ml,
+                    logged_at: entry.logged_at,
+                })),
+            });
+            if (verdict.action === "prompt") outlierPrompt = verdict;
+        }
+        return privateJson(c, { ...result, outlier_prompt: outlierPrompt });
     });
 
     app.patch("/api/app/water/:id", requireSameOrigin, async (c) => {
@@ -3743,6 +3774,12 @@ export function createAppRouter(): Hono {
         if (!isPlausibleWeightGrams(weightG)) {
             throw new Error("Weight is outside the supported range");
         }
+        let recentWeight: Awaited<ReturnType<typeof getRecentWeight>> = [];
+        try {
+            recentWeight = await getRecentWeight(c.get("munchUserId"));
+        } catch {
+            recentWeight = [];
+        }
         const result = await insertWeight(c.get("munchUserId"), {
             weight_g: weightG,
             ...(typeof body.logged_at === "string"
@@ -3750,7 +3787,24 @@ export function createAppRouter(): Hono {
                 : {}),
             ...(typeof body.notes === "string" ? { notes: body.notes } : {}),
         });
-        return privateJson(c, result);
+        // Saved first, exactly as before — see the water route: C1
+        // only adds an advisory soft prompt, never a block or rewrite.
+        let outlierPrompt = null;
+        if (!result.deduplicated) {
+            const verdict = await evaluateOutlierPrompt({
+                kind: "weight",
+                entry: {
+                    value: result.entry.weight_g,
+                    logged_at: result.entry.logged_at,
+                },
+                recent: recentWeight.map((entry) => ({
+                    value: entry.weight_g,
+                    logged_at: entry.logged_at,
+                })),
+            });
+            if (verdict.action === "prompt") outlierPrompt = verdict;
+        }
+        return privateJson(c, { ...result, outlier_prompt: outlierPrompt });
     });
 
     app.patch("/api/app/weight/:id", requireSameOrigin, async (c) => {

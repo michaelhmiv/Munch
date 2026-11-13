@@ -36,7 +36,8 @@ export interface DecisionsCallOptions {
         | "plausibility"
         | "estimate_rung"
         | "yield_estimate"
-        | "chat_claims";
+        | "chat_claims"
+        | "outlier";
     state: unknown;
     questions: Record<string, unknown>;
     timeoutMs: number;

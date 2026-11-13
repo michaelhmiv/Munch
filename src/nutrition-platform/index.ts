@@ -27,6 +27,7 @@ export { getNutritionGoals, upsertNutritionGoals } from "./goals.js";
 export {
     deleteWater,
     getEarliestWaterDate,
+    getRecentWater,
     getWaterByDate,
     getWaterInRange,
     insertWater,
@@ -36,6 +37,7 @@ export {
     deleteWeight,
     getEarliestWeightDate,
     getLatestWeight,
+    getRecentWeight,
     getWeightByDate,
     getWeightInRange,
     insertWeight,

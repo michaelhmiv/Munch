@@ -39,6 +39,8 @@ export interface DecisionsConfig {
     matchTimeoutMs: number;
     gateEnabled: boolean;
     deciderEnabled: boolean;
+    outlierTimeoutMs: number;
+    outlierEnabled: boolean;
     /** Seat C3 — chat-agent unsourced-claim check (log-only). */
     chatClaimsEnabled: boolean;
     chatClaimsTimeoutMs: number;
@@ -151,6 +153,16 @@ export function decisionsConfig(
         deciderEnabled: seatEnabled(
             master,
             flagState(env.MUNCH_JEV_DECIDER_ENABLED),
+        ),
+        outlierTimeoutMs: boundedInteger(
+            env.MUNCH_JEV_OUTLIER_TIMEOUT_MS,
+            2_000,
+            100,
+            15_000,
+        ),
+        outlierEnabled: seatEnabled(
+            master,
+            flagState(env.MUNCH_JEV_OUTLIER_ENABLED),
         ),
         chatClaimsEnabled: seatEnabled(
             master,
@@ -369,6 +381,46 @@ export const DEFAULT_GATE_FOOD_MIN = 0.1;
 export function gateFoodThresholdForModel(model: string): number {
     return (
         DECISION_MODEL_THRESHOLDS[model]?.gateFoodMin ?? DEFAULT_GATE_FOOD_MIN
+    );
+}
+
+/**
+ * Per-model C1 outlier thresholds: `outlierMistakeMin` is the minimum
+ * p(likely logging mistake) at or above which the soft prompt is
+ * surfaced. Calibrated per model from the C1 eval fixture (see
+ * scripts/jev-c1-outlier-eval.ts and the PR evidence), never borrowed
+ * across models. Provisional values are set from that eval before
+ * the seat ships; the eval report is the authority for any change.
+ */
+export interface OutlierModelThresholds {
+    outlierMistakeMin: number;
+}
+
+export const OUTLIER_MODEL_THRESHOLDS: Record<string, OutlierModelThresholds> =
+    {
+        // C1 eval 2026-11-13 (scripts/jev-c1-outlier-eval.ts, 16
+        // constructed production-shaped cases): at 0.50 Jev caught
+        // 8/8 slips but false-prompted 4/8 genuine entries — its
+        // genuine water cases scored 0.55–0.73 while its weakest
+        // slip scored 0.75. 0.74 sits in that (thin) gap: 7/8 slips,
+        // 0/8 false prompts on the fixture. The gap is only ~0.02
+        // wide, so this threshold is provisional on a small fixture;
+        // watch production logs before ever lowering it.
+        "typesafe/jev-1.14": { outlierMistakeMin: 0.74 },
+        // Same eval: at 0.50 pplx caught 7/8 slips with 2/8 false
+        // prompts (genuine water at 0.55 and 0.88). At 0.90: 6/8
+        // slips (exactly the 75% bar) and 0/8 false prompts — the
+        // false-prompt rate is the headline metric, so it wins.
+        "perplexity/pplx-decider-v1.2": { outlierMistakeMin: 0.9 },
+    };
+
+/** Unlisted slugs get the conservative end: fewer prompts, not more. */
+export const DEFAULT_OUTLIER_MISTAKE_MIN = 0.9;
+
+export function outlierMistakeThresholdForModel(model: string): number {
+    return (
+        OUTLIER_MODEL_THRESHOLDS[model]?.outlierMistakeMin ??
+        DEFAULT_OUTLIER_MISTAKE_MIN
     );
 }
 

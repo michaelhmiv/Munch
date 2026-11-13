@@ -3,6 +3,7 @@ import {
     decisionsConfig,
     draftReviewPlausibleThresholdForModel,
     gateFoodThresholdForModel,
+    outlierMistakeThresholdForModel,
     chatClaimsThresholdForModel,
     DEFAULT_CHAT_CLAIMS_SUPPORTED_MIN,
     shortfallCheckEnabled,
@@ -12,6 +13,7 @@ import {
     DEFAULT_DECIDER_MODEL,
     DEFAULT_DRAFT_PLAUSIBLE_MIN,
     DEFAULT_GATE_FOOD_MIN,
+    DEFAULT_OUTLIER_MISTAKE_MIN,
     DEFAULT_SHORTFALL_CONTRADICTION_MIN,
 } from "./config.js";
 
@@ -289,6 +291,48 @@ describe("per-model A3 draft-review thresholds (calibrated, never borrowed)", ()
         expect(draftReviewPlausibleThresholdForModel("example/unknown-1")).toBe(
             DEFAULT_DRAFT_PLAUSIBLE_MIN,
         );
+    });
+});
+
+describe("decisionsConfig C1 outlier seat flag", () => {
+    test("defaults off; master on enables it; explicit seat off wins", () => {
+        expect(decisionsConfig({ ...KEY })!.outlierEnabled).toBe(false);
+        expect(
+            decisionsConfig({ ...KEY, MUNCH_JEV_ENABLED: "true" })!
+                .outlierEnabled,
+        ).toBe(true);
+        expect(
+            decisionsConfig({
+                ...KEY,
+                MUNCH_JEV_ENABLED: "true",
+                MUNCH_JEV_OUTLIER_ENABLED: "false",
+            })!.outlierEnabled,
+        ).toBe(false);
+        expect(
+            decisionsConfig({ ...KEY, MUNCH_JEV_OUTLIER_ENABLED: "true" })!
+                .outlierEnabled,
+        ).toBe(true);
+    });
+
+    test("outlier timeout defaults to 2000 and is bounded", () => {
+        expect(decisionsConfig({ ...KEY })!.outlierTimeoutMs).toBe(2_000);
+        expect(
+            decisionsConfig({ ...KEY, MUNCH_JEV_OUTLIER_TIMEOUT_MS: "5" })!
+                .outlierTimeoutMs,
+        ).toBe(100);
+    });
+
+    test("per-model outlier thresholds are the eval-calibrated values", () => {
+        // C1 eval 2026-11-13: Jev 0.74 (7/8 slips, 0/8 false prompts),
+        // pplx 0.90 (6/8 slips, 0/8 false prompts) — see config.ts.
+        expect(outlierMistakeThresholdForModel("typesafe/jev-1.14")).toBe(0.74);
+        expect(
+            outlierMistakeThresholdForModel("perplexity/pplx-decider-v1.2"),
+        ).toBe(0.9);
+        expect(outlierMistakeThresholdForModel("example/unknown-1")).toBe(
+            DEFAULT_OUTLIER_MISTAKE_MIN,
+        );
+        expect(DEFAULT_OUTLIER_MISTAKE_MIN).toBe(0.9);
     });
 });
 
