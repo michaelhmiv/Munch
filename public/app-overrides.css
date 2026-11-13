@@ -1598,6 +1598,37 @@ dialog.is-closing::backdrop {
     font-size: 36px;
 }
 
+/* Tools-to-top N6: the compact add button at a metric card's head
+   (Today's Water / Weight). Drawn at the 31px control anchor with
+   the rule border; the invisible ::after overlay keeps the tap
+   area at ≥44px, the board's hit-area pattern. */
+.operate-view .metric-head-add {
+    position: relative;
+    flex: 0 0 auto;
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 31px;
+    height: 31px;
+    padding: 0;
+    font: inherit;
+    font-size: 17px;
+    font-weight: 600;
+    line-height: 1;
+    color: #2b2620;
+    background: transparent;
+    border: 1px solid #8a7c63;
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.operate-view .metric-head-add::after {
+    content: "";
+    position: absolute;
+    inset: -7px;
+}
+
 .operate-view .metric-chevron {
     font-size: 11px;
     color: #5d5344;
@@ -5217,6 +5248,15 @@ dialog .guided-grocery-row input[type="checkbox"] {
     margin: 2px 0 12px;
 }
 
+/* Tools-to-top N3: Edit and "+ Chart" ride together at the right
+   edge of the control row — adding a chart no longer waits at the
+   foot of the whole dashboard. */
+.trends-actions {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+}
+
 .trends-pill {
     font: inherit;
     font-size: 12.5px;
@@ -5484,20 +5524,6 @@ dialog .guided-grocery-row input[type="checkbox"] {
     padding: 6px 12px;
     min-height: 32px;
     margin-left: auto;
-    cursor: pointer;
-}
-
-.trends-add {
-    font: inherit;
-    width: 100%;
-    font-size: 14px;
-    font-weight: 600;
-    color: #2e5b34;
-    background: #fffdf8;
-    border: 1.5px dashed #b9c4a4;
-    border-radius: 14px;
-    padding: 13px;
-    min-height: 48px;
     cursor: pointer;
 }
 
