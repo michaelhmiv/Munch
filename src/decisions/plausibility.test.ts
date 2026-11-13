@@ -169,3 +169,98 @@ describe("A1 checker verdicts", () => {
         expect(review.status).toBe("unchecked");
     });
 });
+
+describe("A1 lane order (Perplexity-led; Michael's ruling, 2026-11-13)", () => {
+    const LANE_CONFIG: DecisionsConfig = {
+        ...CONFIG,
+        models: ["typesafe/jev-1.14", "perplexity/pplx-decider-v1.2"],
+    };
+
+    /** Records the model of every request; Perplexity behaves as
+     * scripted, every other model answers. */
+    function laneFetcher(perplexity: "ok" | "http500" | "http404") {
+        const seen: string[] = [];
+        const fetcher = async (_input: unknown, init?: { body?: string }) => {
+            const body = JSON.parse(init?.body ?? "{}") as { model: string };
+            seen.push(body.model);
+            const mode =
+                body.model === "perplexity/pplx-decider-v1.2"
+                    ? perplexity
+                    : "ok";
+            if (mode === "http500") {
+                return new Response("down", { status: 500 });
+            }
+            if (mode === "http404") {
+                return new Response(
+                    JSON.stringify({
+                        error: { message: "No endpoints found" },
+                    }),
+                    { status: 404 },
+                );
+            }
+            return new Response(
+                JSON.stringify({
+                    answers: { q0: { type: "noul", noul: 0.97 } },
+                    usage: { cost: 0.000008 },
+                }),
+                {
+                    status: 200,
+                    headers: { "content-type": "application/json" },
+                },
+            );
+        };
+        return { fetcher, seen };
+    }
+
+    test("Perplexity is called FIRST; Jev is never called when it answers", async () => {
+        const { fetcher, seen } = laneFetcher("ok");
+        const review = await reviewRecipePlausibility([MILK], LANE_CONFIG, {
+            fetcher: fetcher as never,
+        });
+        expect(seen).toEqual(["perplexity/pplx-decider-v1.2"]);
+        expect(review.status).toBe("reviewed");
+        if (review.status !== "reviewed") return;
+        expect(review.model).toBe("perplexity/pplx-decider-v1.2");
+        // Perplexity's own calibrated threshold (never borrowed).
+        expect(review.threshold).toBe(0.5);
+        expect(review.verdicts[0]!.confirmedImplausible).toBe(true);
+    });
+
+    test("Jev is engaged only when Perplexity is unavailable (5xx: one retry, then fallback)", async () => {
+        const { fetcher, seen } = laneFetcher("http500");
+        const review = await reviewRecipePlausibility([MILK], LANE_CONFIG, {
+            fetcher: fetcher as never,
+        });
+        expect(seen).toEqual([
+            "perplexity/pplx-decider-v1.2",
+            "perplexity/pplx-decider-v1.2",
+            "typesafe/jev-1.14",
+        ]);
+        expect(review.status).toBe("reviewed");
+        if (review.status !== "reviewed") return;
+        expect(review.model).toBe("typesafe/jev-1.14");
+    });
+
+    test("a hard 4xx from Perplexity moves to Jev immediately (no retry)", async () => {
+        const { fetcher, seen } = laneFetcher("http404");
+        const review = await reviewRecipePlausibility([MILK], LANE_CONFIG, {
+            fetcher: fetcher as never,
+        });
+        expect(seen).toEqual([
+            "perplexity/pplx-decider-v1.2",
+            "typesafe/jev-1.14",
+        ]);
+        expect(review.status).toBe("reviewed");
+    });
+
+    test("an explicit plausibilityModels on the config wins over the derived lane", async () => {
+        const { fetcher, seen } = laneFetcher("ok");
+        const review = await reviewRecipePlausibility(
+            [MILK],
+            { ...LANE_CONFIG, plausibilityModels: ["typesafe/jev-1.14"] },
+            { fetcher: fetcher as never },
+        );
+        expect(seen).toEqual(["typesafe/jev-1.14"]);
+        expect(review.status).toBe("reviewed");
+    });
+});

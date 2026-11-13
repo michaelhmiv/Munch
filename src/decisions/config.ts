@@ -64,6 +64,12 @@ export interface DecisionsConfig {
      * sweep's shape, so both branches' configs are identical. */
     plausibilityTimeoutMs: number;
     plausibilityEnabled: boolean;
+    /** A1 lane order (Michael's ruling, 2026-11-13 — the seat is
+     * Perplexity-led; see `plausibilityModelOrder`). Optional so
+     * existing config literals in sibling seats/tests stay valid;
+     * `decisionsConfig()` always populates it, and the seat derives
+     * it from `models` when a literal omits it. */
+    plausibilityModels?: string[];
     /** A2 estimate rung (audit §2 Tier 1). Optional so existing
      * config literals in sibling seats/tests stay valid;
      * `decisionsConfig()` always populates both fields. The timeout
@@ -123,6 +129,36 @@ function modelChain(env: Record<string, string | undefined>): string[] {
 }
 
 /**
+ * A1 plausibility lane (Michael's ruling, 2026-11-13, on the
+ * three-model bake-off — ~/workspace/munch-prep/jev-bakeoff-2026-11-13.md):
+ * the plausibility seat is Perplexity-led. Perplexity separated
+ * perfectly on both fixture sets (every defect caught, ZERO false
+ * accusations) while Jev false-accused sound data (honey, a
+ * correctly resolved milk). Jev stays in the lane as the
+ * AVAILABILITY fallback only: it answers when Perplexity cannot,
+ * never instead of it. Every other seat keeps the shared chain
+ * order (`models`) — this lane belongs to the plausibility seat
+ * alone (the stored-data sweep runs the same checker module, so
+ * it judges through the same lane).
+ */
+export const PLAUSIBILITY_LEAD_MODEL = "perplexity/pplx-decider-v1.2";
+
+/**
+ * The plausibility seat's lane: the configured chain re-ordered so
+ * the designated lead answers first and the remaining models
+ * follow in their configured order. A chain that does not contain
+ * the lead (an operator removed it from the model list) is
+ * returned unchanged — config still governs which models exist.
+ */
+export function plausibilityModelOrder(models: string[]): string[] {
+    if (!models.includes(PLAUSIBILITY_LEAD_MODEL)) return [...models];
+    return [
+        PLAUSIBILITY_LEAD_MODEL,
+        ...models.filter((model) => model !== PLAUSIBILITY_LEAD_MODEL),
+    ];
+}
+
+/**
  * Returns null when no OpenRouter key is configured (the seats cannot
  * run; callers treat this exactly like flags-off). Jev rides the same
  * OpenRouter key as the Ember seats.
@@ -133,10 +169,12 @@ export function decisionsConfig(
     const apiKey = env.OPENROUTER_API_KEY?.trim();
     if (!apiKey) return null;
     const master = flagState(env.MUNCH_JEV_ENABLED);
+    const models = modelChain(env);
     return {
         apiKey,
         apiUrl: env.MUNCH_DECIDER_API_URL?.trim() || DECISIONS_API_URL,
-        models: modelChain(env),
+        models,
+        plausibilityModels: plausibilityModelOrder(models),
         gateTimeoutMs: boundedInteger(
             env.MUNCH_JEV_GATE_TIMEOUT_MS,
             1_500,
