@@ -1,9 +1,15 @@
 import { getFeatureModules } from "../feature-modules-repository.js";
 import {
+    getGroceryList,
     getMealPlan,
     getRecipe,
     type RecipeIngredientInput,
 } from "../planning/repository.js";
+import {
+    isOnGroceryList,
+    pantryMatchForGroceryItem,
+    type PantryFlag,
+} from "./grocery-pantry.js";
 import {
     canonicalInventoryUnit,
     convertInventoryQuantity,
@@ -217,11 +223,25 @@ export function computePlanShortfall(
     return items;
 }
 
+/**
+ * A rundown row plus its presence flag (owner ruling, Nov 13). The
+ * flag and the row stay separate channels: the flag reports presence
+ * (have / none / already on the list), the row reports the quantity
+ * math that put it here. A "short" row is by definition in the
+ * pantry — its flag says "have" while the row says how short the
+ * exact stock falls; presence-only rows never reach this surface at
+ * all (the #283 boundary above is unchanged).
+ */
+export interface ShortfallItemWithFlag extends ShortfallItem {
+    on_list: boolean;
+    pantry_flag: PantryFlag;
+}
+
 export interface PlanShortfallResult {
     enabled: boolean;
     start: string;
     end: string;
-    items: ShortfallItem[];
+    items: ShortfallItemWithFlag[];
 }
 
 /**
@@ -276,9 +296,39 @@ export async function getPlanShortfall(input: {
             })),
         });
     }
+    const openList = await getGroceryList({
+        userId: input.userId,
+        scope: input.scope,
+        includePurchased: false,
+    });
     return {
         enabled: true,
         ...base,
-        items: computePlanShortfall(meals, pantry.items),
+        items: computePlanShortfall(meals, pantry.items).map((item) => {
+            const onList = isOnGroceryList(
+                { name: item.name, unit: item.need_unit },
+                openList.items,
+            );
+            const match =
+                item.pantry_state === "short"
+                    ? pantryMatchForGroceryItem(
+                          { name: item.name },
+                          pantry.items,
+                      )
+                    : null;
+            return {
+                ...item,
+                on_list: onList,
+                pantry_flag: {
+                    state: onList
+                        ? ("listed" as const)
+                        : item.pantry_state === "short"
+                          ? ("have" as const)
+                          : ("none" as const),
+                    pantry_item_id: match?.pantry_item_id ?? null,
+                    pantry_name: match?.pantry_name ?? null,
+                },
+            };
+        }),
     };
 }

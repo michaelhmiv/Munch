@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+    attachPantryFlags,
     attachPantryMatches,
+    isOnGroceryList,
+    pantryFlagForItem,
     pantryMatchForGroceryItem,
 } from "./grocery-pantry.js";
 import { normalizeInventoryName } from "./matching.js";
@@ -113,5 +116,116 @@ describe("grocery → pantry presence match", () => {
     test("an empty pantry (module off) matches nothing", () => {
         const items = attachPantryMatches([{ name: "Milk" }], []);
         expect(items[0]!.pantry_match).toBeNull();
+    });
+});
+
+describe("on-list presence", () => {
+    const open = [
+        { name: "Onion", unit: "count" },
+        { name: "Milk", unit: "gal" },
+        { name: "Rice", unit: null },
+    ];
+
+    test("a name-and-unit match on the open list is listed", () => {
+        expect(isOnGroceryList({ name: "onion", unit: "count" }, open)).toBe(
+            true,
+        );
+        expect(isOnGroceryList({ name: "Milk", unit: "gal" }, open)).toBe(true);
+    });
+
+    test("a unit that cannot be the same measure is not listed", () => {
+        expect(isOnGroceryList({ name: "Onion", unit: "cup" }, open)).toBe(
+            false,
+        );
+    });
+
+    test("a missing unit on either side still counts as listed", () => {
+        expect(isOnGroceryList({ name: "Rice" }, open)).toBe(true);
+        expect(isOnGroceryList({ name: "Milk" }, open)).toBe(true);
+    });
+
+    test("an absent name is not listed", () => {
+        expect(isOnGroceryList({ name: "Flour", unit: "cup" }, open)).toBe(
+            false,
+        );
+    });
+});
+
+describe("three-state pantry flag", () => {
+    const pantry = [pantryItem({})]; // Milk, available
+    const open = [{ name: "Onion", unit: null }];
+
+    test("available stock flags have", () => {
+        expect(pantryFlagForItem({ name: "Milk" }, pantry, open)).toEqual({
+            state: "have",
+            pantry_item_id: "item-1",
+            pantry_name: "Milk",
+        });
+    });
+
+    test("low stock still flags have — presence, never an amount", () => {
+        const low = [
+            pantryItem({ stock_state: "low", quantity: 0.1, unit: "cup" }),
+        ];
+        expect(pantryFlagForItem({ name: "Milk" }, low, []).state).toBe("have");
+    });
+
+    test("depleted stock flags none, not have", () => {
+        const depleted = [pantryItem({ stock_state: "depleted", quantity: 0 })];
+        expect(pantryFlagForItem({ name: "Milk" }, depleted, [])).toEqual({
+            state: "none",
+            pantry_item_id: null,
+            pantry_name: null,
+        });
+    });
+
+    test("absent from pantry and list flags none", () => {
+        expect(pantryFlagForItem({ name: "Flour" }, pantry, open).state).toBe(
+            "none",
+        );
+    });
+
+    test("on the open list flags listed", () => {
+        expect(pantryFlagForItem({ name: "Onion" }, pantry, open)).toEqual({
+            state: "listed",
+            pantry_item_id: null,
+            pantry_name: null,
+        });
+    });
+
+    test("listed outranks have at add moments — and keeps the pantry identity", () => {
+        const flag = pantryFlagForItem({ name: "Milk" }, pantry, [
+            { name: "Milk", unit: null },
+        ]);
+        expect(flag.state).toBe("listed");
+        expect(flag.pantry_item_id).toBe("item-1");
+        expect(flag.pantry_name).toBe("Milk");
+    });
+
+    test("the flag never carries an amount, whatever the state", () => {
+        for (const flag of [
+            pantryFlagForItem({ name: "Milk" }, pantry, open),
+            pantryFlagForItem({ name: "Onion" }, pantry, open),
+            pantryFlagForItem({ name: "Flour" }, pantry, open),
+        ]) {
+            expect(Object.keys(flag).sort()).toEqual([
+                "pantry_item_id",
+                "pantry_name",
+                "state",
+            ]);
+        }
+    });
+
+    test("attachPantryFlags annotates every item with its state", () => {
+        const flagged = attachPantryFlags(
+            [{ name: "Milk" }, { name: "Onion" }, { name: "Flour" }],
+            pantry,
+            open,
+        );
+        expect(flagged.map((item) => item.pantry_flag.state)).toEqual([
+            "have",
+            "listed",
+            "none",
+        ]);
     });
 });

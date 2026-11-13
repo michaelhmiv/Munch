@@ -33,10 +33,21 @@ const sampleItem = {
     planned_meal_id: "m1",
 };
 
+// The real flag component the rundown rows render (defined earlier
+// in app.js, beside the grocery rows) — prepended so assertions run
+// on the shipped markup, not a stub.
+function flagChunk() {
+    const start = appSource.indexOf("const PANTRY_FLAG_CHECK_SVG");
+    const end = appSource.indexOf("// Grocery rows render the same component");
+    if (start < 0 || end < 0 || end <= start)
+        throw new Error("pantry flag chunk not found in app.js");
+    return appSource.slice(start, end);
+}
+
 function dialogChunk() {
     const start = appSource.indexOf("function shortfallQty");
     const end = appSource.indexOf("async function addShortfallItems");
-    return appSource.slice(start, end);
+    return `${flagChunk()}\n${appSource.slice(start, end)}`;
 }
 
 test("rundown dialog renders data rows with per-item and add-all actions", () => {
@@ -150,6 +161,102 @@ test("the indicator is a dot and a badge — never a banner", () => {
     expect(appSource.slice(heading, heading + 260)).toContain(
         'data-action="shortfall-open"',
     );
+});
+
+test("rows carry the presence flag beside the quantity line — separate channels", () => {
+    let body = "";
+    const shortItem = {
+        ...sampleItem,
+        name: "Milk",
+        pantry_state: "short",
+        have_quantity: 0.25,
+        short_quantity: 0.25,
+        need_unit: "cup",
+        on_list: false,
+        pantry_flag: {
+            state: "have",
+            pantry_item_id: "pantry-milk",
+            pantry_name: "Milk",
+        },
+    };
+    const context: Record<string, unknown> = {
+        escapeHtml,
+        state: { shortfall: { enabled: true, items: [shortItem] } },
+        openDialog: (_t: string, b: string) => {
+            body = b;
+        },
+    };
+    runInNewContext(
+        `${dialogChunk()}\nthis.__open = openShortfallDialog;`,
+        context,
+    );
+    (context.__open as () => void)();
+    // The row reports quantity; the flag reports presence.
+    expect(body).toContain("Pantry: ~0.25 cup");
+    expect(body).toContain("pantry-flag pantry-flag-have");
+    expect(body).toContain("In your pantry");
+    // A short row is still addable — presence never vetoes the tap.
+    expect(body).toContain('data-action="shortfall-add"');
+});
+
+test("an on-list row shows the listed flag and no Add — and scopes add-all out", () => {
+    let body = "";
+    let actions = "unset";
+    const listedItem = {
+        ...sampleItem,
+        on_list: true,
+        pantry_flag: {
+            state: "listed",
+            pantry_item_id: null,
+            pantry_name: null,
+        },
+    };
+    const context: Record<string, unknown> = {
+        escapeHtml,
+        state: { shortfall: { enabled: true, items: [listedItem] } },
+        openDialog: (_t: string, b: string, a: string) => {
+            body = b;
+            actions = a;
+        },
+    };
+    runInNewContext(
+        `${dialogChunk()}\nthis.__open = openShortfallDialog;`,
+        context,
+    );
+    (context.__open as () => void)();
+    expect(body).toContain("pantry-flag pantry-flag-listed");
+    expect(body).toContain("On your list");
+    expect(body).not.toContain('data-action="shortfall-add"');
+    // Nothing left that needs adding → no Add all either.
+    expect(actions).toBe("");
+});
+
+test("a none row flags Not in pantry and keeps its Add", () => {
+    let body = "";
+    const noneItem = {
+        ...sampleItem,
+        on_list: false,
+        pantry_flag: {
+            state: "none",
+            pantry_item_id: null,
+            pantry_name: null,
+        },
+    };
+    const context: Record<string, unknown> = {
+        escapeHtml,
+        state: { shortfall: { enabled: true, items: [noneItem] } },
+        openDialog: (_t: string, b: string) => {
+            body = b;
+        },
+    };
+    runInNewContext(
+        `${dialogChunk()}\nthis.__open = openShortfallDialog;`,
+        context,
+    );
+    (context.__open as () => void)();
+    expect(body).toContain("pantry-flag pantry-flag-none");
+    expect(body).toContain("Not in pantry");
+    expect(body).toContain('data-action="shortfall-add"');
 });
 
 test("the shortfall endpoint is read-only (no grocery writes server-side)", () => {
