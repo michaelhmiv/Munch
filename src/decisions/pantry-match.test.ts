@@ -47,7 +47,11 @@ function item(
 }
 
 /** A fetcher answering both B3 questions with fixed probabilities. */
-function answeringFetcher(pSame: number, pUnits: number, counter = { calls: 0 }): DecisionsFetcher {
+function answeringFetcher(
+    pSame: number,
+    pUnits: number,
+    counter = { calls: 0 },
+): DecisionsFetcher {
     return async () => {
         counter.calls += 1;
         return new Response(
@@ -72,16 +76,29 @@ describe("B3 fixture band sanity (scores computed by the production scorer)", ()
     test("the grey fixtures really land in the 0.50–0.75 band", () => {
         const score = (existing: string, incoming: string) =>
             inventoryIdentityScore(
-                { normalized_name: existing, food_provider: null, provider_food_id: null },
+                {
+                    normalized_name: existing,
+                    food_provider: null,
+                    provider_food_id: null,
+                },
                 { name: incoming },
             );
         // Token-overlap pairs where neither name contains the other
         // as a substring (a substring scores 0.82, above the band).
-        expect(score("cheddar aged cheese", "cheddar cheese")).toBeCloseTo(0.667, 3);
-        expect(score("sliced cheddar cheese", "shredded cheddar cheese")).toBeCloseTo(0.5, 3);
-        expect(score("swiss aged cheese slices", "swiss cheese slices")).toBeCloseTo(0.75, 3);
+        expect(score("cheddar aged cheese", "cheddar cheese")).toBeCloseTo(
+            0.667,
+            3,
+        );
+        expect(
+            score("sliced cheddar cheese", "shredded cheddar cheese"),
+        ).toBeCloseTo(0.5, 3);
+        expect(
+            score("swiss aged cheese slices", "swiss cheese slices"),
+        ).toBeCloseTo(0.75, 3);
         expect(score("chicken stock", "chicken broth")).toBeCloseTo(0.333, 3);
-        expect(score("swiss aged deli cheese slices", "swiss aged cheese slices")).toBeCloseTo(0.8, 3);
+        expect(
+            score("swiss aged deli cheese slices", "swiss aged cheese slices"),
+        ).toBeCloseTo(0.8, 3);
     });
 });
 
@@ -129,9 +146,18 @@ describe("resolvePantryIdentity — seat enabled, outside the band", () => {
     test("above-band match merges deterministically with zero calls", async () => {
         const counter = { calls: 0 };
         const result = await resolvePantryIdentity(
-            [item({ name: "swiss aged deli cheese slices", normalized_name: "swiss aged deli cheese slices", unit: "count" })],
+            [
+                item({
+                    name: "swiss aged deli cheese slices",
+                    normalized_name: "swiss aged deli cheese slices",
+                    unit: "count",
+                }),
+            ],
             { name: "swiss aged cheese slices", quantity: 4, unit: "count" },
-            { config: testConfig(), fetcher: answeringFetcher(0.01, 0.01, counter) },
+            {
+                config: testConfig(),
+                fetcher: answeringFetcher(0.01, 0.01, counter),
+            },
         );
         expect(result.action).toBe("merge");
         if (result.action === "merge") expect(result.via).toBe("deterministic");
@@ -143,10 +169,14 @@ describe("resolvePantryIdentity — seat enabled, outside the band", () => {
         const result = await resolvePantryIdentity(
             [item({ name: "chicken stock", normalized_name: "chicken stock" })],
             { name: "chicken broth", quantity: 1, unit: "cup" },
-            { config: testConfig(), fetcher: answeringFetcher(0.99, 0.99, counter) },
+            {
+                config: testConfig(),
+                fetcher: answeringFetcher(0.99, 0.99, counter),
+            },
         );
         expect(result.action).toBe("separate");
-        if (result.action === "separate") expect(result.reason).toBe("below_band");
+        if (result.action === "separate")
+            expect(result.reason).toBe("below_band");
         expect(counter.calls).toBe(0);
     });
 });
@@ -155,9 +185,18 @@ describe("resolvePantryIdentity — grey band engages exactly one review", () =>
     test("band low edge (0.50) engages; a confident yes to both questions merges", async () => {
         const counter = { calls: 0 };
         const result = await resolvePantryIdentity(
-            [item({ name: "sliced cheddar cheese", normalized_name: "sliced cheddar cheese", unit: "cup" })],
+            [
+                item({
+                    name: "sliced cheddar cheese",
+                    normalized_name: "sliced cheddar cheese",
+                    unit: "cup",
+                }),
+            ],
             { name: "shredded cheddar cheese", quantity: 2, unit: "cup" },
-            { config: testConfig(), fetcher: answeringFetcher(0.95, 0.9, counter) },
+            {
+                config: testConfig(),
+                fetcher: answeringFetcher(0.95, 0.9, counter),
+            },
         );
         expect(counter.calls).toBe(1);
         expect(result.action).toBe("merge");
@@ -170,9 +209,18 @@ describe("resolvePantryIdentity — grey band engages exactly one review", () =>
     test("band high edge (0.75) engages", async () => {
         const counter = { calls: 0 };
         const result = await resolvePantryIdentity(
-            [item({ name: "swiss aged cheese slices", normalized_name: "swiss aged cheese slices", unit: "count" })],
+            [
+                item({
+                    name: "swiss aged cheese slices",
+                    normalized_name: "swiss aged cheese slices",
+                    unit: "count",
+                }),
+            ],
             { name: "swiss cheese slices", quantity: 4, unit: "count" },
-            { config: testConfig(), fetcher: answeringFetcher(0.9, 0.9, counter) },
+            {
+                config: testConfig(),
+                fetcher: answeringFetcher(0.9, 0.9, counter),
+            },
         );
         expect(counter.calls).toBe(1);
         expect(result.action).toBe("merge");
@@ -180,7 +228,13 @@ describe("resolvePantryIdentity — grey band engages exactly one review", () =>
 
     test("a model no on same-item keeps strangers separate (false-merge discipline)", async () => {
         const result = await resolvePantryIdentity(
-            [item({ name: "cheddar aged cheese", normalized_name: "cheddar aged cheese", unit: "cup" })],
+            [
+                item({
+                    name: "cheddar aged cheese",
+                    normalized_name: "cheddar aged cheese",
+                    unit: "cup",
+                }),
+            ],
             { name: "cheddar cheese spread", quantity: 1, unit: "cup" },
             { config: testConfig(), fetcher: answeringFetcher(0.04, 0.9) },
         );
@@ -198,7 +252,8 @@ describe("resolvePantryIdentity — grey band engages exactly one review", () =>
             { config: testConfig(), fetcher: answeringFetcher(0.95, 0.05) },
         );
         expect(result.action).toBe("separate");
-        if (result.action === "separate") expect(result.reason).toBe("model_declined");
+        if (result.action === "separate")
+            expect(result.reason).toBe("model_declined");
     });
 
     test("mass vs volume never merges even when the model says yes to both (code guard)", async () => {
@@ -206,11 +261,15 @@ describe("resolvePantryIdentity — grey band engages exactly one review", () =>
         const result = await resolvePantryIdentity(
             [item()],
             { name: "cheddar cheese", quantity: 1, unit: "lb" },
-            { config: testConfig(), fetcher: answeringFetcher(0.99, 0.99, counter) },
+            {
+                config: testConfig(),
+                fetcher: answeringFetcher(0.99, 0.99, counter),
+            },
         );
         expect(counter.calls).toBe(1);
         expect(result.action).toBe("separate");
-        if (result.action === "separate") expect(result.reason).toBe("units_cross_family");
+        if (result.action === "separate")
+            expect(result.reason).toBe("units_cross_family");
     });
 
     test("chain down fails open to NO merge and reports unchecked", async () => {
@@ -228,14 +287,17 @@ describe("resolvePantryIdentity — grey band engages exactly one review", () =>
 
     test("unparseable answers fail open to NO merge", async () => {
         const fetcher: DecisionsFetcher = async () =>
-            new Response(JSON.stringify({ answers: { nope: 1 } }), { status: 200 });
+            new Response(JSON.stringify({ answers: { nope: 1 } }), {
+                status: 200,
+            });
         const result = await resolvePantryIdentity(
             [item()],
             { name: "cheddar cheese", quantity: 1, unit: "cup" },
             { config: testConfig(), fetcher },
         );
         expect(result.action).toBe("separate");
-        if (result.action === "separate") expect(result.reason).toBe("unchecked");
+        if (result.action === "separate")
+            expect(result.reason).toBe("unchecked");
     });
 });
 
@@ -244,12 +306,30 @@ describe("attachPantryIdentityReviews (scan-confirm wiring)", () => {
         const counter = { calls: 0 };
         const reviews = await attachPantryIdentityReviews(
             [
-                { name: "paper towels", quantity: 1, unit: "count", is_food: false },
-                { name: "cheddar cheese", quantity: 1, unit: "cup", is_food: true },
-                { name: "unicorn sprinkles", quantity: 1, unit: "count", is_food: true },
+                {
+                    name: "paper towels",
+                    quantity: 1,
+                    unit: "count",
+                    is_food: false,
+                },
+                {
+                    name: "cheddar cheese",
+                    quantity: 1,
+                    unit: "cup",
+                    is_food: true,
+                },
+                {
+                    name: "unicorn sprinkles",
+                    quantity: 1,
+                    unit: "count",
+                    is_food: true,
+                },
             ],
             [item()],
-            { config: testConfig(), fetcher: answeringFetcher(0.95, 0.95, counter) },
+            {
+                config: testConfig(),
+                fetcher: answeringFetcher(0.95, 0.95, counter),
+            },
         );
         expect(Object.keys(reviews)).toEqual(["1"]);
         expect(reviews[1]?.action).toBe("merge");
@@ -261,7 +341,13 @@ describe("reviewPantryIdentityPair (production call shape)", () => {
     test("returns probabilities, the serving model, and the API-reported cost", async () => {
         const pair: PantryIdentityPair = {
             incoming: { name: "cheddar cheese", quantity: 1, unit: "cup" },
-            existing: { id: "item-1", name: "cheddar aged cheese", quantity: 2, unit: "cup", quantityMode: "exact" },
+            existing: {
+                id: "item-1",
+                name: "cheddar aged cheese",
+                quantity: 2,
+                unit: "cup",
+                quantityMode: "exact",
+            },
             identityScore: 0.667,
         };
         const review = await reviewPantryIdentityPair(pair, testConfig(), {

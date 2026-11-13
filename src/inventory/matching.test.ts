@@ -106,7 +106,9 @@ describe("inventory matching", () => {
 });
 
 describe("grey band candidates (seat B3)", () => {
-    const mk = (over: Partial<InventoryMatchableItem>): InventoryMatchableItem => ({
+    const mk = (
+        over: Partial<InventoryMatchableItem>,
+    ): InventoryMatchableItem => ({
         id: "x",
         name: "cheddar aged cheese",
         normalized_name: "cheddar aged cheese",
@@ -135,7 +137,10 @@ describe("grey band candidates (seat B3)", () => {
         expect(candidates[0]!.score).toBeCloseTo(0.667, 3);
         // ...while bestInventoryMatch still refuses them, as today.
         expect(
-            bestInventoryMatch([mk({})], { name: "cheddar cheese", unit: "lb" }),
+            bestInventoryMatch([mk({})], {
+                name: "cheddar cheese",
+                unit: "lb",
+            }),
         ).toBeNull();
     });
     test("cross-family detection is mass vs volume only", () => {

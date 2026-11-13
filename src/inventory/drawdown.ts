@@ -11,10 +11,7 @@ import {
     type IngredientRequirement,
     type InventoryMatchableItem,
 } from "./matching.js";
-import {
-    decisionsConfig,
-    type DecisionsConfig,
-} from "../decisions/config.js";
+import { decisionsConfig, type DecisionsConfig } from "../decisions/config.js";
 import type { DecisionsFetcher } from "../decisions/client.js";
 import {
     drawdownAnomalyFlagged,
@@ -103,8 +100,7 @@ export interface DrawdownLine {
 }
 
 export type DrawdownAnomalyKind =
-    | "draw_exceeds_stock"
-    | "approximate_remainder_flip";
+    "draw_exceeds_stock" | "approximate_remainder_flip";
 
 /**
  * One anomalous draw, aggregated per pantry item across every line

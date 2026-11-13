@@ -206,7 +206,10 @@ describe("decisionsConfig B3/B4 seat flags", () => {
         expect(on!.drawdownReviewEnabled).toBe(true);
     });
     test("per-seat flags enable and kill independently", () => {
-        const b3 = decisionsConfig({ ...KEY, MUNCH_JEV_PANTRY_MATCH_ENABLED: "true" });
+        const b3 = decisionsConfig({
+            ...KEY,
+            MUNCH_JEV_PANTRY_MATCH_ENABLED: "true",
+        });
         expect(b3!.pantryMatchEnabled).toBe(true);
         expect(b3!.drawdownReviewEnabled).toBe(false);
         const killed = decisionsConfig({

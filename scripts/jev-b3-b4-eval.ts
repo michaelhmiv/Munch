@@ -65,22 +65,96 @@ interface B3Fixture {
 
 const B3_FIXTURES: B3Fixture[] = [
     // True-same pairs in the band — must merge.
-    { label: "cheddar cheese ~ cheddar aged cheese", category: "same", incoming: { name: "cheddar cheese", quantity: 1, unit: "cup" }, existing: { name: "cheddar aged cheese", quantity: 2, unit: "cup" } },
-    { label: "shredded ~ sliced cheddar cheese", category: "same", incoming: { name: "shredded cheddar cheese", quantity: 2, unit: "cup" }, existing: { name: "sliced cheddar cheese", quantity: 1, unit: "cup" } },
-    { label: "ground beef chuck ~ ground beef sirloin", category: "same", incoming: { name: "ground beef chuck", quantity: 1, unit: "lb" }, existing: { name: "ground beef sirloin", quantity: 2, unit: "lb" } },
-    { label: "swiss cheese slices ~ swiss aged cheese slices", category: "same", incoming: { name: "swiss cheese slices", quantity: 4, unit: "count" }, existing: { name: "swiss aged cheese slices", quantity: 8, unit: "count" } },
-    { label: "brown rice ~ brown basmati rice", category: "same", incoming: { name: "brown rice", quantity: 2, unit: "cup" }, existing: { name: "brown basmati rice", quantity: 3, unit: "cup" } },
+    {
+        label: "cheddar cheese ~ cheddar aged cheese",
+        category: "same",
+        incoming: { name: "cheddar cheese", quantity: 1, unit: "cup" },
+        existing: { name: "cheddar aged cheese", quantity: 2, unit: "cup" },
+    },
+    {
+        label: "shredded ~ sliced cheddar cheese",
+        category: "same",
+        incoming: { name: "shredded cheddar cheese", quantity: 2, unit: "cup" },
+        existing: { name: "sliced cheddar cheese", quantity: 1, unit: "cup" },
+    },
+    {
+        label: "ground beef chuck ~ ground beef sirloin",
+        category: "same",
+        incoming: { name: "ground beef chuck", quantity: 1, unit: "lb" },
+        existing: { name: "ground beef sirloin", quantity: 2, unit: "lb" },
+    },
+    {
+        label: "swiss cheese slices ~ swiss aged cheese slices",
+        category: "same",
+        incoming: { name: "swiss cheese slices", quantity: 4, unit: "count" },
+        existing: {
+            name: "swiss aged cheese slices",
+            quantity: 8,
+            unit: "count",
+        },
+    },
+    {
+        label: "brown rice ~ brown basmati rice",
+        category: "same",
+        incoming: { name: "brown rice", quantity: 2, unit: "cup" },
+        existing: { name: "brown basmati rice", quantity: 3, unit: "cup" },
+    },
     // True-different pairs in the band — must NOT merge (headline metric).
-    { label: "cheddar cheese spread ~ cheddar aged cheese", category: "different", incoming: { name: "cheddar cheese spread", quantity: 1, unit: "cup" }, existing: { name: "cheddar aged cheese", quantity: 2, unit: "cup" } },
-    { label: "peanut butter cups ~ peanut butter creamy", category: "different", incoming: { name: "peanut butter cups", quantity: 6, unit: "count" }, existing: { name: "peanut butter creamy", quantity: 1, unit: "cup" } },
-    { label: "cream cheese frosting ~ cream cheese block", category: "different", incoming: { name: "cream cheese frosting", quantity: 1, unit: "cup" }, existing: { name: "cream cheese block", quantity: 2, unit: "count" } },
-    { label: "whole milk ~ whole goat milk", category: "different", incoming: { name: "whole milk", quantity: 4, unit: "cup" }, existing: { name: "whole goat milk", quantity: 4, unit: "cup" } },
-    { label: "ground beef patties ~ ground beef chuck", category: "different", incoming: { name: "ground beef patties", quantity: 4, unit: "count" }, existing: { name: "ground beef chuck", quantity: 2, unit: "lb" } },
-    { label: "coconut milk powder ~ coconut milk canned", category: "different", incoming: { name: "coconut milk powder", quantity: 1, unit: "cup" }, existing: { name: "coconut milk canned", quantity: 2, unit: "count" } },
+    {
+        label: "cheddar cheese spread ~ cheddar aged cheese",
+        category: "different",
+        incoming: { name: "cheddar cheese spread", quantity: 1, unit: "cup" },
+        existing: { name: "cheddar aged cheese", quantity: 2, unit: "cup" },
+    },
+    {
+        label: "peanut butter cups ~ peanut butter creamy",
+        category: "different",
+        incoming: { name: "peanut butter cups", quantity: 6, unit: "count" },
+        existing: { name: "peanut butter creamy", quantity: 1, unit: "cup" },
+    },
+    {
+        label: "cream cheese frosting ~ cream cheese block",
+        category: "different",
+        incoming: { name: "cream cheese frosting", quantity: 1, unit: "cup" },
+        existing: { name: "cream cheese block", quantity: 2, unit: "count" },
+    },
+    {
+        label: "whole milk ~ whole goat milk",
+        category: "different",
+        incoming: { name: "whole milk", quantity: 4, unit: "cup" },
+        existing: { name: "whole goat milk", quantity: 4, unit: "cup" },
+    },
+    {
+        label: "ground beef patties ~ ground beef chuck",
+        category: "different",
+        incoming: { name: "ground beef patties", quantity: 4, unit: "count" },
+        existing: { name: "ground beef chuck", quantity: 2, unit: "lb" },
+    },
+    {
+        label: "coconut milk powder ~ coconut milk canned",
+        category: "different",
+        incoming: { name: "coconut milk powder", quantity: 1, unit: "cup" },
+        existing: { name: "coconut milk canned", quantity: 2, unit: "count" },
+    },
     // Same name, units that cannot be added — the units question must say no.
-    { label: "chicken breast lb ~ chicken breast count", category: "unit_incompatible", incoming: { name: "chicken breast", quantity: 2, unit: "lb" }, existing: { name: "chicken breast", quantity: 4, unit: "count" } },
-    { label: "rice lb ~ rice cup", category: "unit_incompatible", incoming: { name: "rice", quantity: 5, unit: "lb" }, existing: { name: "rice", quantity: 10, unit: "cup" } },
-    { label: "flour kg ~ flour cup", category: "unit_incompatible", incoming: { name: "flour", quantity: 2, unit: "kg" }, existing: { name: "flour", quantity: 8, unit: "cup" } },
+    {
+        label: "chicken breast lb ~ chicken breast count",
+        category: "unit_incompatible",
+        incoming: { name: "chicken breast", quantity: 2, unit: "lb" },
+        existing: { name: "chicken breast", quantity: 4, unit: "count" },
+    },
+    {
+        label: "rice lb ~ rice cup",
+        category: "unit_incompatible",
+        incoming: { name: "rice", quantity: 5, unit: "lb" },
+        existing: { name: "rice", quantity: 10, unit: "cup" },
+    },
+    {
+        label: "flour kg ~ flour cup",
+        category: "unit_incompatible",
+        incoming: { name: "flour", quantity: 2, unit: "kg" },
+        existing: { name: "flour", quantity: 8, unit: "cup" },
+    },
 ];
 
 // ---------------------------------------------------------------- B4
@@ -110,14 +184,107 @@ function anomaly(partial: Partial<DrawdownAnomaly>): DrawdownAnomaly {
 }
 
 const B4_FIXTURES: B4Fixture[] = [
-    { label: "broth drawn from chicken breast (wrong match)", category: "genuine", anomaly: anomaly({ ingredient: "chicken broth", ingredientQuantity: 8, ingredientUnit: "cup", requestedQuantity: 8, requestedUnit: "lb", pantryName: "chicken breast", recordedQuantity: 2, recordedUnit: "lb", identityScore: 0.67 }) },
-    { label: "16 cups olive oil from a 1-cup bottle", category: "genuine", anomaly: anomaly({ ingredient: "olive oil", ingredientQuantity: 16, ingredientUnit: "cup", requestedQuantity: 16, pantryName: "olive oil", recordedQuantity: 1 }) },
-    { label: "3 cups garlic powder from a half-cup jar", category: "genuine", anomaly: anomaly({ ingredient: "garlic powder", ingredientQuantity: 3, ingredientUnit: "cup", requestedQuantity: 3, pantryName: "garlic powder", recordedQuantity: 0.5 }) },
-    { label: "20 cups milk from a 4-cup carton", category: "genuine", anomaly: anomaly({ ingredient: "milk", ingredientQuantity: 20, ingredientUnit: "cup", requestedQuantity: 20, pantryName: "milk", recordedQuantity: 4 }) },
-    { label: "2 cups butter from 1.5 cups (holiday baking)", category: "benign", anomaly: anomaly({ ingredient: "butter", ingredientQuantity: 2, ingredientUnit: "cup", requestedQuantity: 2, pantryName: "butter", recordedQuantity: 1.5 }) },
-    { label: "24 eggs from 18 (big breakfast event)", category: "benign", anomaly: anomaly({ ingredient: "eggs", ingredientQuantity: 24, ingredientUnit: "count", requestedQuantity: 24, requestedUnit: "count", pantryName: "eggs", recordedQuantity: 18, recordedUnit: "count" }) },
-    { label: "approximate rice 4 cups drawn from ~4 cups (family dinner)", category: "benign", anomaly: anomaly({ kind: "approximate_remainder_flip", ingredient: "rice", ingredientQuantity: 4, requestedQuantity: 4, recordedQuantity: 4, quantityMode: "approximate" }) },
-    { label: "6 cups flour from 5 cups (bread baking)", category: "benign", anomaly: anomaly({ ingredient: "flour", ingredientQuantity: 6, ingredientUnit: "cup", requestedQuantity: 6, pantryName: "flour", recordedQuantity: 5 }) },
+    {
+        label: "broth drawn from chicken breast (wrong match)",
+        category: "genuine",
+        anomaly: anomaly({
+            ingredient: "chicken broth",
+            ingredientQuantity: 8,
+            ingredientUnit: "cup",
+            requestedQuantity: 8,
+            requestedUnit: "lb",
+            pantryName: "chicken breast",
+            recordedQuantity: 2,
+            recordedUnit: "lb",
+            identityScore: 0.67,
+        }),
+    },
+    {
+        label: "16 cups olive oil from a 1-cup bottle",
+        category: "genuine",
+        anomaly: anomaly({
+            ingredient: "olive oil",
+            ingredientQuantity: 16,
+            ingredientUnit: "cup",
+            requestedQuantity: 16,
+            pantryName: "olive oil",
+            recordedQuantity: 1,
+        }),
+    },
+    {
+        label: "3 cups garlic powder from a half-cup jar",
+        category: "genuine",
+        anomaly: anomaly({
+            ingredient: "garlic powder",
+            ingredientQuantity: 3,
+            ingredientUnit: "cup",
+            requestedQuantity: 3,
+            pantryName: "garlic powder",
+            recordedQuantity: 0.5,
+        }),
+    },
+    {
+        label: "20 cups milk from a 4-cup carton",
+        category: "genuine",
+        anomaly: anomaly({
+            ingredient: "milk",
+            ingredientQuantity: 20,
+            ingredientUnit: "cup",
+            requestedQuantity: 20,
+            pantryName: "milk",
+            recordedQuantity: 4,
+        }),
+    },
+    {
+        label: "2 cups butter from 1.5 cups (holiday baking)",
+        category: "benign",
+        anomaly: anomaly({
+            ingredient: "butter",
+            ingredientQuantity: 2,
+            ingredientUnit: "cup",
+            requestedQuantity: 2,
+            pantryName: "butter",
+            recordedQuantity: 1.5,
+        }),
+    },
+    {
+        label: "24 eggs from 18 (big breakfast event)",
+        category: "benign",
+        anomaly: anomaly({
+            ingredient: "eggs",
+            ingredientQuantity: 24,
+            ingredientUnit: "count",
+            requestedQuantity: 24,
+            requestedUnit: "count",
+            pantryName: "eggs",
+            recordedQuantity: 18,
+            recordedUnit: "count",
+        }),
+    },
+    {
+        label: "approximate rice 4 cups drawn from ~4 cups (family dinner)",
+        category: "benign",
+        anomaly: anomaly({
+            kind: "approximate_remainder_flip",
+            ingredient: "rice",
+            ingredientQuantity: 4,
+            requestedQuantity: 4,
+            recordedQuantity: 4,
+            quantityMode: "approximate",
+        }),
+    },
+    {
+        label: "6 cups flour from 5 cups (bread baking)",
+        category: "benign",
+        anomaly: anomaly({
+            ingredient: "flour",
+            ingredientQuantity: 6,
+            ingredientUnit: "cup",
+            requestedQuantity: 6,
+            pantryName: "flour",
+            recordedQuantity: 5,
+        }),
+    },
 ];
 
 // ---------------------------------------------------------------- run
@@ -129,12 +296,22 @@ async function main() {
         let b3Cost = 0;
         for (const fixture of B3_FIXTURES) {
             const score = inventoryIdentityScore(
-                { normalized_name: fixture.existing.name.toLowerCase(), food_provider: null, provider_food_id: null },
+                {
+                    normalized_name: fixture.existing.name.toLowerCase(),
+                    food_provider: null,
+                    provider_food_id: null,
+                },
                 { name: fixture.incoming.name },
             );
             const pair: PantryIdentityPair = {
                 incoming: fixture.incoming,
-                existing: { id: "eval", name: fixture.existing.name, quantity: fixture.existing.quantity, unit: fixture.existing.unit, quantityMode: "exact" },
+                existing: {
+                    id: "eval",
+                    name: fixture.existing.name,
+                    quantity: fixture.existing.quantity,
+                    unit: fixture.existing.unit,
+                    quantityMode: "exact",
+                },
                 identityScore: score,
             };
             const started = Date.now();
@@ -189,8 +366,12 @@ async function main() {
             },
         };
         console.log(`\n=== ${model} ===`);
-        console.log(`B3 same recall ${report[model]!.b3.same_recall} · false merges ${(report[model] as any).b3.false_merges} · unit-incompatible rejected ${(report[model] as any).b3.unit_incompatible_rejected} · cost $${b3Cost.toFixed(5)}`);
-        console.log(`B4 genuine flagged ${(report[model] as any).b4.genuine_flagged} · benign false alarms ${(report[model] as any).b4.benign_false_alarms} · cost $${b4Cost.toFixed(5)}`);
+        console.log(
+            `B3 same recall ${report[model]!.b3.same_recall} · false merges ${(report[model] as any).b3.false_merges} · unit-incompatible rejected ${(report[model] as any).b3.unit_incompatible_rejected} · cost $${b3Cost.toFixed(5)}`,
+        );
+        console.log(
+            `B4 genuine flagged ${(report[model] as any).b4.genuine_flagged} · benign false alarms ${(report[model] as any).b4.benign_false_alarms} · cost $${b4Cost.toFixed(5)}`,
+        );
     }
     console.log("\n=== FULL JSON ===");
     console.log(JSON.stringify(report, null, 2));

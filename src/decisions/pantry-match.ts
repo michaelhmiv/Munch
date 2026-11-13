@@ -156,9 +156,7 @@ export function pantryPairMerges(
     pair: PantryIdentityPair,
     review: PantryIdentityReview,
 ): boolean {
-    if (
-        crossFamilyInventoryUnits(pair.incoming.unit, pair.existing.unit)
-    ) {
+    if (crossFamilyInventoryUnits(pair.incoming.unit, pair.existing.unit)) {
         return false;
     }
     return (

@@ -75,7 +75,9 @@ describe("reviewDrawdownAnomaly (production call shape)", () => {
     });
 });
 
-function pantryItem(partial: Partial<PantryItem> & { name: string }): PantryItem {
+function pantryItem(
+    partial: Partial<PantryItem> & { name: string },
+): PantryItem {
     const name = partial.name;
     return {
         id: partial.id ?? `id-${name.toLowerCase().replaceAll(" ", "-")}`,
@@ -147,7 +149,10 @@ describe("applyPantryDrawdown — seat B4 wiring", () => {
     test("a benign draw never engages the seat (anomaly-only)", async () => {
         const counter = { calls: 0 };
         const summary = await applyPantryDrawdown(
-            { ...baseInput, requirements: [{ name: "Rice", quantity: 2, unit: "cup" }] },
+            {
+                ...baseInput,
+                requirements: [{ name: "Rice", quantity: 2, unit: "cup" }],
+            },
             deps({
                 jevConfig: seatConfig(),
                 jevFetcher: answeringFetcher(0.01, 0.01, counter),
@@ -182,7 +187,9 @@ describe("applyPantryDrawdown — seat B4 wiring", () => {
 
     test("chain down annotates unchecked and the draw still applies", async () => {
         const failing: DecisionsFetcher = async () =>
-            new Response(JSON.stringify({ error: { message: "down" } }), { status: 500 });
+            new Response(JSON.stringify({ error: { message: "down" } }), {
+                status: 500,
+            });
         const summary = await applyPantryDrawdown(
             baseInput,
             deps({ jevConfig: seatConfig(), jevFetcher: failing }) as never,
