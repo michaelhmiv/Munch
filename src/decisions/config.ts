@@ -360,7 +360,7 @@ export const DECISION_MODEL_THRESHOLDS: Record<
     // Bake-off: positives min 0.84 / median 0.99; hottest negative 0.071
     // — 0.10 sits above it, but with the thinnest margin of the three;
     // watch the production logs before ever lowering this.
-    "liquid/d1-ultra": { gateFoodMin: 0.1 },
+    "liquid/d1-ultra": { gateFoodMin: 0.1, chatClaimsSupportedMin: 0.5 },
 };
 
 /** The brief's standard gate threshold for any unlisted slug. */
