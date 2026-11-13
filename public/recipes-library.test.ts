@@ -254,3 +254,148 @@ test("strip CSS is the direction-C bar: transparent, rule border, hairline divid
     expect(segment).toContain("min-height: 31px");
     expect(segment).toContain("color: #2b2620");
 });
+
+// Regression (2026-11-13): after Calculate nutrition healed a stored
+// recipe, the DETAIL showed the new revision's nutrition but the
+// library CARD kept "unavailable nutrition" — the calculate flow
+// re-rendered only the detail dialog, while the card renders from
+// state.recipeLibrary, which nothing refreshed. The replay below is
+// the production shape end to end: a pre-heal library entry exactly
+// as GET /api/app/planning returned it (revision 1, unavailable,
+// empty per-serving facts), the calculate endpoint's real response
+// shape ({ result, recipe } with the healed revision 2), and then
+// the real card template rendered from the synced entry.
+function loadCalculateSync(apiResponse: unknown) {
+    const start = appSource.indexOf("function syncRecipeLibraryEntry");
+    const end = appSource.indexOf("function recipeHealSummary");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const chunk = appSource.slice(start, end);
+    const library: Array<Record<string, unknown>> = [
+        {
+            recipe_id: "pot-pie",
+            revision_id: "pot-pie-rev-1",
+            name: "Chicken Pot Pie",
+            version: 1,
+            ownership: "personal",
+            servings: 6,
+            nutrition_status: "unavailable",
+            nutrition_per_serving: {},
+            times_scheduled: 0,
+            times_logged: 3,
+            last_logged_at: "2026-11-01T12:00:00.000Z",
+            created_at: "2026-08-31T21:05:35.000Z",
+            updated_at: "2026-08-31T21:05:35.000Z",
+        },
+        {
+            recipe_id: "other-recipe",
+            revision_id: "other-rev-1",
+            name: "Overnight Oats",
+            version: 1,
+            ownership: "personal",
+            servings: 1,
+            nutrition_status: "complete",
+            nutrition_per_serving: { calories: 320 },
+            times_scheduled: 0,
+            times_logged: 11,
+            last_logged_at: null,
+            created_at: "2026-11-01T00:00:00.000Z",
+            updated_at: "2026-11-01T00:00:00.000Z",
+        },
+    ];
+    let gridRefreshes = 0;
+    const context = {
+        state: { recipeLibrary: library },
+        api: async () => apiResponse,
+        refreshRecipeGrid: () => {
+            gridRefreshes += 1;
+        },
+    };
+    const calculateRecipeNutrition = runInNewContext(
+        `${chunk}; calculateRecipeNutrition`,
+        context,
+    ) as (id: string) => Promise<Record<string, unknown>>;
+    return {
+        calculateRecipeNutrition,
+        library,
+        gridRefreshes: () => gridRefreshes,
+    };
+}
+
+const HEALED_CALCULATE_RESPONSE = {
+    result: {
+        healed: true,
+        revision_id: "pot-pie-rev-2",
+        revision_number: 2,
+        nutrition_status: "complete",
+        nutrition_per_serving: {
+            calories: 610.79,
+            protein_g: 25.29,
+            carbs_g: 55.21,
+            fat_g: 32.14,
+        },
+        resolved_ingredients: ["Butter", "Onion"],
+        unresolved_ingredients: [],
+    },
+    recipe: {
+        id: "pot-pie",
+        version: 2,
+        revision_id: "pot-pie-rev-2",
+        revision_number: 2,
+        servings: 6,
+        name: "Chicken Pot Pie",
+        nutrition_status: "complete",
+        nutrition_per_serving: {
+            calories: 610.79,
+            protein_g: 25.29,
+            carbs_g: 55.21,
+            fat_g: 32.14,
+            fiber_g: 4.97,
+            sugar_g: 3.25,
+            sodium_mg: 790.72,
+        },
+        updated_at: "2026-11-13T13:51:50.000Z",
+    },
+};
+
+test("calculate syncs the library entry so list and detail agree", async () => {
+    const { calculateRecipeNutrition, library, gridRefreshes } =
+        loadCalculateSync(HEALED_CALCULATE_RESPONSE);
+    const result = await calculateRecipeNutrition("pot-pie");
+    // The caller still gets the heal result it renders from.
+    expect(result.nutrition_status).toBe("complete");
+    const entry = library[0]!;
+    expect(entry.nutrition_status).toBe("complete");
+    expect(entry.revision_id).toBe("pot-pie-rev-2");
+    expect(entry.version).toBe(2);
+    expect((entry.nutrition_per_serving as { calories: number }).calories).toBe(
+        610.79,
+    );
+    expect(entry.updated_at).toBe("2026-11-13T13:51:50.000Z");
+    // List-only fields the detail payload doesn't carry survive.
+    expect(entry.times_logged).toBe(3);
+    expect(entry.last_logged_at).toBe("2026-11-01T12:00:00.000Z");
+    expect(entry.created_at).toBe("2026-08-31T21:05:35.000Z");
+    // The card grid repaints, and the other recipe is untouched.
+    expect(gridRefreshes()).toBe(1);
+    expect(library[1]!.nutrition_status).toBe("complete");
+    expect(library[1]!.revision_id).toBe("other-rev-1");
+    // The real card template now renders the healed state, with the
+    // Log button pinned to the NEW revision — not the pre-heal one.
+    const html = loadCardRenderer(true)(entry);
+    expect(html).toContain("complete nutrition");
+    expect(html).toContain("611 kcal");
+    expect(html).toContain('data-revision="pot-pie-rev-2"');
+    expect(html).not.toContain("unavailable nutrition");
+});
+
+test("calculate with no matching library entry is a no-op (other surfaces)", async () => {
+    const { calculateRecipeNutrition, library, gridRefreshes } =
+        loadCalculateSync(HEALED_CALCULATE_RESPONSE);
+    // Calculate can run where the library was never loaded into this
+    // shape (e.g. a lone entry) — the sync must not throw or repaint.
+    library.splice(0, library.length);
+    const result = await calculateRecipeNutrition("pot-pie");
+    expect(result.healed).toBe(true);
+    expect(gridRefreshes()).toBe(0);
+});
