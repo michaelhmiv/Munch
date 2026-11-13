@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
     decisionsConfig,
     draftReviewPlausibleThresholdForModel,
-    decisionsConfig,
     gateFoodThresholdForModel,
+    chatClaimsThresholdForModel,
     DEFAULT_CHAT_CLAIMS_SUPPORTED_MIN,
     shortfallCheckEnabled,
     shortfallCheckTimeoutMs,
