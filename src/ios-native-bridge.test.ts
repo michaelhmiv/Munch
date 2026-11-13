@@ -152,4 +152,21 @@ describe("iOS native bridge contract", () => {
         expect(ensure).toBeLessThan(mint);
         expect(workflow).toContain("bun scripts/configure-mobile-ios.ts");
     });
+
+    test("the APPLE_ID_AUTH create carries the documented consent setting", () => {
+        const workflow = read(".github/workflows/mobile-ios.yml");
+        const ensure = workflow.indexOf('"APPLE_ID_AUTH"');
+        const mint = workflow.indexOf('"/profiles"');
+        const block = workflow.slice(ensure, mint);
+        // The ASC API rejects an APPLE_ID_AUTH create with no settings
+        // (409 ENTITY_ERROR: "Please select at least one configuration
+        // for Sign In with Apple."). Apple's CapabilitySetting and
+        // CapabilityOption references document the configuration as the
+        // APPLE_ID_AUTH_APP_CONSENT setting with the PRIMARY_APP_CONSENT
+        // option enabled (this bundle ID is the primary App ID).
+        expect(block).toContain('"settings"');
+        expect(block).toContain('"APPLE_ID_AUTH_APP_CONSENT"');
+        expect(block).toContain('"PRIMARY_APP_CONSENT"');
+        expect(block).toContain('"enabled": True');
+    });
 });
