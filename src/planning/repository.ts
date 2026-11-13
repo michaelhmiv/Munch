@@ -10,6 +10,7 @@ import {
     insertStructuredMeal,
     insertStructuredMealInTransaction,
 } from "../structured-meals/repository.js";
+import { attachPantryFlagsForScope } from "../inventory/grocery-pantry.js";
 import { dateOnlyString } from "../tz.js";
 import { formatRecipeQuantity } from "../quantity-format.js";
 import type {
@@ -1507,6 +1508,8 @@ export interface RecipeGroceryResult {
     groceryListId: string | null;
     added: number;
     merged: number;
+    skipped_in_pantry: number;
+    skipped_on_list: number;
     items: Array<Record<string, unknown>>;
 }
 
@@ -1520,6 +1523,20 @@ export interface RecipeGroceryResult {
  * note. Matching deliberately ignores provider identity — the brief's
  * merge key is name+unit, so a recipe line merges with the plain list
  * entry a person typed by hand.
+ *
+ * Pantry-presence gate (owner ruling, Nov 13): before anything is
+ * added, each ingredient is flagged against the Pantry and the open
+ * list — the same snapshot the recipe view's flags render, so what
+ * the flag promised is what the tap does. An ingredient the user
+ * already has is skipped and counted (presence only: a staple on
+ * hand is enough to skip, no amount is ever consulted). An
+ * ingredient already on the list never gains a second row: with a
+ * quantity it flows through the shared merge path and folds into
+ * the existing row exactly as before (the deliberate re-add at more
+ * servings depends on that fold); without a quantity there is
+ * nothing to fold, so it is skipped and counted instead of
+ * duplicating. Pantry module off → every flag is null → nothing is
+ * skipped, exactly the pre-flag behavior.
  */
 export async function addRecipeToGroceryList(input: {
     userId: string;
@@ -1547,9 +1564,36 @@ export async function addRecipeToGroceryList(input: {
         throw new Error("Recipe servings must be positive");
     }
     const scale = targetServings / input.recipe.servings;
-    const items: GroceryItemInput[] = input.recipe.ingredients
-        .filter((ingredient) => !ingredient.optional)
-        .map((ingredient, index) => ({
+    const candidates = input.recipe.ingredients.filter(
+        (ingredient) => !ingredient.optional,
+    );
+    const openList = await getGroceryList({
+        userId: input.userId,
+        scope: input.scope,
+        includePurchased: false,
+    });
+    const flagged = await attachPantryFlagsForScope({
+        userId: input.userId,
+        scope: input.scope,
+        items: candidates,
+        openItems: openList.items,
+    });
+    let skippedInPantry = 0;
+    let skippedOnList = 0;
+    const items: GroceryItemInput[] = [];
+    flagged.forEach((ingredient, index) => {
+        if (ingredient.pantry_flag?.state === "have") {
+            skippedInPantry += 1;
+            return;
+        }
+        if (
+            ingredient.pantry_flag?.state === "listed" &&
+            ingredient.quantity == null
+        ) {
+            skippedOnList += 1;
+            return;
+        }
+        items.push({
             name: ingredient.name,
             quantity:
                 ingredient.quantity == null
@@ -1560,9 +1604,17 @@ export async function addRecipeToGroceryList(input: {
             sourceRecipeId: input.recipe.id,
             sourceRecipeRevisionId: input.recipe.revisionId,
             idempotencyKey: `${input.idempotencyKey}:${index}`,
-        }));
+        });
+    });
     if (items.length === 0) {
-        return { groceryListId: null, added: 0, merged: 0, items: [] };
+        return {
+            groceryListId: openList.groceryListId,
+            added: 0,
+            merged: 0,
+            skipped_in_pantry: skippedInPantry,
+            skipped_on_list: skippedOnList,
+            items: [],
+        };
     }
     const result = await addGroceryItems({
         userId: input.userId,
@@ -1574,6 +1626,8 @@ export async function addRecipeToGroceryList(input: {
         groceryListId: result.groceryListId,
         added: result.items.length - merged,
         merged,
+        skipped_in_pantry: skippedInPantry,
+        skipped_on_list: skippedOnList,
         items: result.items,
     };
 }

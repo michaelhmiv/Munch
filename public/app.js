@@ -3463,7 +3463,7 @@ async function openRecipe(id) {
     const ingredients = recipe.ingredients
         .map((ingredient) => {
             const resolved = recipeIngredientResolved(ingredient);
-            return `<li class="recipe-ingredient-row"><span class="recipe-ingredient-main"><strong>${escapeHtml(ingredient.name)}</strong>${ingredient.quantity == null ? "" : ` — ${formatRecipeQuantity(ingredient.quantity, ingredient.unit) ?? number(ingredient.quantity, 3)} ${escapeHtml(ingredient.unit || "")}`} ${sourceBadge(ingredient.source_type)}</span>${resolved ? `<strong class="recipe-ingredient-kcal">${number(ingredient.nutrients?.calories)} kcal</strong>` : `<span class="recipe-unresolved">Not resolved</span>`}</li>`;
+            return `<li class="recipe-ingredient-row"><span class="recipe-ingredient-main"><strong>${escapeHtml(ingredient.name)}</strong>${ingredient.quantity == null ? "" : ` — ${formatRecipeQuantity(ingredient.quantity, ingredient.unit) ?? number(ingredient.quantity, 3)} ${escapeHtml(ingredient.unit || "")}`} ${sourceBadge(ingredient.source_type)}${pantryFlagMarkup(ingredient.pantry_flag)}</span>${resolved ? `<strong class="recipe-ingredient-kcal">${number(ingredient.nutrients?.calories)} kcal</strong>` : `<span class="recipe-unresolved">Not resolved</span>`}</li>`;
         })
         .join("");
     const perServing =
@@ -3990,7 +3990,7 @@ async function previewGuidedGroceries() {
     const suggestions = preview.suggestions || [];
     openDialog(
         "Review grocery suggestions",
-        `<p>Select the items to add. This separate step will add only the checked items to your grocery list.</p>${suggestions.length ? `<div class="meal-groups">${suggestions.map((item) => `<label class="meal-card check-row guided-grocery-row"><input type="checkbox" data-guided-grocery-index="${item.index}" ${item.already_on_list ? "disabled" : "checked"} /><span><strong>${escapeHtml(item.name)}</strong><small>${item.quantity == null ? "Quantity unavailable" : `${formatRecipeQuantity(item.quantity, item.unit) ?? number(item.quantity, 2)} ${escapeHtml(item.unit || "")}`} · ${escapeHtml((item.recipes || []).join(", "))}${item.already_on_list ? " · already on list" : ""}</small></span></label>`).join("")}</div>` : `<div class="empty-state"><div><h3>No quantity-based suggestions</h3><p>Ingredients without a known amount need manual entry.</p></div></div>`}<div class="auth-actions spacer-top"><button class="button button-primary" type="button" data-action="guided-grocery-commit" ${suggestions.length ? "" : "disabled"}>Add selected groceries</button></div><p class="tiny">This does not change pantry inventory or mark anything as eaten.</p>`,
+        `<p>Select the items to add. This separate step will add only the checked items to your grocery list.</p>${suggestions.length ? `<div class="meal-groups">${suggestions.map((item) => `<label class="meal-card check-row guided-grocery-row"><input type="checkbox" data-guided-grocery-index="${item.index}" ${item.already_on_list ? "disabled" : "checked"} /><span><strong>${escapeHtml(item.name)}</strong>${pantryFlagMarkup(item.pantry_flag)}<small>${item.quantity == null ? "Quantity unavailable" : `${formatRecipeQuantity(item.quantity, item.unit) ?? number(item.quantity, 2)} ${escapeHtml(item.unit || "")}`} · ${escapeHtml((item.recipes || []).join(", "))}${item.already_on_list ? " · already on list" : ""}</small></span></label>`).join("")}</div>` : `<div class="empty-state"><div><h3>No quantity-based suggestions</h3><p>Ingredients without a known amount need manual entry.</p></div></div>`}<div class="auth-actions spacer-top"><button class="button button-primary" type="button" data-action="guided-grocery-commit" ${suggestions.length ? "" : "disabled"}>Add selected groceries</button></div><p class="tiny">This does not change pantry inventory or mark anything as eaten.</p>`,
     );
 }
 
@@ -4025,15 +4025,52 @@ function groceryItemGroup(item) {
     return "manual";
 }
 
-// "Already have it" (owner redesign, Nov 11): a presence-only Pantry
-// flag on list items. The server attaches `pantry_match` (identity
-// only — never an amount) when the item is listed in the Pantry; the
-// flag states that fact and nothing more. It is not a warning and
-// carries no verdict about buying more: whether the user ran out is
-// theirs to say, at the moment of the add (the run-out prompt below).
+// The pantry-presence flag (owner redesign, Nov 11; three-state
+// system, Nov 13): ONE component on every surface that lists an item
+// for an add decision — recipe ingredients, the grocery list, the
+// plan shortfall rundown, the guided-plan preview. The server
+// attaches `pantry_flag` (presence only — identity, never an
+// amount): "have" (a non-depleted Pantry item matches), "none" (no
+// match), or "listed" (already on the open grocery list — the state
+// that outranks "have" at add moments). `pantry_flag: null` means
+// the Pantry module is off and no flag renders at all. State is
+// carried three ways at once — fill, mark, and word — and the flag
+// states facts only: it is not a warning and carries no verdict
+// about buying more or having "enough"; whether the user ran out is
+// theirs to say, at the moment of the add (the run-out prompt
+// below). Marks are small stroke SVGs in the app's icon vocabulary,
+// never emoji; "none" is a quiet outline, never red.
+const PANTRY_FLAG_CHECK_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="#176b3a" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg>`;
+const PANTRY_FLAG_CIRCLE_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><circle cx="12" cy="12" r="7.5"/></svg>`;
+const PANTRY_FLAG_BASKET_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 8h14l-1.3 11a2 2 0 0 1-2 1.8H8.3a2 2 0 0 1-2-1.8L5 8z"/><path d="M8.5 8L11 3.5M15.5 8L13 3.5"/></svg>`;
+
+function pantryFlagMarkup(flag) {
+    if (!flag) return "";
+    if (flag.state === "have") {
+        return `<span class="pantry-flag pantry-flag-have"${flag.pantry_item_id ? ` data-pantry-item-id="${escapeHtml(flag.pantry_item_id)}"` : ""}>${PANTRY_FLAG_CHECK_SVG}In your pantry</span>`;
+    }
+    if (flag.state === "listed") {
+        return `<span class="pantry-flag pantry-flag-listed">${PANTRY_FLAG_BASKET_SVG}On your list</span>`;
+    }
+    if (flag.state === "none") {
+        return `<span class="pantry-flag pantry-flag-none">${PANTRY_FLAG_CIRCLE_SVG}Not in pantry</span>`;
+    }
+    return "";
+}
+
+// Grocery rows render the same component from the list payload's
+// flag (have / none — a row is on the list by definition, so
+// "listed" never appears here). Payloads that predate the flag fall
+// back to the shipped `pantry_match` badge semantics: matched or
+// nothing.
 function groceryPantryBadgeMarkup(item) {
+    if (item.pantry_flag !== undefined)
+        return pantryFlagMarkup(item.pantry_flag);
     if (!item.pantry_match) return "";
-    return `<span class="grocery-pantry-badge" data-pantry-item-id="${escapeHtml(item.pantry_match.pantry_item_id)}">In your pantry</span>`;
+    return pantryFlagMarkup({
+        state: "have",
+        pantry_item_id: item.pantry_match.pantry_item_id,
+    });
 }
 
 function pantryRunOutPromptKey(scope, pantryItemId) {
@@ -4319,10 +4356,16 @@ function shortfallRowMarkup(item, index) {
             ? "Pantry: none"
             : `Pantry: ~${shortfallQty(item.have_quantity, item.need_unit)}${item.need_unit ? ` ${escapeHtml(item.need_unit)}` : ""}`;
     const need = `need ~${shortfallQty(item.short_quantity, item.need_unit)}${item.need_unit ? ` ${escapeHtml(item.need_unit)}` : ""}`;
-    const action = item.added
-        ? `<button class="button button-secondary button-small" type="button" disabled>Added</button>`
-        : `<button class="button button-secondary button-small" type="button" data-action="shortfall-add" data-index="${index}">Add</button>`;
-    return `<div class="shortfall-row"><div class="shortfall-row-main"><strong>${escapeHtml(item.name)}</strong><span>${need} · ${reasons} · ${pantry}</span></div>${action}</div>`;
+    // The presence flag rides beside the row's own pantry line and
+    // stays a separate channel: the flag reports presence, the row
+    // reports quantity. A row already on the list shows the "listed"
+    // flag and NO Add button — it is already handled.
+    const action = item.on_list
+        ? ""
+        : item.added
+          ? `<button class="button button-secondary button-small" type="button" disabled>Added</button>`
+          : `<button class="button button-secondary button-small" type="button" data-action="shortfall-add" data-index="${index}">Add</button>`;
+    return `<div class="shortfall-row"><div class="shortfall-row-main"><strong>${escapeHtml(item.name)}</strong><span>${need} · ${reasons} · ${pantry}</span>${pantryFlagMarkup(item.pantry_flag)}</div>${action}</div>`;
 }
 
 function openShortfallDialog() {
@@ -4331,7 +4374,7 @@ function openShortfallDialog() {
     const rows = items
         .map((item, index) => shortfallRowMarkup(item, index))
         .join("");
-    const remaining = items.some((item) => !item.added);
+    const remaining = items.some((item) => !item.added && !item.on_list);
     openDialog(
         "Short for this week",
         `<div class="shortfall-rows">${rows}</div>`,
@@ -7678,15 +7721,17 @@ async function handleAction(button) {
     }
     if (action === "shortfall-add") {
         const item = state.shortfall?.items?.[Number(button.dataset.index)];
-        if (item && !item.added) {
+        if (item && !item.added && !item.on_list) {
             await addShortfallItems([item]);
             openShortfallDialog();
         }
         return;
     }
     if (action === "shortfall-add-all") {
+        // Add all scopes to the rows that still need adding — rows
+        // already on the list are handled and stay out.
         const pending = (state.shortfall?.items || []).filter(
-            (item) => !item.added,
+            (item) => !item.added && !item.on_list,
         );
         if (pending.length) {
             await addShortfallItems(pending);
@@ -9325,7 +9370,7 @@ async function handleAction(button) {
         // "Already have it": one tap settles it — the Pantry item is
         // marked finished through the Pantry page's own reconcile
         // call (consume_all), so it leaves the Pantry, and the item
-        // stays on this list. Badges for that Pantry item come off in
+        // stays on this list. Flags for that Pantry item come off in
         // place; no re-render and no second question.
         button.disabled = true;
         const pantryItemId = button.dataset.pantryItemId;
@@ -9344,7 +9389,7 @@ async function handleAction(button) {
         const prompt = button.closest(".grocery-pantry-prompt");
         const view = prompt?.closest(".groceries-view") ?? document;
         for (const badge of view.querySelectorAll(
-            `.grocery-pantry-badge[data-pantry-item-id="${CSS.escape(pantryItemId)}"]`,
+            `.pantry-flag[data-pantry-item-id="${CSS.escape(pantryItemId)}"]`,
         )) {
             badge.remove();
         }
@@ -9352,7 +9397,7 @@ async function handleAction(button) {
         return;
     }
     if (action === "pantry-still-have") {
-        // The Pantry stands as-is and the badge stays on the item as
+        // The Pantry stands as-is and the flag stays on the item as
         // information; the prompt itself is done for this session.
         button.closest(".grocery-pantry-prompt")?.remove();
         return;
@@ -10626,6 +10671,15 @@ document.addEventListener("submit", async (event) => {
                 parts.push(
                     `${result.merged} merged with items already on the list`,
                 );
+            // The pantry-presence gate reports its skips truthfully:
+            // what the flags showed before the tap is what the tap
+            // did — in the pantry stays home, on the list stays put.
+            if (result.skipped_in_pantry)
+                parts.push(
+                    `${result.skipped_in_pantry} already in your pantry`,
+                );
+            if (result.skipped_on_list)
+                parts.push(`${result.skipped_on_list} already on your list`);
             toastAction(
                 parts.length
                     ? `Groceries: ${parts.join(", ")}.`

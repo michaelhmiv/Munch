@@ -25,6 +25,8 @@ import {
 } from "./planning/repository.js";
 import { resolvePlanningRecipeNutrition } from "./recipe-nutrition-resolution.js";
 import { getFeatureModules } from "./feature-modules-repository.js";
+import { pantryMatchForGroceryItem } from "./inventory/grocery-pantry.js";
+import { getPantry } from "./inventory/repository.js";
 import { dateInTz, dateOnlyString, shiftLocalDate, validateTz } from "./tz.js";
 import { toStoredInteger } from "./units.js";
 import {
@@ -1807,25 +1809,69 @@ export async function previewGuidedPlanGroceries(
                     `${normalizedShoppingName(String(item.normalized_name))}|${normalizedShoppingName(String(item.unit ?? ""))}`,
             ),
         );
+        // Pantry-presence flags (owner ruling, Nov 13): the preview
+        // already knew `already_on_list`; each suggestion now also
+        // carries the same three-state flag the other add surfaces
+        // render — listed outranks have, per the shared precedence.
+        // Pantry module off → `pantry_flag: null`, no flag renders.
+        const pantry = await getPantry({
+            userId,
+            scope: draft.personal_owner_user_id
+                ? { type: "personal" }
+                : {
+                      type: "household",
+                      householdId: String(draft.household_id),
+                  },
+            limit: 200,
+        });
         const suggestions = [...grouped.entries()].map(
-            ([key, value], index) => ({
-                index,
-                name: String(value.name ?? ""),
-                quantity: Number(value.quantity ?? 0),
-                unit: value.unit == null ? null : String(value.unit),
-                recipes: Array.isArray(value.recipes)
-                    ? value.recipes.map(String)
-                    : [],
-                source_recipe_id: String(value.source_recipe_id ?? ""),
-                source_recipe_revision_id: String(
-                    value.source_recipe_revision_id ?? "",
-                ),
-                source_planned_meal_id:
-                    value.source_planned_meal_id == null
-                        ? null
-                        : String(value.source_planned_meal_id),
-                already_on_list: existingKeys.has(key),
-            }),
+            ([key, value], index) => {
+                const alreadyOnList = existingKeys.has(key);
+                return {
+                    index,
+                    name: String(value.name ?? ""),
+                    quantity: Number(value.quantity ?? 0),
+                    unit: value.unit == null ? null : String(value.unit),
+                    recipes: Array.isArray(value.recipes)
+                        ? value.recipes.map(String)
+                        : [],
+                    source_recipe_id: String(value.source_recipe_id ?? ""),
+                    source_recipe_revision_id: String(
+                        value.source_recipe_revision_id ?? "",
+                    ),
+                    source_planned_meal_id:
+                        value.source_planned_meal_id == null
+                            ? null
+                            : String(value.source_planned_meal_id),
+                    already_on_list: alreadyOnList,
+                    pantry_flag: (() => {
+                        if (!pantry.enabled) return null;
+                        const match = pantryMatchForGroceryItem(
+                            { name: String(value.name ?? "") },
+                            pantry.items,
+                        );
+                        if (alreadyOnList) {
+                            return {
+                                state: "listed" as const,
+                                pantry_item_id: match?.pantry_item_id ?? null,
+                                pantry_name: match?.pantry_name ?? null,
+                            };
+                        }
+                        if (match) {
+                            return {
+                                state: "have" as const,
+                                pantry_item_id: match.pantry_item_id,
+                                pantry_name: match.pantry_name,
+                            };
+                        }
+                        return {
+                            state: "none" as const,
+                            pantry_item_id: null,
+                            pantry_name: null,
+                        };
+                    })(),
+                };
+            },
         );
         return {
             draft_id: draftId,
