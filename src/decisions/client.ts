@@ -34,7 +34,8 @@ export interface DecisionsCallOptions {
         | "pantry_match"
         | "drawdown_review"
         | "plausibility"
-        | "estimate_rung";
+        | "estimate_rung"
+        | "yield_estimate";
     state: unknown;
     questions: Record<string, unknown>;
     timeoutMs: number;

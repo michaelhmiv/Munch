@@ -58,10 +58,34 @@ export interface RecipeNutritionIngredientPayload {
     source_snapshot?: Record<string, unknown>;
 }
 
+/**
+ * A recipe's yield, as stored with `yield_estimate` provenance
+ * (seat A2b). `source: "estimate"` is the labelled model estimate
+ * (anchor + adjustment factors + serving model recorded);
+ * `source: "user"` is a user correction, which PERMANENTLY replaces
+ * the estimate — no later save/revision/recalculate may overwrite
+ * it with a fresh estimate.
+ */
+export interface RecipeYieldEstimate {
+    source: "estimate" | "user";
+    weight_g: number | null;
+    volume_ml: number | null;
+    anchor?: {
+        weight_g: number | null;
+        volume_ml: number | null;
+        weight_factor: number | null;
+        volume_factor: number | null;
+    } | null;
+    model?: string | null;
+    probability?: number | null;
+}
+
 export interface RecipeNutritionPayload {
     name: string;
     servings: number;
     ingredients: RecipeNutritionIngredientPayload[];
+    instructions?: string[];
+    yield_estimate?: RecipeYieldEstimate | null;
     [key: string]: unknown;
 }
 
@@ -996,6 +1020,8 @@ export interface PlanningRecipeNutritionPayload {
     name: string;
     servings: number;
     ingredients: PlanningRecipeNutritionIngredientPayload[];
+    instructions?: string[];
+    yieldEstimate?: RecipeYieldEstimate | null;
 }
 
 export async function resolvePlanningRecipeNutritionWithReport<
@@ -1008,6 +1034,8 @@ export async function resolvePlanningRecipeNutritionWithReport<
         {
             name: recipe.name,
             servings: recipe.servings,
+            instructions: recipe.instructions,
+            yield_estimate: recipe.yieldEstimate ?? undefined,
             ingredients: recipe.ingredients.map((ingredient) => ({
                 name: ingredient.name,
                 quantity: ingredient.quantity,
@@ -1029,6 +1057,8 @@ export async function resolvePlanningRecipeNutritionWithReport<
     return {
         recipe: {
             ...recipe,
+            yieldEstimate:
+                resolution.recipe.yield_estimate ?? recipe.yieldEstimate,
             ingredients: resolution.recipe.ingredients.map(
                 (ingredient, position) => ({
                     ...recipe.ingredients[position]!,

@@ -3,6 +3,7 @@ import {
     logRecipeNutritionResolution,
     resolvePlanningRecipeNutritionWithReport,
     type RecipeNutritionResolutionDependencies,
+    type RecipeYieldEstimate,
 } from "../recipe-nutrition-resolution.js";
 import { withUserDatabase } from "../platform/database.js";
 import {
@@ -66,6 +67,9 @@ export interface RecipeInput {
     sourceTitle?: string;
     sourceUrl?: string;
     guidanceMetadata?: Record<string, unknown>;
+    /** Seat A2b: the recipe's yield, labelled estimate or user-set.
+     * A user-set value is permanent — see RecipeYieldEstimate. */
+    yieldEstimate?: RecipeYieldEstimate | null;
     ingredients: RecipeIngredientInput[];
 }
 
@@ -378,6 +382,7 @@ async function insertRecipeRevision(
             sugar_g_per_serving,
             sodium_mg_per_serving,
             guidance_metadata,
+            yield_estimate,
             nutrition_status,
             calculated_at,
             created_by_user_id
@@ -406,6 +411,7 @@ async function insertRecipeRevision(
             ${calculation.perServing.sugar_g ?? null},
             ${calculation.perServing.sodium_mg ?? null},
             ${input.recipe.guidanceMetadata ?? {}}::jsonb,
+            ${input.recipe.yieldEstimate ?? null}::jsonb,
             ${calculation.nutritionStatus},
             ${calculation.nutritionStatus === "unavailable" ? null : new Date()},
             ${input.userId}
@@ -557,6 +563,7 @@ export async function getRecipe(
                 revision.description, revision.instructions,
                 revision.preparation_minutes, revision.cooking_minutes,
                 revision.source_type, revision.source_title, revision.source_url,
+                revision.yield_estimate,
                 revision.nutrition_status,
                 revision.calories_total, revision.protein_g_total,
                 revision.carbs_g_total, revision.fat_g_total,
@@ -623,6 +630,8 @@ export async function getRecipe(
                         ? null
                         : String(recipe.source_url),
             },
+            yield_estimate:
+                (recipe.yield_estimate as RecipeYieldEstimate | null) ?? null,
             nutrition_status: String(recipe.nutrition_status),
             nutrition_total: nutrientsFromRow(recipe, "_total"),
             nutrition_per_serving: nutrientsFromRow(recipe, "_per_serving"),
@@ -928,6 +937,7 @@ function recipeInputFromStored(stored: StoredRecipe): RecipeInput {
         sourceType: stored.source.type as RecipeInput["sourceType"],
         sourceTitle: stored.source.title ?? undefined,
         sourceUrl: stored.source.url ?? undefined,
+        yieldEstimate: stored.yield_estimate ?? undefined,
         ingredients: stored.ingredients.map((ingredient) => ({
             name: ingredient.name,
             quantity: ingredient.quantity ?? undefined,
