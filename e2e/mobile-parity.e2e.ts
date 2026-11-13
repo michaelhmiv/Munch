@@ -3409,9 +3409,10 @@ test("photo-flow audit: confirm with an open question logs on the labelled click
     // The silent-save reproduction (2026-11-12): a draft whose
     // question is still open. The old handler toasted and returned
     // before any request — and the toast is invisible under the
-    // modal — so the save simply never happened. The button reads
-    // "Confirm and accept assumptions", so the click IS the
-    // acceptance it labels: one tap sends the confirm, flagged.
+    // modal — so the save simply never happened. The simplified
+    // review (owner-approved) has no Questions section: the open
+    // question is nowhere on the surface, and the single Confirm
+    // click IS the acceptance — one tap sends the confirm, flagged.
     photoDraftVariant = "open-question";
     lastConfirmBody = null;
     try {
@@ -3423,7 +3424,7 @@ test("photo-flow audit: confirm with an open question logs on the labelled click
         await expect(page.locator("#meal-draft-review")).toContainText(
             "Fixture rice bowl",
         );
-        await expect(page.locator("#meal-draft-review")).toContainText(
+        await expect(page.locator("#meal-draft-review")).not.toContainText(
             "Was the rice cooked with oil or butter?",
         );
 
@@ -3452,8 +3453,11 @@ test("photo-flow audit: add-text shows a working state while the revision is in 
     page,
 }) => {
     // The revision request is held server-side so the in-flight
-    // state is observable: button disabled and relabelled, status
-    // line announcing the work — then the applied message lands.
+    // state is observable: in the simplified review the working
+    // state is the re-analyzing render itself (owner-approved
+    // frame) — the status block announces the work and echoes the
+    // note back, and the controls go inert — then the applied
+    // message lands under the note box.
     addTextDelayMs = 1500;
     try {
         await bootPackagedApp(page);
@@ -3470,15 +3474,16 @@ test("photo-flow audit: add-text shows a working state while the revision is in 
         await page.locator('[data-action="add-draft-text"]').click();
         const addButton = page.locator('[data-action="add-draft-text"]');
         await expect(addButton).toBeDisabled();
-        await expect(addButton).toHaveText("Adding…");
-        await expect(page.locator("#meal-draft-add-text-status")).toHaveText(
-            "Adding to draft…",
+        const status = page.locator(".meal-draft-status");
+        await expect(status).toContainText("Re-analyzing your meal");
+        await expect(status).toContainText(
+            "Your note: “I added a good bit of butter”",
         );
         // Applied: the server's own message replaces the working
         // state and the new item is in the review.
-        await expect(page.locator("#meal-draft-add-text-status")).toContainText(
-            "Added butter to the draft.",
-        );
+        await expect(
+            page.locator(".meal-draft-add-text-message"),
+        ).toContainText("Added butter to the draft.");
         await expect(page.locator("#meal-draft-review")).toContainText(
             "Butter",
         );
@@ -5111,8 +5116,11 @@ test("S8 chat: Premium round-trip — send, grounded draft proposal, draft revie
     await expect(page.locator("#meal-draft-review")).toContainText(
         "Chicken breast, grilled",
     );
+    // The simplified review carries no source/provenance line; the
+    // chat draft's unverified item (the moon soup) surfaces as the
+    // review's one blocking line instead.
     await expect(page.locator("#meal-draft-review")).toContainText(
-        "Source: chat",
+        "no nutrition values yet",
     );
     expect(
         observedRequest("GET", "/api/app/meal-drafts/fixture-chat-draft"),
