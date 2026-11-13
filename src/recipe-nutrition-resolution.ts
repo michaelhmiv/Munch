@@ -68,6 +68,15 @@ export interface RecipeNutritionResolution {
     unresolved: number;
     estimatedPositions: number[];
     unresolvedPositions: number[];
+    /**
+     * Positions left unresolved because the food search provider
+     * THREW (outage, circuit open, timeout) rather than because no
+     * defensible match exists. These are retryable: the ingredients
+     * may match perfectly well once the provider recovers, so save
+     * paths surface them distinctly instead of letting them blend
+     * into the ordinary no-match count.
+     */
+    providerErrorPositions: number[];
 }
 
 export interface RecipeNutritionResolutionDependencies {
@@ -430,7 +439,12 @@ async function resolveIngredient(
     foodSearch: Pick<FoodSearchService, "search">,
 ): Promise<{
     ingredient: RecipeNutritionIngredientPayload;
-    kind: "preserved" | "provider" | "low_impact" | "unresolved";
+    kind:
+        | "preserved"
+        | "provider"
+        | "low_impact"
+        | "unresolved"
+        | "provider_error";
 }> {
     if (hasCoreNutrition(ingredient.nutrients)) {
         return { ingredient, kind: "preserved" };
@@ -563,7 +577,7 @@ async function resolveIngredient(
                     },
                 },
             },
-            kind: "unresolved",
+            kind: "provider_error",
         };
     }
 }
@@ -583,6 +597,7 @@ export async function resolveRecipeNutrition(
     let unresolved = 0;
     const estimatedPositions: number[] = [];
     const unresolvedPositions: number[] = [];
+    const providerErrorPositions: number[] = [];
     settled.forEach((result, position) => {
         if (result.kind === "provider") {
             providerMatches += 1;
@@ -593,6 +608,10 @@ export async function resolveRecipeNutrition(
         } else if (result.kind === "unresolved") {
             unresolved += 1;
             unresolvedPositions.push(position);
+        } else if (result.kind === "provider_error") {
+            unresolved += 1;
+            unresolvedPositions.push(position);
+            providerErrorPositions.push(position);
         }
     });
     return {
@@ -605,7 +624,30 @@ export async function resolveRecipeNutrition(
         unresolved,
         estimatedPositions,
         unresolvedPositions,
+        providerErrorPositions,
     };
+}
+
+/**
+ * The one structured trace every recipe save path leaves in the
+ * production logs. A wholesale provider failure additionally warns:
+ * those ingredients were saved unresolved because the food search
+ * provider failed — not because no match exists — and re-running
+ * nutrition calculation (the heal path) is the retry.
+ */
+export function logRecipeNutritionResolution(
+    operation: string,
+    resolution: RecipeNutritionResolution,
+    totalMs?: number,
+): void {
+    console.info(
+        `[recipe_nutrition] operation=${operation} provider_matches=${resolution.providerMatches} low_impact_estimates=${resolution.lowImpactEstimates} unresolved=${resolution.unresolved} provider_errors=${resolution.providerErrorPositions.length} estimated_positions=${resolution.estimatedPositions.join(",") || "none"} unresolved_positions=${resolution.unresolvedPositions.join(",") || "none"}${totalMs === undefined ? "" : ` total_ms=${Math.round(totalMs)}`}`,
+    );
+    if (resolution.providerErrorPositions.length > 0) {
+        console.warn(
+            `[recipe_nutrition] provider_failure operation=${operation} unresolved_due_to_provider_error=${resolution.providerErrorPositions.length} positions=${resolution.providerErrorPositions.join(",")} — ingredients saved unresolved because the food search provider failed, not because no match exists; re-run nutrition calculation to retry`,
+        );
+    }
 }
 
 export interface PlanningRecipeNutritionIngredientPayload {
@@ -630,12 +672,12 @@ export interface PlanningRecipeNutritionPayload {
     ingredients: PlanningRecipeNutritionIngredientPayload[];
 }
 
-export async function resolvePlanningRecipeNutrition<
+export async function resolvePlanningRecipeNutritionWithReport<
     T extends PlanningRecipeNutritionPayload,
 >(
     recipe: T,
     dependencies: RecipeNutritionResolutionDependencies = {},
-): Promise<T> {
+): Promise<{ recipe: T; resolution: RecipeNutritionResolution }> {
     const resolution = await resolveRecipeNutrition(
         {
             name: recipe.name,
@@ -659,26 +701,42 @@ export async function resolvePlanningRecipeNutrition<
         dependencies,
     );
     return {
-        ...recipe,
-        ingredients: resolution.recipe.ingredients.map(
-            (ingredient, position) => ({
-                ...recipe.ingredients[position]!,
-                name: ingredient.name,
-                quantity: ingredient.quantity,
-                unit: ingredient.unit,
-                preparation: ingredient.preparation,
-                optional: ingredient.optional,
-                gramWeight: ingredient.gram_weight,
-                nutrients: ingredient.nutrients,
-                provider: ingredient.provider,
-                providerFoodId: ingredient.provider_food_id,
-                sourceType: ingredient.source_type,
-                sourceUrl: ingredient.source_url,
-                confidence: ingredient.confidence,
-                sourceSnapshot: ingredient.source_snapshot,
-            }),
-        ),
-    } as T;
+        recipe: {
+            ...recipe,
+            ingredients: resolution.recipe.ingredients.map(
+                (ingredient, position) => ({
+                    ...recipe.ingredients[position]!,
+                    name: ingredient.name,
+                    quantity: ingredient.quantity,
+                    unit: ingredient.unit,
+                    preparation: ingredient.preparation,
+                    optional: ingredient.optional,
+                    gramWeight: ingredient.gram_weight,
+                    nutrients: ingredient.nutrients,
+                    provider: ingredient.provider,
+                    providerFoodId: ingredient.provider_food_id,
+                    sourceType: ingredient.source_type,
+                    sourceUrl: ingredient.source_url,
+                    confidence: ingredient.confidence,
+                    sourceSnapshot: ingredient.source_snapshot,
+                }),
+            ),
+        } as T,
+        resolution,
+    };
+}
+
+export async function resolvePlanningRecipeNutrition<
+    T extends PlanningRecipeNutritionPayload,
+>(
+    recipe: T,
+    dependencies: RecipeNutritionResolutionDependencies = {},
+): Promise<T> {
+    const { recipe: resolved } = await resolvePlanningRecipeNutritionWithReport(
+        recipe,
+        dependencies,
+    );
+    return resolved;
 }
 
 function enhancedDescription(description: string): string {
@@ -721,8 +779,10 @@ export function withRecipeNutritionResolution(server: McpServer): McpServer {
                                 ...args,
                                 recipe: resolution.recipe,
                             });
-                            console.info(
-                                `[recipe_nutrition] operation=${name} provider_matches=${resolution.providerMatches} low_impact_estimates=${resolution.lowImpactEstimates} unresolved=${resolution.unresolved} estimated_positions=${resolution.estimatedPositions.join(",") || "none"} unresolved_positions=${resolution.unresolvedPositions.join(",") || "none"} total_ms=${Math.round(performance.now() - startedAt)}`,
+                            logRecipeNutritionResolution(
+                                name,
+                                resolution,
+                                performance.now() - startedAt,
                             );
                             if (
                                 Array.isArray(result?.content) &&
