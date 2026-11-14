@@ -342,14 +342,7 @@ const BUTTON_CLASS_REGISTRY = new Map<
         "button-small",
         {
             status: "context",
-            reason: "size variant of a spec tier; carries no color treatment of its own",
-        },
-    ],
-    [
-        "button-large",
-        {
-            status: "context",
-            reason: "size variant in the legacy styles.css grammar; carries no color treatment of its own",
+            reason: "size variant of a spec tier; carries no color treatment of its own (styles.css draws it at the 31px anchor geometry, asserted in (b))",
         },
     ],
     [
@@ -411,8 +404,8 @@ const BUTTON_CLASS_REGISTRY = new Map<
     [
         "button-light",
         {
-            status: "allow",
-            reason: "legacy styles.css marketing variant with no Direction C tier; retirement rides the styles.css re-skin recorded in DESIGN.md's 'Punch list — audit remainder (2026-11-11)', item P1",
+            status: "spec",
+            reason: "Direction C light-on-dark outline variant (the styles.css button for dark green bands), asserted in (b); its pre-P1 allow-list entry retired with the styles.css re-skin (punch-list P1, ruled 2026-11-13)",
         },
     ],
 ]);
@@ -658,13 +651,107 @@ describe("design authority (b): Direction C spec resolution", () => {
         ).toBe("transparent");
     });
 
-    test("legacy styles.css still anchors its primary hue to authority green", async () => {
+    test("styles.css tokens resolve to the authority palette (P1 re-skin)", async () => {
         const sheet = await loadSheet("styles.css");
+        for (const [token, hex] of Object.entries(AUTHORITY_TOKENS)) {
+            expect(
+                normalizeColor(
+                    resolveVars(sheet.vars.get(token) ?? "", sheet.vars),
+                ),
+                token,
+            ).toBe(hex);
+        }
+        // This sheet names the panel token --panel (editorial/pantry
+        // call the same material --paper-card, asserted above).
+        expect(
+            normalizeColor(
+                resolveVars(sheet.vars.get("--panel") ?? "", sheet.vars),
+            ),
+        ).toBe(PANEL);
+        expect(
+            normalizeColor(
+                resolveVars(sheet.vars.get("--paper") ?? "", sheet.vars),
+            ),
+        ).toBe(PAPER);
+        // The legacy green scale survives only as aliases onto the
+        // authority greens (account-settings.css and app-overrides.css
+        // resolve these names from this sheet's :root).
         expect(
             normalizeColor(
                 resolveVars(sheet.vars.get("--green-700") ?? "", sheet.vars),
             ),
         ).toBe(GREEN);
+        expect(
+            normalizeColor(
+                resolveVars(sheet.vars.get("--green-800") ?? "", sheet.vars),
+            ),
+        ).toBe(GREEN_DEEP);
+    });
+
+    test("styles.css buttons resolve to Direction C at the anchor geometry (P1 re-skin)", async () => {
+        const sheet = await loadSheet("styles.css");
+        const base = declsFor(sheet, ".button");
+        expect(base.get("height")).toBe("31px");
+        expect(base.get("padding")).toBe("6px 14px");
+        expect(base.get("border-radius")).toBe("10px");
+        expect(base.get("font-size")).toBe("0.9rem");
+
+        const primary = declsFor(sheet, ".button-primary");
+        expect(
+            colorOf(primary, sheet.vars, "background", "background-color"),
+        ).toBe(GREEN);
+        expect(colorOf(primary, sheet.vars, "border-color")).toBe(GREEN);
+        expect(colorOf(primary, sheet.vars, "color")).toBe("#ffffff");
+        // Direction C primary carries no shadow.
+        expect(primary.get("box-shadow") ?? "none").toBe("none");
+        const primaryHover = declsFor(sheet, ".button-primary:hover");
+        expect(
+            colorOf(primaryHover, sheet.vars, "background", "background-color"),
+        ).toBe(GREEN_DEEP);
+
+        const secondary = declsFor(sheet, ".button-secondary");
+        expect(
+            colorOf(secondary, sheet.vars, "background", "background-color"),
+        ).toBe("transparent");
+        expect(colorOf(secondary, sheet.vars, "border-color")).toBe(RULE);
+        expect(colorOf(secondary, sheet.vars, "color")).toBe(INK);
+        const secondaryHover = declsFor(sheet, ".button-secondary:hover");
+        expect(
+            colorOf(
+                secondaryHover,
+                sheet.vars,
+                "background",
+                "background-color",
+            ),
+        ).toBe("transparent");
+
+        const quiet = declsFor(sheet, ".button-quiet");
+        expect(colorOf(quiet, sheet.vars, "color")).toBe(INK_SOFT);
+        const quietFill = colorOf(
+            quiet,
+            sheet.vars,
+            "background",
+            "background-color",
+        );
+        expect(quietFill === null || quietFill === "transparent").toBe(true);
+
+        // .button-light keeps its role — the button on dark green
+        // bands — in Direction C outline grammar: transparent fill,
+        // panel outline and text, transparent on hover.
+        const light = declsFor(sheet, ".button-light");
+        expect(
+            colorOf(light, sheet.vars, "background", "background-color"),
+        ).toBe("transparent");
+        expect(colorOf(light, sheet.vars, "border-color")).toBe(PANEL);
+        expect(colorOf(light, sheet.vars, "color")).toBe(PANEL);
+        const lightHover = declsFor(sheet, ".button-light:hover");
+        expect(
+            colorOf(lightHover, sheet.vars, "background", "background-color"),
+        ).toBe("transparent");
+
+        const small = declsFor(sheet, ".button-small");
+        expect(small.get("height")).toBe("31px");
+        expect(small.get("padding")).toBe("6px 14px");
     });
 });
 
