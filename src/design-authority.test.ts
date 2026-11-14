@@ -8,10 +8,10 @@
  *  (a) Retired values are absent from public/ stylesheets and markup.
  *  (b) The shared button tiers resolve to the Direction C spec values,
  *      and the shared token sets resolve to the authority palette.
- *      Drawn geometry (31px / 6px 14px / 10px) is the recorded anchor in
- *      DESIGN.md; production ships the >=44px hit floor, which is what
- *      is asserted here — the drawn-geometry reconciliation is the
- *      authority's own recorded known divergence, not a silent pass.
+ *      Drawn geometry is ENFORCED (punch-list P2, resolved 2026-11-13):
+ *      buttons and fields draw at the 31px anchor (31px / 6px 14px /
+ *      10px radius, dialog cards 14px) and the >=44px hit area is
+ *      delivered by the ::after overlay — never by the drawn box.
  *  (c) Gold #8a6d3b appears ONLY in the allow-listed nav-indicator,
  *      calendar-today, and chart-accent selectors below.
  *  (d) Every button-like class in public/ CSS is either spec-verified
@@ -281,6 +281,9 @@ const RETIRED = [
     // Punch-list P6 (ratified 2026-11-13): --line fallback hairline
     // variant; the one hairline is #d8cdb6.
     "#ded5c0",
+    // Punch-list P4 (2026-11-13): the filled-destructive hover/pressed
+    // family retires; destructive is transparent per Direction C.
+    "#6e241a",
 ];
 
 /** (c) The ONLY selectors allowed to carry gold. Every entry: reason. */
@@ -600,12 +603,97 @@ describe("design authority (b): Direction C spec resolution", () => {
         }
     });
 
-    test("app hit floor: operate buttons and the dialog close reach 44px", async () => {
+    test("app geometry (P2): buttons draw at the 31px anchor, hit area via ::after overlay", async () => {
         const sheet = await loadSheet("app-overrides.css");
-        expect(declsFor(sheet, ".operate-view .button").get("min-height")).toBe(
-            "44px",
+        // The closing P2 section is the cascade winner for the shared
+        // .button grammar: drawn box is the anchor, never the hit box.
+        const button = declsFor(sheet, ".button");
+        expect(button.get("height")).toBe("31px");
+        expect(button.get("min-height")).toBe("31px");
+        expect(button.get("padding")).toBe("6px 14px");
+        expect(button.get("border-radius")).toBe("10px");
+        expect(button.get("font-size")).toBe("0.9rem");
+        // Hit floor delivered by the invisible overlay (31 + 2x7 = 45px).
+        const overlay = declsFor(sheet, ".button::after");
+        expect(overlay.get("content")).toBe('""');
+        expect(overlay.get("position")).toBe("absolute");
+        expect(overlay.get("inset")).toBe("-7px -4px");
+        // Dialog close follows the same anchor + overlay.
+        const close = declsFor(sheet, ".dialog-close");
+        expect(close.get("min-height")).toBe("31px");
+        expect(declsFor(sheet, ".dialog-close::after").get("inset")).toBe(
+            "-7px -4px",
         );
-        expect(declsFor(sheet, ".dialog-close").get("min-height")).toBe("44px");
+        // Fields/selects draw at the anchor (dialog + app-content scope
+        // resolves through the same closing-section rule).
+        const field = declsFor(sheet, ".input");
+        expect(field.get("height")).toBe("31px");
+        expect(field.get("min-height")).toBe("31px");
+        expect(field.get("padding")).toBe("5px 12px");
+        expect(field.get("border-radius")).toBe("10px");
+        // Dialog cards take the board's 14px radius; the mobile sheet
+        // keeps its 24px top radius. The parser flattens @media, so
+        // assert both radii exist as dialog rules rather than a merged
+        // winner (the media rule legitimately wins at <=620px).
+        const dialogRadii = sheet.rules
+            .filter((rule) => rule.selectors.includes("dialog"))
+            .map((rule) => rule.declarations.get("border-radius"));
+        expect(dialogRadii).toContain("14px");
+        expect(dialogRadii).toContain("24px 24px 0 0");
+        const cardRadii = sheet.rules
+            .filter((rule) => rule.selectors.includes("dialog .auth-card"))
+            .map((rule) => rule.declarations.get("border-radius"));
+        expect(cardRadii).toContain("14px");
+        expect(cardRadii).toContain("24px 24px 0 0");
+        // Shared tiers carry the anchor radius, not the 4px variant.
+        for (const tier of [
+            ".button-primary",
+            ".button-secondary",
+            ".button-quiet",
+        ]) {
+            expect(declsFor(sheet, tier).get("border-radius"), tier).toBe(
+                "10px",
+            );
+        }
+        // Checkbox law: 22px drawn inside the 44px tap area.
+        const check = declsFor(sheet, ".groceries-view .grocery-check-input");
+        expect(check.get("width")).toBe("22px");
+        expect(check.get("height")).toBe("22px");
+        expect(
+            declsFor(sheet, ".groceries-view .grocery-check").get("min-width"),
+        ).toBe("44px");
+    });
+
+    test("app destructive (P4): confirms are Direction C transparent, hover included", async () => {
+        const sheet = await loadSheet("app-overrides.css");
+        for (const selector of [
+            ".meal-draft-abandon-confirm",
+            ".recipe-archive-confirm",
+            ".plan-inline-confirm-danger",
+            ".cook-delete-confirm",
+            ".grocery-inline-confirm-danger",
+            ".settings-inline-danger",
+            ".household-inline-confirm-danger",
+        ]) {
+            const decls = declsFor(sheet, selector);
+            expect(
+                colorOf(decls, sheet.vars, "background", "background-color"),
+                selector,
+            ).toBe("transparent");
+            expect(colorOf(decls, sheet.vars, "border-color"), selector).toBe(
+                DANGER,
+            );
+            expect(colorOf(decls, sheet.vars, "color"), selector).toBe(DANGER);
+            const hover = declsFor(sheet, `${selector}:hover`);
+            expect(
+                colorOf(hover, sheet.vars, "background", "background-color"),
+                `${selector}:hover`,
+            ).toBe("transparent");
+            expect(
+                colorOf(hover, sheet.vars, "border-color"),
+                `${selector}:hover`,
+            ).toBe(DANGER);
+        }
     });
 
     test("editorial.css buttons resolve to Direction C", async () => {
