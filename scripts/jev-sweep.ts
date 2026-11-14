@@ -51,6 +51,7 @@ import {
     type SweepRecipeRecord,
     type SweepStore,
 } from "../src/jev-sweep/sweep.js";
+import { recordSweepFindings } from "../src/jev-sweep/findings.js";
 
 const args = new Set(process.argv.slice(2));
 const dryRun = args.has("--dry-run");
@@ -280,40 +281,10 @@ const store: SweepStore = {
     },
 
     async recordFindings(findings) {
-        for (const finding of findings) {
-            const payload =
-                finding.kind === "recipe_healed"
-                    ? {
-                          recipe_id: finding.recipeId,
-                          before_revision_id: finding.beforeRevisionId,
-                          after_revision_id: finding.afterRevisionId,
-                          confirmed_ingredients: finding.confirmedIngredients,
-                          per_serving_before: finding.perServingBefore,
-                          per_serving_after: finding.perServingAfter,
-                      }
-                    : finding.kind === "recipe_flagged"
-                      ? {
-                            recipe_id: finding.recipeId,
-                            confirmed_ingredients: finding.confirmedIngredients,
-                            signatures: finding.signatures,
-                        }
-                      : {
-                            meal_id: finding.mealId,
-                            item_id: finding.itemId,
-                            item_name: finding.itemName,
-                            signatures: finding.signatures,
-                        };
-            await database`
-                insert into munch.jev_sweep_findings (user_id, kind, recipe_id, meal_id, payload)
-                values (
-                    ${finding.userId}::uuid,
-                    ${finding.kind},
-                    ${finding.kind === "meal_check" ? null : finding.recipeId}::uuid,
-                    ${finding.kind === "meal_check" ? finding.mealId : null}::uuid,
-                    ${JSON.stringify(payload)}::jsonb
-                )
-            `;
-        }
+        // The insert lives in src/jev-sweep/findings.ts (importable and
+        // regression-tested; the payload must bind as an object, never
+        // a pre-stringified string — see that module's binding law).
+        await recordSweepFindings(database, findings);
     },
 
     async getWatermark() {
