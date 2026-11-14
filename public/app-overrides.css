@@ -1236,7 +1236,7 @@ body.app-page {
 .button-primary {
     background: #176b3a;
     border-color: #176b3a;
-    border-radius: 4px;
+    border-radius: 10px;
     font-weight: 600;
 }
 
@@ -1249,13 +1249,13 @@ body.app-page {
     background: transparent;
     border-color: #8a7c63;
     color: #2b2620;
-    border-radius: 4px;
+    border-radius: 10px;
     font-weight: 600;
 }
 
 .button-quiet {
     color: #4a4237;
-    border-radius: 4px;
+    border-radius: 10px;
 }
 
 /* S3-deferred MINOR, decided in S6 slice 1 (portal-wide chrome): the
@@ -1265,8 +1265,9 @@ body.app-page {
    brings the visual box to a full 44px target without changing the
    .button-small grammar other surfaces still use. */
 .dialog-close {
-    min-height: 44px;
-    min-width: 44px;
+    position: relative;
+    min-height: 31px;
+    min-width: 31px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1275,7 +1276,7 @@ body.app-page {
 /* ---------- Shared chrome: dialog frame ---------- */
 
 dialog {
-    border-radius: 8px;
+    border-radius: 14px;
 }
 
 dialog::backdrop {
@@ -1286,7 +1287,7 @@ dialog::backdrop {
 dialog .auth-card {
     background: #fffdf8;
     border: 1px solid #d8cdb6;
-    border-radius: 8px;
+    border-radius: 14px;
     color: #2b2620;
 }
 
@@ -1309,7 +1310,7 @@ dialog input,
 dialog select,
 dialog textarea {
     border-color: #8a7c63;
-    border-radius: 4px;
+    border-radius: 10px;
     background: #fffdf8;
     color: #2b2620;
 }
@@ -1466,13 +1467,14 @@ dialog.is-closing::backdrop {
 }
 
 .meal-draft-abandon-confirm {
-    background: #8c2f22;
+    background: transparent;
     border-color: #8c2f22;
+    color: #8c2f22;
 }
 
 .meal-draft-abandon-confirm:hover {
-    background: #6e241a;
-    border-color: #6e241a;
+    background: transparent;
+    border-color: #8c2f22;
 }
 
 /* ---------- Shared chrome: toasts + global states ---------- */
@@ -2450,13 +2452,14 @@ dialog .summary-card > small {
 }
 
 .recipe-archive-confirm {
-    background: #8c2f22;
+    background: transparent;
     border-color: #8c2f22;
+    color: #8c2f22;
 }
 
 .recipe-archive-confirm:hover {
-    background: #6e241a;
-    border-color: #6e241a;
+    background: transparent;
+    border-color: #8c2f22;
 }
 
 /* ---------- Recipe detail D2 (owner-approved 2026-11-13) ----------
@@ -2968,13 +2971,14 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .plan-inline-confirm-danger {
-    background: #8c2f22;
+    background: transparent;
     border-color: #8c2f22;
+    color: #8c2f22;
 }
 
 .plan-inline-confirm-danger:hover {
-    background: #6e241a;
-    border-color: #6e241a;
+    background: transparent;
+    border-color: #8c2f22;
 }
 
 /* UX fix wave F7: the meal-details dialog's per-item Remove
@@ -3230,13 +3234,14 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .cook-delete-confirm {
-    background: #8c2f22;
+    background: transparent;
     border-color: #8c2f22;
+    color: #8c2f22;
 }
 
 .cook-delete-confirm:hover {
-    background: #6e241a;
-    border-color: #6e241a;
+    background: transparent;
+    border-color: #8c2f22;
 }
 
 /* In the detail head the action group wraps under the title block at
@@ -3751,13 +3756,14 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .grocery-inline-confirm-danger {
-    background: #8c2f22;
+    background: transparent;
     border-color: #8c2f22;
+    color: #8c2f22;
 }
 
 .grocery-inline-confirm-danger:hover {
-    background: #6e241a;
-    border-color: #6e241a;
+    background: transparent;
+    border-color: #8c2f22;
 }
 
 /* The add-time run-out prompt shares the inline confirmations'
@@ -4250,7 +4256,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     background: transparent;
     border-color: #8c2f22;
     color: #8c2f22;
-    border-radius: 4px;
+    border-radius: 10px;
 }
 
 /* Inline confirmations (slice 1 pattern, this surface's rows). */
@@ -4275,13 +4281,14 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .settings-inline-danger {
-    background: #8c2f22;
+    background: transparent;
     border-color: #8c2f22;
+    color: #8c2f22;
 }
 
 .settings-inline-danger:hover {
-    background: #6e241a;
-    border-color: #6e241a;
+    background: transparent;
+    border-color: #8c2f22;
 }
 
 /* The goals review panel rides .operate-view .panel already; its
@@ -4569,13 +4576,14 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .operate-view .vital-confirm-danger {
-    background: #8c2f22;
+    background: transparent;
     border-color: #8c2f22;
+    color: #8c2f22;
 }
 
 .operate-view .vital-confirm-danger:hover {
-    background: #6e241a;
-    border-color: #6e241a;
+    background: transparent;
+    border-color: #8c2f22;
 }
 
 /* ---------- Insights dialogs (add / edit water + weight) -------- */
@@ -5040,7 +5048,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .household-view .button-danger:hover {
-    background: #fdf3f2;
+    background: transparent;
     color: #8c2f22;
 }
 
@@ -5096,13 +5104,14 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .household-inline-confirm-danger {
-    background: #8c2f22;
+    background: transparent;
     border-color: #8c2f22;
+    color: #8c2f22;
 }
 
 .household-inline-confirm-danger:hover {
-    background: #6e241a;
-    border-color: #6e241a;
+    background: transparent;
+    border-color: #8c2f22;
 }
 
 /* =====================================================================
@@ -7234,20 +7243,11 @@ dialog:has(
     padding: 6px 8px;
 }
 
-/* Slice-2 exclusion: the Recipes card action strip keeps exactly its
-   pre-C rendering (44px targets, 4px radius, inherited type) until
-   the strip's own slice rebuilds it as the divided bar. */
-.recipes-view .recipe-panel-actions .button {
-    min-height: 44px;
-    padding-top: 9px;
-    padding-bottom: 9px;
-    border-radius: 4px;
-    font-family: inherit;
-}
-
-.recipes-view .recipe-panel-actions .button::after {
-    content: none;
-}
+/* The Recipes card action strip follows the same anchor (P2,
+   2026-11-13): the earlier slice-2 exclusion that kept its 44px
+   drawn boxes and 4px radius is superseded by the punch-list
+   ruling — strip buttons draw at 31px / 10px like every other
+   button, with the ::after overlay carrying the hit area. */
 
 /* ---------- Button tiers (Direction C colors) ---------- */
 
@@ -7402,8 +7402,8 @@ dialog:has(
 #guided-plan-edit-form .plan-inline-confirm-danger:hover,
 .groceries-view .grocery-inline-confirm-danger:hover {
     background: transparent;
-    border-color: #6e241a;
-    color: #6e241a;
+    border-color: #8c2f22;
+    color: #8c2f22;
 }
 
 /* ---------- Fields and selects: the anchor geometry ---------- */
@@ -8334,4 +8334,185 @@ dialog #water-form {
 
 .yield-edit-row select {
     flex: 0 0 92px;
+}
+
+/* =====================================================================
+   PUNCH LIST P2 + P4 — drawn-geometry reconciliation and destructive
+   conformance (ruled 2026-11-13, Michael's delegation; DESIGN.md
+   geometry chapter + Retired values). Governed by the impeccable
+   skill; the owner's settled geometry wins over skill guidance.
+   ---------------------------------------------------------------------
+   P2: EVERY button tier and field/select in this sheet draws at the
+   31px anchor — drawn height 31px, padding 6px 14px (fields 5px
+   12px), border 1px, radius 10px, type .9rem Georgia 600 (quiet
+   500; fields 1rem serif). The >=44px hit area is delivered by the
+   established invisible ::after overlay idiom (inset -7px -4px,
+   first shipped for the Recipes/Plan/Groceries surfaces and the
+   header-util control above) or by a 44px row — NEVER by inflating
+   the drawn control. This closing section wins the cascade over the
+   per-slice 44px/48px drawn-box rules above it, which remain in
+   place only as the hit-floor record for non-button rows.
+   Dialog cards take the board's 14px radius; the mobile sheet's
+   24px top radius is unchanged (re-asserted in its media query
+   below so this section cannot flatten it).
+   P4: destructive is Direction C everywhere — transparent fill,
+   danger #8c2f22 border + text, transparent on hover. The filled
+   filled hover/pressed family (see DESIGN.md Retired values) is
+   retired — zero uses remain in this sheet.
+   ===================================================================== */
+
+/* ---------- Buttons: the 31px anchor, all tiers, all surfaces ---------- */
+
+.button {
+    position: relative;
+    height: 31px;
+    min-height: 31px;
+    padding: 6px 14px;
+    border-width: 1px;
+    border-radius: 10px;
+    font-family: Georgia, "Times New Roman", Times, serif;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.button::after {
+    content: "";
+    position: absolute;
+    inset: -7px -4px;
+}
+
+.button-quiet {
+    font-weight: 500;
+}
+
+.button-small {
+    height: 31px;
+    min-height: 31px;
+    padding: 6px 14px;
+    font-size: 0.9rem;
+}
+
+/* The Recipes card action strip draws at the anchor too (its
+   slice-2 exclusion is superseded by P2 — see the note at the
+   strip's own section above). */
+.recipes-view .recipe-panel-actions .button {
+    height: 31px;
+    min-height: 31px;
+    padding: 6px 14px;
+    border-radius: 10px;
+}
+
+/* Icon-only controls keep a square drawn box: their glyph IS the
+   control, and the registry in src/design-authority.test.ts records
+   them as 44px icon sizing (context, not a tier exception). */
+.trends-icon-btn,
+.photo-capture-button,
+.meal-scan-button {
+    height: 44px;
+    min-height: 44px;
+    width: 44px;
+    padding: 0;
+}
+
+.trends-icon-btn::after,
+.photo-capture-button::after,
+.meal-scan-button::after {
+    content: none;
+}
+
+/* The dialog close draws at the anchor like every other button;
+   its hit area is the ::after overlay. */
+.dialog-close {
+    height: 31px;
+    min-height: 31px;
+    padding: 6px 14px;
+    border-radius: 10px;
+}
+
+.dialog-close::after {
+    content: "";
+    position: absolute;
+    inset: -7px -4px;
+}
+
+/* ---------- Fields and selects: the anchor geometry ---------- */
+
+.app-content
+    input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not(
+        [type="hidden"]
+    ),
+.app-content select,
+dialog
+    input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not(
+        [type="hidden"]
+    ),
+dialog select,
+.input {
+    height: 31px;
+    min-height: 31px;
+    padding: 5px 12px;
+    border: 1px solid #8a7c63;
+    border-radius: 10px;
+    font-family: Georgia, "Times New Roman", Times, serif;
+    font-size: 1rem;
+}
+
+/* Fields inside a panel dialog are paper wells (authority §2.3). */
+dialog
+    input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not(
+        [type="hidden"]
+    ),
+dialog select {
+    background: #f6f1e7;
+}
+
+/* ---------- Dialog cards: the board's 14px radius ---------- */
+
+dialog {
+    border-radius: 14px;
+}
+
+dialog .auth-card {
+    border-radius: 14px;
+}
+
+@media (max-width: 620px) {
+    /* Mobile sheet: 24px top radius UNCHANGED (P2 ruling). */
+    dialog {
+        border-radius: 24px 24px 0 0;
+    }
+
+    dialog .auth-card {
+        border-radius: 24px 24px 0 0;
+    }
+}
+
+/* ---------- Destructive: Direction C, transparent on hover ---------- */
+
+.button-danger,
+.meal-draft-abandon-confirm,
+.recipe-archive-confirm,
+.plan-inline-confirm-danger,
+.cook-delete-confirm,
+.grocery-inline-confirm-danger,
+.settings-inline-danger,
+.vital-confirm-danger,
+.household-inline-confirm-danger {
+    background: transparent;
+    border-color: #8c2f22;
+    color: #8c2f22;
+}
+
+.button-danger:hover,
+.meal-draft-abandon-confirm:hover,
+.recipe-archive-confirm:hover,
+.plan-inline-confirm-danger:hover,
+.cook-delete-confirm:hover,
+.grocery-inline-confirm-danger:hover,
+.settings-inline-danger:hover,
+.vital-confirm-danger:hover,
+.household-inline-confirm-danger:hover {
+    background: transparent;
+    border-color: #8c2f22;
+    color: #8c2f22;
 }
