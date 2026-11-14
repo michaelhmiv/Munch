@@ -214,21 +214,25 @@ RESOLVED with the landing PR.
   board's 14px radius (mobile sheet 24px top unchanged); hit areas stay
   ≥44px via overlay or row. This is the geometry pass in
   `public/app-overrides.css`.
-- **P3 — Trends chart palette:** RULED — ratified as-is and named in the
-  Color tokens chapter (chart palette paragraph). No value changes; the
-  palette is chart-only and future drift treats it as such.
+- **P3 — Trends chart palette:** RESOLVED (ruling PR #327, build PR
+  #330) — ratified as-is and named in the Color tokens chapter (chart
+  palette paragraph). No value changes; the palette is chart-only and
+  the drift check treats it as such (check section (g)).
 - **P4 — Filled destructive confirms:** RULED — Direction C governs:
   destructive confirms are transparent with danger `#8c2f22` border and
   text, transparent on hover like every outline tier.
   `.meal-draft-abandon-confirm` conforms; the `#6e241a` filled/hover
   family is retired (see Retired values).
-- **P5 — Warning amber family:** RULED — the warning family is ratified
-  in the Color tokens chapter (warn-line `#b98a00`, warn-text `#8a6100`);
-  `#8a6d00` consolidates into warn-text. Sheets reference the tokens.
-- **P6 — Hairline/tint variants:** RULED — the one hairline is
-  `#d8cdb6`; the `#ded5c0` fallback family retires to it. Paper-adjacent
-  tints: passive surfaces (rules, wells, non-data bands) consolidate to
-  the nearest authority token (panel / paper / green-tint / hairline);
-  data-bearing tints (chart bands, selected wells) keep their values
-  under the chart palette ruling (P3). The pass is surface-by-surface
-  with before/after captures.
+- **P5 — Warning amber family:** RESOLVED (ruling PR #327, build PR
+  #330) — the warning family is ratified in the Color tokens chapter
+  (warn-line `#b98a00`, warn-text `#8a6100`); `#8a6d00` consolidated
+  into warn-text and retired. Sheets reference the tokens; the drift
+  check enforces them (check section (h)).
+- **P6 — Hairline/tint variants:** RESOLVED (ruling PR #327, build PR
+  #330) — the one hairline is `#d8cdb6`; the `#ded5c0` fallback family
+  retired to it everywhere and joined the drift check's retired list.
+  Paper-adjacent tints: passive surfaces (rules, wells, non-data
+  bands) consolidated to the nearest authority token (panel / paper /
+  green-tint / hairline); data-bearing tints (chart bands, selected
+  wells) kept their values under the chart palette ruling (P3). The
+  pass was surface-by-surface with before/after captures (PR #330).
