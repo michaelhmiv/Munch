@@ -27,6 +27,21 @@
  *      scripts/ui-surface-smoke.ts (branch
  *      feat/design-authority-ci-checks), adapted to this suite's
  *      CSS-parser helpers with the same enforcement strength.
+ *  (g) Chart palette confinement (punch-list P3, ratified
+ *      2026-11-13): the Trends chart palette named in DESIGN.md
+ *      (series green #2e5b34, chart ink #22301f, sage #6e7462, sand
+ *      #c9bfa3, wash #e6eddc) is chart-only — CSS uses are confined
+ *      to the registered chart surfaces in CHART_CSS_SURFACES below,
+ *      JS uses to the two Trends chart color maps, and no chart
+ *      value is an authority token variable. P3 changed no values;
+ *      the recorded text-only exceptions in the registry are the
+ *      whole exception list.
+ *  (h) Warning family (punch-list P5, ratified 2026-11-13):
+ *      warn-line #b98a00 / warn-text #8a6100 are tokens, not
+ *      literals — pantry.css and app-overrides.css both define
+ *      --warn-line / --warn-text at those values, warning rules
+ *      resolve through them, and the near-duplicate #8a6d00 is
+ *      retired (it is in RETIRED below, with #ded5c0 from P6).
  *
  * An exception ships only by amending DESIGN.md and the relevant
  * allow-list here, with the reason recorded, in the same PR.
@@ -260,6 +275,12 @@ const RETIRED = [
     "#b3261e",
     "#fffdf7",
     "#fffef9",
+    // Punch-list P5 (ratified 2026-11-13): warning-amber
+    // near-duplicate, consolidated into warn-text #8a6100.
+    "#8a6d00",
+    // Punch-list P6 (ratified 2026-11-13): --line fallback hairline
+    // variant; the one hairline is #d8cdb6.
+    "#ded5c0",
     // Punch-list P4 (2026-11-13): the filled-destructive hover/pressed
     // family retires; destructive is transparent per Direction C.
     "#6e241a",
@@ -495,6 +516,13 @@ describe("design authority (b): Direction C spec resolution", () => {
             "11px",
             "#efe9db",
             "#b8a888",
+            // Punch-list rulings (ratified 2026-11-13): P3 chart
+            // palette, P5 warning family, P5/P6 retired values.
+            "#2e5b34",
+            "#b98a00",
+            "#8a6100",
+            "#8a6d00",
+            "#ded5c0",
             "NO FILLER",
             "enforced law",
         ]) {
@@ -932,5 +960,242 @@ describe("design authority (f): dialog material", () => {
             }
         }
         expect(offenders).toEqual([]);
+    });
+});
+
+/* ---------------- (g) chart palette confinement ----------------
+ * Punch-list P3 (ratified 2026-11-13, PR #327): the pre-authority
+ * Trends chart palette is ratified as-is and named in DESIGN.md's
+ * token chapter. These values are chart-only: they style chart
+ * marks, selected-day wells, and Trends pills — never buttons,
+ * fields, or general surfaces. The registry below is the surface
+ * list the palette may appear on; every entry carries its reason.
+ * Recorded exceptions are text-only borrowings that already shipped
+ * in the chart grammar's ink/sage/series colors — P3 changed no
+ * values, so they are recorded here rather than silently spread. */
+
+const CHART_PALETTE = ["#2e5b34", "#22301f", "#6e7462", "#c9bfa3", "#e6eddc"];
+
+/** Selector fragments allowed to carry chart-palette values. */
+const CHART_CSS_SURFACES = new Map<string, string>([
+    [
+        ".trends-",
+        "Trends chart system: chart marks, bands, pills, toggles, sheets (P3 ratification, PR #327)",
+    ],
+    [
+        ".macro-",
+        "Today macro tiles/sheets: the Today half of the Trends chart grammar; tile bars and drill-down sheets carry chart data (P3)",
+    ],
+    [
+        ".cal-",
+        "Trends/Today calendar data marks: selected-day well, in-range wash, day dots (DESIGN.md chart palette: selected-day wells)",
+    ],
+    [
+        ".range-",
+        "Trends range view: split/range rows in chart ink and series green (P3)",
+    ],
+    [".day-tag", "Trends range view day tags (P3)"],
+    [".planned-tag", "Trends range view planned tag, series green (P3)"],
+    [".micro-avg", "Trends micro average label, sage (P3)"],
+    [
+        ".brain-link",
+        "insight/brain link: DESIGN.md names series green as the brain glyph's green — one learned 'insight' green (P3)",
+    ],
+    // Recorded text-only exceptions (no fills, no buttons, no
+    // fields): surfaces that shipped in the chart grammar's text
+    // colors before the authority. P3 ratified values as-is.
+    [
+        ".meal-draft-saved",
+        "recorded exception: saved-confirmation text in series green; shipped with the Trends grammar, text only (P3, no value changes)",
+    ],
+    [
+        ".nutrition-label",
+        "recorded exception: nutrition-label meta text in sage; text only (P3, no value changes)",
+    ],
+    [
+        ".cook-mode-",
+        "recorded exception: cook-mode rows reference the chart grammar's muted sage as a var() fallback; text only (P3, no value changes)",
+    ],
+    [
+        ".recipe-portion-picker",
+        "recorded exception: portion-picker labels in the chart grammar's sage/chart ink; text only (P3, no value changes)",
+    ],
+]);
+
+/** (g) Chart palette in JS is confined to the Trends chart maps. */
+const CHART_JS_ALLOWLIST = new Map<string, string>([
+    [
+        "public/app.js::trendsDonutChart",
+        "chart color map: macro donut segments (P3 ratification)",
+    ],
+    [
+        "public/app.js::trendsStackedChart",
+        "chart color map: meal-split stacked segments (P3 ratification)",
+    ],
+]);
+
+describe("design authority (g): chart palette confinement (P3)", () => {
+    test("chart values appear only on registered chart surfaces in CSS", async () => {
+        const offenders: string[] = [];
+        for (const name of publicFiles(".css")) {
+            const sheet = await loadSheet(name);
+            for (const rule of sheet.rules) {
+                const usesChart = [...rule.declarations.values()].some(
+                    (value) => {
+                        const resolved = resolveVars(
+                            value,
+                            sheet.vars,
+                        ).toLowerCase();
+                        return CHART_PALETTE.some((hex) =>
+                            resolved.includes(hex),
+                        );
+                    },
+                );
+                if (!usesChart) continue;
+                for (const selector of rule.selectors) {
+                    const allowed = [...CHART_CSS_SURFACES.keys()].some(
+                        (fragment) => selector.includes(fragment),
+                    );
+                    if (!allowed) {
+                        offenders.push(
+                            `public/${name}:${rule.line} ${selector} uses a chart-palette value outside the registered chart surfaces (P3)`,
+                        );
+                    }
+                }
+            }
+        }
+        expect(offenders).toEqual([]);
+    });
+
+    test("no chart value is an authority token variable in any sheet", async () => {
+        const offenders: string[] = [];
+        for (const name of publicFiles(".css")) {
+            const sheet = await loadSheet(name);
+            for (const [token, value] of sheet.vars) {
+                const resolved = resolveVars(value, sheet.vars).toLowerCase();
+                if (CHART_PALETTE.some((hex) => resolved.includes(hex))) {
+                    offenders.push(
+                        `public/${name} ${token} resolves to a chart-palette value; chart values are not tokens (P3)`,
+                    );
+                }
+            }
+        }
+        expect(offenders).toEqual([]);
+    });
+
+    test("chart values in JS are confined to the Trends chart color maps", async () => {
+        const offenders: string[] = [];
+        for (const name of publicFiles(".js")) {
+            const text = await readPublic(name);
+            for (const hex of CHART_PALETTE) {
+                const pattern = new RegExp(hex, "gi");
+                for (const match of text.matchAll(pattern)) {
+                    const before = text.slice(0, match.index);
+                    const fn = [
+                        ...before.matchAll(/function\s+([A-Za-z0-9_]+)\s*\(/g),
+                    ].pop();
+                    const key = `public/${name}::${fn ? fn[1] : "<top-level>"}`;
+                    if (!CHART_JS_ALLOWLIST.has(key)) {
+                        offenders.push(
+                            `${key} uses chart value ${hex} outside the allow-list (P3)`,
+                        );
+                    }
+                }
+            }
+        }
+        expect(offenders).toEqual([]);
+    });
+});
+
+/* ---------------- (h) warning family tokens ----------------
+ * Punch-list P5 (ratified 2026-11-13, PR #327): warn-line #b98a00
+ * and warn-text #8a6100 are the warning family, RESERVED for
+ * warning signals only. Both sheets that style warnings define
+ * them as tokens and reference the tokens — no literal amber. */
+
+const WARN_LINE = "#b98a00";
+const WARN_TEXT = "#8a6100";
+
+describe("design authority (h): warning family (P5)", () => {
+    test("pantry.css and app-overrides.css define the warn tokens at the ratified values", async () => {
+        for (const name of ["pantry.css", "app-overrides.css"]) {
+            const sheet = await loadSheet(name);
+            expect(
+                normalizeColor(
+                    resolveVars(
+                        sheet.vars.get("--warn-line") ?? "",
+                        sheet.vars,
+                    ),
+                ),
+                `${name} --warn-line`,
+            ).toBe(WARN_LINE);
+            expect(
+                normalizeColor(
+                    resolveVars(
+                        sheet.vars.get("--warn-text") ?? "",
+                        sheet.vars,
+                    ),
+                ),
+                `${name} --warn-text`,
+            ).toBe(WARN_TEXT);
+        }
+    });
+
+    test("no literal warn amber outside the :root token definitions", async () => {
+        const offenders: string[] = [];
+        for (const name of ["pantry.css", "app-overrides.css"]) {
+            const sheet = await loadSheet(name);
+            for (const rule of sheet.rules) {
+                if (rule.selectors.includes(":root")) continue;
+                for (const value of rule.declarations.values()) {
+                    const lower = value.toLowerCase();
+                    if (
+                        lower.includes(WARN_LINE) ||
+                        lower.includes(WARN_TEXT)
+                    ) {
+                        offenders.push(
+                            `public/${name}:${rule.line} ${rule.selectors.join(", ")} uses a literal warn amber; use var(--warn-line) / var(--warn-text) (P5)`,
+                        );
+                    }
+                }
+            }
+        }
+        expect(offenders).toEqual([]);
+    });
+
+    test("app warning rules resolve through the warn tokens", async () => {
+        const sheet = await loadSheet("app-overrides.css");
+        for (const selector of [
+            ".settings-view .account-status-warning",
+            ".household-view .account-status-warning",
+        ]) {
+            expect(
+                colorOf(declsFor(sheet, selector), sheet.vars, "color"),
+                selector,
+            ).toBe(WARN_TEXT);
+        }
+        expect(
+            colorOf(
+                declsFor(sheet, ".household-view .pending-invite"),
+                sheet.vars,
+                "border-left",
+                "border-left-color",
+            ),
+        ).toBe(WARN_LINE);
+    });
+
+    test("pantry warning rules resolve through the warn tokens", async () => {
+        const sheet = await loadSheet("pantry.css");
+        for (const selector of [".notice", ".lowstock"]) {
+            expect(
+                colorOf(
+                    declsFor(sheet, selector),
+                    sheet.vars,
+                    "border-left",
+                    "border-left-color",
+                ),
+                selector,
+            ).toBe(WARN_LINE);
+        }
     });
 });

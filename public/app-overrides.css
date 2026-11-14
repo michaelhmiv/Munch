@@ -1,3 +1,12 @@
+/* Warning family (DESIGN.md, ratified 2026-11-13, punch-list P5):
+   warn-line #b98a00 / warn-text #8a6100 — warning signals only.
+   Mirrored as tokens in public/pantry.css; both sheets align on
+   these custom properties and no literal amber ships here. */
+:root {
+    --warn-line: #b98a00;
+    --warn-text: #8a6100;
+}
+
 dialog {
     width: min(92vw, 560px);
     max-width: none;
@@ -1502,7 +1511,7 @@ dialog.is-closing::backdrop {
 }
 
 .skeleton {
-    background: #e3dac4;
+    background: #d8cdb6;
 }
 
 /* Same B4 family as .tiny: the shared checkbox label sat at 0.82rem. */
@@ -1623,7 +1632,7 @@ dialog.is-closing::backdrop {
 .operate-view .summary-card .progress {
     flex: 1 1 100%;
     height: 4px;
-    background: #e3dac4;
+    background: #f6f1e7;
     border-radius: 0;
 }
 
@@ -2548,7 +2557,7 @@ dialog:has(.recipe-detail) .recipe-detail-card .dialog-close {
 }
 
 .nutrition-empty {
-    border: 1px dashed #ded5c0;
+    border: 1px dashed #d8cdb6;
     border-radius: 10px;
     background: #fffdf8;
     padding: 12px 14px;
@@ -2730,7 +2739,7 @@ dialog .recipe-ingredient-editor {
 }
 
 .recipe-import-spinner {
-    border-color: #e3dac4;
+    border-color: #d8cdb6;
     border-top-color: #176b3a;
 }
 
@@ -3044,7 +3053,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     height: 56px;
     flex: 0 0 56px;
     border-radius: 4px;
-    background: #e3dac4;
+    background: #d8cdb6;
 }
 
 .cooks-view .cook-card-copy {
@@ -4090,7 +4099,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .settings-view .account-status-warning {
-    color: #8a6100;
+    color: var(--warn-text);
 }
 
 .settings-view .account-status-neutral {
@@ -4456,7 +4465,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 .insights-view .insight-rule .progress {
     flex: 1 1 100%;
     height: 4px;
-    background: #e3dac4;
+    background: #f6f1e7;
     border-radius: 0;
 }
 
@@ -4817,7 +4826,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .household-view .account-status-warning {
-    color: #8a6d00;
+    color: var(--warn-text);
 }
 
 /* Owner controls: one row under the member they govern, aligned
@@ -4876,7 +4885,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     align-items: center;
     background: #fffdf8;
     border: 0;
-    border-left: 3px solid #b98a00;
+    border-left: 3px solid var(--warn-line);
     border-radius: 0;
     padding: 8px 10px;
 }
@@ -5486,7 +5495,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     margin-top: 12px;
     padding: 10px 0;
     background: var(--panel, #fffdf8);
-    border-top: 1px solid var(--line, #ded5c0);
+    border-top: 1px solid var(--hairline, #d8cdb6);
 }
 
 .meal-draft-dirty {
@@ -5503,7 +5512,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
    Trends — the customizable analytics dashboard (brief T1-T14; design
    reference: trends-final-renderings.html). Editorial Serif house
    grammar: paper #F6F1E7, panel #FFFDF7, ink #22301F, muted #6E7462,
-   line #DED5C0, deep green #2E5B34, green-soft #E6EDDC, tan #C9BFA3,
+   line #D8CDB6, deep green #2E5B34, green-soft #E6EDDC, tan #C9BFA3,
    gold #8A6D3B. On-chart micro-labels follow the approved renderings
    (~10px) — the 11px floor governs UI type, not chart annotation.
    NO ADS on this surface (the app's only ad slot is on Today).
@@ -5554,7 +5563,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     font-weight: 600;
     color: #6e7462;
     background: transparent;
-    border: 1.5px solid #ded5c0;
+    border: 1.5px solid #d8cdb6;
     border-radius: 999px;
     padding: 7px 16px;
     min-height: 36px;
@@ -5575,7 +5584,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 
 .trends-view .trends-card {
     background: #fffdf8;
-    border: 1px solid #ded5c0;
+    border: 1px solid #d8cdb6;
     border-radius: 14px;
     padding: 14px 14px 12px;
     margin-bottom: 12px;
@@ -5652,7 +5661,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     line-height: 1;
     color: #6e7462;
     background: #f6f1e7;
-    border: 1px solid #ded5c0;
+    border: 1px solid #d8cdb6;
     border-radius: 50%;
     width: 26px;
     height: 26px;
@@ -5751,7 +5760,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 .trends-verdict {
     font-size: 12.5px;
     color: #22301f;
-    border-top: 1px solid #e9e2cf;
+    border-top: 1px solid #d8cdb6;
     padding-top: 8px;
     margin: 10px 0 0;
     line-height: 1.45;
@@ -5968,7 +5977,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     font-weight: 600;
     color: #6e7462;
     background: transparent;
-    border: 1px solid #ded5c0;
+    border: 1px solid #d8cdb6;
     border-radius: 999px;
     padding: 5px 12px;
     min-height: 30px;
@@ -6124,7 +6133,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 
 .trends-window-row.is-avg {
     cursor: default;
-    border-bottom: 1px solid #e9e2cf;
+    border-bottom: 1px solid #d8cdb6;
     padding-bottom: 7px;
 }
 
@@ -6142,7 +6151,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 .trends-window-track {
     flex: 1;
     height: 9px;
-    background: #f1ebda;
+    background: #f6f1e7;
     border-radius: 99px;
     position: relative;
 }
@@ -6187,7 +6196,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 .trends-rhythm-track {
     flex: 1;
     height: 8px;
-    background: #f1ebda;
+    background: #f6f1e7;
     border-radius: 99px;
     overflow: hidden;
 }
@@ -6219,7 +6228,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     text-align: left;
     background: transparent;
     border: 0;
-    border-bottom: 1px solid #e9e2cf;
+    border-bottom: 1px solid #d8cdb6;
     padding: 11px 2px;
     min-height: 52px;
     cursor: pointer;
@@ -6306,7 +6315,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .trends-sheet-meal {
-    border-top: 1px solid #e9e2cf;
+    border-top: 1px solid #d8cdb6;
     padding: 8px 0 4px;
 }
 
@@ -6336,7 +6345,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     width: 100%;
     background: transparent;
     border: 0;
-    border-bottom: 1px solid #e9e2cf;
+    border-bottom: 1px solid #d8cdb6;
     padding: 10px 2px;
     min-height: 48px;
     cursor: pointer;
@@ -6376,7 +6385,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
    Today navigation — calendar sheet + 2x2 macro tiles + breakdown
    sheet (brief items 1–6; design reference: today-macros-2x2-popup.html).
    Editorial Serif house grammar: paper #F6F1E7, panel #FFFDF7,
-   ink #22301F, muted #6E7462, line #DED5C0, deep green #2E5B34,
+   ink #22301F, muted #6E7462, line #D8CDB6, deep green #2E5B34,
    green-soft #E6EDDC, gold #8A6D3B. Day cells hold the 44px tap floor.
    ===================================================================== */
 
@@ -6391,7 +6400,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     color: inherit;
     text-align: left;
     width: 100%;
-    border: 1px solid #ded5c0;
+    border: 1px solid #d8cdb6;
     border-radius: 12px;
     background: #fff;
     padding: 10px 12px 9px;
@@ -6440,7 +6449,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 .macro-tile-bar {
     display: block;
     height: 5px;
-    background: #ede6d2;
+    background: #f6f1e7;
     border-radius: 3px;
     margin-top: auto;
     padding-top: 0;
@@ -6459,7 +6468,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 .macro-expand {
     margin-top: 8px;
     width: 100%;
-    border: 1px solid #ded5c0;
+    border: 1px solid #d8cdb6;
     background: #fff;
     border-radius: 10px;
     padding: 10px 12px;
@@ -6480,7 +6489,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 
 .macro-micros {
     margin-top: 8px;
-    border: 1px dashed #ded5c0;
+    border: 1px dashed #d8cdb6;
     border-radius: 10px;
     padding: 9px 12px;
     background: #fffdf8;
@@ -6521,7 +6530,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .macro-sheet-group + .macro-sheet-group {
-    border-top: 1px solid #efe8d6;
+    border-top: 1px solid #d8cdb6;
 }
 
 .macro-sheet-group-head {
@@ -6576,7 +6585,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     position: sticky;
     bottom: 0;
     background: #fffdf8;
-    border-top: 1px solid #ded5c0;
+    border-top: 1px solid #d8cdb6;
     padding: 11px 2px 2px;
     margin-top: 10px;
     display: flex;
@@ -6607,7 +6616,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     line-height: 1;
     color: #2e5b34;
     background: #fff;
-    border: 1px solid #ded5c0;
+    border: 1px solid #d8cdb6;
     border-radius: 50%;
     width: 44px;
     height: 44px;
@@ -6962,7 +6971,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     margin-top: 12px;
     background: transparent;
     border: 0;
-    border-top: 1px solid #e9e2cf;
+    border-top: 1px solid #d8cdb6;
     padding: 12px 2px 2px;
     min-height: 48px;
     cursor: pointer;
@@ -7031,7 +7040,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     gap: 12px;
     min-height: 48px;
     padding: 8px 12px;
-    border: 1px solid var(--line, #ded5c0);
+    border: 1px solid var(--hairline, #d8cdb6);
     border-radius: 10px;
     background: var(--paper-card, #fffdf8);
     cursor: pointer;
@@ -8158,7 +8167,7 @@ dialog #water-form {
 }
 
 .recipe-portion-picker .yield-adjust {
-    border: 1px dashed #ded5c0;
+    border: 1px dashed #d8cdb6;
     border-radius: 12px;
     background: #fff;
     padding: 12px 14px;
@@ -8227,7 +8236,7 @@ dialog #water-form {
 }
 
 .recipe-portion-picker .portion-tile {
-    border: 1px solid #ded5c0;
+    border: 1px solid #d8cdb6;
     border-radius: 12px;
     background: #fff;
     padding: 10px 12px 9px;
@@ -8264,7 +8273,7 @@ dialog #water-form {
 .recipe-portion-picker .portion-micros-toggle {
     margin-top: 8px;
     width: 100%;
-    border: 1px solid #ded5c0;
+    border: 1px solid #d8cdb6;
     background: #fff;
     border-radius: 10px;
     padding: 10px 12px;
@@ -8280,7 +8289,7 @@ dialog #water-form {
 
 .recipe-portion-picker .portion-micros {
     margin-top: 8px;
-    border: 1px dashed #ded5c0;
+    border: 1px dashed #d8cdb6;
     border-radius: 10px;
     padding: 9px 12px;
     background: #fffdf8;
