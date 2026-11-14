@@ -202,12 +202,18 @@ Found by the enforcement audit, NOT fixed in the enforcement PR. Ruled
 each ruling below is the law for its build pass; builds mark their line
 RESOLVED with the landing PR.
 
-- **P1 — `public/styles.css` legacy grammar:** RULED — one grammar. The
-  sheet re-skins to this chapter's tokens and Direction C buttons
-  (transparent secondary, primary without shadow, radius 10px), keeping
-  its roles: app base layer under `app-overrides.css` and the standalone
-  reviewer/password pages. The check-(d) allow-list entries for its
-  classes retire as the values conform.
+- **P1 — `public/styles.css` legacy grammar:** RESOLVED (PR #331) —
+  RULED — one grammar. The sheet re-skins to this chapter's tokens and
+  Direction C buttons (transparent secondary, primary without shadow,
+  radius 10px), keeping its roles: app base layer under
+  `app-overrides.css` and the standalone reviewer/password pages. The
+  check-(d) allow-list entries for its classes retire as the values
+  conform. As landed: the legacy green/ink scale names survive only as
+  aliases onto the authority tokens (account-settings.css and
+  app-overrides.css resolve them from this sheet's `:root`);
+  `.button-light`'s allow-list entry retired into spec assertions in
+  check (b)/(d), and `.button-large` (no markup consumer) was retired
+  with its class.
 - **P2 — Drawn-geometry reconciliation:** RULED — the anchor governs
   (see the geometry chapter note above). Production drawn geometry
   reconciles to 31px / 6px 14px / 10px radius; dialog cards take the
