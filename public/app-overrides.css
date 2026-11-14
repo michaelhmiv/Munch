@@ -1,3 +1,12 @@
+/* Warning family (DESIGN.md, ratified 2026-11-13, punch-list P5):
+   warn-line #b98a00 / warn-text #8a6100 — warning signals only.
+   Mirrored as tokens in public/pantry.css; both sheets align on
+   these custom properties and no literal amber ships here. */
+:root {
+    --warn-line: #b98a00;
+    --warn-text: #8a6100;
+}
+
 dialog {
     width: min(92vw, 560px);
     max-width: none;
@@ -1236,7 +1245,7 @@ body.app-page {
 .button-primary {
     background: #176b3a;
     border-color: #176b3a;
-    border-radius: 4px;
+    border-radius: 10px;
     font-weight: 600;
 }
 
@@ -1249,13 +1258,13 @@ body.app-page {
     background: transparent;
     border-color: #8a7c63;
     color: #2b2620;
-    border-radius: 4px;
+    border-radius: 10px;
     font-weight: 600;
 }
 
 .button-quiet {
     color: #4a4237;
-    border-radius: 4px;
+    border-radius: 10px;
 }
 
 /* S3-deferred MINOR, decided in S6 slice 1 (portal-wide chrome): the
@@ -1265,8 +1274,9 @@ body.app-page {
    brings the visual box to a full 44px target without changing the
    .button-small grammar other surfaces still use. */
 .dialog-close {
-    min-height: 44px;
-    min-width: 44px;
+    position: relative;
+    min-height: 31px;
+    min-width: 31px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1275,7 +1285,7 @@ body.app-page {
 /* ---------- Shared chrome: dialog frame ---------- */
 
 dialog {
-    border-radius: 8px;
+    border-radius: 14px;
 }
 
 dialog::backdrop {
@@ -1286,7 +1296,7 @@ dialog::backdrop {
 dialog .auth-card {
     background: #fffdf8;
     border: 1px solid #d8cdb6;
-    border-radius: 8px;
+    border-radius: 14px;
     color: #2b2620;
 }
 
@@ -1309,7 +1319,7 @@ dialog input,
 dialog select,
 dialog textarea {
     border-color: #8a7c63;
-    border-radius: 4px;
+    border-radius: 10px;
     background: #fffdf8;
     color: #2b2620;
 }
@@ -1466,13 +1476,14 @@ dialog.is-closing::backdrop {
 }
 
 .meal-draft-abandon-confirm {
-    background: #8c2f22;
+    background: transparent;
     border-color: #8c2f22;
+    color: #8c2f22;
 }
 
 .meal-draft-abandon-confirm:hover {
-    background: #6e241a;
-    border-color: #6e241a;
+    background: transparent;
+    border-color: #8c2f22;
 }
 
 /* ---------- Shared chrome: toasts + global states ---------- */
@@ -1500,7 +1511,7 @@ dialog.is-closing::backdrop {
 }
 
 .skeleton {
-    background: #e3dac4;
+    background: #d8cdb6;
 }
 
 /* Same B4 family as .tiny: the shared checkbox label sat at 0.82rem. */
@@ -1621,7 +1632,7 @@ dialog.is-closing::backdrop {
 .operate-view .summary-card .progress {
     flex: 1 1 100%;
     height: 4px;
-    background: #e3dac4;
+    background: #f6f1e7;
     border-radius: 0;
 }
 
@@ -2450,13 +2461,14 @@ dialog .summary-card > small {
 }
 
 .recipe-archive-confirm {
-    background: #8c2f22;
+    background: transparent;
     border-color: #8c2f22;
+    color: #8c2f22;
 }
 
 .recipe-archive-confirm:hover {
-    background: #6e241a;
-    border-color: #6e241a;
+    background: transparent;
+    border-color: #8c2f22;
 }
 
 /* ---------- Recipe detail D2 (owner-approved 2026-11-13) ----------
@@ -2545,7 +2557,7 @@ dialog:has(.recipe-detail) .recipe-detail-card .dialog-close {
 }
 
 .nutrition-empty {
-    border: 1px dashed #ded5c0;
+    border: 1px dashed #d8cdb6;
     border-radius: 10px;
     background: #fffdf8;
     padding: 12px 14px;
@@ -2727,7 +2739,7 @@ dialog .recipe-ingredient-editor {
 }
 
 .recipe-import-spinner {
-    border-color: #e3dac4;
+    border-color: #d8cdb6;
     border-top-color: #176b3a;
 }
 
@@ -2968,13 +2980,14 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .plan-inline-confirm-danger {
-    background: #8c2f22;
+    background: transparent;
     border-color: #8c2f22;
+    color: #8c2f22;
 }
 
 .plan-inline-confirm-danger:hover {
-    background: #6e241a;
-    border-color: #6e241a;
+    background: transparent;
+    border-color: #8c2f22;
 }
 
 /* UX fix wave F7: the meal-details dialog's per-item Remove
@@ -3040,7 +3053,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     height: 56px;
     flex: 0 0 56px;
     border-radius: 4px;
-    background: #e3dac4;
+    background: #d8cdb6;
 }
 
 .cooks-view .cook-card-copy {
@@ -3230,13 +3243,14 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .cook-delete-confirm {
-    background: #8c2f22;
+    background: transparent;
     border-color: #8c2f22;
+    color: #8c2f22;
 }
 
 .cook-delete-confirm:hover {
-    background: #6e241a;
-    border-color: #6e241a;
+    background: transparent;
+    border-color: #8c2f22;
 }
 
 /* In the detail head the action group wraps under the title block at
@@ -3751,13 +3765,14 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .grocery-inline-confirm-danger {
-    background: #8c2f22;
+    background: transparent;
     border-color: #8c2f22;
+    color: #8c2f22;
 }
 
 .grocery-inline-confirm-danger:hover {
-    background: #6e241a;
-    border-color: #6e241a;
+    background: transparent;
+    border-color: #8c2f22;
 }
 
 /* The add-time run-out prompt shares the inline confirmations'
@@ -4084,7 +4099,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .settings-view .account-status-warning {
-    color: #8a6100;
+    color: var(--warn-text);
 }
 
 .settings-view .account-status-neutral {
@@ -4250,7 +4265,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     background: transparent;
     border-color: #8c2f22;
     color: #8c2f22;
-    border-radius: 4px;
+    border-radius: 10px;
 }
 
 /* Inline confirmations (slice 1 pattern, this surface's rows). */
@@ -4275,13 +4290,14 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .settings-inline-danger {
-    background: #8c2f22;
+    background: transparent;
     border-color: #8c2f22;
+    color: #8c2f22;
 }
 
 .settings-inline-danger:hover {
-    background: #6e241a;
-    border-color: #6e241a;
+    background: transparent;
+    border-color: #8c2f22;
 }
 
 /* The goals review panel rides .operate-view .panel already; its
@@ -4449,7 +4465,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 .insights-view .insight-rule .progress {
     flex: 1 1 100%;
     height: 4px;
-    background: #e3dac4;
+    background: #f6f1e7;
     border-radius: 0;
 }
 
@@ -4569,13 +4585,14 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .operate-view .vital-confirm-danger {
-    background: #8c2f22;
+    background: transparent;
     border-color: #8c2f22;
+    color: #8c2f22;
 }
 
 .operate-view .vital-confirm-danger:hover {
-    background: #6e241a;
-    border-color: #6e241a;
+    background: transparent;
+    border-color: #8c2f22;
 }
 
 /* ---------- Insights dialogs (add / edit water + weight) -------- */
@@ -4809,7 +4826,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .household-view .account-status-warning {
-    color: #8a6d00;
+    color: var(--warn-text);
 }
 
 /* Owner controls: one row under the member they govern, aligned
@@ -4868,7 +4885,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     align-items: center;
     background: #fffdf8;
     border: 0;
-    border-left: 3px solid #b98a00;
+    border-left: 3px solid var(--warn-line);
     border-radius: 0;
     padding: 8px 10px;
 }
@@ -5040,7 +5057,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .household-view .button-danger:hover {
-    background: #fdf3f2;
+    background: transparent;
     color: #8c2f22;
 }
 
@@ -5096,13 +5113,14 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .household-inline-confirm-danger {
-    background: #8c2f22;
+    background: transparent;
     border-color: #8c2f22;
+    color: #8c2f22;
 }
 
 .household-inline-confirm-danger:hover {
-    background: #6e241a;
-    border-color: #6e241a;
+    background: transparent;
+    border-color: #8c2f22;
 }
 
 /* =====================================================================
@@ -5477,7 +5495,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     margin-top: 12px;
     padding: 10px 0;
     background: var(--panel, #fffdf8);
-    border-top: 1px solid var(--line, #ded5c0);
+    border-top: 1px solid var(--hairline, #d8cdb6);
 }
 
 .meal-draft-dirty {
@@ -5494,7 +5512,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
    Trends — the customizable analytics dashboard (brief T1-T14; design
    reference: trends-final-renderings.html). Editorial Serif house
    grammar: paper #F6F1E7, panel #FFFDF7, ink #22301F, muted #6E7462,
-   line #DED5C0, deep green #2E5B34, green-soft #E6EDDC, tan #C9BFA3,
+   line #D8CDB6, deep green #2E5B34, green-soft #E6EDDC, tan #C9BFA3,
    gold #8A6D3B. On-chart micro-labels follow the approved renderings
    (~10px) — the 11px floor governs UI type, not chart annotation.
    NO ADS on this surface (the app's only ad slot is on Today).
@@ -5545,7 +5563,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     font-weight: 600;
     color: #6e7462;
     background: transparent;
-    border: 1.5px solid #ded5c0;
+    border: 1.5px solid #d8cdb6;
     border-radius: 999px;
     padding: 7px 16px;
     min-height: 36px;
@@ -5566,7 +5584,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 
 .trends-view .trends-card {
     background: #fffdf8;
-    border: 1px solid #ded5c0;
+    border: 1px solid #d8cdb6;
     border-radius: 14px;
     padding: 14px 14px 12px;
     margin-bottom: 12px;
@@ -5643,7 +5661,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     line-height: 1;
     color: #6e7462;
     background: #f6f1e7;
-    border: 1px solid #ded5c0;
+    border: 1px solid #d8cdb6;
     border-radius: 50%;
     width: 26px;
     height: 26px;
@@ -5742,7 +5760,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 .trends-verdict {
     font-size: 12.5px;
     color: #22301f;
-    border-top: 1px solid #e9e2cf;
+    border-top: 1px solid #d8cdb6;
     padding-top: 8px;
     margin: 10px 0 0;
     line-height: 1.45;
@@ -5959,7 +5977,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     font-weight: 600;
     color: #6e7462;
     background: transparent;
-    border: 1px solid #ded5c0;
+    border: 1px solid #d8cdb6;
     border-radius: 999px;
     padding: 5px 12px;
     min-height: 30px;
@@ -6115,7 +6133,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 
 .trends-window-row.is-avg {
     cursor: default;
-    border-bottom: 1px solid #e9e2cf;
+    border-bottom: 1px solid #d8cdb6;
     padding-bottom: 7px;
 }
 
@@ -6133,7 +6151,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 .trends-window-track {
     flex: 1;
     height: 9px;
-    background: #f1ebda;
+    background: #f6f1e7;
     border-radius: 99px;
     position: relative;
 }
@@ -6178,7 +6196,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 .trends-rhythm-track {
     flex: 1;
     height: 8px;
-    background: #f1ebda;
+    background: #f6f1e7;
     border-radius: 99px;
     overflow: hidden;
 }
@@ -6210,7 +6228,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     text-align: left;
     background: transparent;
     border: 0;
-    border-bottom: 1px solid #e9e2cf;
+    border-bottom: 1px solid #d8cdb6;
     padding: 11px 2px;
     min-height: 52px;
     cursor: pointer;
@@ -6297,7 +6315,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .trends-sheet-meal {
-    border-top: 1px solid #e9e2cf;
+    border-top: 1px solid #d8cdb6;
     padding: 8px 0 4px;
 }
 
@@ -6327,7 +6345,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     width: 100%;
     background: transparent;
     border: 0;
-    border-bottom: 1px solid #e9e2cf;
+    border-bottom: 1px solid #d8cdb6;
     padding: 10px 2px;
     min-height: 48px;
     cursor: pointer;
@@ -6367,7 +6385,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
    Today navigation — calendar sheet + 2x2 macro tiles + breakdown
    sheet (brief items 1–6; design reference: today-macros-2x2-popup.html).
    Editorial Serif house grammar: paper #F6F1E7, panel #FFFDF7,
-   ink #22301F, muted #6E7462, line #DED5C0, deep green #2E5B34,
+   ink #22301F, muted #6E7462, line #D8CDB6, deep green #2E5B34,
    green-soft #E6EDDC, gold #8A6D3B. Day cells hold the 44px tap floor.
    ===================================================================== */
 
@@ -6382,7 +6400,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     color: inherit;
     text-align: left;
     width: 100%;
-    border: 1px solid #ded5c0;
+    border: 1px solid #d8cdb6;
     border-radius: 12px;
     background: #fff;
     padding: 10px 12px 9px;
@@ -6431,7 +6449,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 .macro-tile-bar {
     display: block;
     height: 5px;
-    background: #ede6d2;
+    background: #f6f1e7;
     border-radius: 3px;
     margin-top: auto;
     padding-top: 0;
@@ -6450,7 +6468,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 .macro-expand {
     margin-top: 8px;
     width: 100%;
-    border: 1px solid #ded5c0;
+    border: 1px solid #d8cdb6;
     background: #fff;
     border-radius: 10px;
     padding: 10px 12px;
@@ -6471,7 +6489,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 
 .macro-micros {
     margin-top: 8px;
-    border: 1px dashed #ded5c0;
+    border: 1px dashed #d8cdb6;
     border-radius: 10px;
     padding: 9px 12px;
     background: #fffdf8;
@@ -6512,7 +6530,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .macro-sheet-group + .macro-sheet-group {
-    border-top: 1px solid #efe8d6;
+    border-top: 1px solid #d8cdb6;
 }
 
 .macro-sheet-group-head {
@@ -6567,7 +6585,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     position: sticky;
     bottom: 0;
     background: #fffdf8;
-    border-top: 1px solid #ded5c0;
+    border-top: 1px solid #d8cdb6;
     padding: 11px 2px 2px;
     margin-top: 10px;
     display: flex;
@@ -6598,7 +6616,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     line-height: 1;
     color: #2e5b34;
     background: #fff;
-    border: 1px solid #ded5c0;
+    border: 1px solid #d8cdb6;
     border-radius: 50%;
     width: 44px;
     height: 44px;
@@ -6953,7 +6971,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     margin-top: 12px;
     background: transparent;
     border: 0;
-    border-top: 1px solid #e9e2cf;
+    border-top: 1px solid #d8cdb6;
     padding: 12px 2px 2px;
     min-height: 48px;
     cursor: pointer;
@@ -7022,7 +7040,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
     gap: 12px;
     min-height: 48px;
     padding: 8px 12px;
-    border: 1px solid var(--line, #ded5c0);
+    border: 1px solid var(--hairline, #d8cdb6);
     border-radius: 10px;
     background: var(--paper-card, #fffdf8);
     cursor: pointer;
@@ -7234,20 +7252,11 @@ dialog:has(
     padding: 6px 8px;
 }
 
-/* Slice-2 exclusion: the Recipes card action strip keeps exactly its
-   pre-C rendering (44px targets, 4px radius, inherited type) until
-   the strip's own slice rebuilds it as the divided bar. */
-.recipes-view .recipe-panel-actions .button {
-    min-height: 44px;
-    padding-top: 9px;
-    padding-bottom: 9px;
-    border-radius: 4px;
-    font-family: inherit;
-}
-
-.recipes-view .recipe-panel-actions .button::after {
-    content: none;
-}
+/* The Recipes card action strip follows the same anchor (P2,
+   2026-11-13): the earlier slice-2 exclusion that kept its 44px
+   drawn boxes and 4px radius is superseded by the punch-list
+   ruling — strip buttons draw at 31px / 10px like every other
+   button, with the ::after overlay carrying the hit area. */
 
 /* ---------- Button tiers (Direction C colors) ---------- */
 
@@ -7402,8 +7411,8 @@ dialog:has(
 #guided-plan-edit-form .plan-inline-confirm-danger:hover,
 .groceries-view .grocery-inline-confirm-danger:hover {
     background: transparent;
-    border-color: #6e241a;
-    color: #6e241a;
+    border-color: #8c2f22;
+    color: #8c2f22;
 }
 
 /* ---------- Fields and selects: the anchor geometry ---------- */
@@ -8158,7 +8167,7 @@ dialog #water-form {
 }
 
 .recipe-portion-picker .yield-adjust {
-    border: 1px dashed #ded5c0;
+    border: 1px dashed #d8cdb6;
     border-radius: 12px;
     background: #fff;
     padding: 12px 14px;
@@ -8227,7 +8236,7 @@ dialog #water-form {
 }
 
 .recipe-portion-picker .portion-tile {
-    border: 1px solid #ded5c0;
+    border: 1px solid #d8cdb6;
     border-radius: 12px;
     background: #fff;
     padding: 10px 12px 9px;
@@ -8264,7 +8273,7 @@ dialog #water-form {
 .recipe-portion-picker .portion-micros-toggle {
     margin-top: 8px;
     width: 100%;
-    border: 1px solid #ded5c0;
+    border: 1px solid #d8cdb6;
     background: #fff;
     border-radius: 10px;
     padding: 10px 12px;
@@ -8280,7 +8289,7 @@ dialog #water-form {
 
 .recipe-portion-picker .portion-micros {
     margin-top: 8px;
-    border: 1px dashed #ded5c0;
+    border: 1px dashed #d8cdb6;
     border-radius: 10px;
     padding: 9px 12px;
     background: #fffdf8;
@@ -8334,4 +8343,185 @@ dialog #water-form {
 
 .yield-edit-row select {
     flex: 0 0 92px;
+}
+
+/* =====================================================================
+   PUNCH LIST P2 + P4 — drawn-geometry reconciliation and destructive
+   conformance (ruled 2026-11-13, Michael's delegation; DESIGN.md
+   geometry chapter + Retired values). Governed by the impeccable
+   skill; the owner's settled geometry wins over skill guidance.
+   ---------------------------------------------------------------------
+   P2: EVERY button tier and field/select in this sheet draws at the
+   31px anchor — drawn height 31px, padding 6px 14px (fields 5px
+   12px), border 1px, radius 10px, type .9rem Georgia 600 (quiet
+   500; fields 1rem serif). The >=44px hit area is delivered by the
+   established invisible ::after overlay idiom (inset -7px -4px,
+   first shipped for the Recipes/Plan/Groceries surfaces and the
+   header-util control above) or by a 44px row — NEVER by inflating
+   the drawn control. This closing section wins the cascade over the
+   per-slice 44px/48px drawn-box rules above it, which remain in
+   place only as the hit-floor record for non-button rows.
+   Dialog cards take the board's 14px radius; the mobile sheet's
+   24px top radius is unchanged (re-asserted in its media query
+   below so this section cannot flatten it).
+   P4: destructive is Direction C everywhere — transparent fill,
+   danger #8c2f22 border + text, transparent on hover. The filled
+   filled hover/pressed family (see DESIGN.md Retired values) is
+   retired — zero uses remain in this sheet.
+   ===================================================================== */
+
+/* ---------- Buttons: the 31px anchor, all tiers, all surfaces ---------- */
+
+.button {
+    position: relative;
+    height: 31px;
+    min-height: 31px;
+    padding: 6px 14px;
+    border-width: 1px;
+    border-radius: 10px;
+    font-family: Georgia, "Times New Roman", Times, serif;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.button::after {
+    content: "";
+    position: absolute;
+    inset: -7px -4px;
+}
+
+.button-quiet {
+    font-weight: 500;
+}
+
+.button-small {
+    height: 31px;
+    min-height: 31px;
+    padding: 6px 14px;
+    font-size: 0.9rem;
+}
+
+/* The Recipes card action strip draws at the anchor too (its
+   slice-2 exclusion is superseded by P2 — see the note at the
+   strip's own section above). */
+.recipes-view .recipe-panel-actions .button {
+    height: 31px;
+    min-height: 31px;
+    padding: 6px 14px;
+    border-radius: 10px;
+}
+
+/* Icon-only controls keep a square drawn box: their glyph IS the
+   control, and the registry in src/design-authority.test.ts records
+   them as 44px icon sizing (context, not a tier exception). */
+.trends-icon-btn,
+.photo-capture-button,
+.meal-scan-button {
+    height: 44px;
+    min-height: 44px;
+    width: 44px;
+    padding: 0;
+}
+
+.trends-icon-btn::after,
+.photo-capture-button::after,
+.meal-scan-button::after {
+    content: none;
+}
+
+/* The dialog close draws at the anchor like every other button;
+   its hit area is the ::after overlay. */
+.dialog-close {
+    height: 31px;
+    min-height: 31px;
+    padding: 6px 14px;
+    border-radius: 10px;
+}
+
+.dialog-close::after {
+    content: "";
+    position: absolute;
+    inset: -7px -4px;
+}
+
+/* ---------- Fields and selects: the anchor geometry ---------- */
+
+.app-content
+    input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not(
+        [type="hidden"]
+    ),
+.app-content select,
+dialog
+    input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not(
+        [type="hidden"]
+    ),
+dialog select,
+.input {
+    height: 31px;
+    min-height: 31px;
+    padding: 5px 12px;
+    border: 1px solid #8a7c63;
+    border-radius: 10px;
+    font-family: Georgia, "Times New Roman", Times, serif;
+    font-size: 1rem;
+}
+
+/* Fields inside a panel dialog are paper wells (authority §2.3). */
+dialog
+    input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not(
+        [type="hidden"]
+    ),
+dialog select {
+    background: #f6f1e7;
+}
+
+/* ---------- Dialog cards: the board's 14px radius ---------- */
+
+dialog {
+    border-radius: 14px;
+}
+
+dialog .auth-card {
+    border-radius: 14px;
+}
+
+@media (max-width: 620px) {
+    /* Mobile sheet: 24px top radius UNCHANGED (P2 ruling). */
+    dialog {
+        border-radius: 24px 24px 0 0;
+    }
+
+    dialog .auth-card {
+        border-radius: 24px 24px 0 0;
+    }
+}
+
+/* ---------- Destructive: Direction C, transparent on hover ---------- */
+
+.button-danger,
+.meal-draft-abandon-confirm,
+.recipe-archive-confirm,
+.plan-inline-confirm-danger,
+.cook-delete-confirm,
+.grocery-inline-confirm-danger,
+.settings-inline-danger,
+.vital-confirm-danger,
+.household-inline-confirm-danger {
+    background: transparent;
+    border-color: #8c2f22;
+    color: #8c2f22;
+}
+
+.button-danger:hover,
+.meal-draft-abandon-confirm:hover,
+.recipe-archive-confirm:hover,
+.plan-inline-confirm-danger:hover,
+.cook-delete-confirm:hover,
+.grocery-inline-confirm-danger:hover,
+.settings-inline-danger:hover,
+.vital-confirm-danger:hover,
+.household-inline-confirm-danger:hover {
+    background: transparent;
+    border-color: #8c2f22;
+    color: #8c2f22;
 }

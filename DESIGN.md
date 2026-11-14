@@ -133,15 +133,14 @@ Inputs and selects: height 31px (anchor), padding 5px 12px, type 1rem
 serif, border 1px rule `#8a7c63`, radius 10px, fill by surface (above).
 Focus on all controls: 2px green outline, 1px offset.
 
-Known divergence, recorded not hidden: production chrome currently ships
-44–48px hit boxes with a 4px button radius (the hit floor is enforced by
-the drift checks today). Ruled 2026-11-13 (punch-list P2): the anchor
-governs — production drawn geometry reconciles to 31px / padding 6px
-14px / radius 10px, dialog cards to the board's 14px radius (mobile sheet
-24px top unchanged), and the ≥44px hit area is delivered by invisible
-overlay or row, never by inflating the drawn control. Until that pass
-lands, the divergence stands recorded and does not license any other
-geometry.
+Resolved divergence (punch-list P2, PR #329): production chrome
+previously shipped 44–48px drawn boxes with a 4px button radius.
+The anchor now governs in production — drawn geometry is 31px /
+padding 6px 14px / radius 10px, dialog cards take the board's 14px
+radius (mobile sheet 24px top unchanged), and the ≥44px hit area is
+delivered by invisible overlay or row, never by inflating the drawn
+control. The drift checks enforce the anchor geometry, not only the
+hit floor.
 
 ### Type scale and the 11px floor
 
@@ -214,27 +213,32 @@ RESOLVED with the landing PR.
   `.button-light`'s allow-list entry retired into spec assertions in
   check (b)/(d), and `.button-large` (no markup consumer) was retired
   with its class.
-- **P2 — Drawn-geometry reconciliation:** RULED — the anchor governs
-  (see the geometry chapter note above). Production drawn geometry
-  reconciles to 31px / 6px 14px / 10px radius; dialog cards take the
-  board's 14px radius (mobile sheet 24px top unchanged); hit areas stay
-  ≥44px via overlay or row. This is the geometry pass in
-  `public/app-overrides.css`.
-- **P3 — Trends chart palette:** RULED — ratified as-is and named in the
-  Color tokens chapter (chart palette paragraph). No value changes; the
-  palette is chart-only and future drift treats it as such.
-- **P4 — Filled destructive confirms:** RULED — Direction C governs:
-  destructive confirms are transparent with danger `#8c2f22` border and
-  text, transparent on hover like every outline tier.
-  `.meal-draft-abandon-confirm` conforms; the `#6e241a` filled/hover
-  family is retired (see Retired values).
-- **P5 — Warning amber family:** RULED — the warning family is ratified
-  in the Color tokens chapter (warn-line `#b98a00`, warn-text `#8a6100`);
-  `#8a6d00` consolidates into warn-text. Sheets reference the tokens.
-- **P6 — Hairline/tint variants:** RULED — the one hairline is
-  `#d8cdb6`; the `#ded5c0` fallback family retires to it. Paper-adjacent
-  tints: passive surfaces (rules, wells, non-data bands) consolidate to
-  the nearest authority token (panel / paper / green-tint / hairline);
-  data-bearing tints (chart bands, selected wells) keep their values
-  under the chart palette ruling (P3). The pass is surface-by-surface
-  with before/after captures.
+- **P2 — Drawn-geometry reconciliation:** RESOLVED (PR #329) — the
+  anchor governs (see the geometry chapter note above). Production
+  drawn geometry is reconciled to 31px / 6px 14px / 10px radius;
+  dialog cards take the board's 14px radius (mobile sheet 24px top
+  unchanged); hit areas stay ≥44px via overlay or row. This was the
+  geometry pass in `public/app-overrides.css`.
+- **P3 — Trends chart palette:** RESOLVED (ruling PR #327, build PR
+  #330) — ratified as-is and named in the Color tokens chapter (chart
+  palette paragraph). No value changes; the palette is chart-only and
+  the drift check treats it as such (check section (g)).
+- **P4 — Filled destructive confirms:** RESOLVED (PR #329) —
+  Direction C governs: destructive confirms are transparent with
+  danger `#8c2f22` border and text, transparent on hover like every
+  outline tier. `.meal-draft-abandon-confirm` conforms; the `#6e241a`
+  filled/hover family is retired (see Retired values) and the drift
+  check's retired list now carries it.
+- **P5 — Warning amber family:** RESOLVED (ruling PR #327, build PR
+  #330) — the warning family is ratified in the Color tokens chapter
+  (warn-line `#b98a00`, warn-text `#8a6100`); `#8a6d00` consolidated
+  into warn-text and retired. Sheets reference the tokens; the drift
+  check enforces them (check section (h)).
+- **P6 — Hairline/tint variants:** RESOLVED (ruling PR #327, build PR
+  #330) — the one hairline is `#d8cdb6`; the `#ded5c0` fallback family
+  retired to it everywhere and joined the drift check's retired list.
+  Paper-adjacent tints: passive surfaces (rules, wells, non-data
+  bands) consolidated to the nearest authority token (panel / paper /
+  green-tint / hairline); data-bearing tints (chart bands, selected
+  wells) kept their values under the chart palette ruling (P3). The
+  pass was surface-by-surface with before/after captures (PR #330).
