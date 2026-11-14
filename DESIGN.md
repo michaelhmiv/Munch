@@ -79,6 +79,19 @@ law as of this PR, not a style suggestion.
 Gold never styles a button and never emphasizes text. Danger never styles
 anything except shortage/destructive signals.
 
+**Warning family (ratified 2026-11-13, punch-list P5):** warn-line
+`#b98a00`, warn-text `#8a6100`. RESERVED: warning signals only (stale or
+suspect data, expiring stock) — never decoration, never a button fill.
+The near-duplicate `#8a6d00` is retired into warn-text.
+
+**Chart palette (ratified 2026-11-13, punch-list P3):** the pre-authority
+Trends chart system is adopted as the named chart palette — series green
+`#2e5b34` (the same green as the brain glyph: one learned "insight" green),
+chart ink `#22301f`, sage `#6e7462`, sand `#c9bfa3`, wash `#e6eddc`, with
+gold `#8a6d3b` accents per the token table. These values are chart-only:
+they style chart marks, selected-day wells, and Trends pills — never
+buttons, fields, or general surfaces.
+
 ### Surface rules
 
 1. Screens sit on **paper**. Nothing else is a screen background.
@@ -122,8 +135,12 @@ Focus on all controls: 2px green outline, 1px offset.
 
 Known divergence, recorded not hidden: production chrome currently ships
 44–48px hit boxes with a 4px button radius (the hit floor is enforced by
-the drift checks today); reconciling the drawn geometry to the 31px /
-10px anchor is a separate, later decision and does not license any other
+the drift checks today). Ruled 2026-11-13 (punch-list P2): the anchor
+governs — production drawn geometry reconciles to 31px / padding 6px
+14px / radius 10px, dialog cards to the board's 14px radius (mobile sheet
+24px top unchanged), and the ≥44px hit area is delivered by invisible
+overlay or row, never by inflating the drawn control. Until that pass
+lands, the divergence stands recorded and does not license any other
 geometry.
 
 ### Type scale and the 11px floor
@@ -153,6 +170,9 @@ rundown lives behind the tap, in a dialog, as rows of data.
 | `#b3261e` | Material-design danger red               | Pre-authority danger color in settings/household CSS; replaced by authority danger `#8c2f22` in the enforcement pass.                               |
 | `#fffdf7` | Off-by-one panel tint                    | Panel is `#fffdf8`; the one-digit variant appeared as literal fills and var() fallbacks in Trends/Today CSS and was purged in the enforcement pass. |
 | `#fffef9` | Off-by-one panel tint                    | Same family as `#fffdf7`; appeared as the macro-micros well background and was purged in the enforcement pass.                                      |
+| `#6e241a` | Filled-destructive hover/pressed family  | Retired 2026-11-13 (punch-list P4): destructive is transparent per Direction C; danger `#8c2f22` carries the signal alone.                          |
+| `#ded5c0` | `--line` fallback hairline variant       | Retired 2026-11-13 (punch-list P6): the one hairline is `#d8cdb6`.                                                                                  |
+| `#8a6d00` | Warning-amber near-duplicate             | Retired 2026-11-13 (punch-list P5): consolidated into warn-text `#8a6100`. (Distinct from gold `#8a6d3b`, which stays reserved as tabled above.)    |
 
 ### Copy law — NO FILLER
 
@@ -175,14 +195,40 @@ or allow-listed with a reason in the check; and no `font-size` below the
 that needs an exception amends this chapter and the check's allow-list —
 with the reason recorded — in the same PR.
 
-### Punch list — audit remainder (2026-11-11)
+### Punch list — audit remainder (2026-11-11), RULED 2026-11-13
 
-Found by the enforcement audit, NOT fixed in the enforcement PR — each
-item needs its own pass or ruling:
+Found by the enforcement audit, NOT fixed in the enforcement PR. Ruled
+2026-11-13 under Michael's delegation ("you do everything yourself") —
+each ruling below is the law for its build pass; builds mark their line
+RESOLVED with the landing PR.
 
-- **P1 — `public/styles.css` legacy grammar** (`:root` lines 52–100; `.button-secondary` line 336 white fill; `.button-light` line 395; `.button` radius 12px + primary shadow): pre-authority palette (green/ink scales) serving the app as base layer (app tiers are corrected by `app-overrides.css` in cascade) and the reviewer/password pages standalone. Not small/safe: piecemeal edits would split one sheet into two grammars; it needs a dedicated re-skin/retirement pass. Its classes are allow-listed in check (d) with this reason.
-- **P2 — Drawn-geometry reconciliation:** authority anchor is 31px drawn / padding 6px 14px / radius 10px; production ships 44–48px hit boxes with 4px button radius (`public/app-overrides.css` `.button-primary` ~line 1058; dialog radius 8px, lines 1100/1111 vs board 14px). The authority itself records this reconciliation as "a separate, later decision." Not small/safe: it is the geometry pass, not an audit fix. Checks enforce colors + the 44px hit floor today.
-- **P3 — Trends chart palette:** legacy green `#2e5b34` (32 uses in `public/app-overrides.css`, incl. `.trends-pill.is-on`, `.cal-day.is-selected`, chart lines/dots) plus chart hues `#22301f`, `#6e7462`, `#c9bfa3`, `#e6eddc` form a coherent chart system that predates the authority, which names no chart palette beyond gold accents. Needs a chart-palette amendment/ruling, not blind replacement.
-- **P4 — Filled destructive confirms:** `.meal-draft-abandon-confirm` (`public/app-overrides.css` ~lines 1165–1176) is a FILLED danger button (hover `#6e241a`); Direction C destructive is transparent. `#6e241a` (16 uses) is its pressed/hover family. Changing confirm emphasis is a design call on a destructive flow — ruling needed.
-- **P5 — Warning amber family:** `#b98a00` (`public/pantry.css:33` `--warn-line`; `public/app-overrides.css:4202`), `#8a6100` (line 3418), `#8a6d00` (line 4143). The authority defines no warning token; inventing one here would itself be drift. Needs a token ruling.
-- **P6 — Hairline/tint variants:** `#ded5c0` used as the `--line` fallback family (15 uses, e.g. `public/app-overrides.css:4794`) and paper-adjacent tints `#e9e2cf`, `#e3dac4`, `#eae2ce`, `#ede6d2`, `#efe8d6`, `#f1ebda` across Trends/Today surfaces. Consolidation to hairline `#d8cdb6` / panel / paper needs a surface-by-surface visual pass; several are chart bands and selected wells, not passive rules.
+- **P1 — `public/styles.css` legacy grammar:** RULED — one grammar. The
+  sheet re-skins to this chapter's tokens and Direction C buttons
+  (transparent secondary, primary without shadow, radius 10px), keeping
+  its roles: app base layer under `app-overrides.css` and the standalone
+  reviewer/password pages. The check-(d) allow-list entries for its
+  classes retire as the values conform.
+- **P2 — Drawn-geometry reconciliation:** RULED — the anchor governs
+  (see the geometry chapter note above). Production drawn geometry
+  reconciles to 31px / 6px 14px / 10px radius; dialog cards take the
+  board's 14px radius (mobile sheet 24px top unchanged); hit areas stay
+  ≥44px via overlay or row. This is the geometry pass in
+  `public/app-overrides.css`.
+- **P3 — Trends chart palette:** RULED — ratified as-is and named in the
+  Color tokens chapter (chart palette paragraph). No value changes; the
+  palette is chart-only and future drift treats it as such.
+- **P4 — Filled destructive confirms:** RULED — Direction C governs:
+  destructive confirms are transparent with danger `#8c2f22` border and
+  text, transparent on hover like every outline tier.
+  `.meal-draft-abandon-confirm` conforms; the `#6e241a` filled/hover
+  family is retired (see Retired values).
+- **P5 — Warning amber family:** RULED — the warning family is ratified
+  in the Color tokens chapter (warn-line `#b98a00`, warn-text `#8a6100`);
+  `#8a6d00` consolidates into warn-text. Sheets reference the tokens.
+- **P6 — Hairline/tint variants:** RULED — the one hairline is
+  `#d8cdb6`; the `#ded5c0` fallback family retires to it. Paper-adjacent
+  tints: passive surfaces (rules, wells, non-data bands) consolidate to
+  the nearest authority token (panel / paper / green-tint / hairline);
+  data-bearing tints (chart bands, selected wells) keep their values
+  under the chart palette ruling (P3). The pass is surface-by-surface
+  with before/after captures.
