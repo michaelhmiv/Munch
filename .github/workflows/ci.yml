@@ -116,6 +116,8 @@ jobs:
         run: bun run db:migrate
       - name: Verify canonical schema is idempotent
         run: bun run db:migrate
+      - name: Exercise Jev sweep findings payload persistence (jsonb object regression)
+        run: bun test src/jev-sweep/findings.test.ts
       - name: Verify Better Auth schema is current
         env:
           NODE_ENV: test
