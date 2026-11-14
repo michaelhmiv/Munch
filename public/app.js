@@ -3149,6 +3149,55 @@ async function selectRecipeFoodOption(key) {
     renderRecipeIngredients();
 }
 
+/**
+ * Food-picked recipe ingredients carry a portion snapshot: the
+ * nutrients the ingredient's values were last scaled for
+ * (`nutrition_snapshot`) and the quantity they correspond to
+ * (`selected_quantity`; 1 at pick time). When the quantity changes,
+ * the nutrients must follow the snapshot — snapshot × (new quantity /
+ * selected_quantity) — or the recipe silently counts the old quantity
+ * (a picked food bumped from 1 to 12 slices counted one slice).
+ * Manual ingredients have no portion snapshot: their typed nutrients
+ * are the line total and never rescale. The snapshot pair is updated
+ * to the new quantity so the next change rescales from the right
+ * base, and the scaled values are written back into the row's inputs
+ * so what the user sees is what saves. Returns true when the
+ * ingredient's nutrients were rescaled from the snapshot.
+ */
+function rescaleRecipeIngredientFromSnapshot(ingredient, quantity, field) {
+    const snapshot = ingredient.sourceSnapshot;
+    const base = snapshot?.nutrition_snapshot;
+    if (!base || typeof base !== "object") return false;
+    const baseQuantity = Number(snapshot.selected_quantity);
+    if (!Number.isFinite(baseQuantity) || baseQuantity <= 0) return false;
+    if (
+        typeof quantity !== "number" ||
+        !Number.isFinite(quantity) ||
+        quantity <= 0
+    )
+        return false;
+    if (quantity === baseQuantity) return false;
+    const factor = quantity / baseQuantity;
+    const nutrients = {};
+    for (const key of recipeNutrientFields) {
+        const value = base[key];
+        if (typeof value === "number" && Number.isFinite(value)) {
+            nutrients[key] = Math.round(value * factor * 10) / 10;
+        }
+    }
+    if (Object.keys(nutrients).length === 0) return false;
+    ingredient.nutrients = nutrients;
+    snapshot.nutrition_snapshot = { ...nutrients };
+    snapshot.selected_quantity = quantity;
+    if (field) {
+        for (const key of recipeNutrientFields) {
+            const input = field(key);
+            if (input) input.value = nutrients[key] ?? "";
+        }
+    }
+    return true;
+}
+
 function syncRecipeComposerFromDom() {
     const root = document.getElementById("recipe-ingredients");
     if (!root) return;
@@ -3170,11 +3219,22 @@ function syncRecipeComposerFromDom() {
         ingredient.preparation = field("preparation")?.value || "";
         ingredient.optional = Boolean(field("optional")?.checked);
         ingredient.gramWeight = numeric("gram_weight");
-        ingredient.nutrients = Object.fromEntries(
-            recipeNutrientFields
-                .map((key) => [key, numeric(key)])
-                .filter(([, value]) => value !== undefined),
-        );
+        // A quantity change on a food-picked ingredient rescales its
+        // nutrients from the portion snapshot; anything else (manual
+        // ingredients, unchanged quantity) keeps the typed values.
+        if (
+            !rescaleRecipeIngredientFromSnapshot(
+                ingredient,
+                ingredient.quantity,
+                field,
+            )
+        ) {
+            ingredient.nutrients = Object.fromEntries(
+                recipeNutrientFields
+                    .map((key) => [key, numeric(key)])
+                    .filter(([, value]) => value !== undefined),
+            );
+        }
     });
 }
 
