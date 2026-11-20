@@ -395,6 +395,9 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          IOS_DIST_CERT_P12_PASSWORD: ${{ secrets.IOS_DIST_CERT_P12_PASSWORD }}
+          IOS_DIST_CERT_ID: ${{ secrets.IOS_DIST_CERT_ID }}
         run: |
           set -euo pipefail
           sign_dir="$RUNNER_TEMP/munch-signing"
@@ -434,16 +437,7 @@ jobs:
           headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
           api = "https://api.appstoreconnect.apple.com/v1"
 
-          # call() fails the step on any API error, as before. call_raw()
-          # raises AscApiError instead, so the certificate mint below can
-          # catch the one transient error worth retrying (409) without
-          # changing the failure behavior of any other call site.
-          class AscApiError(Exception):
-              def __init__(self, method, path, status, body):
-                  super().__init__(f"ASC API {method} {path} failed ({status}): {body[:600]}")
-                  self.status = status
-
-          def call_raw(method, path, payload=None):
+          def call(method, path, payload=None):
               data = json.dumps(payload).encode() if payload is not None else None
               request = urllib.request.Request(api + path, data=data, headers=headers, method=method)
               try:
@@ -451,117 +445,53 @@ jobs:
                       body = response.read()
                       return json.loads(body) if body else {}
               except urllib.error.HTTPError as error:
-                  raise AscApiError(method, path, error.code, error.read().decode())
+                  raise SystemExit(
+                      f"ASC API {method} {path} failed ({error.code}): "
+                      f"{error.read().decode()[:600]}")
 
-          def call(method, path, payload=None):
-              try:
-                  return call_raw(method, path, payload)
-              except AscApiError as error:
-                  raise SystemExit(str(error))
+          # Shared CI distribution certificate (Michael's ruling,
+          # 2026-11-20): ONE Apple Distribution certificate is shared by
+          # all of Michael's apps' iOS CI because the team effectively
+          # caps at 2 DISTRIBUTION certs and per-build minting collided
+          # with that cap; mint-per-build is retired. The shared cert +
+          # its private key live in this repo's IOS_DIST_CERT_* secrets
+          # as a .p12 (IOS_DIST_CERT_P12_BASE64 /
+          # IOS_DIST_CERT_P12_PASSWORD); IOS_DIST_CERT_ID is the shared
+          # cert's App Store Connect certificate ID, referenced by the
+          # provisioning profile created below.
+          shared_cert_id = os.environ.get("IOS_DIST_CERT_ID", "").strip()
+          shared_p12_base64 = os.environ.get("IOS_DIST_CERT_P12_BASE64", "").strip()
+          shared_p12_password = os.environ.get("IOS_DIST_CERT_P12_PASSWORD", "")
+          if not shared_cert_id or not shared_p12_base64:
+              raise SystemExit(
+                  "Configure the IOS_DIST_CERT_ID and "
+                  "IOS_DIST_CERT_P12_BASE64 secrets (shared CI distribution "
+                  "certificate) before requesting an App Store build.")
+          shared_p12_path = sign_dir / "shared-distribution.p12"
+          shared_p12_path.write_bytes(base64.b64decode(shared_p12_base64))
 
-          # Free the distribution-certificate slot held by the previous CI run.
-          # Apple overrides the subject name on distribution certs, so the CI
-          # cert cannot be found by name; find it through the CI profile, whose
-          # name IS ours to choose, then delete the profile and revoke its cert.
+          # Delete the previous CI provisioning profile, if present. The
+          # profile is per-app and API-managed; the certificate it
+          # referenced is the shared cert now and is never revoked here.
           old_profiles = call("GET", "/profiles?filter[name]=Munch%20App%20Store%20CI&limit=50").get("data", [])
-          old_cert_ids = []
-          for old_profile in old_profiles:
-              linked = call("GET", f"/profiles/{old_profile['id']}/certificates").get("data", [])
-              old_cert_ids.extend(cert["id"] for cert in linked)
           for old_profile in old_profiles:
               call("DELETE", f"/profiles/{old_profile['id']}")
               print(f"Deleted previous CI profile {old_profile['id']}")
-          for cert_id in dict.fromkeys(old_cert_ids):
-              call("DELETE", f"/certificates/{cert_id}")
-              print(f"Revoked previous CI certificate {cert_id}")
 
-          # A run that dies between minting its certificate and creating its
-          # profile leaves that certificate orphaned: no profile references
-          # it, so the pass above cannot find it, and it holds the
-          # distribution slot against every later POST /certificates. Sweep
-          # for it: revoke distribution-family certificates that NO
-          # provisioning profile references. A certificate any profile
-          # references is never touched, whatever its type or owner, and no
-          # profile is modified here. On a healthy run this finds nothing.
-          # DISTRIBUTION_MANAGED is part of the family: an orphaned managed
-          # cert holds a slot exactly like any other (run 44738432261 was
-          # blocked by one the sweep could not see, and it had to be
-          # revoked by hand in the portal); the referenced check is what
-          # protects a managed cert that is actually in use. The mint
-          # below re-runs this sweep before each of its retries.
-          def get_all(path):
-              items = []
-              while path is not None:
-                  page = call("GET", path)
-                  items.extend(page.get("data", []))
-                  next_link = page.get("links", {}).get("next")
-                  path = next_link[len(api):] if next_link else None
-              return items
-
-          def sweep_orphaned_certificates():
-              referenced_cert_ids = set()
-              for any_profile in get_all("/profiles?limit=200"):
-                  linked = call("GET", f"/profiles/{any_profile['id']}/certificates").get("data", [])
-                  referenced_cert_ids.update(cert["id"] for cert in linked)
-              distribution_types = {"DISTRIBUTION", "IOS_DISTRIBUTION", "MAC_APP_DISTRIBUTION",
-                                    "DISTRIBUTION_MANAGED"}
-              orphan_candidates = []
-              for certificate in get_all("/certificates?limit=200"):
-                  cert_type = certificate.get("attributes", {}).get("certificateType")
-                  if cert_type not in distribution_types:
-                      continue
-                  if certificate["id"] in referenced_cert_ids:
-                      print(f"Distribution certificate {certificate['id']} ({cert_type}) is referenced "
-                            "by a profile; leaving it alone")
-                  else:
-                      orphan_candidates.append(certificate)
-                      print(f"Orphan candidate: distribution certificate {certificate['id']} "
-                            f"({cert_type}) is referenced by no profile")
-              for orphan in orphan_candidates:
-                  call("DELETE", f"/certificates/{orphan['id']}")
-                  print(f"Revoked orphaned distribution certificate {orphan['id']}")
-              if not orphan_candidates:
-                  print("No orphaned distribution certificates found")
-
-          sweep_orphaned_certificates()
-
-          # Fresh key + CSR on this runner; the private key never leaves it.
-          subprocess.run(["openssl", "genrsa", "-out", str(sign_dir / "ci.key"), "2048"], check=True)
-          subprocess.run(["openssl", "req", "-new", "-key", str(sign_dir / "ci.key"),
-                          "-out", str(sign_dir / "ci.csr"), "-subj", "/CN=Munch CI"], check=True)
-          csr = (sign_dir / "ci.csr").read_text()
-
-          # Three apps (Munch, PitTech, CyberCache) share this team's
-          # 3-slot distribution-certificate pool, and each app's CI frees
-          # and re-mints its own cert per build, so the pool can read
-          # full transiently — another app's rotation in flight, or an
-          # orphan its sweep has not revoked yet — and POST /certificates
-          # answers 409 ENTITY_ERROR ("You already have a current
-          # Distribution certificate or a pending certificate request").
-          # Three Munch dispatches on 2026-11-20 died on that single
-          # unretried POST. The 409 is transient, so retry the mint with
-          # backoff (~10-minute budget), re-running the orphan sweep
-          # before each attempt; any other error, or a 409 that outlives
-          # the budget, fails exactly as the single attempt did before.
-          mint_payload = {"data": {"type": "certificates", "attributes": {
-              "certificateType": "DISTRIBUTION", "csrContent": csr}}}
-          retry_delays = [20, 40, 60, 90, 120]
-          created = None
-          for attempt in range(len(retry_delays) + 1):
-              try:
-                  created = call_raw("POST", "/certificates", payload=mint_payload)["data"]
-                  break
-              except AscApiError as error:
-                  if error.status != 409 or attempt == len(retry_delays):
-                      raise SystemExit(str(error))
-                  delay = retry_delays[attempt]
-                  print(f"POST /certificates answered 409 (distribution slot "
-                        f"temporarily held); re-sweeping and retrying in "
-                        f"{delay}s (attempt {attempt + 2} of {len(retry_delays) + 1})")
-                  time.sleep(delay)
-                  sweep_orphaned_certificates()
-          (sign_dir / "ci.cer").write_bytes(base64.b64decode(created["attributes"]["certificateContent"]))
-          print(f"Created distribution certificate {created['id']}")
+          # Extract the shared certificate and private key into exactly
+          # the artifact paths the rest of this step already consumes:
+          # ci.cer (DER certificate) and ci.key (PEM private key).
+          subprocess.run(["openssl", "pkcs12", "-in", str(shared_p12_path),
+                          "-passin", f"pass:{shared_p12_password}",
+                          "-clcerts", "-nokeys",
+                          "-out", str(sign_dir / "shared-cert.pem")], check=True)
+          subprocess.run(["openssl", "x509", "-in", str(sign_dir / "shared-cert.pem"),
+                          "-outform", "DER", "-out", str(sign_dir / "ci.cer")], check=True)
+          subprocess.run(["openssl", "pkcs12", "-in", str(shared_p12_path),
+                          "-passin", f"pass:{shared_p12_password}",
+                          "-nocerts", "-nodes",
+                          "-out", str(sign_dir / "ci.key")], check=True)
+          print(f"Using shared distribution certificate {shared_cert_id}")
 
           bundle_records = call("GET", "/bundleIds?filter[identifier]=business.munch.app&limit=200").get("data", [])
           exact_matches = [record for record in bundle_records
@@ -633,7 +563,7 @@ jobs:
           profile = call("POST", "/profiles", payload={"data": {"type": "profiles", "attributes": {
               "name": "Munch App Store CI", "profileType": "IOS_APP_STORE"}, "relationships": {
               "bundleId": {"data": {"type": "bundleIds", "id": bundle_id}},
-              "certificates": {"data": [{"type": "certificates", "id": created["id"]}]}}}})["data"]
+              "certificates": {"data": [{"type": "certificates", "id": shared_cert_id}]}}}})["data"]
           (sign_dir / "Munch.mobileprovision").write_bytes(base64.b64decode(profile["attributes"]["profileContent"]))
           print(f"Created provisioning profile {profile['id']}")
 
