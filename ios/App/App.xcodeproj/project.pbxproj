@@ -12,6 +12,7 @@
 		AD5A00012F3C4D5E8F000001 /* MunchAdsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD5A00012F3C4D5E8F000002 /* MunchAdsPlugin.swift */; };
 		AD5A00012F3C4D5E8F000007 /* GoogleMobileAds in Frameworks */ = {isa = PBXBuildFile; productRef = AD5A00012F3C4D5E8F000005 /* GoogleMobileAds */; };
 		AD5A00012F3C4D5E8F000008 /* GoogleUserMessagingPlatform in Frameworks */ = {isa = PBXBuildFile; productRef = AD5A00012F3C4D5E8F000006 /* UserMessagingPlatform */; };
+		AD5A00012F3C4D5E8F00000B /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = AD5A00012F3C4D5E8F00000A /* GoogleSignIn */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
@@ -21,6 +22,7 @@
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
 		51DF00000000000000000002 /* MunchSecureSessionPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51DF00000000000000000001 /* MunchSecureSessionPlugin.swift */; };
 		51DF00000000000000000004 /* MunchAppleSignInPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51DF00000000000000000003 /* MunchAppleSignInPlugin.swift */; };
+		51DF00000000000000000008 /* MunchGoogleSignInPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51DF00000000000000000007 /* MunchGoogleSignInPlugin.swift */; };
 		51DF00000000000000000006 /* MunchBridgeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51DF00000000000000000005 /* MunchBridgeViewController.swift */; };
 		51DE00000000000000000005 /* MunchSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51DE00000000000000000004 /* MunchSmokeTests.swift */; };
 /* End PBXBuildFile section */
@@ -40,6 +42,7 @@
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		51DF00000000000000000001 /* MunchSecureSessionPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MunchSecureSessionPlugin.swift; sourceTree = "<group>"; };
 		51DF00000000000000000003 /* MunchAppleSignInPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MunchAppleSignInPlugin.swift; sourceTree = "<group>"; };
+		51DF00000000000000000007 /* MunchGoogleSignInPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MunchGoogleSignInPlugin.swift; sourceTree = "<group>"; };
 		51DF00000000000000000005 /* MunchBridgeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MunchBridgeViewController.swift; sourceTree = "<group>"; };
 		51DE00000000000000000002 /* AppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		51DE00000000000000000004 /* MunchSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MunchSmokeTests.swift; sourceTree = "<group>"; };
@@ -54,6 +57,7 @@
 				4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */,
 				AD5A00012F3C4D5E8F000007 /* GoogleMobileAds in Frameworks */,
 				AD5A00012F3C4D5E8F000008 /* GoogleUserMessagingPlatform in Frameworks */,
+				AD5A00012F3C4D5E8F00000B /* GoogleSignIn in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -92,6 +96,7 @@
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
 				51DF00000000000000000001 /* MunchSecureSessionPlugin.swift */,
 				51DF00000000000000000003 /* MunchAppleSignInPlugin.swift */,
+				51DF00000000000000000007 /* MunchGoogleSignInPlugin.swift */,
 				51DF00000000000000000005 /* MunchBridgeViewController.swift */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
@@ -135,6 +140,7 @@
 				4D22ABE82AF431CB00220026 /* CapApp-SPM */,
 				AD5A00012F3C4D5E8F000005 /* GoogleMobileAds */,
 				AD5A00012F3C4D5E8F000006 /* GoogleUserMessagingPlatform */,
+				AD5A00012F3C4D5E8F00000A /* GoogleSignIn */,
 			);
 			productName = App;
 			productReference = 504EC3041FED79650016851F /* App.app */;
@@ -191,6 +197,7 @@
 				D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */,
 				AD5A00012F3C4D5E8F000003 /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */,
 				AD5A00012F3C4D5E8F000004 /* XCRemoteSwiftPackageReference "swift-package-manager-google-user-messaging-platform" */,
+				AD5A00012F3C4D5E8F000009 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
 			productRefGroup = 504EC3051FED79650016851F /* Products */;
 			projectDirPath = "";
@@ -235,6 +242,7 @@
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 				51DF00000000000000000002 /* MunchSecureSessionPlugin.swift in Sources */,
 				51DF00000000000000000004 /* MunchAppleSignInPlugin.swift in Sources */,
+				51DF00000000000000000008 /* MunchGoogleSignInPlugin.swift in Sources */,
 				51DF00000000000000000006 /* MunchBridgeViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -536,6 +544,14 @@
 				minimumVersion = 3.0;
 			};
 		};
+		AD5A00012F3C4D5E8F000009 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 8.0.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -548,6 +564,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AD5A00012F3C4D5E8F000004 /* XCRemoteSwiftPackageReference "swift-package-manager-google-user-messaging-platform" */;
 			productName = GoogleUserMessagingPlatform;
+		};
+		AD5A00012F3C4D5E8F00000A /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AD5A00012F3C4D5E8F000009 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
 		};
 /* End XCSwiftPackageProductDependency section */
 

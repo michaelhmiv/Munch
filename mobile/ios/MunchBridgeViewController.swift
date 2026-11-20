@@ -8,9 +8,10 @@ import UIKit
 /// App-target plugin classes are NOT discovered automatically —
 /// `registerPluginType` is a no-op while auto-registration is on and
 /// there is no runtime subclass scan. First-party plugins compiled
-/// into the App target (MunchSecureSession, MunchAppleSignIn) must
-/// therefore be registered as instances once the bridge exists, which
-/// is what `capacitorDidLoad()` is for. SceneDelegate instantiates
+/// into the App target (MunchSecureSession, MunchAppleSignIn,
+/// MunchGoogleSignIn) must therefore be registered as instances once
+/// the bridge exists, which is what `capacitorDidLoad()` is for.
+/// SceneDelegate instantiates
 /// this subclass instead of a plain CAPBridgeViewController.
 ///
 /// Any future App-target plugin (e.g. an ads bridge) registers here
@@ -21,5 +22,6 @@ public class MunchBridgeViewController: CAPBridgeViewController {
         super.capacitorDidLoad()
         bridge?.registerPluginInstance(MunchSecureSessionPlugin())
         bridge?.registerPluginInstance(MunchAppleSignInPlugin())
+        bridge?.registerPluginInstance(MunchGoogleSignInPlugin())
     }
 }

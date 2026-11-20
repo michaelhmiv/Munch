@@ -337,19 +337,50 @@ async function googleSignInConfig() {
         throw new Error(CONNECTIVITY_MESSAGE);
     }
     const payload = await response.json().catch(() => ({}));
+    // Per-platform config (Amendment G): the endpoint's top-level
+    // fields describe the packaged Android flow — Credential Manager
+    // takes the web client ID as its server client ID — while the
+    // iOS block hands out the iOS client ID the GIDSignIn plugin
+    // configures with, plus the web client ID as its serverClientID.
+    // Each platform reads only its own block, so a platform whose
+    // OAuth client does not exist yet stays honestly unconfigured
+    // here instead of borrowing the other platform's readiness.
+    if (Capacitor.getPlatform() === "ios") {
+        const ios = payload.platforms?.ios;
+        if (
+            !response.ok ||
+            !ios?.configured ||
+            !ios.clientId ||
+            !ios.webClientId
+        ) {
+            throw new Error("Google sign-in is not configured yet");
+        }
+        return {
+            platform: "ios",
+            clientId: ios.clientId,
+            serverClientId: ios.webClientId,
+        };
+    }
     if (!response.ok || !payload.configured || !payload.webClientId) {
         throw new Error("Google sign-in is not configured yet");
     }
-    return payload;
+    return { platform: "android", webClientId: payload.webClientId };
 }
 
 async function requestGoogleIdToken() {
     const config = await googleSignInConfig();
     const nonce = randomBase64Url();
-    const credential = await MunchGoogleSignIn.signIn({
-        webClientId: config.webClientId,
-        nonce,
-    });
+    const credential =
+        config.platform === "ios"
+            ? await MunchGoogleSignIn.signIn({
+                  clientId: config.clientId,
+                  serverClientId: config.serverClientId,
+                  nonce,
+              })
+            : await MunchGoogleSignIn.signIn({
+                  webClientId: config.webClientId,
+                  nonce,
+              });
     if (typeof credential?.idToken !== "string" || !credential.idToken) {
         throw new Error("Google did not return a sign-in token");
     }
@@ -358,8 +389,9 @@ async function requestGoogleIdToken() {
 
 /**
  * Fresh provider ID token for the packaged app's session-bound link
- * (the prompt's confirm leg and any other native link): on Android,
- * Google linking completes in place with a native token — the web
+ * (the prompt's confirm leg and any other native link): Google
+ * linking completes in place with a native token on both platforms
+ * (Credential Manager on Android, GIDSignIn on iOS) — the web
  * consent redirect the shared shell falls back to cannot complete
  * against a bearer session. Providers with no native bridge on this
  * platform return null and keep that fallback.
