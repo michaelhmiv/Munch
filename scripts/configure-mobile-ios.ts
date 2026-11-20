@@ -20,6 +20,7 @@ const appDir = "ios/App/App";
 for (const file of [
     "MunchSecureSessionPlugin.swift",
     "MunchAppleSignInPlugin.swift",
+    "MunchGoogleSignInPlugin.swift",
     "MunchBridgeViewController.swift",
 ]) {
     await cp(`mobile/ios/${file}`, `${appDir}/${file}`);
@@ -49,6 +50,22 @@ for (const required of [
     }
 }
 
+// The Google sign-in wiring follows the same verify-never-rewrite
+// rule: the GIDSignIn Swift package dependency and the plugin's
+// project membership are committed project state; a missing piece
+// fails the lane instead of being silently patched.
+for (const required of [
+    "MunchGoogleSignInPlugin.swift",
+    "google/GoogleSignIn-iOS.git",
+    "productName = GoogleSignIn;",
+]) {
+    if (!project.includes(required)) {
+        throw new Error(
+            `iOS project is missing Google sign-in wiring: ${required}`,
+        );
+    }
+}
+
 const infoPlist = await readFile("ios/App/App/Info.plist", "utf8");
 if (
     !infoPlist.includes(
@@ -63,7 +80,19 @@ if (!infoPlist.includes("<key>NSUserTrackingUsageDescription</key>")) {
 if (!infoPlist.includes("cstr6suwn9.skadnetwork")) {
     throw new Error("Info.plist is missing the SKAdNetwork items");
 }
+// The reversed client ID of the "Munch iOS" OAuth client
+// (949731430033-87g1d2pd73432f4mft6t9f6jvvltn5ii) — the URL scheme
+// the Google Sign-In OAuth redirect returns on.
+if (
+    !infoPlist.includes(
+        "<string>com.googleusercontent.apps.949731430033-87g1d2pd73432f4mft6t9f6jvvltn5ii</string>",
+    )
+) {
+    throw new Error(
+        "Info.plist is missing the Google sign-in redirect URL scheme",
+    );
+}
 
 console.log(
-    "Configured iOS first-party plugins, ads plugin, SPM ad packages, and AdMob Info.plist keys",
+    "Configured iOS first-party plugins, ads plugin, SPM ad packages, AdMob Info.plist keys, and Google sign-in wiring",
 );

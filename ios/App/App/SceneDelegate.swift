@@ -1,5 +1,6 @@
 import UIKit
 import Capacitor
+import GoogleSignIn
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
@@ -18,7 +19,19 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
-        SceneDelegateProxy.shared.scene(scene, openURLContexts: URLContexts)
+        // Google Sign-In's OAuth redirect returns on the
+        // reversed-client-ID scheme declared in Info.plist; GIDSignIn
+        // gets first claim on each URL, and only the URLs it does not
+        // handle continue to the Capacitor scene proxy.
+        let unhandled = URLContexts.filter {
+            !GIDSignIn.sharedInstance.handle($0.url)
+        }
+        if !unhandled.isEmpty {
+            SceneDelegateProxy.shared.scene(
+                scene,
+                openURLContexts: Set(unhandled)
+            )
+        }
     }
 
     func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {

@@ -24,6 +24,17 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>GADApplicationIdentifier</key>
 	<string>ca-app-pub-2708638041809482~8470224712</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.949731430033-87g1d2pd73432f4mft6t9f6jvvltn5ii</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSUserTrackingUsageDescription</key>
 	<string>Munch only requests non-personalized ads. Your identifier may be used by our ad partner to limit how often you see the same ad; Munch does not use it to track you across other apps or websites.</string>
 	<key>SKAdNetworkItems</key>

@@ -19,6 +19,7 @@ describe("iOS native bridge contract", () => {
         "mobile/ios/MunchSecureSessionPlugin.swift",
     );
     const appleSignInSwift = read("mobile/ios/MunchAppleSignInPlugin.swift");
+    const googleSignInSwift = read("mobile/ios/MunchGoogleSignInPlugin.swift");
     const bridgeViewController = read(
         "mobile/ios/MunchBridgeViewController.swift",
     );
@@ -31,6 +32,7 @@ describe("iOS native bridge contract", () => {
         for (const file of [
             "MunchSecureSessionPlugin.swift",
             "MunchAppleSignInPlugin.swift",
+            "MunchGoogleSignInPlugin.swift",
             "MunchBridgeViewController.swift",
         ]) {
             expect(read(`ios/App/App/${file}`)).toBe(
@@ -42,11 +44,12 @@ describe("iOS native bridge contract", () => {
         );
     });
 
-    test("the Xcode project compiles all three first-party Swift files into the App target", () => {
+    test("the Xcode project compiles all four first-party Swift files into the App target", () => {
         const project = read("ios/App/App.xcodeproj/project.pbxproj");
         for (const file of [
             "MunchSecureSessionPlugin.swift",
             "MunchAppleSignInPlugin.swift",
+            "MunchGoogleSignInPlugin.swift",
             "MunchBridgeViewController.swift",
         ]) {
             expect(project).toContain(`${file} in Sources`);
@@ -54,13 +57,16 @@ describe("iOS native bridge contract", () => {
         }
     });
 
-    test("the bridge view controller registers both plugins and SceneDelegate uses it", () => {
+    test("the bridge view controller registers the first-party plugins and SceneDelegate uses it", () => {
         expect(bridgeViewController).toContain("CAPBridgeViewController");
         expect(bridgeViewController).toContain(
             "registerPluginInstance(MunchSecureSessionPlugin())",
         );
         expect(bridgeViewController).toContain(
             "registerPluginInstance(MunchAppleSignInPlugin())",
+        );
+        expect(bridgeViewController).toContain(
+            "registerPluginInstance(MunchGoogleSignInPlugin())",
         );
         expect(read("ios/App/App/SceneDelegate.swift")).toContain(
             "MunchBridgeViewController()",
@@ -168,5 +174,82 @@ describe("iOS native bridge contract", () => {
         expect(block).toContain('"APPLE_ID_AUTH_APP_CONSENT"');
         expect(block).toContain('"PRIMARY_APP_CONSENT"');
         expect(block).toContain('"enabled": True');
+    });
+
+    test("the Google plugin runs GIDSignIn and returns only an ID token", () => {
+        expect(googleSignInSwift).toContain('jsName = "MunchGoogleSignIn"');
+        expect(googleSignInSwift).toContain("import GoogleSignIn");
+        expect(googleSignInSwift).toContain("GIDSignIn.sharedInstance");
+        expect(googleSignInSwift).toContain("GIDConfiguration(");
+        // The runtime hands over the iOS platform's identifiers from
+        // GET /mobile/auth/google-config plus its raw nonce; the SDK
+        // returns the nonce as the token's claim for the server
+        // verifier, exactly like the Android plugin's contract.
+        expect(googleSignInSwift).toContain('call.getString("clientId")');
+        expect(googleSignInSwift).toContain('call.getString("serverClientId")');
+        expect(googleSignInSwift).toContain('call.getString("nonce")');
+        expect(googleSignInSwift).toContain('["idToken": idToken]');
+        // Failure shapes mirror the sibling plugins: not configured,
+        // no token, and one shared cancelled/could-not-complete line
+        // the login page prints verbatim.
+        expect(googleSignInSwift).toContain(
+            '"Google sign-in is not configured"',
+        );
+        expect(googleSignInSwift).toContain(
+            '"Google did not return an ID token"',
+        );
+        expect(googleSignInSwift).toContain(
+            '"Google sign-in was cancelled or could not be completed"',
+        );
+        expect(read("scripts/configure-mobile-ios.ts")).toContain(
+            "MunchGoogleSignInPlugin.swift",
+        );
+    });
+
+    test("the runtime gates the Google door on the iOS platform block", () => {
+        expect(runtime).toContain('registerPlugin("MunchGoogleSignIn")');
+        expect(runtime).toContain("/mobile/auth/google-config");
+        // On iOS the runtime reads platforms.ios and passes the iOS
+        // client ID + web client ID (as serverClientId) to the
+        // plugin; the Android call keeps its webClientId shape.
+        expect(runtime).toContain('Capacitor.getPlatform() === "ios"');
+        expect(runtime).toContain("payload.platforms?.ios");
+        expect(runtime).toContain("clientId: config.clientId");
+        expect(runtime).toContain("serverClientId: config.serverClientId");
+        expect(runtime).toContain("webClientId: config.webClientId");
+        // The packaged sign-in surface carries the Google door in the
+        // shared grammar, shown only when the platform probe passes.
+        const loginHtml = read("mobile/mobile-login.html");
+        expect(loginHtml).toContain('id="google-sign-in"');
+        expect(loginHtml).toContain("Continue with Google");
+        const loginJs = read("mobile/mobile-login.js");
+        expect(loginJs).toContain("signInWithGoogle");
+        expect(loginJs).toContain("isGoogleSignInAvailable");
+    });
+
+    test("the Google SDK package and OAuth redirect scheme are wired", () => {
+        const project = read("ios/App/App.xcodeproj/project.pbxproj");
+        expect(project).toContain("google/GoogleSignIn-iOS.git");
+        expect(project).toContain("productName = GoogleSignIn;");
+        expect(project).toContain("GoogleSignIn in Frameworks");
+        // The OAuth redirect returns on the reversed client ID of
+        // the Munch iOS OAuth client; the scheme in Info.plist must
+        // be that client's exact reversal.
+        const infoPlist = read("ios/App/App/Info.plist");
+        expect(infoPlist).toContain(
+            "com.googleusercontent.apps.949731430033-87g1d2pd73432f4mft6t9f6jvvltn5ii",
+        );
+        expect(read("scripts/configure-mobile-ios.ts")).toContain(
+            "com.googleusercontent.apps.949731430033-87g1d2pd73432f4mft6t9f6jvvltn5ii",
+        );
+        // Both URL entry points give GIDSignIn first claim on the
+        // redirect (AppDelegate per the SDK's documented integration,
+        // SceneDelegate because that is the path this app takes).
+        expect(read("ios/App/App/AppDelegate.swift")).toContain(
+            "GIDSignIn.sharedInstance.handle(url)",
+        );
+        expect(read("ios/App/App/SceneDelegate.swift")).toContain(
+            "GIDSignIn.sharedInstance.handle",
+        );
     });
 });
