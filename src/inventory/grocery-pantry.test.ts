@@ -141,7 +141,30 @@ describe("on-list presence", () => {
 
     test("a missing unit on either side still counts as listed", () => {
         expect(isOnGroceryList({ name: "Rice" }, open)).toBe(true);
-        expect(isOnGroceryList({ name: "Milk" }, open)).toBe(true);
+        // Unitless cannot fold into a unit-bearing row ("gal") without
+        // corrupting its quantity, so it no longer counts as listed
+        // (Finding 2: flag identity === merge identity).
+        expect(isOnGroceryList({ name: "Milk" }, open)).toBe(false);
+    });
+
+    test("same-family units and merchandising-word variants count as listed; cross-family units do not", () => {
+        const familyOpen = [
+            { name: "Flour", unit: "g" },
+            { name: "Fresh Organic Onion", unit: "count" },
+            { name: "Olive oil", unit: "cups" },
+        ];
+        expect(isOnGroceryList({ name: "Flour", unit: "lb" }, familyOpen)).toBe(
+            true,
+        );
+        expect(
+            isOnGroceryList({ name: "Flour", unit: "cup" }, familyOpen),
+        ).toBe(false);
+        expect(
+            isOnGroceryList({ name: "Onion", unit: "each" }, familyOpen),
+        ).toBe(true);
+        expect(
+            isOnGroceryList({ name: "Olive oil", unit: "tbsp" }, familyOpen),
+        ).toBe(true);
     });
 
     test("an absent name is not listed", () => {

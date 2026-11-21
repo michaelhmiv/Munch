@@ -126,6 +126,99 @@ export function convertInventoryQuantity(
     return null;
 }
 
+export interface InventoryUnitFamily {
+    key: string;
+    base: string | null;
+}
+
+/**
+ * Aggregation family: mass and volume each collapse to a base unit so
+ * 1 lb + 200 g of flour is one need; unitless stays unitless; any
+ * other unit stays in its own canonical family.
+ */
+export function inventoryUnitFamily(unit?: string | null): InventoryUnitFamily {
+    const canonical = canonicalInventoryUnit(unit);
+    if (!canonical) return { key: "unitless", base: null };
+    if (MASS_UNITS.has(canonical)) return { key: "mass", base: "g" };
+    if (VOLUME_UNITS.has(canonical)) return { key: "volume", base: "ml" };
+    return { key: `unit:${canonical}`, base: canonical };
+}
+
+function plainNormalizeName(value: string): string {
+    return value
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim()
+        .replace(/\s+/g, " ");
+}
+
+/**
+ * Grocery-row name normalizer. Uses `normalizeInventoryName` (stripping
+ * merchandising modifiers like "fresh"/"organic"/"large"/"whole"), with a
+ * fallback to plain lowercase alphanumeric normalization if stripping leaves
+ * an empty string (e.g. a user literally types "Fresh"), preserving the DB
+ * `grocery_items_normalized_nonempty` check constraint.
+ */
+export function normalizeGroceryName(value: string): string {
+    return normalizeInventoryName(value) || plainNormalizeName(value);
+}
+
+export interface GroceryIdentityInput {
+    name: string;
+    unit?: string | null;
+}
+
+/**
+ * Canonical grocery identity key: normalized name + unit family.
+ * Shared by `isOnGroceryList` (flag path), `addGroceryItemsInTransaction`
+ * (merge path), and `previewGuidedPlanGroceries` (guided-plan preview) so
+ * flag identity and merge identity cannot diverge.
+ */
+export function groceryIdentityKey(item: GroceryIdentityInput): string | null {
+    const normalizedName = normalizeGroceryName(item.name);
+    if (!normalizedName) return null;
+    const family = inventoryUnitFamily(item.unit);
+    return `${normalizedName}|${family.key}`;
+}
+
+export function sameGroceryIdentity(
+    left: GroceryIdentityInput,
+    right: GroceryIdentityInput,
+): boolean {
+    const leftKey = groceryIdentityKey(left);
+    const rightKey = groceryIdentityKey(right);
+    return leftKey !== null && leftKey === rightKey;
+}
+
+/**
+ * Convert `addedQuantity` (in `addedUnit`) into `existingUnit` and add it to
+ * `existingQuantity`, rounded to 3 decimal places (`numeric(12, 3)`).
+ * Returns `null` when the two units do not belong to the same unit family
+ * (including mass vs volume or unit-bearing vs unitless).
+ */
+export function combineGroceryQuantities(
+    existingQuantity: number | null | undefined,
+    existingUnit: string | null | undefined,
+    addedQuantity: number,
+    addedUnit: string | null | undefined,
+): number | null {
+    if (
+        inventoryUnitFamily(existingUnit).key !==
+        inventoryUnitFamily(addedUnit).key
+    ) {
+        return null;
+    }
+    const converted = convertInventoryQuantity(
+        addedQuantity,
+        addedUnit,
+        existingUnit,
+    );
+    if (converted == null) return null;
+    return Number(((existingQuantity ?? 0) + converted).toFixed(3));
+}
+
 export function inventoryIdentityScore(
     item: Pick<
         InventoryMatchableItem,

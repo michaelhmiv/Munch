@@ -1,8 +1,4 @@
-import {
-    bestInventoryMatch,
-    compatibleInventoryUnits,
-    normalizeInventoryName,
-} from "./matching.js";
+import { bestInventoryMatch, groceryIdentityKey } from "./matching.js";
 import {
     getPantry,
     type InventoryScope,
@@ -83,21 +79,18 @@ export interface OpenGroceryItemLike {
 
 /**
  * Presence on the scope's open (unpurchased, undeleted) grocery
- * list. Identity is the normalized name plus unit compatibility —
- * the same name-and-unit key the grocery merge path folds on, so
- * the flag predicts exactly what an add would have merged into.
+ * list. Delegates to the shared `groceryIdentityKey` (normalized name
+ * + unit family) used by `addGroceryItemsInTransaction` and
+ * `previewGuidedPlanGroceries`, so the flag is true if and only if a
+ * quantity-bearing add would fold into an existing open row.
  */
 export function isOnGroceryList(
     item: { name: string; unit?: string | null },
     openItems: readonly OpenGroceryItemLike[],
 ): boolean {
-    const wanted = normalizeInventoryName(item.name);
+    const wanted = groceryIdentityKey(item);
     if (!wanted) return false;
-    return openItems.some(
-        (entry) =>
-            normalizeInventoryName(entry.name) === wanted &&
-            compatibleInventoryUnits(entry.unit, item.unit),
-    );
+    return openItems.some((entry) => groceryIdentityKey(entry) === wanted);
 }
 
 export function pantryFlagForItem(

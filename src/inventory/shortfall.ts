@@ -18,7 +18,9 @@ import {
 import {
     canonicalInventoryUnit,
     convertInventoryQuantity,
+    INVENTORY_IDENTITY_THRESHOLD,
     inventoryIdentityScore,
+    inventoryUnitFamily,
     normalizeInventoryName,
     type InventoryMatchableItem,
 } from "./matching.js";
@@ -74,21 +76,8 @@ export interface ShortfallItem {
     planned_meal_id: string;
 }
 
-const MASS_UNITS = new Set(["g", "kg", "oz", "lb"]);
-const VOLUME_UNITS = new Set(["ml", "l", "cup", "tbsp", "tsp"]);
-
 function round3(value: number): number {
     return Number(value.toFixed(3));
-}
-
-/** Aggregation family: mass and volume each collapse to a base unit so
- * 1 lb + 200 g of flour is one need; anything else keeps its own unit. */
-function unitFamily(unit: string | null): { key: string; base: string | null } {
-    const canonical = canonicalInventoryUnit(unit);
-    if (!canonical) return { key: "unitless", base: null };
-    if (MASS_UNITS.has(canonical)) return { key: "mass", base: "g" };
-    if (VOLUME_UNITS.has(canonical)) return { key: "volume", base: "ml" };
-    return { key: `unit:${canonical}`, base: canonical };
 }
 
 interface AggregatedNeed {
@@ -117,7 +106,7 @@ export function computePlanShortfall(
             }
             const normalizedName = normalizeInventoryName(ingredient.name);
             if (!normalizedName) continue;
-            const family = unitFamily(ingredient.unit ?? null);
+            const family = inventoryUnitFamily(ingredient.unit ?? null);
             const key = `${normalizedName}|${family.key}`;
             const inBase = convertInventoryQuantity(
                 ingredient.quantity * scale,
@@ -161,17 +150,34 @@ export function computePlanShortfall(
         );
         if (needDisplay == null || needDisplay <= 0) continue;
 
-        const candidates = pantryItems.filter((item) => {
+        // Stage 1: all non-depleted name-matched pantry items, regardless
+        // of unit family.
+        const nameMatched = pantryItems.filter((item) => {
             if (item.stock_state === "depleted") return false;
-            const score = inventoryIdentityScore(item, { name: need.name });
-            if (score < 0.62) return false;
+            return (
+                inventoryIdentityScore(item, { name: need.name }) >=
+                INVENTORY_IDENTITY_THRESHOLD
+            );
+        });
+
+        // Stage 2 (#283 law): approximate or presence-only stock can never
+        // prove a shortfall — even if recorded in a different unit family
+        // (e.g. "bag" vs "cup").
+        const hasApproximate = nameMatched.some(
+            (item) => item.quantity_mode !== "exact" || item.quantity == null,
+        );
+        if (hasApproximate) continue;
+
+        // Stage 3: exact-stock quantity math stays restricted to the
+        // need's unit family (or unitless when either side has no unit).
+        const exactCandidates = nameMatched.filter((item) => {
             const itemUnit = canonicalInventoryUnit(item.unit);
             if (!itemUnit || !need.baseUnit) return true;
-            const family = unitFamily(item.unit);
+            const family = inventoryUnitFamily(item.unit);
             return family.key === need.familyKey;
         });
 
-        if (candidates.length === 0) {
+        if (exactCandidates.length === 0) {
             items.push({
                 name: need.name,
                 normalized_name: need.normalizedName,
@@ -186,15 +192,8 @@ export function computePlanShortfall(
             continue;
         }
 
-        // Approximate or presence-only stock can never prove a
-        // shortfall — the pantry record is approximate by design.
-        const hasApproximate = candidates.some(
-            (item) => item.quantity_mode !== "exact" || item.quantity == null,
-        );
-        if (hasApproximate) continue;
-
         let haveBase = 0;
-        for (const item of candidates) {
+        for (const item of exactCandidates) {
             const converted = convertInventoryQuantity(
                 item.quantity!,
                 item.unit,
