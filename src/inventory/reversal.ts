@@ -145,7 +145,7 @@ export async function reverseMealDrawdownInTransaction(
                 1,
                 ${userId},
                 ${event.id},
-                jsonb_build_object('reason', 'meal_deleted', 'reversed_event_type', ${event.event_type})
+                jsonb_build_object('reason', 'meal_deleted', 'reversed_event_type', ${event.event_type}::text)
             )
             on conflict (inventory_space_id, source_key)
                 where source_key is not null
