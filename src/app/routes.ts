@@ -1000,6 +1000,7 @@ function groceryItemInputFromBody(value: unknown): GroceryItemInput {
             "Grocery idempotency key",
             255,
         ),
+        isFood: typeof body.is_food === "boolean" ? body.is_food : undefined,
     };
 }
 

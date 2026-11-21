@@ -224,7 +224,7 @@ function pantryOperations(value: unknown): PantryOperation[] {
     });
 }
 
-function purchaseLines(value: unknown): PurchaseLineInput[] {
+export function purchaseLines(value: unknown): PurchaseLineInput[] {
     if (!Array.isArray(value) || value.length < 1 || value.length > 200) {
         throw new Error("Purchase lines must contain 1 to 200 items");
     }
@@ -253,7 +253,10 @@ function purchaseLines(value: unknown): PurchaseLineInput[] {
             ),
             isFood:
                 typeof body.is_food === "boolean" ? body.is_food : undefined,
-            confirmed: body.confirmed === true,
+            confirmed:
+                typeof body.confirmed === "boolean"
+                    ? body.confirmed
+                    : undefined,
             location: locationValue(body.location),
         };
     });

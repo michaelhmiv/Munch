@@ -666,6 +666,97 @@ describe("applyPantryDrawdown", () => {
         }
     });
 
+    test("loads full pantry without candidate pre-filter so non-substring mismatches reach the AI seam", async () => {
+        let capturedCalled = false;
+        let capturedCandidateNames: string[] | undefined;
+        const summary = await applyPantryDrawdown(
+            {
+                ...baseInput,
+                requirements: [
+                    { name: "chicken breast", quantity: 1.5, unit: "lb" },
+                ],
+            },
+            {
+                aiConfig: {
+                    apiKey: "test-key",
+                    model: "meta/muse-ember",
+                    baseUrl: "https://openrouter.example/api/v1",
+                    timeoutMs: 5_000,
+                },
+                fetcher: async () =>
+                    new Response(
+                        JSON.stringify({
+                            choices: [
+                                {
+                                    message: {
+                                        content: JSON.stringify({
+                                            matches: [
+                                                {
+                                                    ingredient_index: 0,
+                                                    inventory_item_id:
+                                                        CHICKEN_THIGHS.id,
+                                                    quantity: 1.5,
+                                                    unit: "lb",
+                                                    remainder: "a_little_left",
+                                                    confidence: 0.8,
+                                                },
+                                            ],
+                                        }),
+                                    },
+                                },
+                            ],
+                        }),
+                        { status: 200 },
+                    ),
+                // Faithfully mimics getPantry's SQL substring filter
+                // whenever candidateNames is non-empty: only rows whose
+                // normalized name equals, contains, or is contained by a
+                // candidate survive.
+                getPantryFn: async (input) => {
+                    capturedCalled = true;
+                    capturedCandidateNames = input.candidateNames;
+                    const candidates = (input.candidateNames ?? []).map(
+                        (name) => name.toLowerCase(),
+                    );
+                    const items = candidates.length
+                        ? [CHICKEN_THIGHS].filter((entry) =>
+                              candidates.some(
+                                  (candidate) =>
+                                      entry.normalized_name === candidate ||
+                                      entry.normalized_name.includes(
+                                          candidate,
+                                      ) ||
+                                      candidate.includes(entry.normalized_name),
+                              ),
+                          )
+                        : [CHICKEN_THIGHS];
+                    return {
+                        enabled: true,
+                        inventorySpaceId: "space-1",
+                        items,
+                    };
+                },
+                reconcileFn: async () => ({
+                    enabled: true,
+                    inventorySpaceId: "space-1",
+                    operations: [],
+                }),
+                jevConfig: null,
+            },
+        );
+        expect(capturedCalled).toBe(true);
+        expect(capturedCandidateNames).toBeUndefined();
+        expect(summary.status).toBe("applied");
+        if (summary.status === "applied") {
+            expect(summary.lines[0]).toMatchObject({
+                status: "applied",
+                via: "ai",
+                pantry_item_id: CHICKEN_THIGHS.id,
+                used_quantity: 1.5,
+            });
+        }
+    });
+
     test("a reconcile failure reports not_applied instead of throwing", async () => {
         const summary = await applyPantryDrawdown(baseInput, {
             aiConfig: null,
