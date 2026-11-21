@@ -8,10 +8,12 @@ import Security
 /// Same JS bridge surface as Android (plugin name "MunchSecureSession",
 /// called through mobile/runtime.js): getToken() -> { token },
 /// setToken({ token }), clearToken(), getPendingAuth() -> { value },
-/// setPendingAuth({ value }), clearPendingAuth(). The shared runtime
-/// treats a missing plugin as signed-out, so until this plugin shipped,
-/// iOS had no native persistent session store and every relaunch of the
-/// packaged app looked signed out.
+/// setPendingAuth({ value }), clearPendingAuth(),
+/// getPendingLinkPrompt() -> { value }, setPendingLinkPrompt({ value }),
+/// clearPendingLinkPrompt(). The shared runtime treats a missing plugin
+/// as signed-out, so until this plugin shipped, iOS had no native
+/// persistent session store and every relaunch of the packaged app
+/// looked signed out.
 ///
 /// Storage is the iOS Keychain — the platform counterpart of Android's
 /// Keystore-encrypted SharedPreferences: items are OS-encrypted at rest
@@ -27,7 +29,8 @@ import Security
 ///   rejects, matching Android's delete-on-decrypt-failure behaviour —
 ///   the user signs in again rather than the app trusting damaged state.
 /// - Writes reject blank values and values over the same ceilings as
-///   Android (session token 16,384 chars; pending auth 4,096 chars).
+///   Android (session token 16,384 chars; pending auth 4,096 chars;
+///   pending link prompt 512 chars).
 @objc(MunchSecureSessionPlugin)
 public class MunchSecureSessionPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "MunchSecureSessionPlugin"
@@ -39,13 +42,18 @@ public class MunchSecureSessionPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getPendingAuth", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setPendingAuth", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clearPendingAuth", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getPendingLinkPrompt", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setPendingLinkPrompt", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearPendingLinkPrompt", returnType: CAPPluginReturnPromise),
     ]
 
     private static let service = "business.munch.app.secure-session"
     private static let tokenAccount = "session-token"
     private static let pendingAuthAccount = "pending-auth"
+    private static let pendingLinkPromptAccount = "pending-link-prompt"
     private static let tokenLimit = 16384
     private static let pendingAuthLimit = 4096
+    private static let pendingLinkPromptLimit = 512
 
     @objc func getToken(_ call: CAPPluginCall) {
         readValue(account: Self.tokenAccount, call: call, resultKey: "token") {
@@ -88,6 +96,28 @@ public class MunchSecureSessionPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func clearPendingAuth(_ call: CAPPluginCall) {
         deleteValue(account: Self.pendingAuthAccount)
+        call.resolve()
+    }
+
+    @objc func getPendingLinkPrompt(_ call: CAPPluginCall) {
+        readValue(account: Self.pendingLinkPromptAccount, call: call, resultKey: "value") {
+            "Unable to read the pending Munch link prompt"
+        }
+    }
+
+    @objc func setPendingLinkPrompt(_ call: CAPPluginCall) {
+        writeValue(
+            account: Self.pendingLinkPromptAccount,
+            value: call.getString("value"),
+            limit: Self.pendingLinkPromptLimit,
+            call: call,
+            invalidMessage: "A valid pending Munch link prompt is required",
+            storeMessage: "Unable to store the pending Munch link prompt"
+        )
+    }
+
+    @objc func clearPendingLinkPrompt(_ call: CAPPluginCall) {
+        deleteValue(account: Self.pendingLinkPromptAccount)
         call.resolve()
     }
 

@@ -110,10 +110,10 @@ async function recordPendingLinkPrompt(provider) {
             value: JSON.stringify({ provider, recordedAt: Date.now() }),
         });
     } catch {
-        // A missing native store (iOS has no MunchSecureSession plugin
-        // yet) or a storage failure loses only the automatic prompt:
-        // the collision error still names the original-method path,
-        // and Settings linking remains available after sign-in.
+        // A missing native store or a storage failure loses only the
+        // automatic prompt: the collision error still names the
+        // original-method path, and Settings linking remains available
+        // after sign-in.
     }
 }
 
@@ -389,17 +389,29 @@ async function requestGoogleIdToken() {
 
 /**
  * Fresh provider ID token for the packaged app's session-bound link
- * (the prompt's confirm leg and any other native link): Google
- * linking completes in place with a native token on both platforms
- * (Credential Manager on Android, GIDSignIn on iOS) — the web
- * consent redirect the shared shell falls back to cannot complete
- * against a bearer session. Providers with no native bridge on this
- * platform return null and keep that fallback.
+ * (Settings -> Sign-in methods -> Link and the collision prompt's
+ * confirm leg): Google linking completes in place with a native token
+ * on both platforms (Credential Manager on Android, GIDSignIn on iOS),
+ * and Apple linking completes in place with ASAuthorization on iOS.
+ * The web consent redirect the shared shell falls back to cannot
+ * complete against a bearer session, so on Android (where Apple has no
+ * native bridge) we refuse honestly instead of bouncing the WebView.
  */
 export async function nativeProviderIdToken(provider) {
-    if (provider !== "google") return null;
-    const { idToken } = await requestGoogleIdToken();
-    return idToken;
+    if (provider === "google") {
+        const { idToken } = await requestGoogleIdToken();
+        return idToken;
+    }
+    if (provider === "apple") {
+        if (Capacitor.getPlatform() !== "ios") {
+            throw new Error(
+                "Sign in with Apple can only be linked from an iOS device or on the web at munch.business.",
+            );
+        }
+        const { idToken } = await requestAppleIdToken();
+        return idToken;
+    }
+    return null;
 }
 
 export async function signInWithGoogle() {
@@ -479,7 +491,7 @@ async function appleSignInConfig() {
     return payload;
 }
 
-export async function signInWithApple() {
+async function requestAppleIdToken() {
     await appleSignInConfig();
     const nonce = randomBase64Url();
     // The native plugin puts the SHA-256 hex of this nonce on the
@@ -490,6 +502,11 @@ export async function signInWithApple() {
     if (typeof credential?.idToken !== "string" || !credential.idToken) {
         throw new Error("Apple did not return a sign-in token");
     }
+    return { idToken: credential.idToken, nonce };
+}
+
+export async function signInWithApple() {
+    const { idToken, nonce } = await requestAppleIdToken();
 
     const response = await fetch(
         new URL("/api/auth/sign-in/social", API_BASE_URL),
@@ -502,13 +519,23 @@ export async function signInWithApple() {
             },
             body: JSON.stringify({
                 provider: "apple",
-                idToken: { token: credential.idToken, nonce },
+                idToken: { token: idToken, nonce },
                 callbackURL: "/app",
             }),
         },
     );
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
+        // Cross-provider collision (2026-11-12): mirror Google's
+        // OAUTH_LINK_ERROR handling so an Apple identity colliding
+        // with an existing account records the pending link prompt
+        // instead of surfacing raw server copy.
+        if (payload?.code === "OAUTH_LINK_ERROR") {
+            await recordPendingLinkPrompt("apple");
+            throw new Error(
+                "This email already has a Munch account with a different sign-in method. Sign in with that method first (for example, your email link or Google) — once you're in, we'll ask whether you'd like to add Apple as another way to sign in to this same account.",
+            );
+        }
         throw new Error(
             payload?.message || payload?.error || "Apple sign-in failed",
         );
