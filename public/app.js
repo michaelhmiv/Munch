@@ -3913,12 +3913,16 @@ function recipeDetailStepEditRowsMarkup() {
 }
 
 // The in-place editor syncs ONLY the fields its rows expose (name /
-// quantity / unit, and the step texts): preparation, gram weight,
-// nutrients, provider and the source snapshot ride untouched in the
-// composer state seeded from the loaded record. The shared
-// syncRecipeComposerFromDom must NOT run for this surface — it
-// reads preparation / gram-weight / nutrient inputs this editor
-// deliberately doesn't render, and would wipe them.
+// quantity / unit, and the step texts): preparation, provider and
+// the source snapshot ride untouched in the composer state seeded
+// from the loaded record. The shared syncRecipeComposerFromDom must
+// NOT run for this surface — it reads preparation / gram-weight /
+// nutrient inputs this editor deliberately doesn't render, and
+// would wipe them. One exception: a quantity change on a
+// food-picked ingredient rescales its nutrients AND gram weight
+// from the portion snapshot (the create composer's PR #325 rescale,
+// applied here) — without it the new revision kept the old line's
+// calories beside the new quantity, still labelled complete.
 function syncRecipeDetailEditFromDom() {
     const ingredientsRoot = document.getElementById(
         "recipe-detail-ingredients",
@@ -3941,6 +3945,32 @@ function syncRecipeDetailEditFromDom() {
                         ? undefined
                         : Number(quantity);
                 ingredient.unit = field("unit")?.value || "";
+                // The rescale rewrites the snapshot's selected
+                // quantity, so capture the base first; the gram
+                // weight (not rescaled by the shared function, and
+                // not rendered as a field on this surface) scales
+                // by the same factor when the rescale fires.
+                const baseQuantity = Number(
+                    ingredient.sourceSnapshot?.selected_quantity,
+                );
+                if (
+                    rescaleRecipeIngredientFromSnapshot(
+                        ingredient,
+                        ingredient.quantity,
+                        undefined,
+                    ) &&
+                    Number.isFinite(baseQuantity) &&
+                    baseQuantity > 0 &&
+                    typeof ingredient.gramWeight === "number" &&
+                    Number.isFinite(ingredient.gramWeight)
+                ) {
+                    ingredient.gramWeight =
+                        Math.round(
+                            ingredient.gramWeight *
+                                (ingredient.quantity / baseQuantity) *
+                                100,
+                        ) / 100;
+                }
             });
     }
     const stepsRoot = document.getElementById("recipe-detail-steps");

@@ -931,3 +931,275 @@ describe("recipe nutrition resolution", () => {
         expect(juice.nutrients?.calories).toBe(111.6);
     });
 });
+
+describe("preserved backstop (W2 recipes Findings 1 & 2)", () => {
+    const oneSlice = {
+        calories: 115,
+        protein_g: 6.8,
+        carbs_g: 0.1,
+        fat_g: 9.5,
+        fiber_g: 0,
+        sugar_g: 0.1,
+        sodium_mg: 183,
+    };
+
+    function cheddarSearch(counter: { searches: number }) {
+        return {
+            async search(query: string) {
+                counter.searches += 1;
+                if (query === "Cheddar") {
+                    return {
+                        candidates: [
+                            candidate({
+                                id: "test-cheddar",
+                                name: "Cheddar, sharp, sliced",
+                                portions: [
+                                    onePortion("slice", "1 slice (1 oz)", 28, {
+                                        ...oneSlice,
+                                    }),
+                                ],
+                            }),
+                        ],
+                        totalResults: 1,
+                    };
+                }
+                return { candidates: [], totalResults: 0 };
+            },
+        };
+    }
+
+    test("quantity moved off the snapshot base with untouched nutrients: re-priced, not preserved", async () => {
+        const counter = { searches: 0 };
+        const result = await resolveRecipeNutrition(
+            {
+                name: "Stale edit",
+                servings: 4,
+                ingredients: [
+                    {
+                        name: "Cheddar",
+                        quantity: 12,
+                        unit: "slice",
+                        gram_weight: 28,
+                        source_type: "usda",
+                        nutrients: { ...oneSlice },
+                        source_snapshot: {
+                            resolution_layer: "food_search",
+                            selected_portion_id: "slice",
+                            selected_quantity: 1,
+                            nutrition_snapshot: { ...oneSlice },
+                        },
+                    },
+                ],
+            },
+            { foodSearch: cheddarSearch(counter) },
+        );
+        expect(counter.searches).toBe(1);
+        expect(result.providerMatches).toBe(1);
+        const saved = result.recipe.ingredients[0]!;
+        expect(saved.nutrients?.calories).toBe(1380);
+        expect(saved.gram_weight).toBe(336);
+    });
+
+    test("quantity moved but nutrients hand-edited away from the snapshot: still preserved", async () => {
+        const counter = { searches: 0 };
+        const result = await resolveRecipeNutrition(
+            {
+                name: "Hand edit",
+                servings: 4,
+                ingredients: [
+                    {
+                        name: "Cheddar",
+                        quantity: 12,
+                        unit: "slice",
+                        source_type: "usda",
+                        nutrients: { ...oneSlice, protein_g: 9.9 },
+                        source_snapshot: {
+                            resolution_layer: "food_search",
+                            selected_portion_id: "slice",
+                            selected_quantity: 1,
+                            nutrition_snapshot: { ...oneSlice },
+                        },
+                    },
+                ],
+            },
+            { foodSearch: cheddarSearch(counter) },
+        );
+        expect(counter.searches).toBe(0);
+        expect(result.providerMatches).toBe(0);
+        expect(result.recipe.ingredients[0]?.nutrients?.protein_g).toBe(9.9);
+    });
+
+    test("quantity unchanged against the snapshot: preserved without provider work", async () => {
+        const counter = { searches: 0 };
+        const result = await resolveRecipeNutrition(
+            {
+                name: "Unchanged",
+                servings: 4,
+                ingredients: [
+                    {
+                        name: "Cheddar",
+                        quantity: 1,
+                        unit: "slice",
+                        source_type: "usda",
+                        nutrients: { ...oneSlice },
+                        source_snapshot: {
+                            resolution_layer: "food_search",
+                            selected_portion_id: "slice",
+                            selected_quantity: 1,
+                            nutrition_snapshot: { ...oneSlice },
+                        },
+                    },
+                ],
+            },
+            { foodSearch: cheddarSearch(counter) },
+        );
+        expect(counter.searches).toBe(0);
+        expect(result.recipe.ingredients[0]?.nutrients?.calories).toBe(115);
+    });
+
+    test("recipe_url nutrients the save resolver never examined: re-priced through the gate", async () => {
+        // The import priced 3 cups of milk off the guideline portion
+        // (183 g / 111.63 kcal in the snapshot); the save must not
+        // preserve that unchecked — the gated resolver prices the
+        // real cup portion instead (732 g / 446.52 kcal).
+        let searches = 0;
+        const result = await resolveRecipeNutrition(
+            {
+                name: "Imported mac",
+                servings: 12,
+                ingredients: [
+                    {
+                        name: "Whole milk",
+                        quantity: 3,
+                        unit: "cup",
+                        gram_weight: 183,
+                        source_type: "usda",
+                        nutrients: {
+                            calories: 111.63,
+                            protein_g: 6,
+                            carbs_g: 8.49,
+                            fat_g: 5.85,
+                            fiber_g: 0,
+                            sugar_g: 8.79,
+                            sodium_mg: 69.54,
+                        },
+                        source_snapshot: {
+                            resolution_layer: "recipe_url",
+                            resolution: "matched",
+                            selected_portion_id: "290519",
+                            scaling_factor: 3,
+                            scaling_reason: "portion_label_match",
+                            nutrition_snapshot: {
+                                calories: 111.63,
+                                protein_g: 6,
+                                carbs_g: 8.49,
+                                fat_g: 5.85,
+                            },
+                        },
+                    },
+                ],
+            },
+            {
+                foodSearch: {
+                    async search(query: string) {
+                        searches += 1;
+                        if (query === "Whole milk") {
+                            return {
+                                candidates: [
+                                    candidate({
+                                        id: "2705385",
+                                        name: "Milk, whole",
+                                        nutrientsPer100g: {
+                                            calories: 61,
+                                            protein_g: 3.27,
+                                            carbs_g: 4.63,
+                                            fat_g: 3.2,
+                                            fiber_g: 0,
+                                            sugar_g: 4.81,
+                                            sodium_mg: 38,
+                                        },
+                                        portions: [
+                                            onePortion(
+                                                "290519",
+                                                "Guideline amount per cup of hot cereal",
+                                                61,
+                                                {
+                                                    calories: 37.21,
+                                                    protein_g: 2,
+                                                    carbs_g: 2.83,
+                                                    fat_g: 1.95,
+                                                    fiber_g: 0,
+                                                    sugar_g: 2.93,
+                                                    sodium_mg: 23.18,
+                                                },
+                                            ),
+                                            onePortion("290515", "1 cup", 244, {
+                                                calories: 148.84,
+                                                protein_g: 7.98,
+                                                carbs_g: 11.3,
+                                                fat_g: 7.81,
+                                                fiber_g: 0,
+                                                sugar_g: 11.74,
+                                                sodium_mg: 92.72,
+                                            }),
+                                        ],
+                                    }),
+                                ],
+                                totalResults: 1,
+                            };
+                        }
+                        return { candidates: [], totalResults: 0 };
+                    },
+                },
+            },
+        );
+        expect(searches).toBe(1);
+        expect(result.providerMatches).toBe(1);
+        const milk = result.recipe.ingredients[0]!;
+        expect(milk.gram_weight).toBe(732);
+        expect(milk.nutrients?.calories).toBe(446.52);
+    });
+
+    test("recipe_url nutrients already carrying the resolver's trace: preserved", async () => {
+        let searches = 0;
+        const result = await resolveRecipeNutrition(
+            {
+                name: "Imported, already vetted",
+                servings: 12,
+                ingredients: [
+                    {
+                        name: "Whole milk",
+                        quantity: 3,
+                        unit: "cup",
+                        source_type: "usda",
+                        nutrients: {
+                            calories: 446.52,
+                            protein_g: 23.94,
+                            carbs_g: 33.9,
+                            fat_g: 23.43,
+                        },
+                        source_snapshot: {
+                            resolution_layer: "recipe_url",
+                            resolution: "matched",
+                            automatic_nutrition: {
+                                resolver_version: 2,
+                                resolution: "provider_match",
+                            },
+                        },
+                    },
+                ],
+            },
+            {
+                foodSearch: {
+                    async search() {
+                        searches += 1;
+                        return { candidates: [], totalResults: 0 };
+                    },
+                },
+            },
+        );
+        expect(searches).toBe(0);
+        expect(result.providerMatches).toBe(0);
+        expect(result.recipe.ingredients[0]?.nutrients?.calories).toBe(446.52);
+    });
+});

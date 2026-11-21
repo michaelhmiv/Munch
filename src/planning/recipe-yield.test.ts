@@ -309,3 +309,104 @@ describe("share resolution", () => {
         expect(shareFractionLabel(0.0834)).toBe("0.083");
     });
 });
+
+describe("stored Jev yield estimate wiring (W2 recipes Finding 3)", () => {
+    // The live specimen's stored A2b estimate (audit, 2026-11-20):
+    // 2,739.8 g / 1,863 ml against the ingredient-sum's 2,193 g /
+    // 9.25 cups for the same mac and cheese.
+    const jevEstimate = {
+        source: "estimate" as const,
+        weight_g: 2739.8,
+        volume_ml: 1863,
+    };
+
+    test("effective yields prefer the stored Jev estimate over the ingredient-sum", () => {
+        const effective = effectiveRecipeYields(
+            { volume: null, weight: null },
+            macIngredients,
+            jevEstimate,
+        );
+        expect(effective.weight).toEqual({
+            quantity: 2740,
+            unit: "g",
+            family: "weight",
+            source: "estimated",
+        });
+        // 1863 ml = 7.8741… cups, carried at 2 decimals (not snapped).
+        expect(effective.volume).toEqual({
+            quantity: 7.87,
+            unit: "cup",
+            family: "volume",
+            source: "estimated",
+        });
+    });
+
+    test("a set slot stays supreme per family while the Jev estimate fills the other", () => {
+        const effective = effectiveRecipeYields(
+            { volume: null, weight: { quantity: 2000, unit: "g" } },
+            macIngredients,
+            jevEstimate,
+        );
+        expect(effective.weight).toEqual({
+            quantity: 2000,
+            unit: "g",
+            family: "weight",
+            source: "set",
+        });
+        expect(effective.volume?.quantity).toBe(7.87);
+        expect(effective.volume?.source).toBe("estimated");
+    });
+
+    test("a user-corrected yield estimate ranks as a set yield, not an estimate", () => {
+        const effective = effectiveRecipeYields(
+            { volume: null, weight: null },
+            macIngredients,
+            { source: "user", weight_g: 2500, volume_ml: null },
+        );
+        expect(effective.weight).toEqual({
+            quantity: 2500,
+            unit: "g",
+            family: "weight",
+            source: "set",
+        });
+        // The family the user did not correct falls back to the
+        // deterministic ingredient-sum estimate.
+        expect(effective.volume).toEqual({
+            quantity: 9.25,
+            unit: "cup",
+            family: "volume",
+            source: "estimated",
+        });
+    });
+
+    test("amount-mode logging shares against the Jev estimate, labeled estimated", () => {
+        const resolved = resolveRecipePortion(
+            {
+                servings: 12,
+                yields: { volume: null, weight: null },
+                ingredients: macIngredients,
+                yieldEstimate: jevEstimate,
+            },
+            { mode: "amount", amount: 500, unit: "g" },
+        );
+        // 500 g of a 2,740 g recipe is an 18.2% share — not the
+        // 22.8% the cruder ingredient-sum (2,193 g) used to book.
+        expect(resolved.factor).toBeCloseTo(500 / 2740, 12);
+        expect(resolved.record.yield_snapshot).toEqual({
+            quantity: 2740,
+            unit: "g",
+            family: "weight",
+            source: "estimated",
+        });
+    });
+
+    test("a null stored estimate keeps the ingredient-sum behavior", () => {
+        const effective = effectiveRecipeYields(
+            { volume: null, weight: null },
+            macIngredients,
+            null,
+        );
+        expect(effective.weight?.quantity).toBe(2193);
+        expect(effective.volume?.quantity).toBe(9.25);
+    });
+});

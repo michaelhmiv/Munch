@@ -941,23 +941,28 @@ describe("recipe import enrichment", () => {
                 name: query,
                 dataKind: "generic",
                 portions: [
+                    // Plausible gram weight per unit: import pricing
+                    // enforces the #310 density sanity gate (W2
+                    // recipes Finding 2), and a 100 g tablespoon is
+                    // physically impossible — the gate refuses it
+                    // exactly as the save-time resolver does.
                     ...[
-                        ["g", "1 gram"],
-                        ["cup", "1 cup"],
-                        ["tbsp", "1 tablespoon"],
-                        ["tsp", "1 teaspoon"],
-                        ["lb", "1 pound"],
-                        ["piece", "1 piece"],
-                        ["slice", "1 slice"],
-                        ["clove", "1 clove"],
-                        ["head", "1 head"],
-                        ["sprig", "1 sprig"],
-                    ].map(([unit, label]) => ({
-                        id: unit,
+                        ["g", "1 gram", 1],
+                        ["cup", "1 cup", 240],
+                        ["tbsp", "1 tablespoon", 15],
+                        ["tsp", "1 teaspoon", 5],
+                        ["lb", "1 pound", 453],
+                        ["piece", "1 piece", 100],
+                        ["slice", "1 slice", 30],
+                        ["clove", "1 clove", 3],
+                        ["head", "1 head", 100],
+                        ["sprig", "1 sprig", 1],
+                    ].map(([unit, label, gramWeight]) => ({
+                        id: unit as string,
                         amount: 1,
-                        unit,
-                        label,
-                        gramWeight: 100,
+                        unit: unit as string,
+                        label: label as string,
+                        gramWeight: gramWeight as number,
                         nutrients: {
                             calories: 100,
                             protein_g: 2,
@@ -1172,5 +1177,174 @@ describe("recipe import enrichment", () => {
         });
 
         expect(rerankCalls).toBe(0);
+    });
+});
+
+describe("recipe import portion sanity gate (W2 recipes Finding 2)", () => {
+    const milkPortions = {
+        guideline: {
+            id: "290519",
+            amount: 1,
+            unit: "cup",
+            label: "Guideline amount per cup of hot cereal",
+            gramWeight: 61,
+            nutrients: {
+                calories: 37.21,
+                protein_g: 2,
+                carbs_g: 2.83,
+                fat_g: 1.95,
+            },
+        },
+        cup: {
+            id: "290515",
+            amount: 1,
+            unit: "cup",
+            label: "1 cup",
+            gramWeight: 244,
+            nutrients: {
+                calories: 148.84,
+                protein_g: 7.98,
+                carbs_g: 11.3,
+                fat_g: 7.81,
+            },
+        },
+    };
+
+    function milkCandidate(portions: FoodCandidate["portions"]): FoodCandidate {
+        return {
+            provider: "usda",
+            providerFoodId: "2705385",
+            name: "Milk, whole",
+            dataKind: "generic",
+            confidence: 0.98,
+            attribution: {
+                label: "USDA FoodData Central",
+                url: "https://fdc.nal.usda.gov/food/2705385",
+            },
+            portions,
+            nutrientsPer100g: {
+                calories: 61,
+                protein_g: 3.27,
+                carbs_g: 4.63,
+                fat_g: 3.2,
+            },
+        };
+    }
+
+    function milkDraft(candidate: FoodCandidate) {
+        return previewRecipeUrl("https://example.com/recipe", {
+            fetchPage: async (url) => ({
+                submittedUrl: url,
+                finalUrl: url,
+                html: `
+                    <script type="application/ld+json">
+                    {"@type":"Recipe","name":"Milk Test","recipeYield":"1 serving","recipeIngredient":["3 cups whole milk"],"recipeInstructions":"Pour."}
+                    </script>
+                `,
+            }),
+            foodSearch: {
+                search: async () => ({ candidates: [candidate], failures: [] }),
+            },
+        });
+    }
+
+    test("a guideline portion listed first does not price the ingredient — the real cup portion does", async () => {
+        // The #310 specimen shape: the guideline reference portion
+        // is listed FIRST and its label mentions "cup", so a naive
+        // label match prices 3 cups of milk at 61 g each (183 g).
+        const draft = await milkDraft(
+            milkCandidate([milkPortions.guideline, milkPortions.cup]),
+        );
+        const milk = draft.recipe.ingredients[0]!;
+        expect(milk.source_snapshot).toMatchObject({
+            selected_portion_id: "290515",
+        });
+        expect(milk.gram_weight).toBe(732);
+        expect(milk.nutrients?.calories).toBe(446.52);
+    });
+
+    test("a liquid cup implying 61 g is refused by the sanity gate when it is the only cup match", async () => {
+        // The only cup portion claims 61 g per cup; an fl oz
+        // portion marks the food liquid-like, so a cup must imply
+        // 150–350 g (the resolver's liquid-cup rule). Refused →
+        // the ingredient falls to the model-estimate review path
+        // instead of baking in 183 g for 3 cups.
+        const draft = await milkDraft(
+            milkCandidate([
+                { ...milkPortions.cup, gramWeight: 61 },
+                {
+                    id: "290520",
+                    amount: 1,
+                    unit: "fl oz",
+                    label: "1 fl oz",
+                    gramWeight: 30.5,
+                    nutrients: {
+                        calories: 18.6,
+                        protein_g: 1,
+                        carbs_g: 1.44,
+                        fat_g: 0.98,
+                    },
+                },
+            ]),
+        );
+        const milk = draft.recipe.ingredients[0]!;
+        expect(milk.nutrients).toBeUndefined();
+        expect(milk.gram_weight).toBeUndefined();
+        expect(milk.source_type).toBe("model_estimate");
+    });
+
+    test("a count ingredient is not priced by dividing through a per-100 g portion", async () => {
+        const chicken: FoodCandidate = {
+            provider: "usda",
+            providerFoodId: "171077",
+            name: "Chicken breast",
+            dataKind: "generic",
+            confidence: 0.95,
+            attribution: {
+                label: "USDA FoodData Central",
+                url: "https://fdc.nal.usda.gov/food/171077",
+            },
+            portions: [
+                {
+                    id: "100g",
+                    amount: 100,
+                    unit: "g",
+                    label: "100 g",
+                    gramWeight: 100,
+                    nutrients: {
+                        calories: 165,
+                        protein_g: 31,
+                        carbs_g: 0,
+                        fat_g: 3.6,
+                    },
+                },
+            ],
+            nutrientsPer100g: {
+                calories: 165,
+                protein_g: 31,
+                carbs_g: 0,
+                fat_g: 3.6,
+            },
+        };
+        const draft = await previewRecipeUrl("https://example.com/recipe", {
+            fetchPage: async (url) => ({
+                submittedUrl: url,
+                finalUrl: url,
+                html: `
+                    <script type="application/ld+json">
+                    {"@type":"Recipe","name":"Chicken Test","recipeYield":"2 servings","recipeIngredient":["2 pieces chicken breast"],"recipeInstructions":"Cook."}
+                    </script>
+                `,
+            }),
+            foodSearch: {
+                search: async () => ({ candidates: [chicken], failures: [] }),
+            },
+        });
+        const breast = draft.recipe.ingredients[0]!;
+        // NOT 2/100 × the 100 g panel (3.3 kcal for two breasts):
+        // with no count portion available the ingredient is a model
+        // estimate for human review, carrying no priced nutrients.
+        expect(breast.nutrients).toBeUndefined();
+        expect(breast.source_type).toBe("model_estimate");
     });
 });

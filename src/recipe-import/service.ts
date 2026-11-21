@@ -6,6 +6,10 @@ import {
 } from "../food-providers/service.js";
 import { normalizeFoodText } from "../food-providers/catalog-repository.js";
 import { scaleNutrients } from "../food-providers/nutrients.js";
+import {
+    isNonHeadlinePortion,
+    isPer100gPortion,
+} from "../food-providers/portions.js";
 import type { FoodCandidate, FoodPortion } from "../food-providers/types.js";
 import {
     calculateNutrition,
@@ -277,7 +281,111 @@ function portionScale(
     return null;
 }
 
+/** Exact millilitres per volume unit — mirrors the resolver's table
+ * in src/recipe-nutrition-resolution.ts so import and save convert
+ * identically. */
+const VOLUME_TO_ML: Record<string, number> = {
+    ml: 1,
+    l: 1_000,
+    tsp: 4.92892159,
+    tbsp: 14.7867648,
+    "fl oz": 29.5735296,
+    cup: 236.5882365,
+    pint: 473.176473,
+    quart: 946.352946,
+    gallon: 3785.41178,
+};
+
+/**
+ * The #310 sanity envelope, mirrored from the save-time resolver
+ * (resolveVolumePortion): a portion used to interpret a volume
+ * quantity implies a density, and ordinary foods sit inside
+ * [0.06, 2.0] g/ml; for liquid-like foods a cup must additionally
+ * imply 150–350 g. Import pricing historically skipped this gate
+ * entirely, so an insane portion baked its numbers into the draft
+ * and the save resolver then preserved them unchecked. A refused
+ * scale falls to the model-estimate review path — the importer has
+ * no cross-portion conversion machinery, so refusal, not
+ * conversion, is the honest outcome here.
+ */
+const MIN_PLAUSIBLE_DENSITY_G_PER_ML = 0.06;
+const MAX_PLAUSIBLE_DENSITY_G_PER_ML = 2.0;
+const LIQUID_CUP_MIN_GRAMS = 150;
+const LIQUID_CUP_MAX_GRAMS = 350;
+
+function portionScalePassesSanityGate(
+    ingredient: ParsedRecipeIngredient,
+    scale: { factor: number; gramWeight?: number },
+    portions: FoodPortion[],
+): boolean {
+    const quantity = ingredient.quantity;
+    if (quantity === undefined || !(quantity > 0)) return true;
+    if (scale.gramWeight === undefined || !(scale.gramWeight > 0)) {
+        return true;
+    }
+    const unit = normalizePortionUnit(ingredient.unit ?? "");
+    const mlPerUnit = VOLUME_TO_ML[unit];
+    if (mlPerUnit === undefined) return true;
+    const gramsPerUnit = scale.gramWeight / quantity;
+    const density = gramsPerUnit / mlPerUnit;
+    if (
+        density < MIN_PLAUSIBLE_DENSITY_G_PER_ML ||
+        density > MAX_PLAUSIBLE_DENSITY_G_PER_ML
+    ) {
+        return false;
+    }
+    if (unit === "cup") {
+        const liquidLike = portions.some((portion) => {
+            const portionUnit = normalizePortionUnit(portion.unit);
+            if (portionUnit === "fl oz") return true;
+            const portionMlPerUnit = VOLUME_TO_ML[portionUnit];
+            if (
+                portionMlPerUnit === undefined ||
+                !(portion.amount > 0) ||
+                portion.gramWeight === undefined ||
+                !(portion.gramWeight > 0)
+            ) {
+                return false;
+            }
+            const portionDensity =
+                portion.gramWeight / (portion.amount * portionMlPerUnit);
+            return portionDensity >= 0.85 && portionDensity <= 1.15;
+        });
+        if (
+            liquidLike &&
+            (gramsPerUnit < LIQUID_CUP_MIN_GRAMS ||
+                gramsPerUnit > LIQUID_CUP_MAX_GRAMS)
+        ) {
+            return false;
+        }
+    }
+    return true;
+}
+
 function selectPortion(
+    ingredient: ParsedRecipeIngredient,
+    portions: FoodPortion[],
+): FoodPortion | undefined {
+    if (portions.length === 0) return undefined;
+    // Non-headline portions ("guideline amount" / "quantity not
+    // specified" reference rows) may only win when no headline
+    // portion matches — the same rule the save-time resolver's
+    // portionForUnit applies. Without it, a guideline portion
+    // listed first prices the ingredient off a reference amount
+    // for another food context (the #310 defect shape).
+    const headline = portions.filter(
+        (portion) => !isNonHeadlinePortion(portion),
+    );
+    if (headline.length > 0 && headline.length < portions.length) {
+        return (
+            selectPortionFromPool(ingredient, headline) ??
+            selectPortionFromPool(ingredient, portions)
+        );
+    }
+    return selectPortionFromPool(ingredient, portions);
+}
+
+function selectPortionFromPool(
     ingredient: ParsedRecipeIngredient,
     portions: FoodPortion[],
 ): FoodPortion | undefined {
@@ -300,7 +408,12 @@ function selectPortion(
                     portionUnit === "piece" ||
                     /\b(each|piece|item)\b/i.test(portion.label)
                 );
-            }) ?? portions[0]
+            }) ??
+            // Never fall back to a per-100 g reference portion for a
+            // count: portionScale would divide the count by 100 and
+            // price "2 chicken breasts" as ~2 g of nutrients. No
+            // count-compatible portion → no portion (model estimate).
+            portions.find((portion) => !isPer100gPortion(portion))
         );
     }
     return (
@@ -583,14 +696,20 @@ function enrichIngredient(
         assignment.confidence >= 0.55;
     const portion = selectPortion(ingredient, selected.portions);
     const scale = portion ? portionScale(ingredient, portion) : null;
-    if (!portion || !scale || !Number.isFinite(scale.factor)) {
+    const scaleIsSane =
+        portion !== undefined &&
+        scale !== null &&
+        portionScalePassesSanityGate(ingredient, scale, selected.portions);
+    if (!portion || !scale || !Number.isFinite(scale.factor) || !scaleIsSane) {
         return modelEstimatedIngredient(
             ingredient,
             sourceUrl,
             strategy,
             semanticLabel,
             candidates,
-            "The selected food did not expose a compatible portion; the ingredient was retained as a model estimate.",
+            !portion || !scale
+                ? "The selected food did not expose a compatible portion; the ingredient was retained as a model estimate."
+                : "The selected food's portion failed the portion sanity gate; the ingredient was retained as a model estimate.",
         );
     }
     const nutrients = nutrientFacts(portion, scale.factor);
