@@ -86,10 +86,19 @@ appleButton?.addEventListener("click", async () => {
     }
 });
 
+// Probe both providers in parallel (from closed PR #342): the
+// sequential awaits serialized two native bridge round-trips, so the
+// second button's availability waited on the first probe and both
+// buttons sat in their default visible state meanwhile.
+const [appleAvailable, googleAvailable] = await Promise.all([
+    appleButton ? isAppleSignInAvailable() : Promise.resolve(false),
+    googleButton ? isGoogleSignInAvailable() : Promise.resolve(false),
+]);
+
 if (appleButton) {
-    appleButton.hidden = !(await isAppleSignInAvailable());
+    appleButton.hidden = !appleAvailable;
 }
 
 if (googleButton) {
-    googleButton.hidden = !(await isGoogleSignInAvailable());
+    googleButton.hidden = !googleAvailable;
 }

@@ -167,17 +167,29 @@ async function scanBarcode() {
     }
 }
 
-function injectBarcodeCard() {
-    const grid = $(".grid-two");
-    if (!grid || $("#native-barcode-card")) return;
-    const card = document.createElement("section");
-    card.id = "native-barcode-card";
-    card.className = "card stack";
-    card.innerHTML =
-        '<div><p class="eyebrow">Barcode</p><h2>Scan a packaged food</h2></div>' +
-        '<p class="muted">Use the device camera to identify a packaged food, then review the verified product before adding it.</p>';
-    card.append(createButton("Scan barcode", scanBarcode, ""));
-    grid.append(card);
+// The scan control rides the tools rail (the icon-only bar the
+// pantry page actually renders). The previous injector targeted the
+// retired two-column card grid, which no longer exists in
+// pantry.html, so it silently returned and barcode scanning never
+// appeared in the packaged app. Adapted from closed PR #342 to the
+// rail's shipped .rail-tool class instead of its parallel class.
+function injectBarcodeTool() {
+    const rail = $(".tools-rail");
+    if (!rail || $("#native-barcode-scan")) return;
+    const tool = document.createElement("button");
+    tool.type = "button";
+    tool.id = "native-barcode-scan";
+    tool.className = "rail-tool";
+    tool.setAttribute("aria-label", "Scan barcode");
+    tool.title = "Scan barcode";
+    tool.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        '<path d="M4 7V5h3M20 7V5h-3M4 17v2h3M20 17v2h-3" />' +
+        '<path d="M7 9v6M10 9v6M13 9v6M16 9v6" /></svg>';
+    tool.addEventListener("click", scanBarcode);
+    const receiptTool = rail.querySelector('[data-open-sheet="sheet-receipt"]');
+    if (receiptTool) receiptTool.after(tool);
+    else rail.append(tool);
 }
 
-injectBarcodeCard();
+injectBarcodeTool();

@@ -43,7 +43,33 @@ function patchToast(message, kind = "success") {
     element.textContent = message;
     if (kind === "error") element.style.borderColor = "var(--danger-700)";
     patchToastRegion.append(element);
-    window.setTimeout(() => element.remove(), 4200);
+    // Same top-layer handling as app.js toast() (from closed PR
+    // #342): show the manual-popover region while a toast is up and
+    // hide it once the last one leaves.
+    if (typeof patchToastRegion.showPopover === "function") {
+        try {
+            if (!patchToastRegion.matches(":popover-open")) {
+                patchToastRegion.showPopover();
+            }
+        } catch {
+            // The region stays visible through the stylesheet fallback.
+        }
+    }
+    window.setTimeout(() => {
+        element.remove();
+        if (
+            patchToastRegion.childElementCount === 0 &&
+            typeof patchToastRegion.hidePopover === "function"
+        ) {
+            try {
+                if (patchToastRegion.matches(":popover-open")) {
+                    patchToastRegion.hidePopover();
+                }
+            } catch {
+                // Nothing to hide when the popover is already closed.
+            }
+        }
+    }, 4200);
 }
 
 // UX fix wave F1: the editor's data layer delegates to the shared

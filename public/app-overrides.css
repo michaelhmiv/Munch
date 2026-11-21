@@ -8415,7 +8415,7 @@ dialog #water-form {
    control, and the registry in src/design-authority.test.ts records
    them as 44px icon sizing (context, not a tier exception). */
 .trends-icon-btn,
-.photo-capture-button,
+.photo-capture-camera,
 .meal-scan-button {
     height: 44px;
     min-height: 44px;
@@ -8424,7 +8424,7 @@ dialog #water-form {
 }
 
 .trends-icon-btn::after,
-.photo-capture-button::after,
+.photo-capture-camera::after,
 .meal-scan-button::after {
     content: none;
 }
