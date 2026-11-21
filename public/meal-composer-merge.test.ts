@@ -112,6 +112,7 @@ function buildComposer(
             extractConst("mealComposer", "\n};"),
             extract("foodTitle"),
             extract("foodPortion"),
+            extractOptional("composerCustomPortionNutrients"),
             extract("syncMealComposerFromDom"),
             extract("mealComposerItemMacros"),
             extract("mealComposerTotals"),

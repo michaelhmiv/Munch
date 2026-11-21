@@ -489,7 +489,7 @@ document.addEventListener(
         const preferredUnit = await fetchPatchedPreferredWeightUnit();
         showPatchedDialog(
             "Add weight",
-            `<form id="weight-form" class="auth-form"><label class="field"><span>Weight</span><input name="weight" type="number" min="1" step="0.1" inputmode="decimal" required /></label><label class="field"><span>Unit</span><select name="unit" required><option value="" disabled ${preferredUnit ? "" : "selected"}>Select unit</option><option value="lb" ${preferredUnit === "lb" ? "selected" : ""}>lb</option><option value="kg" ${preferredUnit === "kg" ? "selected" : ""}>kg</option></select></label><label class="field"><span>Notes</span><input name="notes" placeholder="Optional" /></label><button class="button button-primary" type="submit">Add weight</button></form>`,
+            `<form id="weight-form" class="auth-form" data-idempotency-key="${patchEscape(crypto.randomUUID())}"><label class="field"><span>Weight</span><input name="weight" type="number" min="1" step="0.1" inputmode="decimal" required /></label><label class="field"><span>Unit</span><select name="unit" required><option value="" disabled ${preferredUnit ? "" : "selected"}>Select unit</option><option value="lb" ${preferredUnit === "lb" ? "selected" : ""}>lb</option><option value="kg" ${preferredUnit === "kg" ? "selected" : ""}>kg</option></select></label><label class="field"><span>Notes</span><input name="notes" placeholder="Optional" /></label><button class="button button-primary" type="submit">Add weight</button></form>`,
         );
     },
     true,

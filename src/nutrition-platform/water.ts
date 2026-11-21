@@ -33,13 +33,14 @@ function mapWater(row: WaterRow): WaterEntry {
 export async function insertWater(
     userId: string,
     input: WaterInput,
+    runInTx: typeof withUserDatabase = withUserDatabase,
 ): Promise<WaterInsertResult> {
     const loggedAt = input.logged_at ?? new Date().toISOString();
     const idempotencyKey =
         input.idempotency_key ??
         deriveIdempotencyKey([userId, input.amount_ml, input.notes, loggedAt]);
 
-    return withUserDatabase(userId, async (tx) => {
+    return runInTx(userId, async (tx) => {
         const inserted = await tx<Array<WaterRow>>`
             insert into munch.water_logs (
                 user_id,

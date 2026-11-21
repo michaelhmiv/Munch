@@ -328,3 +328,142 @@ describe("recents re-add parity — quantity and per-quantity nutrients (W2 Find
         expect(atOne.nutrients.calories).toBe(150);
     });
 });
+
+describe("custom portion gram weight (W2 logging math Finding 2)", () => {
+    test("custom portion gram weight at half the listed portion logs half the nutrients", async () => {
+        detailsSpy = spyOn(getFoodSearchService(), "details").mockResolvedValue(
+            appleCandidate(),
+        );
+
+        const item = await resolveWebMealItem("user-1", {
+            candidate_id: "usda:171688",
+            portion_id: "medium",
+            quantity: 1,
+            portion_label: "Half apple",
+            gram_weight: 91,
+        });
+
+        expect(item.nutrients).toEqual({
+            calories: 47.5,
+            protein_g: 0.25,
+            carbs_g: 12.5,
+            fat_g: 0.15,
+        });
+        expect(item.gramWeight).toBe(91);
+        expect(item.portionLabel).toBe("Half apple");
+        expect(item.sourceSnapshot?.resolution_layer).toBe(
+            "food_search_custom_portion",
+        );
+        expect(item.sourceSnapshot?.custom_gram_weight).toBe(91);
+        expect(item.sourceSnapshot?.selected_portion_id).toBe("medium");
+        expect(item.sourceSnapshot?.selected_portion_gram_weight).toBe(182);
+    });
+
+    test("custom portion gram weight multiplies cleanly with quantity > 1 without double rounding", async () => {
+        detailsSpy = spyOn(getFoodSearchService(), "details").mockResolvedValue(
+            appleCandidate(),
+        );
+
+        const item = await resolveWebMealItem("user-1", {
+            candidate_id: "usda:171688",
+            portion_id: "medium",
+            quantity: 2,
+            gram_weight: 91,
+        });
+
+        expect(item.nutrients.calories).toBe(95);
+        expect(item.gramWeight).toBe(182);
+        // No custom label was supplied, so the gram weight names the portion.
+        expect(item.portionLabel).toBe("91 g");
+    });
+
+    test("custom portion falls back to nutrientsPer100g when chosen portion has no gramWeight", async () => {
+        detailsSpy = spyOn(getFoodSearchService(), "details").mockResolvedValue(
+            appleCandidate({
+                portions: [
+                    {
+                        id: "blob",
+                        amount: 1,
+                        unit: "serving",
+                        label: "1 serving",
+                        nutrients: { calories: 60, carbs_g: 15 },
+                    },
+                ],
+                nutrientsPer100g: { calories: 52, carbs_g: 13.8 },
+            }),
+        );
+
+        const item = await resolveWebMealItem("user-1", {
+            candidate_id: "usda:171688",
+            portion_id: "blob",
+            quantity: 1,
+            gram_weight: 50,
+        });
+
+        expect(item.nutrients).toEqual({ calories: 26, carbs_g: 6.9 });
+        expect(item.gramWeight).toBe(50);
+        expect(item.sourceSnapshot?.custom_gram_weight).toBe(50);
+    });
+
+    test("custom portion with label only (no gram_weight) preserves portion nutrients and uses custom label", async () => {
+        detailsSpy = spyOn(getFoodSearchService(), "details").mockResolvedValue(
+            appleCandidate(),
+        );
+
+        const item = await resolveWebMealItem("user-1", {
+            candidate_id: "usda:171688",
+            portion_id: "medium",
+            quantity: 1,
+            portion_label: "My apple",
+        });
+
+        expect(item.nutrients.calories).toBe(95);
+        expect(item.gramWeight).toBe(182);
+        expect(item.portionLabel).toBe("My apple");
+        expect(item.sourceSnapshot?.resolution_layer).toBe(
+            "food_search_custom_portion",
+        );
+        expect(item.sourceSnapshot?.custom_gram_weight).toBeUndefined();
+    });
+
+    test("non-positive custom gram_weight fails loudly", async () => {
+        detailsSpy = spyOn(getFoodSearchService(), "details").mockResolvedValue(
+            appleCandidate(),
+        );
+
+        await expect(
+            resolveWebMealItem("user-1", {
+                candidate_id: "usda:171688",
+                portion_id: "medium",
+                quantity: 1,
+                gram_weight: 0,
+            }),
+        ).rejects.toThrow("Meal item gram weight must be positive");
+        await expect(
+            resolveWebMealItem("user-1", {
+                candidate_id: "usda:171688",
+                portion_id: "medium",
+                quantity: 1,
+                gram_weight: -50,
+            }),
+        ).rejects.toThrow("Meal item gram weight must be positive");
+    });
+
+    test("non-custom candidate items keep their source snapshot unchanged", async () => {
+        detailsSpy = spyOn(getFoodSearchService(), "details").mockResolvedValue(
+            appleCandidate(),
+        );
+
+        const item = await resolveWebMealItem("user-1", {
+            candidate_id: "usda:171688",
+            portion_id: "medium",
+            quantity: 1,
+        });
+
+        expect(item.sourceSnapshot?.resolution_layer).toBe("food_search");
+        expect(
+            item.sourceSnapshot?.selected_portion_gram_weight,
+        ).toBeUndefined();
+        expect(item.sourceSnapshot?.custom_gram_weight).toBeUndefined();
+    });
+});

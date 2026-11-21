@@ -126,6 +126,7 @@ const mealComposer = {
     usuals: new Map(),
     yesterday: null,
     mealTypeTouched: false,
+    idempotencyKey: null,
 };
 
 const mealDraftReview = {
@@ -297,6 +298,18 @@ function escapeHtml(value) {
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#39;");
+}
+
+// One idempotency key per form/composer session (W2 logging math
+// Findings 5 & 6): minted when a form opens, reused by every retry
+// of that form's submit, and rotated only on success or an explicit
+// fresh start — so a timeout/network retry or a post-401 reload
+// deduplicates server-side instead of double-logging.
+function createIdempotencyKey() {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+        return crypto.randomUUID();
+    }
+    return `client-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
 function dateInTimezone(timeZone, instant = new Date()) {
@@ -7157,6 +7170,19 @@ function draftNutrientLabel(key) {
         .replace("saturated_fat", "sat. fat");
 }
 
+// Draft quantity rescale (W2 logging math Finding 1): draft items
+// store TOTAL nutrients for their current quantity, so rescaling a
+// quantity change always starts from the item's stored totals —
+// never from whatever a previous live edit left in the DOM.
+function draftBaseQuantity(item) {
+    const quantity = Number(item?.quantity);
+    return Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+}
+
+function scaleDraftValue(baseValue, baseQuantity, nextQuantity) {
+    return Math.round(((baseValue * nextQuantity) / baseQuantity) * 100) / 100;
+}
+
 function draftItemPayloadFromDom(index) {
     const root = document.querySelector(`[data-draft-item-index="${index}"]`);
     const original = mealDraftReview.draft.items[index];
@@ -7216,6 +7242,46 @@ function draftItemPayloadFromDom(index) {
             selected_portion_id: chosenPortion.id,
             selected_portion_label: chosenPortion.label,
         };
+    } else if (payload.quantity != null && payload.quantity > 0) {
+        // No portion picker (manual foods, past-meal snapshots,
+        // model-estimate photo items) or "Custom portion…": the
+        // stored nutrients are totals for the item's ORIGINAL
+        // quantity, so a quantity change rescales them here. Fields
+        // the user hand-edited keep their DOM values; fields the
+        // live editor already rescaled (draftAutoValue) recompute
+        // from the original totals, never from the rescaled DOM.
+        const baseQuantity = draftBaseQuantity(original);
+        if (payload.quantity !== baseQuantity) {
+            const rescaleField = (key, baseValue, assign) => {
+                if (baseValue == null || !Number.isFinite(Number(baseValue)))
+                    return;
+                const rescaled = scaleDraftValue(
+                    Number(baseValue),
+                    baseQuantity,
+                    payload.quantity,
+                );
+                const element = field(key);
+                const domVal = draftNumber(element?.value);
+                const untouched =
+                    !element?.dataset?.draftEdited &&
+                    (domVal === undefined
+                        ? !element || element.value === ""
+                        : domVal === Number(baseValue) ||
+                          domVal === rescaled ||
+                          (element?.dataset?.draftAutoValue !== undefined &&
+                              String(domVal) ===
+                                  element.dataset.draftAutoValue));
+                if (untouched) assign(rescaled);
+            };
+            for (const key of draftNutrientFields) {
+                rescaleField(key, original.nutrients?.[key], (rescaled) => {
+                    payload.nutrients[key] = rescaled;
+                });
+            }
+            rescaleField("gram_weight", original.gram_weight, (rescaled) => {
+                payload.gram_weight = rescaled;
+            });
+        }
     }
     return payload;
 }
@@ -8067,13 +8133,82 @@ function foodPortion(food, portionId) {
     );
 }
 
-function foodMacroLine(food, portionId) {
+// Custom portion scaling (W2 logging math Finding 2): a custom
+// gram weight rescales the selected portion's nutrients by
+// customGramWeight / portion.gram_weight — or, when the portion
+// carries no gram weight of its own, the food's per-100g panel by
+// customGramWeight / 100. Mirrors the server's candidateMealItem
+// rule exactly so the composer preview matches what gets saved.
+// `nutrients` is the per-unit scaled panel (rounded like the
+// server); `baseNutrients` + `factor` let callers apply quantity in
+// the same single step the server uses.
+function composerCustomPortionNutrients(food, portionId, customGramWeight) {
+    const portion = foodPortion(food, portionId);
+    const base = portion?.nutrients || {};
+    const grams = Number(customGramWeight);
+    if (!Number.isFinite(grams) || grams <= 0) {
+        return { portion, nutrients: base, factor: 1, baseNutrients: base };
+    }
+    const portionGrams = Number(portion?.gram_weight);
+    if (Number.isFinite(portionGrams) && portionGrams > 0) {
+        const ratio = grams / portionGrams;
+        const scaled = {};
+        for (const [key, value] of Object.entries(base)) {
+            if (value != null && Number.isFinite(Number(value))) {
+                scaled[key] = Math.round(Number(value) * ratio * 100) / 100;
+            }
+        }
+        return {
+            portion,
+            nutrients: scaled,
+            factor: ratio,
+            baseNutrients: base,
+        };
+    }
+    const per100 = food?.nutrients_per_100g;
+    if (
+        per100 &&
+        per100.calories != null &&
+        Number.isFinite(Number(per100.calories))
+    ) {
+        const ratio = grams / 100;
+        const scaled = {};
+        for (const [key, value] of Object.entries(per100)) {
+            if (value != null && Number.isFinite(Number(value))) {
+                scaled[key] = Math.round(Number(value) * ratio * 100) / 100;
+            }
+        }
+        return {
+            portion,
+            nutrients: scaled,
+            factor: ratio,
+            baseNutrients: per100,
+        };
+    }
+    return { portion, nutrients: base, factor: 1, baseNutrients: base };
+}
+
+function foodMacroLine(food, portionId, item = null) {
     const portion = foodPortion(food, portionId);
     if (!portion) return "No declared portion";
+    if (item?.customPortion) {
+        const resolved = composerCustomPortionNutrients(
+            food,
+            portionId,
+            item.customGramWeight,
+        );
+        const nutrients = resolved.nutrients || {};
+        const customGrams = Number(item.customGramWeight);
+        const label =
+            item.portionLabel ||
+            (Number.isFinite(customGrams) && customGrams > 0
+                ? `${number(customGrams, 1)} g`
+                : portion.label);
+        return `${escapeHtml(label)} · ${number(nutrients.calories)} kcal · P ${number(nutrients.protein_g, 1)}g · C ${number(nutrients.carbs_g, 1)}g · F ${number(nutrients.fat_g, 1)}g`;
+    }
     const nutrients = portion.nutrients || {};
     return `${escapeHtml(portion.label)} · ${number(nutrients.calories)} kcal · P ${number(nutrients.protein_g, 1)}g · C ${number(nutrients.carbs_g, 1)}g · F ${number(nutrients.fat_g, 1)}g`;
 }
-
 /**
  * Portion picker helpers (search ranking + portion picker slice).
  * The server serializes portions natural-first (cup before fl oz,
@@ -8117,7 +8252,13 @@ function applyDraftPortionToEditor(select) {
         ) ?? 1;
     const setField = (name, value) => {
         const element = root.querySelector(`[data-draft-field="${name}"]`);
-        if (element) element.value = value ?? "";
+        if (element) {
+            element.value = value ?? "";
+            // Portion-driven writes are authoritative: any earlier
+            // hand-edit / live-rescale markers for the field lapse.
+            delete element.dataset.draftEdited;
+            delete element.dataset.draftAutoValue;
+        }
     };
     setField("portion_label", portion.label);
     if (portion.gram_weight != null) {
@@ -8133,6 +8274,45 @@ function applyDraftPortionToEditor(select) {
             value == null ? "" : Math.round(value * quantity * 100) / 100,
         );
     }
+}
+
+// Live companion to the draftItemPayloadFromDom rescale: when the
+// quantity of a portion-picker-less (or custom-portion) draft item
+// changes, rewrite its nutrient/gram inputs from the ORIGINAL totals
+// so the editor shows the same numbers the save will store. Fields
+// the user hand-edited (draftEdited) are never overwritten; written
+// fields carry draftAutoValue so the payload builder can tell a
+// live-rescaled value from a hand edit.
+function applyDraftQuantityToEditor(input) {
+    const root = input?.closest?.("[data-draft-item-index]");
+    if (!root) return;
+    const index = Number(root.dataset.draftItemIndex);
+    const original = mealDraftReview.draft?.items?.[index];
+    if (!original) return;
+    const portionSelect = root.querySelector('[data-draft-field="portion_id"]');
+    if (portionSelect && portionSelect.value !== "__custom__") {
+        applyDraftPortionToEditor(portionSelect);
+        return;
+    }
+    const nextQuantity = draftNumber(input.value);
+    if (nextQuantity == null || nextQuantity <= 0) return;
+    const baseQuantity = draftBaseQuantity(original);
+    const setAuto = (name, baseValue) => {
+        if (baseValue == null || !Number.isFinite(Number(baseValue))) return;
+        const element = root.querySelector(`[data-draft-field="${name}"]`);
+        if (!element || element.dataset.draftEdited) return;
+        const rescaled = scaleDraftValue(
+            Number(baseValue),
+            baseQuantity,
+            nextQuantity,
+        );
+        element.value = rescaled;
+        element.dataset.draftAutoValue = String(rescaled);
+    };
+    for (const key of draftNutrientFields) {
+        setAuto(key, original.nutrients?.[key]);
+    }
+    setAuto("gram_weight", original.gram_weight);
 }
 
 document.addEventListener("change", (event) => {
@@ -8164,6 +8344,9 @@ document.addEventListener("change", (event) => {
     }
     if (target.matches('[data-draft-field="portion_id"]')) {
         applyDraftPortionToEditor(target);
+    }
+    if (target.matches('[data-draft-field="quantity"]')) {
+        applyDraftQuantityToEditor(target);
     }
     if (target.matches("[data-recipe-plan-toggle]")) {
         // Consolidated create: checking "Also add to plan" reveals
@@ -8271,6 +8454,11 @@ function readMealComposerDraft(now = Date.now()) {
         const notes = typeof parsed.notes === "string" ? parsed.notes : "";
         const fromPantry = parsed.fromPantry === true;
         const mealTypeTouched = parsed.mealTypeTouched === true;
+        const idempotencyKey =
+            typeof parsed.idempotencyKey === "string" &&
+            parsed.idempotencyKey.trim()
+                ? parsed.idempotencyKey
+                : null;
         const draft = {
             version: 1,
             items,
@@ -8278,6 +8466,7 @@ function readMealComposerDraft(now = Date.now()) {
             mealTypeTouched,
             notes,
             fromPantry,
+            idempotencyKey,
             reopenAfterAuth: parsed.reopenAfterAuth === true,
             savedAt: typeof parsed.savedAt === "number" ? parsed.savedAt : now,
         };
@@ -8305,6 +8494,11 @@ function writeMealComposerDraft(draft) {
                 mealTypeTouched: Boolean(draft.mealTypeTouched),
                 notes: typeof draft.notes === "string" ? draft.notes : "",
                 fromPantry: Boolean(draft.fromPantry),
+                idempotencyKey:
+                    typeof draft.idempotencyKey === "string" &&
+                    draft.idempotencyKey.trim()
+                        ? draft.idempotencyKey
+                        : null,
                 reopenAfterAuth: Boolean(draft.reopenAfterAuth),
                 savedAt:
                     typeof draft.savedAt === "number"
@@ -8359,6 +8553,7 @@ function persistMealComposerState({ reopenAfterAuth = false } = {}) {
         mealTypeTouched: mealComposer.mealTypeTouched,
         notes,
         fromPantry,
+        idempotencyKey: mealComposer.idempotencyKey,
         reopenAfterAuth: reopenAfterAuth || Boolean(existing?.reopenAfterAuth),
         savedAt: Date.now(),
     });
@@ -8614,7 +8809,7 @@ function renderMealComposerItems() {
         .map((item, index) => {
             if (item.kind === "food") {
                 const portions = item.food.portions || [];
-                return `<article class="meal-composer-item" data-composer-index="${index}"><div class="meal-composer-item-head"><div><strong>${escapeHtml(foodTitle(item.food))}</strong><small>${sourceBadge(item.savedFoodId ? "saved_food" : item.food.provider)} ${confidenceBadge(item.food.confidence)}</small></div><button class="button button-quiet button-small" type="button" data-action="remove-meal-item" data-index="${index}">Remove</button></div><div class="meal-composer-grid"><label class="field"><span>Portion</span><select data-composer-field="portion_id">${portions.map((portion) => `<option value="${escapeHtml(portion.id)}" ${!item.customPortion && portion.id === item.portionId ? "selected" : ""}>${escapeHtml(portionOptionLabelJs(portion))}</option>`).join("")}<option value="__custom__" ${item.customPortion ? "selected" : ""}>Custom portion…</option></select></label><label class="field"><span>Quantity</span><input data-composer-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity || 1)}" /></label>${item.customPortion ? `<label class="field"><span>Custom portion</span><input data-composer-field="portion_label" value="${escapeHtml(item.portionLabel || "")}" placeholder="e.g. 1 large glass" /></label><label class="field"><span>Gram weight</span><input data-composer-field="gram_weight" type="number" min="0.01" step="0.1" value="${escapeHtml(item.customGramWeight || "")}" /></label>` : ""}</div><small class="meal-composer-macros">${foodMacroLine(item.food, item.portionId)}</small></article>`;
+                return `<article class="meal-composer-item" data-composer-index="${index}"><div class="meal-composer-item-head"><div><strong>${escapeHtml(foodTitle(item.food))}</strong><small>${sourceBadge(item.savedFoodId ? "saved_food" : item.food.provider)} ${confidenceBadge(item.food.confidence)}</small></div><button class="button button-quiet button-small" type="button" data-action="remove-meal-item" data-index="${index}">Remove</button></div><div class="meal-composer-grid"><label class="field"><span>Portion</span><select data-composer-field="portion_id">${portions.map((portion) => `<option value="${escapeHtml(portion.id)}" ${!item.customPortion && portion.id === item.portionId ? "selected" : ""}>${escapeHtml(portionOptionLabelJs(portion))}</option>`).join("")}<option value="__custom__" ${item.customPortion ? "selected" : ""}>Custom portion…</option></select></label><label class="field"><span>Quantity</span><input data-composer-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity || 1)}" /></label>${item.customPortion ? `<label class="field"><span>Custom portion</span><input data-composer-field="portion_label" value="${escapeHtml(item.portionLabel || "")}" placeholder="e.g. 1 large glass" /></label><label class="field"><span>Gram weight</span><input data-composer-field="gram_weight" type="number" min="0.01" step="0.1" value="${escapeHtml(item.customGramWeight || "")}" /></label>` : ""}</div><small class="meal-composer-macros">${foodMacroLine(item.food, item.portionId, item)}</small></article>`;
             }
             const nutrients = item.nutrients || {};
             return `<article class="meal-composer-item" data-composer-index="${index}"><div class="meal-composer-item-head"><div><strong>${item.kind === "recent" ? escapeHtml(item.name) : "Manual food"}</strong><small>${sourceBadge(item.sourceType || "user_supplied")} ${item.kind === "recent" ? (item.fromUsuals ? "From your usuals" : "From recent meal history") : "Enter the nutrition used"}</small></div><button class="button button-quiet button-small" type="button" data-action="remove-meal-item" data-index="${index}">Remove</button></div><div class="meal-composer-grid"><label class="field"><span>Name</span><input data-composer-field="name" value="${escapeHtml(item.name || "")}" required /></label><label class="field"><span>Portion</span><input data-composer-field="portion_label" value="${escapeHtml(item.portionLabel || "")}" placeholder="1 bowl, 1 slice…" /></label><label class="field"><span>Quantity</span><input data-composer-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity || 1)}" /></label></div><div class="meal-composer-nutrients">${["calories", "protein_g", "carbs_g", "fat_g", "fiber_g", "sugar_g", "sodium_mg"].map((key) => `<label class="field"><span>${escapeHtml(key.replaceAll("_g", " (g)").replace("sodium_mg", "sodium (mg)"))}</span><input data-composer-field="${key}" type="number" min="0" step="0.1" value="${escapeHtml(nutrients[key] ?? "")}" /></label>`).join("")}</div></article>`;
@@ -8629,16 +8824,38 @@ function renderMealComposerItems() {
 // top of the composer carries the meal's running totals, with the
 // meal's contribution delta against the day in gold. The math
 // mirrors the submit path exactly — a food item contributes its
-// selected portion's nutrients × quantity (the server scales
-// supplied items by quantity only; a custom portion's gram weight
-// is recorded, not rescaled), a recent/manual item its stored
-// nutrients × quantity.
+// selected portion's nutrients × quantity (for a custom portion,
+// the gram weight scales the selected portion's nutrients by
+// customGramWeight / portion.gram_weight, identically to the
+// server), a recent/manual item its stored nutrients × quantity.
 function mealComposerItemMacros(item) {
     const quantity = item.quantity || 1;
-    const nutrients =
-        item.kind === "food"
-            ? foodPortion(item.food, item.portionId)?.nutrients || {}
-            : item.nutrients || {};
+    if (item.kind === "food") {
+        const resolved = item.customPortion
+            ? composerCustomPortionNutrients(
+                  item.food,
+                  item.portionId,
+                  item.customGramWeight,
+              )
+            : {
+                  nutrients:
+                      foodPortion(item.food, item.portionId)?.nutrients || {},
+                  factor: 1,
+                  baseNutrients:
+                      foodPortion(item.food, item.portionId)?.nutrients || {},
+              };
+        const base = resolved.baseNutrients || resolved.nutrients || {};
+        const totalFactor = (resolved.factor ?? 1) * quantity;
+        return {
+            calories:
+                Math.round((base.calories || 0) * totalFactor * 100) / 100,
+            protein_g:
+                Math.round((base.protein_g || 0) * totalFactor * 100) / 100,
+            carbs_g: Math.round((base.carbs_g || 0) * totalFactor * 100) / 100,
+            fat_g: Math.round((base.fat_g || 0) * totalFactor * 100) / 100,
+        };
+    }
+    const nutrients = item.nutrients || {};
     return {
         calories: (nutrients.calories || 0) * quantity,
         protein_g: (nutrients.protein_g || 0) * quantity,
@@ -9225,6 +9442,11 @@ function openMealComposer() {
     const restored = readMealComposerDraft();
     mealComposer.items = restored?.items ?? [];
     mealComposer.mealTypeTouched = Boolean(restored?.mealTypeTouched);
+    // The composer session's idempotency key restores with the draft
+    // so a submit retried after an app kill or a 401 reload still
+    // deduplicates against the first attempt.
+    mealComposer.idempotencyKey =
+        restored?.idempotencyKey || createIdempotencyKey();
     mealComposer.options.clear();
     mealComposer.usuals.clear();
     mealComposer.yesterday = null;
@@ -9330,7 +9552,7 @@ async function openMealDuplicate(id) {
     const itemCount = (meal.items || []).length;
     openDialog(
         "Duplicate meal",
-        `<form id="duplicate-meal-form" class="auth-form" data-id="${escapeHtml(id)}"><p class="tiny">${escapeHtml(meal.description || "Meal")} · ${escapeHtml(type)}${itemCount ? ` · ${itemCount} food${itemCount === 1 ? "" : "s"}, copied exactly as logged` : ""}.</p><label class="field"><span>Duplicate to</span><input name="target_date" type="date" value="${escapeHtml(tomorrow)}" required /></label><div class="auth-actions duplicate-day-choices"><button class="button button-secondary button-small" type="button" data-action="duplicate-day-choice" data-date="${escapeHtml(today)}">Today</button><button class="button button-secondary button-small is-selected" type="button" data-action="duplicate-day-choice" data-date="${escapeHtml(tomorrow)}">Tomorrow</button></div><label class="field"><span>Meal type</span><select name="meal_type">${typeOptions}</select></label><button class="button button-primary" type="submit">Duplicate meal</button></form>`,
+        `<form id="duplicate-meal-form" class="auth-form" data-id="${escapeHtml(id)}" data-idempotency-key="${escapeHtml(createIdempotencyKey())}"><p class="tiny">${escapeHtml(meal.description || "Meal")} · ${escapeHtml(type)}${itemCount ? ` · ${itemCount} food${itemCount === 1 ? "" : "s"}, copied exactly as logged` : ""}.</p><label class="field"><span>Duplicate to</span><input name="target_date" type="date" value="${escapeHtml(tomorrow)}" required /></label><div class="auth-actions duplicate-day-choices"><button class="button button-secondary button-small" type="button" data-action="duplicate-day-choice" data-date="${escapeHtml(today)}">Today</button><button class="button button-secondary button-small is-selected" type="button" data-action="duplicate-day-choice" data-date="${escapeHtml(tomorrow)}">Tomorrow</button></div><label class="field"><span>Meal type</span><select name="meal_type">${typeOptions}</select></label><button class="button button-primary" type="submit">Duplicate meal</button></form>`,
     );
 }
 
@@ -10706,6 +10928,9 @@ async function handleAction(button) {
     if (action === "clear-meal-composer") {
         mealComposer.items = [];
         mealComposer.mealTypeTouched = false;
+        // Clearing the draft is an explicit fresh start: rotate the
+        // session key so the next meal never deduplicates against it.
+        mealComposer.idempotencyKey = createIdempotencyKey();
         clearMealComposerDraft();
         const form = document.getElementById("meal-form");
         if (form) {
@@ -11215,13 +11440,27 @@ async function handleAction(button) {
         // One tap logs the whole bottle (see waterBottlePresets):
         // post the chip's converted ml, close, refresh, and confirm
         // with the action toast — Undo deletes the entry just made.
+        // The chip owns one idempotency key: a failed POST re-enables
+        // the chip and the retry reuses the key, so the server
+        // deduplicates instead of logging the bottle twice.
         button.disabled = true;
         const amountMl = Number(button.dataset.ml);
-        const result = await api("/api/app/water", {
-            method: "POST",
-            body: JSON.stringify({ amount_ml: amountMl }),
-            keepPrevious: true,
-        });
+        const idempotencyKey = (button.dataset.idempotencyKey ||=
+            createIdempotencyKey());
+        let result;
+        try {
+            result = await api("/api/app/water", {
+                method: "POST",
+                body: JSON.stringify({
+                    amount_ml: amountMl,
+                    idempotency_key: idempotencyKey,
+                }),
+                keepPrevious: true,
+            });
+        } catch (error) {
+            button.disabled = false;
+            throw error;
+        }
         if (dialog.open) closeAppDialog();
         await renderRoute();
         const entryId = result?.entry?.id;
@@ -11246,6 +11485,10 @@ async function handleAction(button) {
     }
     if (action === "add-water") {
         openDialog("Add water", addWaterDialogMarkup());
+        const waterForm = document.getElementById("water-form");
+        if (waterForm) {
+            waterForm.dataset.idempotencyKey = createIdempotencyKey();
+        }
         return;
     }
     if (action === "add-weight") {
@@ -11254,7 +11497,7 @@ async function handleAction(button) {
         );
         openDialog(
             "Add weight",
-            `<form id="weight-form" class="auth-form"><label class="field"><span>Weight</span><input name="weight" type="number" min="1" step="0.1" required /></label><label class="field"><span>Unit</span><select name="unit" required><option value="" disabled ${preferredWeightUnit ? "" : "selected"}>Select unit</option><option value="lb" ${preferredWeightUnit === "lb" ? "selected" : ""}>lb</option><option value="kg" ${preferredWeightUnit === "kg" ? "selected" : ""}>kg</option></select></label><label class="field"><span>Notes</span><input name="notes" placeholder="Optional" /></label><button class="button button-primary" type="submit">Add weight</button></form>`,
+            `<form id="weight-form" class="auth-form" data-idempotency-key="${escapeHtml(createIdempotencyKey())}"><label class="field"><span>Weight</span><input name="weight" type="number" min="1" step="0.1" required /></label><label class="field"><span>Unit</span><select name="unit" required><option value="" disabled ${preferredWeightUnit ? "" : "selected"}>Select unit</option><option value="lb" ${preferredWeightUnit === "lb" ? "selected" : ""}>lb</option><option value="kg" ${preferredWeightUnit === "kg" ? "selected" : ""}>kg</option></select></label><label class="field"><span>Notes</span><input name="notes" placeholder="Optional" /></label><button class="button button-primary" type="submit">Add weight</button></form>`,
         );
         return;
     }
@@ -11277,6 +11520,7 @@ async function handleAction(button) {
         return;
     }
     if (action === "logout") {
+        mealComposer.idempotencyKey = null;
         clearMealComposerDraft();
         clearMealDraftReviewEdits();
         await api("/account/logout", {
@@ -11521,6 +11765,24 @@ document.addEventListener("click", async (event) => {
     }
 });
 
+/** Finding 1: a user's own keystroke in a draft item's nutrient or
+ * gram-weight field marks that field hand-edited, so neither the
+ * live quantity rescale nor the payload rescale overwrites it.
+ * Programmatic value writes never fire `input`, so portion-picker
+ * and live-rescale writes stay unmarked. */
+function markDraftNutrientUserEdited(target) {
+    if (!target?.closest?.("#meal-draft-review")) return;
+    if (!target.matches?.("[data-draft-field]")) return;
+    if (!target.closest("[data-draft-item-index]")) return;
+    const fieldName = target.dataset?.draftField;
+    if (
+        draftNutrientFields.includes(fieldName) ||
+        fieldName === "gram_weight"
+    ) {
+        target.dataset.draftEdited = "1";
+    }
+}
+
 /** Photo-flow P4: any edit inside the draft review marks its owner
  * dirty and refreshes the save bar in place (no re-render). */
 function markDraftFieldDirty(target) {
@@ -11646,6 +11908,7 @@ document.addEventListener("change", async (event) => {
 
 document.addEventListener("input", (event) => {
     markDraftFieldDirty(event.target);
+    markDraftNutrientUserEdited(event.target);
     if (
         event.target.closest?.("#water-form") &&
         (event.target.name === "amount" || event.target.name === "unit")
@@ -11672,6 +11935,25 @@ document.addEventListener("input", (event) => {
         updateMealComposerStrip();
         persistMealComposerState();
         syncMealComposerClearButton();
+        // Custom-portion rows: the row's own macro line follows the
+        // gram-weight edit in place too (no re-render, focus kept).
+        const composerRow = event.target.closest("[data-composer-index]");
+        if (composerRow) {
+            const item =
+                mealComposer.items[Number(composerRow.dataset.composerIndex)];
+            if (item?.kind === "food" && item.customPortion) {
+                const macrosEl = composerRow.querySelector(
+                    ".meal-composer-macros",
+                );
+                if (macrosEl) {
+                    macrosEl.innerHTML = foodMacroLine(
+                        item.food,
+                        item.portionId,
+                        item,
+                    );
+                }
+            }
+        }
     }
     if (
         event.target.closest?.("#meal-form") &&
@@ -11748,48 +12030,71 @@ function mealComposerPayload() {
     for (const item of mealComposer.items) {
         mergeMealComposerItem(merged, { ...item });
     }
-    return merged.map((item) =>
-        item.kind === "food" && item.customPortion
-            ? {
-                  // Custom portion… escape: the free-text label and
-                  // gram weight win, nutrition stays grounded in the
-                  // selected provider portion's snapshot (the server
-                  // scales it by quantity like any supplied item).
-                  name: foodTitle(item.food),
-                  quantity: item.quantity,
-                  portion_label: item.portionLabel || undefined,
-                  gram_weight: item.customGramWeight
-                      ? Number(item.customGramWeight)
-                      : undefined,
-                  nutrients:
-                      foodPortion(item.food, item.portionId)?.nutrients || {},
-                  source_type: item.food.provider,
-                  provider: item.food.provider,
-                  provider_food_id: item.food.provider_food_id,
-                  source_snapshot: {
-                      resolution_layer: "food_search_custom_portion",
-                      candidate_id: item.candidateId,
-                      selected_portion_id: item.portionId,
-                  },
-              }
-            : item.kind === "food"
-              ? {
+    return merged.map((item) => {
+        if (item.kind === "food" && item.customPortion) {
+            // Custom portion… escape (W2 logging math Finding 2):
+            // route through the candidate/saved-food identity with
+            // the free-text label and gram weight so the server
+            // rescales the verified portion authoritatively — the
+            // old supplied-item shape recorded the gram weight but
+            // never scaled the nutrients.
+            const customGrams = Number(item.customGramWeight);
+            const validGrams =
+                Number.isFinite(customGrams) && customGrams > 0
+                    ? customGrams
+                    : undefined;
+            if (item.candidateId || item.savedFoodId) {
+                return {
                     candidate_id: item.candidateId,
                     saved_food_id: item.savedFoodId,
                     portion_id: item.portionId,
                     quantity: item.quantity,
-                }
-              : {
-                    name: item.name,
-                    quantity: item.quantity,
-                    portion_label: item.portionLabel,
-                    nutrients: item.nutrients,
-                    source_type: item.sourceType || "user_supplied",
-                    provider: item.provider,
-                    provider_food_id: item.providerFoodId,
-                    source_snapshot: item.sourceSnapshot,
+                    portion_label: item.portionLabel || undefined,
+                    gram_weight: validGrams,
+                };
+            }
+            // Defensive fallback: a food item with no server identity
+            // keeps the supplied shape, with nutrients scaled by the
+            // same custom-portion rule the preview uses.
+            return {
+                name: foodTitle(item.food),
+                quantity: item.quantity,
+                portion_label: item.portionLabel || undefined,
+                gram_weight: validGrams,
+                nutrients:
+                    composerCustomPortionNutrients(
+                        item.food,
+                        item.portionId,
+                        item.customGramWeight,
+                    ).nutrients || {},
+                source_type: item.food.provider,
+                provider: item.food.provider,
+                provider_food_id: item.food.provider_food_id,
+                source_snapshot: {
+                    resolution_layer: "food_search_custom_portion",
+                    candidate_id: item.candidateId,
+                    selected_portion_id: item.portionId,
                 },
-    );
+            };
+        }
+        return item.kind === "food"
+            ? {
+                  candidate_id: item.candidateId,
+                  saved_food_id: item.savedFoodId,
+                  portion_id: item.portionId,
+                  quantity: item.quantity,
+              }
+            : {
+                  name: item.name,
+                  quantity: item.quantity,
+                  portion_label: item.portionLabel,
+                  nutrients: item.nutrients,
+                  source_type: item.sourceType || "user_supplied",
+                  provider: item.provider,
+                  provider_food_id: item.providerFoodId,
+                  source_snapshot: item.sourceSnapshot,
+              };
+    });
 }
 
 async function saveGuidancePreferences(form) {
@@ -12399,6 +12704,10 @@ document.addEventListener("submit", async (event) => {
         }
         if (form.id === "meal-form") {
             const items = mealComposerPayload();
+            // Session key persisted pre-POST for retry dedup.
+            const idempotencyKey = (mealComposer.idempotencyKey ||=
+                createIdempotencyKey());
+            persistMealComposerState();
             const result = await api("/api/app/meals", {
                 method: "POST",
                 body: JSON.stringify({
@@ -12406,7 +12715,7 @@ document.addEventListener("submit", async (event) => {
                     meal_type: values.meal_type,
                     logged_at: values.logged_at,
                     notes: values.notes || undefined,
-                    idempotency_key: crypto.randomUUID(),
+                    idempotency_key: idempotencyKey,
                     from_pantry: values.from_pantry === "on",
                     items,
                 }),
@@ -12415,6 +12724,7 @@ document.addEventListener("submit", async (event) => {
             clearMealComposerDraft();
             mealComposer.items = [];
             mealComposer.mealTypeTouched = false;
+            mealComposer.idempotencyKey = null;
             toast(
                 result.deduplicated
                     ? "This meal was already logged."
@@ -12430,19 +12740,24 @@ document.addEventListener("submit", async (event) => {
             // pantry draw-down (that lives in the from-pantry log
             // flow's own confirmation).
             const targetDate = values.target_date;
-            await api(
+            const idempotencyKey = (form.dataset.idempotencyKey ||=
+                createIdempotencyKey());
+            const copied = await api(
                 `/api/app/meals/${encodeURIComponent(form.dataset.id)}/copy`,
                 {
                     method: "POST",
                     body: JSON.stringify({
                         logged_at: `${targetDate}T12:00:00.000Z`,
                         meal_type: values.meal_type,
+                        idempotency_key: idempotencyKey,
                     }),
                     keepPrevious: true,
                 },
             );
             toastAction(
-                `Duplicated to ${formatDate(targetDate, { weekday: true })}.`,
+                copied?.deduplicated
+                    ? `Already duplicated to ${formatDate(targetDate, { weekday: true })}.`
+                    : `Duplicated to ${formatDate(targetDate, { weekday: true })}.`,
                 "View day",
                 () => {
                     state.date = targetDate;
@@ -12474,24 +12789,36 @@ document.addEventListener("submit", async (event) => {
             toast("Meal updated.");
         }
         if (form.id === "water-form") {
+            const idempotencyKey = (form.dataset.idempotencyKey ||=
+                createIdempotencyKey());
             const result = await api("/api/app/water", {
                 method: "POST",
                 body: JSON.stringify({
                     amount_ml: waterFormAmountMl(values.amount, values.unit),
                     notes: values.notes ?? "",
+                    idempotency_key: idempotencyKey,
                 }),
                 keepPrevious: true,
             });
-            toast("Water added.");
+            toast(
+                result.deduplicated ? "Water already added." : "Water added.",
+            );
             queueOutlierPrompt("water", result);
         }
         if (form.id === "weight-form") {
+            const idempotencyKey = (form.dataset.idempotencyKey ||=
+                createIdempotencyKey());
             const result = await api("/api/app/weight", {
                 method: "POST",
-                body: JSON.stringify(values),
+                body: JSON.stringify({
+                    ...values,
+                    idempotency_key: idempotencyKey,
+                }),
                 keepPrevious: true,
             });
-            toast("Weight added.");
+            toast(
+                result.deduplicated ? "Weight already added." : "Weight added.",
+            );
             queueOutlierPrompt("weight", result);
         }
         if (form.id === "edit-water-form") {

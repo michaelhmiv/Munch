@@ -176,7 +176,9 @@ test("chip action: posts the chip ml, toasts with Undo, Undo deletes the created
     // Posts exactly the chip's converted ml to the existing endpoint.
     expect(block).toContain("Number(button.dataset.ml)");
     expect(block).toContain('api("/api/app/water", {');
-    expect(block).toContain("body: JSON.stringify({ amount_ml: amountMl })");
+    expect(block).toContain("body: JSON.stringify({");
+    expect(block).toContain("amount_ml: amountMl");
+    expect(block).toContain("idempotency_key: idempotencyKey");
     // Closes and refreshes before confirming.
     expect(block).toContain("closeAppDialog()");
     expect(block).toContain("renderRoute()");
