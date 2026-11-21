@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+    androidEntitlementsFromCapabilities,
     androidEntitlementsFromLegacyStripePremium,
     resolveAndroidEntitlements,
 } from "./android-entitlements.js";
+import { capabilitiesFromSubscription } from "./capabilities.js";
 import { chooseDirectSubscription } from "./subscription-sources.js";
 
 const now = new Date("2026-10-10T12:00:00.000Z");
@@ -65,13 +67,16 @@ describe("Android ad-free entitlement", () => {
     });
 });
 
-describe("resolveAndroidEntitlements (merged rail-neutral snapshot)", () => {
+describe("resolveAndroidEntitlements (resolved account capabilities)", () => {
     test("(a) Stripe Premium resolves ad-free, unchanged", async () => {
         const result = await resolveAndroidEntitlements(
             "stripe-user",
             async () =>
-                chooseDirectSubscription(
-                    [{ provider: "stripe", status: "active" }],
+                capabilitiesFromSubscription(
+                    chooseDirectSubscription(
+                        [{ provider: "stripe", status: "active" }],
+                        now,
+                    ),
                     now,
                 ),
         );
@@ -80,15 +85,20 @@ describe("resolveAndroidEntitlements (merged rail-neutral snapshot)", () => {
 
     test("(b) store-rail-only Premium (google_play, no Stripe record) resolves ad-free", async () => {
         const result = await resolveAndroidEntitlements("play-user", async () =>
-            chooseDirectSubscription(
-                [
-                    {
-                        provider: "google_play",
-                        productId: "munch_premium_monthly",
-                        status: "active",
-                        currentPeriodEnd: new Date("2026-11-10T12:00:00.000Z"),
-                    },
-                ],
+            capabilitiesFromSubscription(
+                chooseDirectSubscription(
+                    [
+                        {
+                            provider: "google_play",
+                            productId: "munch_premium_monthly",
+                            status: "active",
+                            currentPeriodEnd: new Date(
+                                "2026-11-10T12:00:00.000Z",
+                            ),
+                        },
+                    ],
+                    now,
+                ),
                 now,
             ),
         );
@@ -97,15 +107,18 @@ describe("resolveAndroidEntitlements (merged rail-neutral snapshot)", () => {
 
     test("merged snapshot prefers an active Play subscription over a canceled Stripe record", async () => {
         const result = await resolveAndroidEntitlements("play-user", async () =>
-            chooseDirectSubscription(
-                [
-                    { provider: "stripe", status: "canceled" },
-                    {
-                        provider: "google_play",
-                        productId: "munch_premium_monthly",
-                        status: "trialing",
-                    },
-                ],
+            capabilitiesFromSubscription(
+                chooseDirectSubscription(
+                    [
+                        { provider: "stripe", status: "canceled" },
+                        {
+                            provider: "google_play",
+                            productId: "munch_premium_monthly",
+                            status: "trialing",
+                        },
+                    ],
+                    now,
+                ),
                 now,
             ),
         );
@@ -114,12 +127,15 @@ describe("resolveAndroidEntitlements (merged rail-neutral snapshot)", () => {
 
     test("(c) no subscription resolves not ad-free", async () => {
         const result = await resolveAndroidEntitlements("free-user", async () =>
-            chooseDirectSubscription([], now),
+            capabilitiesFromSubscription(
+                chooseDirectSubscription([], now),
+                now,
+            ),
         );
         expect(result).toEqual({ adFree: false });
     });
 
-    test("(d) a failing snapshot source fails soft to null, without throwing", async () => {
+    test("(d) a failing capability source fails soft to null, without throwing", async () => {
         const result = await resolveAndroidEntitlements(
             "unlucky-user",
             async () => {
@@ -127,5 +143,45 @@ describe("resolveAndroidEntitlements (merged rail-neutral snapshot)", () => {
             },
         );
         expect(result).toEqual({ adFree: null });
+    });
+
+    test("explicit_override capabilities resolve ad-free", async () => {
+        const free = capabilitiesFromSubscription({ status: null }, now);
+        const result = await resolveAndroidEntitlements(
+            "override-user",
+            async () => ({
+                ...free,
+                tier: "premium" as const,
+                entitlementSource: "explicit_override" as const,
+            }),
+        );
+        expect(result).toEqual({ adFree: true });
+    });
+
+    test("household_subscription capabilities resolve ad-free", async () => {
+        const free = capabilitiesFromSubscription({ status: null }, now);
+        const result = await resolveAndroidEntitlements(
+            "member-user",
+            async () => ({
+                ...free,
+                tier: "premium" as const,
+                entitlementSource: "household_subscription" as const,
+            }),
+        );
+        expect(result).toEqual({ adFree: true });
+    });
+});
+
+describe("androidEntitlementsFromCapabilities", () => {
+    test("maps the resolved tier to ad-free", () => {
+        expect(
+            androidEntitlementsFromCapabilities({ tier: "premium" }),
+        ).toEqual({ adFree: true });
+        expect(androidEntitlementsFromCapabilities({ tier: "free" })).toEqual({
+            adFree: false,
+        });
+        expect(androidEntitlementsFromCapabilities(null)).toEqual({
+            adFree: false,
+        });
     });
 });

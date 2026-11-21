@@ -58,4 +58,30 @@ describe("subscription entitlement policy", () => {
             expect(decision.canWriteNutritionData).toBe(false);
         }
     });
+
+    test("ends active and trialing subscriptions at currentPeriodEnd", () => {
+        const pastEnd = new Date("2026-08-02T17:00:00Z");
+        for (const status of ["active", "trialing"] as const) {
+            const decision = decideEntitlement(
+                { status, currentPeriodEnd: pastEnd },
+                now,
+            );
+            expect(decision.allowMcp).toBe(false);
+            expect(decision.reason).toBe("subscription_ended");
+        }
+        // Exact boundary: a period ending right now is no longer current.
+        const boundary = decideEntitlement(
+            { status: "active", currentPeriodEnd: now },
+            now,
+        );
+        expect(boundary.allowMcp).toBe(false);
+        expect(boundary.reason).toBe("subscription_ended");
+        // Null period end (PR #302 grandfathering) still grants access.
+        expect(
+            decideEntitlement(
+                { status: "trialing", currentPeriodEnd: null },
+                now,
+            ).reason,
+        ).toBe("trialing");
+    });
 });

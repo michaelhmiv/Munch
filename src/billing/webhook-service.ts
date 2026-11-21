@@ -1,11 +1,10 @@
-import type { SubscriptionStatus } from "./entitlements.js";
 import {
     markStripeWebhookProcessed,
     recordStripeWebhookEvent,
-    replaceSubscriptionItems,
     upsertStripeCustomer,
-    upsertSubscription,
 } from "./repository.js";
+import type { StripeSubscription } from "./stripe-client.js";
+import { persistStripeSubscription } from "./stripe-persistence.js";
 
 interface StripeEventEnvelope {
     id: string;
@@ -76,29 +75,6 @@ function parseEvent(rawPayload: string): StripeEventEnvelope {
     };
 }
 
-function subscriptionStatus(value: string): SubscriptionStatus {
-    const allowed: SubscriptionStatus[] = [
-        "incomplete",
-        "incomplete_expired",
-        "trialing",
-        "active",
-        "past_due",
-        "canceled",
-        "unpaid",
-        "paused",
-    ];
-    if (!allowed.includes(value as SubscriptionStatus)) {
-        throw new Error("unsupported_subscription_status");
-    }
-    return value as SubscriptionStatus;
-}
-
-function optionalDate(timestamp: number | null | undefined): Date | null {
-    return typeof timestamp === "number" && Number.isFinite(timestamp)
-        ? new Date(timestamp * 1000)
-        : null;
-}
-
 function userIdFromMetadata(
     metadata: Record<string, string> | undefined,
     fallback?: string | null,
@@ -144,43 +120,13 @@ async function processSubscription(
     }
 
     const userId = userIdFromMetadata(subscription.metadata);
-    const status = subscriptionStatus(subscription.status);
-    const graceExpiresAt =
-        status === "past_due"
-            ? new Date((eventCreated + 3 * 24 * 60 * 60) * 1000)
-            : null;
-    const items = (subscription.items?.data ?? [])
-        .filter(
-            (item) =>
-                typeof item.id === "string" &&
-                typeof item.price?.id === "string",
-        )
-        .map((item) => ({
-            stripeSubscriptionItemId: item.id as string,
-            stripePriceId: item.price?.id as string,
-            quantity: Math.max(0, Number(item.quantity ?? 0)),
-        }));
-    const premiumPriceId = process.env.STRIPE_PRICE_ID?.trim();
-    const primaryPriceId =
-        items.find((item) => item.stripePriceId === premiumPriceId)
-            ?.stripePriceId ??
-        items[0]?.stripePriceId ??
-        null;
-
-    await upsertStripeCustomer(userId, subscription.customer);
-    await upsertSubscription({
+    // The payload shape was validated above; the persistence helper
+    // re-validates the status and normalizes line items before writing.
+    await persistStripeSubscription({
         userId,
-        stripeSubscriptionId: subscription.id,
-        stripePriceId: primaryPriceId,
-        status,
-        currentPeriodStart: optionalDate(subscription.current_period_start),
-        currentPeriodEnd: optionalDate(subscription.current_period_end),
-        trialEnd: optionalDate(subscription.trial_end),
-        cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
-        canceledAt: optionalDate(subscription.canceled_at),
-        graceExpiresAt,
+        subscription: subscription as unknown as StripeSubscription,
+        graceAnchorMs: eventCreated * 1000,
     });
-    await replaceSubscriptionItems(subscription.id, items);
 }
 
 function processingErrorCode(error: unknown): string {

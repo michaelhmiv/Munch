@@ -100,4 +100,38 @@ describe("Munch startup configuration", () => {
             }),
         );
     });
+
+    test("accepts unset STRIPE_GRANDFATHERED_PRICE_IDS", () => {
+        validEnvironment();
+        delete process.env.STRIPE_GRANDFATHERED_PRICE_IDS;
+        expect(configurationIssues()).toEqual([]);
+    });
+
+    test("accepts valid grandfathered Stripe price IDs", () => {
+        validEnvironment();
+        process.env.STRIPE_GRANDFATHERED_PRICE_IDS =
+            "price_legacy_299, price_legacy_older";
+        expect(configurationIssues()).toEqual([]);
+    });
+
+    test("rejects malformed grandfathered Stripe price IDs", () => {
+        validEnvironment();
+        process.env.STRIPE_GRANDFATHERED_PRICE_IDS = "legacy-299";
+        expect(configurationIssues()).toContainEqual(
+            expect.objectContaining({
+                key: "STRIPE_GRANDFATHERED_PRICE_IDS",
+            }),
+        );
+    });
+
+    test("rejects the household member seat price as grandfathered", () => {
+        validEnvironment();
+        process.env.STRIPE_GRANDFATHERED_PRICE_IDS =
+            process.env.STRIPE_HOUSEHOLD_MEMBER_PRICE_ID;
+        expect(configurationIssues()).toContainEqual(
+            expect.objectContaining({
+                key: "STRIPE_GRANDFATHERED_PRICE_IDS",
+            }),
+        );
+    });
 });

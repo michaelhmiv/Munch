@@ -60,6 +60,29 @@ export function configurationIssues(): ConfigurationIssue[] {
     requireValue(issues, "STRIPE_WEBHOOK_SECRET");
     requireValue(issues, "STRIPE_PRICE_ID");
     requireValue(issues, "STRIPE_HOUSEHOLD_MEMBER_PRICE_ID");
+
+    const grandfatheredPriceIds = present("STRIPE_GRANDFATHERED_PRICE_IDS");
+    if (grandfatheredPriceIds) {
+        const entries = grandfatheredPriceIds
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean);
+        if (entries.some((entry) => !/^price_[A-Za-z0-9_]+$/.test(entry))) {
+            issues.push({
+                key: "STRIPE_GRANDFATHERED_PRICE_IDS",
+                message:
+                    "Grandfathered price IDs must be comma-separated Stripe price IDs",
+            });
+        }
+        const memberPriceId = present("STRIPE_HOUSEHOLD_MEMBER_PRICE_ID");
+        if (memberPriceId && entries.includes(memberPriceId)) {
+            issues.push({
+                key: "STRIPE_GRANDFATHERED_PRICE_IDS",
+                message:
+                    "Grandfathered price IDs must not include the household member seat price",
+            });
+        }
+    }
     requireValue(issues, "OFF_USER_AGENT");
     requireValue(
         issues,

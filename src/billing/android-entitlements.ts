@@ -1,9 +1,9 @@
-import { subscriptionProvidesPremium } from "./capabilities.js";
-import type { SubscriptionSnapshot } from "./entitlements.js";
 import {
-    getDirectSubscriptionSnapshot,
-    type DirectSubscriptionSnapshot,
-} from "./subscription-sources.js";
+    resolveMunchCapabilities,
+    subscriptionProvidesPremium,
+    type MunchCapabilities,
+} from "./capabilities.js";
+import type { SubscriptionSnapshot } from "./entitlements.js";
 
 export interface AndroidEntitlements {
     adFree: boolean | null;
@@ -31,31 +31,43 @@ export function androidEntitlementsFromLegacyStripePremium(
     return androidEntitlementsFromSubscription(subscription, now);
 }
 
-export type AndroidSubscriptionSnapshotLoader = (
+export function androidEntitlementsFromCapabilities(
+    capabilities: Pick<MunchCapabilities, "tier"> | null,
+): AndroidEntitlements {
+    return {
+        adFree: capabilities?.tier === "premium",
+    };
+}
+
+export type AndroidCapabilitiesLoader = (
     userId: string,
-) => Promise<DirectSubscriptionSnapshot>;
+) => Promise<Pick<MunchCapabilities, "tier">>;
 
 /**
- * Premium subscribers receive the Android ad-free benefit, on whichever rail
- * they subscribed through. The resolver reads the same merged rail-neutral
- * snapshot the rest of the system uses (`getDirectSubscriptionSnapshot`:
- * Stripe + store records merged by `subscription-sources.ts`), so a Google
- * Play Premium subscriber resolves ad-free exactly like a Stripe one.
+ * Premium subscribers receive the Android ad-free benefit. Ad-free follows
+ * the fully resolved account Premium tier — a direct subscription on any
+ * rail (Stripe or store), an active explicit premium override, or a
+ * covered paid household seat — because Munch's product contract defines
+ * Premium as ad-free + MCP + in-app AI chat, and capability resolution
+ * already grants all three groups `tier: "premium"`.
  *
- * This remains a separate entitlement from the Munch feature tier: it reads
- * the DIRECT subscription only — household seat coverage and explicit
- * premium overrides (both part of capability resolution) do not grant
- * ad-free here, exactly as they did not under the Stripe-only resolver.
+ * The tier is resolved on the `"web"` (account-wide) surface via
+ * `resolveMunchCapabilities(userId, "web")`: the `"android"` surface
+ * intentionally reports a free baseline, so resolving there would mask
+ * ad-free for every Android bearer client.
+ *
  * A lookup failure returns `{ adFree: null }` (fail-soft, no throw) so the
- * caller can leave the ad state undecided rather than guessing.
+ * caller can leave the ad state undecided rather than guessing; the ads
+ * policy only shows ads on an explicit `adFree === false`.
  */
 export async function resolveAndroidEntitlements(
     userId: string,
-    loadSnapshot: AndroidSubscriptionSnapshotLoader = getDirectSubscriptionSnapshot,
+    loadCapabilities: AndroidCapabilitiesLoader = (id) =>
+        resolveMunchCapabilities(id, "web"),
 ): Promise<AndroidEntitlements> {
     try {
-        const subscription = await loadSnapshot(userId);
-        return androidEntitlementsFromSubscription(subscription);
+        const capabilities = await loadCapabilities(userId);
+        return androidEntitlementsFromCapabilities(capabilities);
     } catch (error) {
         console.warn("Android ad-free entitlement lookup failed", {
             errorName: error instanceof Error ? error.name : "unknown",

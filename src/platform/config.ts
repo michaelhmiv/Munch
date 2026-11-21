@@ -4,6 +4,7 @@ export interface PlatformConfig {
     stripeSecretKey: string;
     stripeWebhookSecret: string;
     stripePriceId: string;
+    stripeGrandfatheredPriceIds: string[];
     stripeHouseholdMemberPriceId: string;
 }
 
@@ -35,6 +36,75 @@ function normalizedBaseUrl(value: string): string {
     return url.toString().replace(/\/$/, "");
 }
 
+export function parseStripeGrandfatheredPriceIds(
+    raw = process.env.STRIPE_GRANDFATHERED_PRICE_IDS,
+): string[] {
+    if (!raw) return [];
+    const seen = new Set<string>();
+    for (const part of raw.split(",")) {
+        const trimmed = part.trim();
+        if (trimmed) seen.add(trimmed);
+    }
+    return [...seen];
+}
+
+export function knownPremiumStripePriceIds(input: {
+    stripePriceId?: string | null;
+    stripeGrandfatheredPriceIds?: readonly string[];
+    stripeHouseholdMemberPriceId?: string | null;
+}): Set<string> {
+    const seatPriceId = input.stripeHouseholdMemberPriceId?.trim() || null;
+    const ids = new Set<string>();
+    const current = input.stripePriceId?.trim();
+    if (current && current !== seatPriceId) ids.add(current);
+    for (const legacy of input.stripeGrandfatheredPriceIds ?? []) {
+        const trimmed = legacy.trim();
+        if (trimmed && trimmed !== seatPriceId) ids.add(trimmed);
+    }
+    return ids;
+}
+
+export function isKnownPremiumStripePriceId(
+    priceId: string | null | undefined,
+    config: Pick<
+        PlatformConfig,
+        | "stripePriceId"
+        | "stripeGrandfatheredPriceIds"
+        | "stripeHouseholdMemberPriceId"
+    >,
+): boolean {
+    if (!priceId) return false;
+    return knownPremiumStripePriceIds(config).has(priceId);
+}
+
+export function selectPrimaryStripePriceId(
+    items: ReadonlyArray<{ stripePriceId: string }>,
+    input?: {
+        stripePriceId?: string | null;
+        stripeGrandfatheredPriceIds?: readonly string[];
+        stripeHouseholdMemberPriceId?: string | null;
+    },
+): string | null {
+    const cfg = input ?? {
+        stripePriceId: process.env.STRIPE_PRICE_ID,
+        stripeGrandfatheredPriceIds: parseStripeGrandfatheredPriceIds(),
+        stripeHouseholdMemberPriceId:
+            process.env.STRIPE_HOUSEHOLD_MEMBER_PRICE_ID,
+    };
+    const known = knownPremiumStripePriceIds(cfg);
+    const seatPriceId = cfg.stripeHouseholdMemberPriceId?.trim() || null;
+    return (
+        items.find((item) => known.has(item.stripePriceId))?.stripePriceId ??
+        items.find(
+            (item) =>
+                Boolean(item.stripePriceId) &&
+                item.stripePriceId !== seatPriceId,
+        )?.stripePriceId ??
+        items[0]?.stripePriceId ??
+        null
+    );
+}
+
 export function getPlatformConfig(): PlatformConfig {
     return {
         databaseUrl: requiredEnvironmentVariable("DATABASE_URL"),
@@ -46,6 +116,7 @@ export function getPlatformConfig(): PlatformConfig {
             "STRIPE_WEBHOOK_SECRET",
         ),
         stripePriceId: requiredEnvironmentVariable("STRIPE_PRICE_ID"),
+        stripeGrandfatheredPriceIds: parseStripeGrandfatheredPriceIds(),
         stripeHouseholdMemberPriceId: requiredEnvironmentVariable(
             "STRIPE_HOUSEHOLD_MEMBER_PRICE_ID",
         ),

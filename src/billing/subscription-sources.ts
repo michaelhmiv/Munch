@@ -1,4 +1,7 @@
-import type { SubscriptionSnapshot } from "./entitlements.js";
+import {
+    subscriptionPeriodIsCurrent,
+    type SubscriptionSnapshot,
+} from "./entitlements.js";
 import { getLatestStripeSubscriptionRecord } from "./repository.js";
 import {
     getLatestStoreSubscriptionRecord,
@@ -14,8 +17,9 @@ export interface DirectSubscriptionSnapshot extends SubscriptionSnapshot {
 
 function accessRank(subscription: SubscriptionSnapshot, now: Date): number {
     if (
-        subscription.status === "active" ||
-        subscription.status === "trialing"
+        (subscription.status === "active" ||
+            subscription.status === "trialing") &&
+        subscriptionPeriodIsCurrent(subscription.currentPeriodEnd, now)
     ) {
         return 4;
     }
