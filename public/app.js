@@ -4668,7 +4668,7 @@ async function openPlannedLog(meal) {
             ${picker}
             <label>Meal<select name="meal_type">${slotOptions}</select></label>
             <label>Notes<textarea name="notes" rows="2" maxlength="2000"></textarea></label>
-            <button class="button button-primary" type="submit" data-log-submit>Log meal</button>
+            <button class="button button-primary" type="submit" data-log-submit>Log food</button>
         </form>`,
     );
     if (recipe) {
@@ -4721,7 +4721,7 @@ async function openRecipeLog(id, revisionId, options = {}) {
         "Log saved recipe",
         `<form id="recipe-log-form" class="auth-form" data-id="${escapeHtml(id)}" data-revision="${escapeHtml(revisionId || "")}"><p>Use the saved ingredients and nutrition exactly as stored. Choose how much you ate.</p>${pantryFields}${picker}<label class="field"><span>Meal type</span><select name="meal_type">${mealTypeOptionsHtml(
             defaultMealType(new Date(), state.bootstrap?.profile?.timezone),
-        )}</select></label><label class="field"><span>Notes</span><input name="notes" maxlength="4000" placeholder="Optional" /></label><button class="button button-primary" type="submit" data-log-submit>Log meal</button></form>`,
+        )}</select></label><label class="field"><span>Notes</span><input name="notes" maxlength="4000" placeholder="Optional" /></label><button class="button button-primary" type="submit" data-log-submit>Log food</button></form>`,
     );
     if (recipe) {
         wireRecipePortionPicker(
@@ -7639,7 +7639,7 @@ function renderMealDraftReview(draft) {
         mealPhotoCapture.session?.draftId === draft.id
             ? mealPhotoCapture.session
             : null;
-    root.innerHTML = `<div class="meal-draft-review">${draft.description ? `<p class="meal-draft-desc">${escapeHtml(draft.description)}</p>` : ""}<div class="meal-draft-meta" data-draft-details><span>${escapeHtml(draftLoggedLabel(draft.logged_at))}</span>${editable ? `<select class="meal-draft-mealtype" data-draft-field="meal_type" aria-label="Meal type">${mealTypeOptionsHtml(draft.meal_type)}</select>` : `<span>${escapeHtml(draft.meal_type)}</span>`}</div>${busyText || photoBusy ? `<div class="meal-draft-status" role="status"><span class="meal-draft-spinner" aria-hidden="true"></span><span class="meal-draft-status-text"><strong>Re-analyzing your meal</strong>${busyText ? `<small>Your note: “${escapeHtml(busyText)}”</small>` : ""}</span></div>` : ""}<div class="meal-draft-totals${busyText || photoBusy ? " meal-draft-dim" : ""}"><div class="meal-draft-total meal-draft-total-lead"><span>Calories</span><strong>${number(totals.calories)} <small>kcal</small></strong></div><div class="meal-draft-total"><span>Protein</span><strong>${number(totals.protein_g)} g</strong></div><div class="meal-draft-total"><span>Carbs</span><strong>${number(totals.carbs_g)} g</strong></div><div class="meal-draft-total"><span>Fat</span><strong>${number(totals.fat_g)} g</strong></div></div><div class="meal-draft-items${busyText || photoBusy ? " meal-draft-dim" : ""}">${draft.items.map(draftItemEditor).join("") || `<p class="tiny">No foods are in this draft yet.</p>`}${editable ? mealDraftReview.pendingManual.map(draftManualEditor).join("") : ""}</div>${photoSession ? `<div class="meal-draft-photos">${photoSession.files.map((file, i) => `<span class="meal-draft-photo-chip">Photo ${i + 1}<button class="button button-quiet button-small" type="button" data-action="remove-draft-photo" data-index="${i}" aria-label="Remove photo ${i + 1}">Remove</button></span>`).join("")}${photoSession.files.length < 3 ? photoCaptureMarkup({ inputId: "meal-draft-photo-file", label: "Add another photo", multiple: true }) : ""}</div>` : ""}${blockingNames.length ? `<p class="meal-draft-blocker">${escapeHtml(blockingNames.join(", "))} ${blockingNames.length === 1 ? "has" : "have"} no nutrition values yet. Tap the row to add values, or swipe left to remove.</p>` : ""}${editable && draft.source_mode === "photo" ? `<section class="meal-draft-notebox meal-draft-add-text"><label class="field"><span>Anything else to add?</span><input class="input meal-draft-add-text-input" id="meal-draft-add-text-input" type="text" placeholder="I added a good bit of butter…" maxlength="500" autocomplete="off" value="${busyText ? escapeHtml(busyText) : ""}" ${busyText || photoBusy ? "disabled" : ""} /></label><button class="button button-secondary meal-draft-add-text-button" type="button" data-action="add-draft-text" ${busyText || photoBusy ? "disabled" : ""}>Add to draft</button>${mealDraftReview.addTextMessage ? `<p class="tiny meal-draft-add-text-message" role="status">${escapeHtml(mealDraftReview.addTextMessage)}</p>` : ""}</section>` : editable ? `<section class="meal-draft-section meal-draft-search"><div class="panel-title"><h4>Add a food</h4><button class="button button-secondary button-small" type="button" data-action="add-draft-manual">Add manual food</button></div><input class="input" id="meal-draft-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" aria-label="Search foods to add" /><div id="meal-draft-food-results" class="meal-food-results"></div></section>` : ""}${editable ? `<div class="meal-draft-actions"><button class="button button-primary meal-draft-confirm" type="button" data-action="confirm-meal-draft" ${busyText || photoBusy ? "disabled" : ""}>Confirm and log meal</button><button class="button button-quiet" type="button" data-action="cancel-meal-draft" ${busyText || photoBusy ? "disabled" : ""}>Abandon draft</button></div>` : `<p class="tiny">This draft is ${escapeHtml((expired ? "expired" : draft.status).replaceAll("_", " "))}.</p>`}</div>`;
+    root.innerHTML = `<div class="meal-draft-review">${draft.description ? `<p class="meal-draft-desc">${escapeHtml(draft.description)}</p>` : ""}<div class="meal-draft-meta" data-draft-details><span>${escapeHtml(draftLoggedLabel(draft.logged_at))}</span>${editable ? `<select class="meal-draft-mealtype" data-draft-field="meal_type" aria-label="Meal type">${mealTypeOptionsHtml(draft.meal_type)}</select>` : `<span>${escapeHtml(draft.meal_type)}</span>`}</div>${busyText || photoBusy ? `<div class="meal-draft-status" role="status"><span class="meal-draft-spinner" aria-hidden="true"></span><span class="meal-draft-status-text"><strong>Re-analyzing your meal</strong>${busyText ? `<small>Your note: “${escapeHtml(busyText)}”</small>` : ""}</span></div>` : ""}<div class="meal-draft-totals${busyText || photoBusy ? " meal-draft-dim" : ""}"><div class="meal-draft-total meal-draft-total-lead"><span>Calories</span><strong>${number(totals.calories)} <small>kcal</small></strong></div><div class="meal-draft-total"><span>Protein</span><strong>${number(totals.protein_g)} g</strong></div><div class="meal-draft-total"><span>Carbs</span><strong>${number(totals.carbs_g)} g</strong></div><div class="meal-draft-total"><span>Fat</span><strong>${number(totals.fat_g)} g</strong></div></div><div class="meal-draft-items${busyText || photoBusy ? " meal-draft-dim" : ""}">${draft.items.map(draftItemEditor).join("") || `<p class="tiny">No foods are in this draft yet.</p>`}${editable ? mealDraftReview.pendingManual.map(draftManualEditor).join("") : ""}</div>${photoSession ? `<div class="meal-draft-photos">${photoSession.files.map((file, i) => `<span class="meal-draft-photo-chip">Photo ${i + 1}<button class="button button-quiet button-small" type="button" data-action="remove-draft-photo" data-index="${i}" aria-label="Remove photo ${i + 1}">Remove</button></span>`).join("")}${photoSession.files.length < 3 ? photoCaptureMarkup({ inputId: "meal-draft-photo-file", label: "Add another photo", multiple: true }) : ""}</div>` : ""}${blockingNames.length ? `<p class="meal-draft-blocker">${escapeHtml(blockingNames.join(", "))} ${blockingNames.length === 1 ? "has" : "have"} no nutrition values yet. Tap the row to add values, or swipe left to remove.</p>` : ""}${editable && draft.source_mode === "photo" ? `<section class="meal-draft-notebox meal-draft-add-text"><label class="field"><span>Anything else to add?</span><input class="input meal-draft-add-text-input" id="meal-draft-add-text-input" type="text" placeholder="I added a good bit of butter…" maxlength="500" autocomplete="off" value="${busyText ? escapeHtml(busyText) : ""}" ${busyText || photoBusy ? "disabled" : ""} /></label><button class="button button-secondary meal-draft-add-text-button" type="button" data-action="add-draft-text" ${busyText || photoBusy ? "disabled" : ""}>Add to draft</button>${mealDraftReview.addTextMessage ? `<p class="tiny meal-draft-add-text-message" role="status">${escapeHtml(mealDraftReview.addTextMessage)}</p>` : ""}</section>` : editable ? `<section class="meal-draft-section meal-draft-search"><div class="panel-title"><h4>Add a food</h4><button class="button button-secondary button-small" type="button" data-action="add-draft-manual">Add manual food</button></div><input class="input" id="meal-draft-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" aria-label="Search foods to add" /><div id="meal-draft-food-results" class="meal-food-results"></div></section>` : ""}${editable ? `<div class="meal-draft-actions"><button class="button button-primary meal-draft-confirm" type="button" data-action="confirm-meal-draft" ${busyText || photoBusy ? "disabled" : ""}>Confirm and log food</button><button class="button button-quiet" type="button" data-action="cancel-meal-draft" ${busyText || photoBusy ? "disabled" : ""}>Abandon draft</button></div>` : `<p class="tiny">This draft is ${escapeHtml((expired ? "expired" : draft.status).replaceAll("_", " "))}.</p>`}</div>`;
     applyDraftUnsavedEdits(snapshot, draft);
     if (scrollHost) scrollHost.scrollTop = scrollTop;
 }
@@ -8835,8 +8835,16 @@ function renderMealComposerItems() {
         syncMealComposerClearButton();
         return;
     }
+    // Newest first (approved 2026-11-21): the most recently added
+    // food sits at the top of the list, right under the controls.
+    // The items array itself stays in add order — data-composer-index
+    // and data-index keep addressing the array, so DOM sync, the C4
+    // focus landing, the payload order, and draft persistence are
+    // all untouched; only the rendered order flips.
     root.innerHTML = mealComposer.items
-        .map((item, index) => {
+        .map((item, index) => ({ item, index }))
+        .reverse()
+        .map(({ item, index }) => {
             if (item.kind === "food") {
                 const portions = item.food.portions || [];
                 return `<article class="meal-composer-item" data-composer-index="${index}"><div class="meal-composer-item-head"><div><strong>${escapeHtml(foodTitle(item.food))}</strong><small>${sourceBadge(item.savedFoodId ? "saved_food" : item.food.provider)} ${confidenceBadge(item.food.confidence)}</small></div><button class="button button-quiet button-small" type="button" data-action="remove-meal-item" data-index="${index}">Remove</button></div><div class="meal-composer-grid"><label class="field"><span>Portion</span><select data-composer-field="portion_id">${portions.map((portion) => `<option value="${escapeHtml(portion.id)}" ${!item.customPortion && portion.id === item.portionId ? "selected" : ""}>${escapeHtml(portionOptionLabelJs(portion))}</option>`).join("")}<option value="__custom__" ${item.customPortion ? "selected" : ""}>Custom portion…</option></select></label><label class="field"><span>Quantity</span><input data-composer-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity || 1)}" /></label>${item.customPortion ? `<label class="field"><span>Custom portion</span><input data-composer-field="portion_label" value="${escapeHtml(item.portionLabel || "")}" placeholder="e.g. 1 large glass" /></label><label class="field"><span>Gram weight</span><input data-composer-field="gram_weight" type="number" min="0.01" step="0.1" value="${escapeHtml(item.customGramWeight || "")}" /></label>` : ""}</div><small class="meal-composer-macros">${foodMacroLine(item.food, item.portionId, item)}</small></article>`;
@@ -9501,7 +9509,7 @@ function openMealComposer() {
         "Add meal",
         `<button class="meal-composer-strip" type="button" data-action="open-composer-breakdown" aria-label="Meal totals — view breakdown" aria-expanded="false" aria-controls="meal-composer-breakdown"><span class="meal-composer-strip-totals" id="meal-composer-totals">0 kcal · P 0 g · C 0 g · F 0 g</span><span class="meal-composer-strip-delta" id="meal-composer-delta"></span></button><div id="meal-composer-breakdown" class="meal-composer-breakdown" hidden></div><form id="meal-form" class="auth-form"><input type="hidden" name="logged_at" value="${escapeHtml(`${state.date}T12:00:00.000Z`)}" /><section class="meal-composer-search"><div class="panel-title"><h3>Find foods</h3><span>Verified, saved, and recent</span></div><div id="meal-usuals" class="meal-usuals" hidden></div><div class="meal-composer-search-row meal-composer-search-row-slim"><input class="input" id="meal-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><button class="button button-secondary meal-scan-button" type="button" data-action="scan-food-barcode" aria-label="Scan barcode" title="Scan barcode"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M7.5 8v8M11 8v8M14 8v8M17 8v8"/></svg></button></div><div id="meal-food-results" class="meal-food-results"></div></section><section><div class="panel-title"><h3>Selected foods</h3><div class="auth-actions"><button class="button button-quiet button-small" type="button" data-action="clear-meal-composer" id="meal-composer-clear"${restored ? "" : " hidden"}>Clear draft</button><button class="button button-secondary button-small" type="button" data-action="add-manual-food">Add manual food</button></div></div><div id="meal-selected-items" class="meal-selected-items"></div></section><label class="field"><span>Meal type</span><select name="meal_type">${mealTypeOptionsHtml(
             initialMealType,
-        )}</select></label>${pantryField}<label class="field"><span>Notes</span><textarea name="notes" rows="2" maxlength="4000" placeholder="Optional">${escapeHtml(initialNotes)}</textarea></label><button class="button button-primary" type="submit">Log meal</button></form>`,
+        )}</select></label>${pantryField}<label class="field"><span>Notes</span><textarea name="notes" rows="2" maxlength="4000" placeholder="Optional">${escapeHtml(initialNotes)}</textarea></label><button class="button button-primary" type="submit">Log food</button></form>`,
     );
     renderMealComposerItems();
     // globalThis form (not window.clearTimeout): this function is
@@ -9702,6 +9710,59 @@ document.addEventListener(
         draftSwipeArm = null;
         if (draftSwipeRemoves(startX, event.changedTouches[0].clientX)) {
             requestRemoveDraftItem(Number(item.dataset.draftItemIndex), item);
+        }
+    },
+    { passive: true },
+);
+
+/**
+ * Ask to remove a composer item (inline confirmation, never a native
+ * dialog). The card head's swipe-left gesture lands here; the card's
+ * Remove button keeps its direct-remove behavior.
+ */
+function requestRemoveMealItem(index, anchor) {
+    const item = mealComposer.items[index];
+    if (!item || !anchor) return;
+    const name =
+        item.kind === "food"
+            ? foodTitle(item.food)
+            : item.name || "Manual food";
+    showInlineConfirm(anchor, {
+        note: `Remove ${name} from this meal?`,
+        confirmLabel: "Yes, remove item",
+        confirmAction: "confirm-remove-meal-item",
+        confirmAttrs: { index: String(index) },
+        dismissLabel: "Keep item",
+        destructive: true,
+    });
+}
+
+// Swipe-left on a composer card removes the item (approved
+// 2026-11-21): the same gesture as the draft review above — it arms
+// only on the card's head, never across the Portion/Quantity fields
+// below it, and lands on the same inline confirmation.
+let composerSwipeArm = null;
+document.addEventListener(
+    "touchstart",
+    (event) => {
+        const head = event.target.closest?.(".meal-composer-item-head");
+        composerSwipeArm = head
+            ? {
+                  card: head.closest("[data-composer-index]"),
+                  startX: event.touches[0].clientX,
+              }
+            : null;
+    },
+    { passive: true },
+);
+document.addEventListener(
+    "touchend",
+    (event) => {
+        if (!composerSwipeArm?.card) return;
+        const { card, startX } = composerSwipeArm;
+        composerSwipeArm = null;
+        if (draftSwipeRemoves(startX, event.changedTouches[0].clientX)) {
+            requestRemoveMealItem(Number(card.dataset.composerIndex), card);
         }
     },
     { passive: true },
@@ -10889,7 +10950,7 @@ async function handleAction(button) {
         const draft = mealDraftReview.draft;
         const actions = document.querySelector(".meal-draft-actions");
         if (!draft || !actions) return;
-        actions.innerHTML = `<button class="button button-primary meal-draft-confirm" type="button" data-action="confirm-meal-draft">Confirm and log meal</button><button class="button button-quiet" type="button" data-action="cancel-meal-draft">Abandon draft</button>`;
+        actions.innerHTML = `<button class="button button-primary meal-draft-confirm" type="button" data-action="confirm-meal-draft">Confirm and log food</button><button class="button button-quiet" type="button" data-action="cancel-meal-draft">Abandon draft</button>`;
         actions.querySelector('[data-action="cancel-meal-draft"]')?.focus();
         return;
     }
@@ -10928,6 +10989,15 @@ async function handleAction(button) {
         return;
     }
     if (action === "remove-meal-item") {
+        syncMealComposerFromDom();
+        mealComposer.items.splice(Number(button.dataset.index), 1);
+        renderMealComposerItems();
+        return;
+    }
+    if (action === "confirm-remove-meal-item") {
+        // The swipe's inline confirmation, confirmed: sync first so
+        // the re-render keeps every other row's unsaved edits, then
+        // remove exactly the item the confirmation named.
         syncMealComposerFromDom();
         mealComposer.items.splice(Number(button.dataset.index), 1);
         renderMealComposerItems();

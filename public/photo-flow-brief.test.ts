@@ -226,11 +226,11 @@ describe("setButtonBusy", () => {
         expect(button.attrs["aria-busy"]).toBeUndefined();
     });
     test("double-busy keeps the ORIGINAL label for the restore", () => {
-        const button = stubButton("Confirm and log meal");
+        const button = stubButton("Confirm and log food");
         setButtonBusy(button, true, "Logging meal…");
         setButtonBusy(button, true, "Logging meal…");
         setButtonBusy(button, false);
-        expect(button.textContent).toBe("Confirm and log meal");
+        expect(button.textContent).toBe("Confirm and log food");
     });
 });
 

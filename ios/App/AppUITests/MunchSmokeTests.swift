@@ -85,8 +85,8 @@ final class MunchSmokeTests: XCTestCase {
             "Meal composer never opened from Today"
         )
         XCTAssertTrue(
-            buttons(containing: "Log meal").firstMatch.exists,
-            "Meal composer is missing its Log meal submit"
+            buttons(containing: "Log food").firstMatch.exists,
+            "Meal composer is missing its Log food submit"
         )
         attachScreenshot("04-add-meal-composer")
         tapHittable(

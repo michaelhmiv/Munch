@@ -174,7 +174,7 @@ test("planned meals log as planned once, read Logged, and prompt in the evening"
     const servingsInput = dialog.getByLabel("Servings eaten");
     await expect(servingsInput).toHaveValue("2");
     await servingsInput.fill("1");
-    await dialog.getByRole("button", { name: "Log meal" }).click();
+    await dialog.getByRole("button", { name: "Log food" }).click();
 
     await expect(plannedRow.locator(".macro-chip")).toHaveText("Logged");
     await expect(

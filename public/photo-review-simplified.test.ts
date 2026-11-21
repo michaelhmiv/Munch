@@ -179,7 +179,7 @@ describe("simplified review — the approved frame inventory", () => {
         // One note box, one Confirm, quiet Abandon.
         expect(html).toContain('id="meal-draft-add-text-input"');
         expect(html.match(/data-action="confirm-meal-draft"/g)).toHaveLength(1);
-        expect(html).toContain("Confirm and log meal");
+        expect(html).toContain("Confirm and log food");
         expect(html).toContain("Abandon draft");
         // The clutter the owner struck is gone.
         expect(html).not.toContain("Questions");
