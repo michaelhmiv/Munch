@@ -11,6 +11,7 @@ const webPlatform = Object.freeze({
 });
 
 let platform = webPlatform;
+let beforeAuthenticationRequired = null;
 
 function normalizedApiBaseUrl(value) {
     if (!value) return null;
@@ -41,10 +42,62 @@ export function setMunchPlatformAdapter(adapter) {
 
 export function resetMunchPlatformAdapter() {
     platform = webPlatform;
+    beforeAuthenticationRequired = null;
 }
 
 export function getMunchPlatformKind() {
     return platform.kind;
+}
+
+export const SESSION_EXPIRED_PRESERVED_MESSAGE =
+    "Your session expired. Your meal is saved on this device — sign in again to continue.";
+
+/**
+ * Register a pre-auth hook that runs BEFORE platform.onAuthenticationRequired
+ * redirects (web) or wipes the bearer token and jumps to login (mobile).
+ * Returning `true` or `{ defer: true }` tells the transport that the app
+ * preserved in-progress work (e.g. an open meal composer or dirty draft review)
+ * and surfaced an in-place sign-in action, so the immediate navigation must be
+ * deferred until the user explicitly triggers triggerAuthenticationRequired().
+ */
+export function setBeforeAuthenticationRequired(handler) {
+    beforeAuthenticationRequired =
+        typeof handler === "function" ? handler : null;
+}
+
+/**
+ * Invoke the platform's authentication redirect / login handoff directly,
+ * bypassing the pre-auth deferral hook (used when the user clicks "Sign in
+ * to continue" after a deferred 401).
+ */
+export async function triggerAuthenticationRequired(
+    event = { reason: "unauthorized" },
+) {
+    await platform.onAuthenticationRequired(event);
+}
+
+/**
+ * Run the registered pre-auth hook before handing off to
+ * platform.onAuthenticationRequired. Returns true when the hook deferred the
+ * immediate redirect; returns false after platform.onAuthenticationRequired
+ * has executed.
+ */
+export async function notifyAuthenticationRequired(
+    event = { reason: "unauthorized" },
+) {
+    if (beforeAuthenticationRequired) {
+        let decision = null;
+        try {
+            decision = await beforeAuthenticationRequired(event);
+        } catch {
+            decision = null;
+        }
+        if (decision === true || decision?.defer === true) {
+            return true;
+        }
+    }
+    await platform.onAuthenticationRequired(event);
+    return false;
 }
 
 /**
@@ -179,18 +232,28 @@ export async function requestJson(path, options = {}) {
         headers.set("Content-Type", "application/json");
     }
 
+    const method = String(options.method || "GET").toUpperCase();
     const token = await platform.getAccessToken();
     if (platform.kind === "mobile") {
         if (!token) {
-            await platform.onAuthenticationRequired({
+            const deferred = await notifyAuthenticationRequired({
                 reason: "missing_token",
+                path,
+                method,
             });
-            throw new Error("Authentication required");
+            const error = new Error(
+                deferred
+                    ? SESSION_EXPIRED_PRESERVED_MESSAGE
+                    : "Authentication required",
+            );
+            error.status = 401;
+            error.code = "authentication_required";
+            if (deferred) error.authDeferred = true;
+            throw error;
         }
         headers.set("Authorization", `Bearer ${token}`);
     }
 
-    const method = String(options.method || "GET").toUpperCase();
     const isWrite = !["GET", "HEAD", "OPTIONS"].includes(method);
     // Honest offline writes (Decision 6): a write attempted with no
     // connectivity fails here with an explicit message. It is never
@@ -219,9 +282,19 @@ export async function requestJson(path, options = {}) {
     }
 
     if (response.status === 401) {
-        await platform.onAuthenticationRequired({ reason: "unauthorized" });
-        const error = new Error("Authentication required");
+        const deferred = await notifyAuthenticationRequired({
+            reason: "unauthorized",
+            path,
+            method,
+        });
+        const error = new Error(
+            deferred
+                ? SESSION_EXPIRED_PRESERVED_MESSAGE
+                : "Authentication required",
+        );
         error.status = 401;
+        error.code = "authentication_required";
+        if (deferred) error.authDeferred = true;
         throw error;
     }
 

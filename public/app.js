@@ -7,6 +7,9 @@ import {
     nativeProviderIdToken,
     pendingNativeLinkPrompt,
     requestJson,
+    SESSION_EXPIRED_PRESERVED_MESSAGE,
+    setBeforeAuthenticationRequired,
+    triggerAuthenticationRequired,
 } from "./app-api.js";
 import {
     shouldRenderTodayAdSlot,
@@ -55,6 +58,7 @@ installPhotoCapture();
 const state = {
     bootstrap: null,
     linkPromptChecked: false,
+    postAuthRestoreChecked: false,
     route: "today",
     date: null,
     mealHistoryDays: 1,
@@ -119,6 +123,7 @@ const mealComposer = {
     searchTimer: null,
     usuals: new Map(),
     yesterday: null,
+    mealTypeTouched: false,
 };
 
 const mealDraftReview = {
@@ -6399,6 +6404,7 @@ async function renderRoute() {
             }
         }
         content.focus({ preventScroll: true });
+        void maybeRestoreAfterAuth();
     } catch (error) {
         errorState(error);
     }
@@ -7357,6 +7363,7 @@ async function saveDraftChanges() {
         mealDraftReview.detailsDirty = false;
     }
     mealDraftReview.savedMessage = "All changes saved.";
+    clearMealDraftReviewEdits(mealDraftReview.draft?.id);
     return mealDraftReview.draft;
 }
 
@@ -7580,6 +7587,28 @@ async function openMealDraft(id) {
         keepPrevious: true,
     });
     renderMealDraftReview(data.draft);
+    const storedEdits = readMealDraftReviewEdits(data.draft?.id);
+    if (storedEdits) {
+        if (storedEdits.pendingManual?.length) {
+            mealDraftReview.pendingManual = storedEdits.pendingManual;
+            mealDraftReview.suppressSnapshot = true;
+            renderMealDraftReview(data.draft);
+        }
+        applyDraftUnsavedEdits(storedEdits, data.draft);
+        for (const key of storedEdits.dirtyItems || []) {
+            mealDraftReview.dirtyItems.add(key);
+        }
+        if (storedEdits.detailsDirty) {
+            mealDraftReview.detailsDirty = true;
+        }
+        if (storedEdits.addText) {
+            const addTextInput = document.getElementById(
+                "meal-draft-add-text-input",
+            );
+            if (addTextInput) addTextInput.value = storedEdits.addText;
+        }
+        refreshDraftSaveBar();
+    }
     searchDraftFoods("");
 }
 
@@ -7981,8 +8010,21 @@ document.addEventListener("change", (event) => {
         return;
     }
     if (target.matches('#meal-form select[name="meal_type"]')) {
+        mealComposer.mealTypeTouched = true;
+        persistMealComposerState();
+        syncMealComposerClearButton();
         // Usuals are per meal slot: refetch for the newly chosen slot.
         void loadMealUsuals();
+    }
+    if (
+        target.closest?.("#meal-form") &&
+        (target.matches('input[name="from_pantry"]') ||
+            target.matches('textarea[name="notes"]') ||
+            target.matches("[data-composer-field]"))
+    ) {
+        syncMealComposerFromDom();
+        persistMealComposerState();
+        syncMealComposerClearButton();
     }
     if (target.matches('[data-draft-field="portion_id"]')) {
         applyDraftPortionToEditor(target);
@@ -7995,6 +8037,385 @@ document.addEventListener("change", (event) => {
         syncRecipePlanSection(target.closest("form"));
     }
 });
+
+// Composer survival (W1c, audit/area6-sync-auth.md Findings 4 & 5):
+// Persist the in-progress manual meal composer (items, quantities,
+// portions, notes, meal type, pantry toggle) in localStorage so an OS
+// app kill, browser/tab close, full-page navigation, or mid-task 401
+// session expiry never eats the user's meal. Matches server meal
+// drafts' 24-hour TTL and clears immediately on successful log,
+// explicit discard, or sign-out.
+const MEAL_COMPOSER_DRAFT_KEY = "munch.meal-composer-draft";
+const MEAL_COMPOSER_DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
+const MEAL_DRAFT_REVIEW_EDITS_KEY = "munch.meal-draft-review-edits";
+const VALID_MEAL_TYPES = new Set(["breakfast", "lunch", "dinner", "snack"]);
+
+function normalizeComposerDraftItem(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const quantity = Number(raw.quantity);
+    const safeQuantity =
+        Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+    if (raw.kind === "food") {
+        if (!raw.food || typeof raw.food !== "object") return null;
+        return {
+            kind: "food",
+            food: raw.food,
+            candidateId: raw.candidateId ?? raw.food.candidate_id,
+            savedFoodId: raw.savedFoodId,
+            portionId: raw.portionId ?? raw.food.portions?.[0]?.id,
+            quantity: safeQuantity,
+            customPortion: Boolean(raw.customPortion),
+            portionLabel:
+                typeof raw.portionLabel === "string" ? raw.portionLabel : "",
+            customGramWeight:
+                raw.customGramWeight == null
+                    ? ""
+                    : String(raw.customGramWeight),
+        };
+    }
+    if (raw.kind === "recent" || raw.kind === "manual") {
+        return {
+            kind: raw.kind,
+            name: typeof raw.name === "string" ? raw.name : "",
+            quantity: safeQuantity,
+            portionLabel:
+                typeof raw.portionLabel === "string" ? raw.portionLabel : "",
+            nutrients:
+                raw.nutrients && typeof raw.nutrients === "object"
+                    ? raw.nutrients
+                    : {},
+            sourceType:
+                typeof raw.sourceType === "string"
+                    ? raw.sourceType
+                    : raw.kind === "recent"
+                      ? "past_meal"
+                      : "user_supplied",
+            provider: raw.provider,
+            providerFoodId: raw.providerFoodId,
+            fromUsuals: Boolean(raw.fromUsuals),
+            sourceSnapshot: raw.sourceSnapshot,
+        };
+    }
+    return null;
+}
+
+function hasMealComposerDraftContent(draft) {
+    if (!draft || typeof draft !== "object") return false;
+    return Boolean(
+        (Array.isArray(draft.items) && draft.items.length > 0) ||
+        (typeof draft.notes === "string" && draft.notes.trim().length > 0) ||
+        draft.fromPantry === true ||
+        draft.mealTypeTouched === true,
+    );
+}
+
+function readMealComposerDraft(now = Date.now()) {
+    try {
+        const raw = localStorage.getItem(MEAL_COMPOSER_DRAFT_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object") {
+            localStorage.removeItem(MEAL_COMPOSER_DRAFT_KEY);
+            return null;
+        }
+        if (
+            typeof parsed.savedAt === "number" &&
+            (parsed.savedAt > now + 60_000 ||
+                now - parsed.savedAt > MEAL_COMPOSER_DRAFT_TTL_MS)
+        ) {
+            localStorage.removeItem(MEAL_COMPOSER_DRAFT_KEY);
+            return null;
+        }
+        const items = Array.isArray(parsed.items)
+            ? parsed.items.map(normalizeComposerDraftItem).filter(Boolean)
+            : [];
+        const mealType = VALID_MEAL_TYPES.has(parsed.mealType)
+            ? parsed.mealType
+            : null;
+        const notes = typeof parsed.notes === "string" ? parsed.notes : "";
+        const fromPantry = parsed.fromPantry === true;
+        const mealTypeTouched = parsed.mealTypeTouched === true;
+        const draft = {
+            version: 1,
+            items,
+            mealType,
+            mealTypeTouched,
+            notes,
+            fromPantry,
+            reopenAfterAuth: parsed.reopenAfterAuth === true,
+            savedAt: typeof parsed.savedAt === "number" ? parsed.savedAt : now,
+        };
+        if (!hasMealComposerDraftContent(draft)) return null;
+        return draft;
+    } catch {
+        return null;
+    }
+}
+
+function writeMealComposerDraft(draft) {
+    try {
+        if (!hasMealComposerDraftContent(draft)) {
+            localStorage.removeItem(MEAL_COMPOSER_DRAFT_KEY);
+            return false;
+        }
+        localStorage.setItem(
+            MEAL_COMPOSER_DRAFT_KEY,
+            JSON.stringify({
+                version: 1,
+                items: draft.items,
+                mealType: VALID_MEAL_TYPES.has(draft.mealType)
+                    ? draft.mealType
+                    : null,
+                mealTypeTouched: Boolean(draft.mealTypeTouched),
+                notes: typeof draft.notes === "string" ? draft.notes : "",
+                fromPantry: Boolean(draft.fromPantry),
+                reopenAfterAuth: Boolean(draft.reopenAfterAuth),
+                savedAt:
+                    typeof draft.savedAt === "number"
+                        ? draft.savedAt
+                        : Date.now(),
+            }),
+        );
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function clearMealComposerDraft() {
+    try {
+        localStorage.removeItem(MEAL_COMPOSER_DRAFT_KEY);
+    } catch {
+        // Storage unavailable.
+    }
+}
+
+function syncMealComposerClearButton() {
+    const button = document.getElementById("meal-composer-clear");
+    if (!button) return;
+    const form = document.getElementById("meal-form");
+    const notes = form?.querySelector('textarea[name="notes"]')?.value || "";
+    const fromPantry = Boolean(
+        form?.querySelector('input[name="from_pantry"]')?.checked,
+    );
+    button.hidden = !hasMealComposerDraftContent({
+        items: mealComposer.items,
+        notes,
+        fromPantry,
+        mealTypeTouched: mealComposer.mealTypeTouched,
+    });
+}
+
+function persistMealComposerState({ reopenAfterAuth = false } = {}) {
+    const form = document.getElementById("meal-form");
+    if (!form) return false;
+    syncMealComposerFromDom();
+    const mealType =
+        form.querySelector('select[name="meal_type"]')?.value || null;
+    const notes = form.querySelector('textarea[name="notes"]')?.value || "";
+    const fromPantry = Boolean(
+        form.querySelector('input[name="from_pantry"]')?.checked,
+    );
+    const existing = readMealComposerDraft();
+    return writeMealComposerDraft({
+        items: mealComposer.items,
+        mealType,
+        mealTypeTouched: mealComposer.mealTypeTouched,
+        notes,
+        fromPantry,
+        reopenAfterAuth: reopenAfterAuth || Boolean(existing?.reopenAfterAuth),
+        savedAt: Date.now(),
+    });
+}
+
+function readMealDraftReviewEdits(draftId = null, now = Date.now()) {
+    try {
+        const raw = localStorage.getItem(MEAL_DRAFT_REVIEW_EDITS_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (
+            !parsed ||
+            typeof parsed !== "object" ||
+            typeof parsed.draftId !== "string" ||
+            !parsed.draftId
+        ) {
+            localStorage.removeItem(MEAL_DRAFT_REVIEW_EDITS_KEY);
+            return null;
+        }
+        if (
+            typeof parsed.savedAt === "number" &&
+            (parsed.savedAt > now + 60_000 ||
+                now - parsed.savedAt > MEAL_COMPOSER_DRAFT_TTL_MS)
+        ) {
+            localStorage.removeItem(MEAL_DRAFT_REVIEW_EDITS_KEY);
+            return null;
+        }
+        if (draftId && parsed.draftId !== draftId) return null;
+        return {
+            version: 1,
+            draftId: parsed.draftId,
+            items: new Map(Array.isArray(parsed.items) ? parsed.items : []),
+            pending: new Map(
+                Array.isArray(parsed.pending) ? parsed.pending : [],
+            ),
+            details:
+                parsed.details && typeof parsed.details === "object"
+                    ? parsed.details
+                    : {},
+            dirtyItems: Array.isArray(parsed.dirtyItems)
+                ? parsed.dirtyItems
+                : [],
+            detailsDirty: parsed.detailsDirty === true,
+            pendingManual: Array.isArray(parsed.pendingManual)
+                ? parsed.pendingManual
+                : [],
+            addText: typeof parsed.addText === "string" ? parsed.addText : "",
+            reopenAfterAuth: parsed.reopenAfterAuth === true,
+            savedAt: typeof parsed.savedAt === "number" ? parsed.savedAt : now,
+        };
+    } catch {
+        return null;
+    }
+}
+
+function writeMealDraftReviewEdits(record) {
+    try {
+        if (!record?.draftId) {
+            localStorage.removeItem(MEAL_DRAFT_REVIEW_EDITS_KEY);
+            return false;
+        }
+        localStorage.setItem(
+            MEAL_DRAFT_REVIEW_EDITS_KEY,
+            JSON.stringify({
+                version: 1,
+                draftId: record.draftId,
+                items:
+                    record.items instanceof Map
+                        ? [...record.items.entries()]
+                        : Array.isArray(record.items)
+                          ? record.items
+                          : [],
+                pending:
+                    record.pending instanceof Map
+                        ? [...record.pending.entries()]
+                        : Array.isArray(record.pending)
+                          ? record.pending
+                          : [],
+                details: record.details || {},
+                dirtyItems: Array.isArray(record.dirtyItems)
+                    ? record.dirtyItems
+                    : [],
+                detailsDirty: Boolean(record.detailsDirty),
+                pendingManual: Array.isArray(record.pendingManual)
+                    ? record.pendingManual
+                    : [],
+                addText:
+                    typeof record.addText === "string" ? record.addText : "",
+                reopenAfterAuth: Boolean(record.reopenAfterAuth),
+                savedAt:
+                    typeof record.savedAt === "number"
+                        ? record.savedAt
+                        : Date.now(),
+            }),
+        );
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function clearMealDraftReviewEdits(draftId = null) {
+    try {
+        if (draftId) {
+            const existing = readMealDraftReviewEdits();
+            if (existing && existing.draftId !== draftId) return;
+        }
+        localStorage.removeItem(MEAL_DRAFT_REVIEW_EDITS_KEY);
+    } catch {
+        // Storage unavailable.
+    }
+}
+
+function persistMealDraftReviewEdits({ reopenAfterAuth = false } = {}) {
+    const draft = mealDraftReview.draft;
+    const root = document.getElementById("meal-draft-review");
+    if (!draft?.id || !root) return false;
+    const snapshot = captureDraftUnsavedEdits();
+    const addText =
+        document.getElementById("meal-draft-add-text-input")?.value || "";
+    const hasEdits =
+        draftHasUnsavedChanges() ||
+        mealDraftReview.pendingManual.length > 0 ||
+        addText.trim().length > 0;
+    if (!hasEdits && !reopenAfterAuth) return false;
+    const existing = readMealDraftReviewEdits(draft.id);
+    return writeMealDraftReviewEdits({
+        draftId: draft.id,
+        items: snapshot?.items ?? new Map(),
+        pending: snapshot?.pending ?? new Map(),
+        details: snapshot?.details ?? {},
+        dirtyItems: [...mealDraftReview.dirtyItems],
+        detailsDirty: mealDraftReview.detailsDirty,
+        pendingManual: mealDraftReview.pendingManual,
+        addText,
+        reopenAfterAuth: reopenAfterAuth || Boolean(existing?.reopenAfterAuth),
+        savedAt: Date.now(),
+    });
+}
+
+function showDialogAuthExpiredNotice(
+    container,
+    message = SESSION_EXPIRED_PRESERVED_MESSAGE,
+) {
+    if (!container) return;
+    let notice = container.querySelector('[data-testid="auth-expired-notice"]');
+    if (!notice) {
+        notice = document.createElement("div");
+        notice.className = "meal-draft-question";
+        notice.dataset.testid = "auth-expired-notice";
+        notice.setAttribute("role", "alert");
+        container.prepend(notice);
+    }
+    notice.innerHTML = `<p class="meal-draft-action-note">${escapeHtml(message)}</p><div class="auth-actions"><button class="button button-primary button-small" type="button" data-action="reauth-continue">Sign in to continue</button></div>`;
+}
+
+function handleBeforeAuthenticationRequired() {
+    const mealForm = document.getElementById("meal-form");
+    if (mealForm && dialog.open) {
+        const saved = persistMealComposerState({ reopenAfterAuth: true });
+        if (saved) {
+            showDialogAuthExpiredNotice(mealForm);
+            return { defer: true };
+        }
+    }
+    const draftReview = document.getElementById("meal-draft-review");
+    if (draftReview && dialog.open && mealDraftReview.draft) {
+        persistMealDraftReviewEdits({ reopenAfterAuth: true });
+        showDialogAuthExpiredNotice(draftReview);
+        return { defer: true };
+    }
+    return false;
+}
+
+async function maybeRestoreAfterAuth() {
+    if (state.postAuthRestoreChecked || dialog.open) return;
+    state.postAuthRestoreChecked = true;
+    const composerDraft = readMealComposerDraft();
+    if (composerDraft?.reopenAfterAuth) {
+        writeMealComposerDraft({ ...composerDraft, reopenAfterAuth: false });
+        openMealComposer();
+        return;
+    }
+    const draftEdits = readMealDraftReviewEdits();
+    if (draftEdits?.reopenAfterAuth && draftEdits.draftId) {
+        writeMealDraftReviewEdits({ ...draftEdits, reopenAfterAuth: false });
+        try {
+            await openMealDraft(draftEdits.draftId);
+        } catch {
+            clearMealDraftReviewEdits();
+        }
+    }
+}
 
 function syncMealComposerFromDom() {
     const root = document.getElementById("meal-selected-items");
@@ -8049,6 +8470,8 @@ function renderMealComposerItems() {
     if (mealComposer.items.length === 0) {
         root.innerHTML = `<div class="empty-state"><div><strong>No foods selected yet.</strong><p>Search for a food, choose a recent item, or add a manual food.</p></div></div>`;
         updateMealComposerStrip();
+        persistMealComposerState();
+        syncMealComposerClearButton();
         return;
     }
     root.innerHTML = mealComposer.items
@@ -8062,6 +8485,8 @@ function renderMealComposerItems() {
         })
         .join("");
     updateMealComposerStrip();
+    persistMealComposerState();
+    syncMealComposerClearButton();
 }
 
 // Composer wave C6 (approved 2026-11-11): the strip pinned at the
@@ -8613,15 +9038,21 @@ async function lookupMealBarcodeValue(barcode) {
 }
 
 function openMealComposer() {
-    mealComposer.items = [];
+    const restored = readMealComposerDraft();
+    mealComposer.items = restored?.items ?? [];
+    mealComposer.mealTypeTouched = Boolean(restored?.mealTypeTouched);
     mealComposer.options.clear();
     mealComposer.usuals.clear();
     mealComposer.yesterday = null;
+    const initialMealType =
+        restored?.mealType ||
+        defaultMealType(new Date(), state.bootstrap?.profile?.timezone);
+    const initialNotes = restored?.notes || "";
     // Cross-work §4: single foods — the logged amount is the used
     // amount, so "From my pantry" is a checkbox only, no extra
     // field. Present only while the Pantry module is on.
     const pantryField = featureFlags().pantry
-        ? `<label class="checkbox-row"><input type="checkbox" name="from_pantry" /> From my pantry</label>`
+        ? `<label class="checkbox-row"><input type="checkbox" name="from_pantry"${restored?.fromPantry ? " checked" : ""} /> From my pantry</label>`
         : "";
     // Composer wave C1–C6 (approved 2026-11-11, built 2026-11-13):
     // the macro strip pins the top, Find foods leads, added foods
@@ -8632,9 +9063,9 @@ function openMealComposer() {
     // foods it categorizes.
     openDialog(
         "Add meal",
-        `<button class="meal-composer-strip" type="button" data-action="open-composer-breakdown" aria-label="Meal totals — view breakdown" aria-expanded="false" aria-controls="meal-composer-breakdown"><span class="meal-composer-strip-totals" id="meal-composer-totals">0 kcal · P 0 g · C 0 g · F 0 g</span><span class="meal-composer-strip-delta" id="meal-composer-delta"></span></button><div id="meal-composer-breakdown" class="meal-composer-breakdown" hidden></div><form id="meal-form" class="auth-form"><input type="hidden" name="logged_at" value="${escapeHtml(`${state.date}T12:00:00.000Z`)}" /><section class="meal-composer-search"><div class="panel-title"><h3>Find foods</h3><span>Verified, saved, and recent</span></div><div id="meal-usuals" class="meal-usuals" hidden></div><div class="meal-composer-search-row meal-composer-search-row-slim"><input class="input" id="meal-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><button class="button button-secondary meal-scan-button" type="button" data-action="scan-food-barcode" aria-label="Scan barcode" title="Scan barcode"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M7.5 8v8M11 8v8M14 8v8M17 8v8"/></svg></button></div><div id="meal-food-results" class="meal-food-results"></div></section><section><div class="panel-title"><h3>Selected foods</h3><button class="button button-secondary button-small" type="button" data-action="add-manual-food">Add manual food</button></div><div id="meal-selected-items" class="meal-selected-items"></div></section><label class="field"><span>Meal type</span><select name="meal_type">${mealTypeOptionsHtml(
-            defaultMealType(new Date(), state.bootstrap?.profile?.timezone),
-        )}</select></label>${pantryField}<label class="field"><span>Notes</span><textarea name="notes" rows="2" maxlength="4000" placeholder="Optional"></textarea></label><button class="button button-primary" type="submit">Log meal</button></form>`,
+        `<button class="meal-composer-strip" type="button" data-action="open-composer-breakdown" aria-label="Meal totals — view breakdown" aria-expanded="false" aria-controls="meal-composer-breakdown"><span class="meal-composer-strip-totals" id="meal-composer-totals">0 kcal · P 0 g · C 0 g · F 0 g</span><span class="meal-composer-strip-delta" id="meal-composer-delta"></span></button><div id="meal-composer-breakdown" class="meal-composer-breakdown" hidden></div><form id="meal-form" class="auth-form"><input type="hidden" name="logged_at" value="${escapeHtml(`${state.date}T12:00:00.000Z`)}" /><section class="meal-composer-search"><div class="panel-title"><h3>Find foods</h3><span>Verified, saved, and recent</span></div><div id="meal-usuals" class="meal-usuals" hidden></div><div class="meal-composer-search-row meal-composer-search-row-slim"><input class="input" id="meal-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><button class="button button-secondary meal-scan-button" type="button" data-action="scan-food-barcode" aria-label="Scan barcode" title="Scan barcode"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M7.5 8v8M11 8v8M14 8v8M17 8v8"/></svg></button></div><div id="meal-food-results" class="meal-food-results"></div></section><section><div class="panel-title"><h3>Selected foods</h3><div class="auth-actions"><button class="button button-quiet button-small" type="button" data-action="clear-meal-composer" id="meal-composer-clear"${restored ? "" : " hidden"}>Clear draft</button><button class="button button-secondary button-small" type="button" data-action="add-manual-food">Add manual food</button></div></div><div id="meal-selected-items" class="meal-selected-items"></div></section><label class="field"><span>Meal type</span><select name="meal_type">${mealTypeOptionsHtml(
+            initialMealType,
+        )}</select></label>${pantryField}<label class="field"><span>Notes</span><textarea name="notes" rows="2" maxlength="4000" placeholder="Optional">${escapeHtml(initialNotes)}</textarea></label><button class="button button-primary" type="submit">Log meal</button></form>`,
     );
     renderMealComposerItems();
     searchMealFoods("");
@@ -9943,11 +10374,13 @@ async function handleAction(button) {
             );
             mealDraftReview.actionNote = null;
             mealPhotoCapture.session = null;
+            clearMealDraftReviewEdits(draft.id);
             closeAppDialog();
             toast("Meal confirmed and logged.");
             await renderRoute();
             return result;
         } catch (error) {
+            if (error?.authDeferred) return;
             // Photo-flow audit (2026-11-12): any failure (save or
             // confirm) is stated in the review itself, in place —
             // a toast renders outside the modal dialog and is never
@@ -10008,6 +10441,7 @@ async function handleAction(button) {
             },
         );
         mealPhotoCapture.session = null;
+        clearMealDraftReviewEdits(draft.id);
         closeAppDialog();
         toast("Meal draft abandoned.");
         await renderRoute();
@@ -10051,6 +10485,42 @@ async function handleAction(button) {
     }
     if (action === "open-composer-breakdown") {
         toggleComposerBreakdown();
+        return;
+    }
+    if (action === "clear-meal-composer") {
+        mealComposer.items = [];
+        mealComposer.mealTypeTouched = false;
+        clearMealComposerDraft();
+        const form = document.getElementById("meal-form");
+        if (form) {
+            const notes = form.querySelector('textarea[name="notes"]');
+            if (notes) notes.value = "";
+            const pantry = form.querySelector('input[name="from_pantry"]');
+            if (pantry) pantry.checked = false;
+            const mealType = form.querySelector('select[name="meal_type"]');
+            if (mealType) {
+                mealType.value = defaultMealType(
+                    new Date(),
+                    state.bootstrap?.profile?.timezone,
+                );
+            }
+            form.querySelector('[data-testid="auth-expired-notice"]')?.remove();
+        }
+        renderMealComposerItems();
+        void loadMealUsuals();
+        return;
+    }
+    if (action === "reauth-continue") {
+        if (document.getElementById("meal-form") && dialog.open) {
+            persistMealComposerState({ reopenAfterAuth: true });
+        } else if (
+            document.getElementById("meal-draft-review") &&
+            dialog.open &&
+            mealDraftReview.draft
+        ) {
+            persistMealDraftReviewEdits({ reopenAfterAuth: true });
+        }
+        await triggerAuthenticationRequired({ reason: "unauthorized" });
         return;
     }
     if (action === "edit-meal") return editMeal(button.dataset.id);
@@ -10591,6 +11061,8 @@ async function handleAction(button) {
         return;
     }
     if (action === "logout") {
+        clearMealComposerDraft();
+        clearMealDraftReviewEdits();
         await api("/account/logout", {
             method: "POST",
             body: "{}",
@@ -10982,6 +11454,15 @@ document.addEventListener("input", (event) => {
         // focus and caret stay put.
         syncMealComposerFromDom();
         updateMealComposerStrip();
+        persistMealComposerState();
+        syncMealComposerClearButton();
+    }
+    if (
+        event.target.closest?.("#meal-form") &&
+        event.target.matches?.('textarea[name="notes"]')
+    ) {
+        persistMealComposerState();
+        syncMealComposerClearButton();
     }
     if (event.target.id === "meal-draft-food-search") {
         window.clearTimeout(mealDraftReview.searchTimer);
@@ -11715,6 +12196,9 @@ document.addEventListener("submit", async (event) => {
                 }),
                 keepPrevious: true,
             });
+            clearMealComposerDraft();
+            mealComposer.items = [];
+            mealComposer.mealTypeTouched = false;
             toast(
                 result.deduplicated
                     ? "This meal was already logged."
@@ -12111,7 +12595,9 @@ document.addEventListener("submit", async (event) => {
     } catch (error) {
         pendingPantryRunOutPrompts = [];
         pendingOutlierPrompt = null;
-        toast(error.message || "Save failed", "error");
+        if (!error?.authDeferred) {
+            toast(error.message || "Save failed", "error");
+        }
     } finally {
         submit.disabled = false;
     }
@@ -12134,6 +12620,19 @@ window.addEventListener("online", () => {
 // Grocery fix G2: restore the session's shopping-mode preference
 // before the first render so the mode (and its Exit label) is
 // already in place when Groceries is the landing route.
+setBeforeAuthenticationRequired(handleBeforeAuthenticationRequired);
+window.addEventListener("pagehide", () => {
+    if (document.getElementById("meal-form") && dialog.open) {
+        persistMealComposerState();
+    }
+    if (
+        document.getElementById("meal-draft-review") &&
+        dialog.open &&
+        mealDraftReview.draft
+    ) {
+        persistMealDraftReviewEdits();
+    }
+});
 state.shoppingMode = readShoppingModePreference();
 installMealPhotoEntryCapture();
 renderRoute();

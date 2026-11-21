@@ -58,6 +58,9 @@ export {
     isConnectivityError,
     isOffline,
     resolveMunchApiUrl,
+    SESSION_EXPIRED_PRESERVED_MESSAGE,
+    setBeforeAuthenticationRequired,
+    triggerAuthenticationRequired,
 } from "./app-api.js";
 
 const FIXTURES = {
