@@ -1232,6 +1232,14 @@ export async function handleAccountAction(button, ctx) {
         const label = button.dataset.providerLabel || provider;
         button.disabled = true;
         try {
+            // Packaged app: link in place with a fresh native ID token
+            // (the Amendment I link's native path) — a web consent
+            // redirect cannot complete against its bearer session.
+            // Web: nativeProviderIdToken() returns null, unchanged flow.
+            const idToken =
+                typeof ctx.nativeProviderIdToken === "function"
+                    ? await ctx.nativeProviderIdToken(provider)
+                    : null;
             const result = await ctx.api(
                 `/api/app/sign-in-methods/${encodeURIComponent(provider)}/link`,
                 {
@@ -1239,6 +1247,7 @@ export async function handleAccountAction(button, ctx) {
                     body: JSON.stringify({
                         callbackURL: "/app/settings/account",
                         errorCallbackURL: "/app/settings/account",
+                        ...(idToken ? { idToken } : {}),
                     }),
                     keepPrevious: true,
                 },

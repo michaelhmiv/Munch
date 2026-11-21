@@ -73,7 +73,7 @@ describe("iOS native bridge contract", () => {
         );
     });
 
-    test("SecureSession exposes the same six bridge methods on iOS and Android", () => {
+    test("SecureSession exposes the same nine bridge methods on iOS and Android", () => {
         const methods = [
             "getToken",
             "setToken",
@@ -81,6 +81,9 @@ describe("iOS native bridge contract", () => {
             "getPendingAuth",
             "setPendingAuth",
             "clearPendingAuth",
+            "getPendingLinkPrompt",
+            "setPendingLinkPrompt",
+            "clearPendingLinkPrompt",
         ];
         expect(secureSessionSwift).toContain('jsName = "MunchSecureSession"');
         for (const method of methods) {
@@ -96,10 +99,12 @@ describe("iOS native bridge contract", () => {
 
     test("iOS SecureSession storage mirrors the Android limits and stays device-only", () => {
         // Android ceilings (MunchSecureSessionPlugin.java): session
-        // token 16384 chars, pending auth 4096 chars; unreadable stored
-        // values are deleted rather than trusted.
+        // token 16384 chars, pending auth 4096 chars, pending link
+        // prompt 512 chars; unreadable stored values are deleted rather
+        // than trusted.
         expect(secureSessionSwift).toContain("tokenLimit = 16384");
         expect(secureSessionSwift).toContain("pendingAuthLimit = 4096");
+        expect(secureSessionSwift).toContain("pendingLinkPromptLimit = 512");
         expect(secureSessionSwift).toContain(
             "kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly",
         );
@@ -111,6 +116,12 @@ describe("iOS native bridge contract", () => {
         );
         expect(secureSessionSwift).toContain(
             '"A valid Munch session token is required"',
+        );
+        expect(secureSessionSwift).toContain(
+            '"Unable to read the pending Munch link prompt"',
+        );
+        expect(secureSessionSwift).toContain(
+            '"A valid pending Munch link prompt is required"',
         );
     });
 

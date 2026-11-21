@@ -5986,6 +5986,7 @@ function accountContext() {
         setLoading,
         renderRoute,
         navigate,
+        nativeProviderIdToken,
         // Feature toggles (T5/T6): a saved flag set updates the
         // in-memory bootstrap and re-renders both navs in place.
         applyFeatures: (features) => {
