@@ -180,4 +180,59 @@ describe("computePlanShortfall", () => {
     test("an empty plan produces no rows", () => {
         expect(computePlanShortfall([], [stock("Flour", 1, "g")])).toEqual([]);
     });
+
+    test("presence-only stock in a different unit family still covers the need (#283)", () => {
+        const items = computePlanShortfall(
+            [meal("m1", "Bread", 2, 2, [ingredient("Flour", 2, "cup")])],
+            [stock("Flour", null, "bag", "presence_only", "available")],
+        );
+        expect(items).toHaveLength(0);
+    });
+
+    test("approximate stock in a different unit family still covers the need (#283)", () => {
+        const items = computePlanShortfall(
+            [meal("m1", "Bread", 2, 2, [ingredient("Flour", 500, "g")])],
+            [stock("Flour", 1, "bag", "approximate", "available")],
+        );
+        expect(items).toHaveLength(0);
+    });
+
+    test("low-stock presence-only item in a different unit family covers the need, while depleted does not", () => {
+        const low = computePlanShortfall(
+            [meal("m1", "Bread", 2, 2, [ingredient("Flour", 2, "cup")])],
+            [stock("Flour", null, "bag", "presence_only", "low")],
+        );
+        expect(low).toHaveLength(0);
+
+        const depleted = computePlanShortfall(
+            [meal("m1", "Bread", 2, 2, [ingredient("Flour", 2, "cup")])],
+            [stock("Flour", null, "bag", "presence_only", "depleted")],
+        );
+        expect(depleted).toHaveLength(1);
+        expect(depleted[0]!.pantry_state).toBe("none");
+    });
+
+    test("presence-only stock in another unit family prevents proving a shortfall even when a same-family exact row falls short", () => {
+        const items = computePlanShortfall(
+            [meal("m1", "Bread", 2, 2, [ingredient("Flour", 500, "g")])],
+            [
+                stock("Flour", 200, "g", "exact", "available"),
+                stock("Flour", null, "bag", "presence_only", "available"),
+            ],
+        );
+        expect(items).toHaveLength(0);
+    });
+
+    test("exact stock in a different unit family leaves exact-stock shortfall behavior unchanged", () => {
+        const items = computePlanShortfall(
+            [meal("m1", "Bread", 2, 2, [ingredient("Flour", 2, "cup")])],
+            [stock("Flour", 1, "bag", "exact", "available")],
+        );
+        expect(items).toHaveLength(1);
+        expect(items[0]).toMatchObject({
+            pantry_state: "none",
+            have_quantity: 0,
+            short_quantity: 2,
+        });
+    });
 });

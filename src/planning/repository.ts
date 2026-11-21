@@ -12,6 +12,12 @@ import {
     insertStructuredMealInTransaction,
 } from "../structured-meals/repository.js";
 import { attachPantryFlagsForScope } from "../inventory/grocery-pantry.js";
+import {
+    canonicalInventoryUnit,
+    combineGroceryQuantities,
+    normalizeGroceryName,
+    sameGroceryIdentity,
+} from "../inventory/matching.js";
 import { dateOnlyString } from "../tz.js";
 import { formatRecipeQuantity } from "../quantity-format.js";
 import {
@@ -1666,7 +1672,7 @@ async function getOrCreateGroceryListInTransaction(
     return rows[0].id;
 }
 
-async function addGroceryItemsInTransaction(
+export async function addGroceryItemsInTransaction(
     tx: DatabaseTransaction,
     input: {
         userId: string;
@@ -1682,43 +1688,87 @@ async function addGroceryItemsInTransaction(
         input.userId,
         input.scope,
     );
+    // Load and lock the list's open rows once, in deterministic order,
+    // so same-family unit conversion can fold adds in memory against
+    // exactly the rows an add could merge into (flag identity ===
+    // merge identity: see groceryIdentityKey in inventory/matching).
+    const openRowRecords = await tx<Array<Record<string, unknown>>>`
+        select id, name, normalized_name, quantity, unit,
+               food_provider, provider_food_id, version
+        from munch.grocery_items
+        where grocery_list_id = ${listId}
+          and purchased_at is null
+          and deleted_at is null
+        order by created_at asc, id asc
+        for update
+    `;
+    interface OpenGroceryRow {
+        id: string;
+        name: string;
+        quantity: number | null;
+        unit: string | null;
+        food_provider: string | null;
+        provider_food_id: string | null;
+        version: number;
+    }
+    const openRows: OpenGroceryRow[] = openRowRecords.map((row) => ({
+        id: String(row.id),
+        name: String(row.name),
+        quantity: row.quantity == null ? null : Number(row.quantity),
+        unit: row.unit == null ? null : String(row.unit),
+        food_provider:
+            row.food_provider == null ? null : String(row.food_provider),
+        provider_food_id:
+            row.provider_food_id == null ? null : String(row.provider_food_id),
+        version: Number(row.version),
+    }));
     const results: Array<Record<string, unknown>> = [];
     for (const item of input.items) {
         const name = item.name.trim();
-        const normalized = normalizeName(name);
+        const normalized = normalizeGroceryName(name);
         if (!name || !normalized)
             throw new Error("Grocery item name is invalid");
-        const unit = item.unit?.trim() || null;
-        let existing: Array<Record<string, unknown>> = [];
+        const unit = canonicalInventoryUnit(item.unit);
         if (item.quantity !== undefined) {
-            existing = await tx<Array<Record<string, unknown>>>`
-                select id, quantity, version
-                from munch.grocery_items
-                where grocery_list_id = ${listId}
-                  and normalized_name = ${normalized}
-                  and unit is not distinct from ${unit}
-                  and food_provider is not distinct from ${item.foodProvider ?? null}
-                  and provider_food_id is not distinct from ${item.providerFoodId ?? null}
-                  and purchased_at is null and deleted_at is null
-                limit 1
-                for update
-            `;
-        }
-        if (existing[0]) {
-            const updated = await tx<Array<Record<string, unknown>>>`
-                update munch.grocery_items
-                set quantity = coalesce(quantity, 0) + ${item.quantity ?? 0},
-                    note = coalesce(note, ${item.note?.trim() || null}),
-                    source_recipe_id = coalesce(source_recipe_id, ${item.sourceRecipeId ?? null}),
-                    source_recipe_revision_id = coalesce(source_recipe_revision_id, ${item.sourceRecipeRevisionId ?? null}),
-                    source_planned_meal_id = coalesce(source_planned_meal_id, ${item.sourcePlannedMealId ?? null}),
-                    updated_by_user_id = ${input.userId},
-                    updated_at = now(), version = version + 1
-                where id = ${String(existing[0].id)}
-                returning id, name, quantity, unit, purchased_at, version
-            `;
-            results.push({ ...updated[0], merged: true });
-            continue;
+            const row = openRows.find(
+                (candidate) =>
+                    sameGroceryIdentity(
+                        { name: candidate.name, unit: candidate.unit },
+                        { name, unit },
+                    ) &&
+                    (candidate.food_provider ?? null) ===
+                        (item.foodProvider ?? null) &&
+                    (candidate.provider_food_id ?? null) ===
+                        (item.providerFoodId ?? null),
+            );
+            if (row) {
+                const combined = combineGroceryQuantities(
+                    row.quantity,
+                    row.unit,
+                    item.quantity,
+                    unit,
+                );
+                if (combined !== null) {
+                    const updated = await tx<Array<Record<string, unknown>>>`
+                        update munch.grocery_items
+                        set quantity = ${combined},
+                            note = coalesce(note, ${item.note?.trim() || null}),
+                            source_recipe_id = coalesce(source_recipe_id, ${item.sourceRecipeId ?? null}),
+                            source_recipe_revision_id = coalesce(source_recipe_revision_id, ${item.sourceRecipeRevisionId ?? null}),
+                            source_planned_meal_id = coalesce(source_planned_meal_id, ${item.sourcePlannedMealId ?? null}),
+                            updated_by_user_id = ${input.userId},
+                            updated_at = now(), version = version + 1
+                        where id = ${row.id}
+                        returning id, name, quantity, unit, purchased_at, version
+                    `;
+                    if (updated[0]) {
+                        row.quantity = combined;
+                        row.version = Number(updated[0].version);
+                        results.push({ ...updated[0], merged: true });
+                        continue;
+                    }
+                }
+            }
         }
         const inserted = await tx<Array<Record<string, unknown>>>`
             insert into munch.grocery_items (
@@ -1738,7 +1788,18 @@ async function addGroceryItemsInTransaction(
             on conflict do nothing
             returning id, name, quantity, unit, purchased_at, version
         `;
-        if (inserted[0]) results.push({ ...inserted[0], merged: false });
+        if (inserted[0]) {
+            results.push({ ...inserted[0], merged: false });
+            openRows.push({
+                id: String(inserted[0].id),
+                name,
+                quantity: item.quantity ?? null,
+                unit,
+                food_provider: item.foodProvider ?? null,
+                provider_food_id: item.providerFoodId ?? null,
+                version: Number(inserted[0].version),
+            });
+        }
     }
     return { groceryListId: listId, items: results };
 }
@@ -2016,9 +2077,9 @@ export async function updateGroceryItem(input: {
         const rows = await tx<Array<Record<string, unknown>>>`
             update munch.grocery_items item
             set name = ${name},
-                normalized_name = ${normalizeName(name)},
+                normalized_name = ${normalizeGroceryName(name)},
                 quantity = ${input.quantity},
-                unit = ${input.unit?.trim() || null},
+                unit = ${canonicalInventoryUnit(input.unit)},
                 note = ${input.note?.trim() || null},
                 updated_by_user_id = ${input.userId},
                 updated_at = now(),

@@ -25,7 +25,15 @@ import {
 } from "./planning/repository.js";
 import { resolvePlanningRecipeNutrition } from "./recipe-nutrition-resolution.js";
 import { getFeatureModules } from "./feature-modules-repository.js";
-import { pantryMatchForGroceryItem } from "./inventory/grocery-pantry.js";
+import {
+    isOnGroceryList,
+    pantryMatchForGroceryItem,
+} from "./inventory/grocery-pantry.js";
+import {
+    canonicalInventoryUnit,
+    combineGroceryQuantities,
+    groceryIdentityKey,
+} from "./inventory/matching.js";
 import { getPantry } from "./inventory/repository.js";
 import { dateInTz, dateOnlyString, shiftLocalDate, validateTz } from "./tz.js";
 import { toStoredInteger } from "./units.js";
@@ -1705,16 +1713,6 @@ export async function commitGuidedPlanDraft(input: {
     });
 }
 
-function normalizedShoppingName(value: string) {
-    return value
-        .normalize("NFKD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, " ")
-        .trim()
-        .replace(/\s+/g, " ");
-}
-
 export async function previewGuidedPlanGroceries(
     userId: string,
     draftId: string,
@@ -1744,14 +1742,22 @@ export async function previewGuidedPlanGroceries(
             if (row.optional === true || row.quantity == null) continue;
             const name = String(row.name);
             const unit = row.unit == null ? null : String(row.unit);
-            const key = `${normalizedShoppingName(name)}|${normalizedShoppingName(unit ?? "")}`;
+            const canonicalUnit = canonicalInventoryUnit(unit);
+            const key = groceryIdentityKey({ name, unit: canonicalUnit });
+            if (!key) continue;
             const scale =
                 Number(row.servings) /
                 Math.max(Number(row.recipe_servings), 0.001);
             const quantity = Number(row.quantity) * scale;
             const current = grouped.get(key);
             if (current) {
-                current.quantity = Number(current.quantity) + quantity;
+                const combined = combineGroceryQuantities(
+                    Number(current.quantity),
+                    current.unit == null ? null : String(current.unit),
+                    quantity,
+                    canonicalUnit,
+                );
+                if (combined !== null) current.quantity = combined;
             } else {
                 const planned = await tx<Array<Record<string, unknown>>>`
                     select id from munch.planned_meals
@@ -1765,8 +1771,8 @@ export async function previewGuidedPlanGroceries(
                 `;
                 grouped.set(key, {
                     name,
-                    quantity,
-                    unit,
+                    quantity: Number(quantity.toFixed(3)),
+                    unit: canonicalUnit,
                     source_recipe_id: String(row.recipe_id),
                     source_recipe_revision_id: String(row.recipe_revision_id),
                     source_planned_meal_id: planned[0]
@@ -1799,16 +1805,14 @@ export async function previewGuidedPlanGroceries(
         `;
         const activeItems = lists[0]
             ? await tx<Array<Record<string, unknown>>>`
-                  select normalized_name, unit from munch.grocery_items
+                  select name, unit from munch.grocery_items
                   where grocery_list_id = ${lists[0].id} and deleted_at is null and purchased_at is null
               `
             : [];
-        const existingKeys = new Set(
-            activeItems.map(
-                (item) =>
-                    `${normalizedShoppingName(String(item.normalized_name))}|${normalizedShoppingName(String(item.unit ?? ""))}`,
-            ),
-        );
+        const openItems = activeItems.map((item) => ({
+            name: String(item.name ?? ""),
+            unit: item.unit == null ? null : String(item.unit),
+        }));
         // Pantry-presence flags (owner ruling, Nov 13): the preview
         // already knew `already_on_list`; each suggestion now also
         // carries the same three-state flag the other add surfaces
@@ -1824,55 +1828,59 @@ export async function previewGuidedPlanGroceries(
                   },
             limit: 200,
         });
-        const suggestions = [...grouped.entries()].map(
-            ([key, value], index) => {
-                const alreadyOnList = existingKeys.has(key);
-                return {
-                    index,
+        const suggestions = [...grouped.values()].map((value, index) => {
+            const alreadyOnList = isOnGroceryList(
+                {
                     name: String(value.name ?? ""),
-                    quantity: Number(value.quantity ?? 0),
                     unit: value.unit == null ? null : String(value.unit),
-                    recipes: Array.isArray(value.recipes)
-                        ? value.recipes.map(String)
-                        : [],
-                    source_recipe_id: String(value.source_recipe_id ?? ""),
-                    source_recipe_revision_id: String(
-                        value.source_recipe_revision_id ?? "",
-                    ),
-                    source_planned_meal_id:
-                        value.source_planned_meal_id == null
-                            ? null
-                            : String(value.source_planned_meal_id),
-                    already_on_list: alreadyOnList,
-                    pantry_flag: (() => {
-                        if (!pantry.enabled) return null;
-                        const match = pantryMatchForGroceryItem(
-                            { name: String(value.name ?? "") },
-                            pantry.items,
-                        );
-                        if (alreadyOnList) {
-                            return {
-                                state: "listed" as const,
-                                pantry_item_id: match?.pantry_item_id ?? null,
-                                pantry_name: match?.pantry_name ?? null,
-                            };
-                        }
-                        if (match) {
-                            return {
-                                state: "have" as const,
-                                pantry_item_id: match.pantry_item_id,
-                                pantry_name: match.pantry_name,
-                            };
-                        }
+                },
+                openItems,
+            );
+            return {
+                index,
+                name: String(value.name ?? ""),
+                quantity: Number(value.quantity ?? 0),
+                unit: value.unit == null ? null : String(value.unit),
+                recipes: Array.isArray(value.recipes)
+                    ? value.recipes.map(String)
+                    : [],
+                source_recipe_id: String(value.source_recipe_id ?? ""),
+                source_recipe_revision_id: String(
+                    value.source_recipe_revision_id ?? "",
+                ),
+                source_planned_meal_id:
+                    value.source_planned_meal_id == null
+                        ? null
+                        : String(value.source_planned_meal_id),
+                already_on_list: alreadyOnList,
+                pantry_flag: (() => {
+                    if (!pantry.enabled) return null;
+                    const match = pantryMatchForGroceryItem(
+                        { name: String(value.name ?? "") },
+                        pantry.items,
+                    );
+                    if (alreadyOnList) {
                         return {
-                            state: "none" as const,
-                            pantry_item_id: null,
-                            pantry_name: null,
+                            state: "listed" as const,
+                            pantry_item_id: match?.pantry_item_id ?? null,
+                            pantry_name: match?.pantry_name ?? null,
                         };
-                    })(),
-                };
-            },
-        );
+                    }
+                    if (match) {
+                        return {
+                            state: "have" as const,
+                            pantry_item_id: match.pantry_item_id,
+                            pantry_name: match.pantry_name,
+                        };
+                    }
+                    return {
+                        state: "none" as const,
+                        pantry_item_id: null,
+                        pantry_name: null,
+                    };
+                })(),
+            };
+        });
         return {
             draft_id: draftId,
             scope: draft.personal_owner_user_id ? "personal" : "household",
