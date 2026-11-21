@@ -7421,11 +7421,14 @@ function renderMealDraftReview(draft) {
     mealDraftReview.draft = draft;
     if (!root) return;
     const totals = draft.totals || {};
-    const editable = [
-        "open",
-        "awaiting_answers",
-        "awaiting_confirmation",
-    ].includes(draft.status);
+    const expired =
+        Boolean(draft.expires_at) &&
+        Number.isFinite(Date.parse(draft.expires_at)) &&
+        Date.parse(draft.expires_at) <= Date.now();
+    const editable =
+        ["open", "awaiting_answers", "awaiting_confirmation"].includes(
+            draft.status,
+        ) && !expired;
     const busyText = mealDraftReview.addTextBusy;
     const photoBusy = mealDraftReview.photoBusy;
     const blockingNames = editable ? openBlockingQuestionItemNames(draft) : [];
@@ -7437,7 +7440,7 @@ function renderMealDraftReview(draft) {
         mealPhotoCapture.session?.draftId === draft.id
             ? mealPhotoCapture.session
             : null;
-    root.innerHTML = `<div class="meal-draft-review">${draft.description ? `<p class="meal-draft-desc">${escapeHtml(draft.description)}</p>` : ""}<div class="meal-draft-meta" data-draft-details><span>${escapeHtml(draftLoggedLabel(draft.logged_at))}</span>${editable ? `<select class="meal-draft-mealtype" data-draft-field="meal_type" aria-label="Meal type">${mealTypeOptionsHtml(draft.meal_type)}</select>` : `<span>${escapeHtml(draft.meal_type)}</span>`}</div>${busyText || photoBusy ? `<div class="meal-draft-status" role="status"><span class="meal-draft-spinner" aria-hidden="true"></span><span class="meal-draft-status-text"><strong>Re-analyzing your meal</strong>${busyText ? `<small>Your note: “${escapeHtml(busyText)}”</small>` : ""}</span></div>` : ""}<div class="meal-draft-totals${busyText || photoBusy ? " meal-draft-dim" : ""}"><div class="meal-draft-total meal-draft-total-lead"><span>Calories</span><strong>${number(totals.calories)} <small>kcal</small></strong></div><div class="meal-draft-total"><span>Protein</span><strong>${number(totals.protein_g)} g</strong></div><div class="meal-draft-total"><span>Carbs</span><strong>${number(totals.carbs_g)} g</strong></div><div class="meal-draft-total"><span>Fat</span><strong>${number(totals.fat_g)} g</strong></div></div><div class="meal-draft-items${busyText || photoBusy ? " meal-draft-dim" : ""}">${draft.items.map(draftItemEditor).join("") || `<p class="tiny">No foods are in this draft yet.</p>`}${mealDraftReview.pendingManual.map(draftManualEditor).join("")}</div>${photoSession ? `<div class="meal-draft-photos">${photoSession.files.map((file, i) => `<span class="meal-draft-photo-chip">Photo ${i + 1}<button class="button button-quiet button-small" type="button" data-action="remove-draft-photo" data-index="${i}" aria-label="Remove photo ${i + 1}">Remove</button></span>`).join("")}${photoSession.files.length < 3 ? photoCaptureMarkup({ inputId: "meal-draft-photo-file", label: "Add another photo", multiple: true }) : ""}</div>` : ""}${blockingNames.length ? `<p class="meal-draft-blocker">${escapeHtml(blockingNames.join(", "))} ${blockingNames.length === 1 ? "has" : "have"} no nutrition values yet. Tap the row to add values, or swipe left to remove.</p>` : ""}${editable && draft.source_mode === "photo" ? `<section class="meal-draft-notebox meal-draft-add-text"><label class="field"><span>Anything else to add?</span><input class="input meal-draft-add-text-input" id="meal-draft-add-text-input" type="text" placeholder="I added a good bit of butter…" maxlength="500" autocomplete="off" value="${busyText ? escapeHtml(busyText) : ""}" ${busyText || photoBusy ? "disabled" : ""} /></label><button class="button button-secondary meal-draft-add-text-button" type="button" data-action="add-draft-text" ${busyText || photoBusy ? "disabled" : ""}>Add to draft</button>${mealDraftReview.addTextMessage ? `<p class="tiny meal-draft-add-text-message" role="status">${escapeHtml(mealDraftReview.addTextMessage)}</p>` : ""}</section>` : ""}${editable ? `<div class="meal-draft-actions"><button class="button button-primary meal-draft-confirm" type="button" data-action="confirm-meal-draft" ${busyText || photoBusy ? "disabled" : ""}>Confirm and log meal</button><button class="button button-quiet" type="button" data-action="cancel-meal-draft" ${busyText || photoBusy ? "disabled" : ""}>Abandon draft</button></div>` : `<p class="tiny">This draft is ${escapeHtml(draft.status.replaceAll("_", " "))}.</p>`}</div>`;
+    root.innerHTML = `<div class="meal-draft-review">${draft.description ? `<p class="meal-draft-desc">${escapeHtml(draft.description)}</p>` : ""}<div class="meal-draft-meta" data-draft-details><span>${escapeHtml(draftLoggedLabel(draft.logged_at))}</span>${editable ? `<select class="meal-draft-mealtype" data-draft-field="meal_type" aria-label="Meal type">${mealTypeOptionsHtml(draft.meal_type)}</select>` : `<span>${escapeHtml(draft.meal_type)}</span>`}</div>${busyText || photoBusy ? `<div class="meal-draft-status" role="status"><span class="meal-draft-spinner" aria-hidden="true"></span><span class="meal-draft-status-text"><strong>Re-analyzing your meal</strong>${busyText ? `<small>Your note: “${escapeHtml(busyText)}”</small>` : ""}</span></div>` : ""}<div class="meal-draft-totals${busyText || photoBusy ? " meal-draft-dim" : ""}"><div class="meal-draft-total meal-draft-total-lead"><span>Calories</span><strong>${number(totals.calories)} <small>kcal</small></strong></div><div class="meal-draft-total"><span>Protein</span><strong>${number(totals.protein_g)} g</strong></div><div class="meal-draft-total"><span>Carbs</span><strong>${number(totals.carbs_g)} g</strong></div><div class="meal-draft-total"><span>Fat</span><strong>${number(totals.fat_g)} g</strong></div></div><div class="meal-draft-items${busyText || photoBusy ? " meal-draft-dim" : ""}">${draft.items.map(draftItemEditor).join("") || `<p class="tiny">No foods are in this draft yet.</p>`}${editable ? mealDraftReview.pendingManual.map(draftManualEditor).join("") : ""}</div>${photoSession ? `<div class="meal-draft-photos">${photoSession.files.map((file, i) => `<span class="meal-draft-photo-chip">Photo ${i + 1}<button class="button button-quiet button-small" type="button" data-action="remove-draft-photo" data-index="${i}" aria-label="Remove photo ${i + 1}">Remove</button></span>`).join("")}${photoSession.files.length < 3 ? photoCaptureMarkup({ inputId: "meal-draft-photo-file", label: "Add another photo", multiple: true }) : ""}</div>` : ""}${blockingNames.length ? `<p class="meal-draft-blocker">${escapeHtml(blockingNames.join(", "))} ${blockingNames.length === 1 ? "has" : "have"} no nutrition values yet. Tap the row to add values, or swipe left to remove.</p>` : ""}${editable && draft.source_mode === "photo" ? `<section class="meal-draft-notebox meal-draft-add-text"><label class="field"><span>Anything else to add?</span><input class="input meal-draft-add-text-input" id="meal-draft-add-text-input" type="text" placeholder="I added a good bit of butter…" maxlength="500" autocomplete="off" value="${busyText ? escapeHtml(busyText) : ""}" ${busyText || photoBusy ? "disabled" : ""} /></label><button class="button button-secondary meal-draft-add-text-button" type="button" data-action="add-draft-text" ${busyText || photoBusy ? "disabled" : ""}>Add to draft</button>${mealDraftReview.addTextMessage ? `<p class="tiny meal-draft-add-text-message" role="status">${escapeHtml(mealDraftReview.addTextMessage)}</p>` : ""}</section>` : editable ? `<section class="meal-draft-section meal-draft-search"><div class="panel-title"><h4>Add a food</h4><button class="button button-secondary button-small" type="button" data-action="add-draft-manual">Add manual food</button></div><input class="input" id="meal-draft-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" aria-label="Search foods to add" /><div id="meal-draft-food-results" class="meal-food-results"></div></section>` : ""}${editable ? `<div class="meal-draft-actions"><button class="button button-primary meal-draft-confirm" type="button" data-action="confirm-meal-draft" ${busyText || photoBusy ? "disabled" : ""}>Confirm and log meal</button><button class="button button-quiet" type="button" data-action="cancel-meal-draft" ${busyText || photoBusy ? "disabled" : ""}>Abandon draft</button></div>` : `<p class="tiny">This draft is ${escapeHtml((expired ? "expired" : draft.status).replaceAll("_", " "))}.</p>`}</div>`;
     applyDraftUnsavedEdits(snapshot, draft);
     if (scrollHost) scrollHost.scrollTop = scrollTop;
 }
@@ -7516,7 +7519,20 @@ async function searchDraftFoods(query) {
 async function selectDraftFoodOption(key) {
     const option = mealDraftReview.options.get(key);
     const draft = mealDraftReview.draft;
-    if (!option || !draft) return;
+    const expired =
+        Boolean(draft?.expires_at) &&
+        Number.isFinite(Date.parse(draft.expires_at)) &&
+        Date.parse(draft.expires_at) <= Date.now();
+    if (
+        !option ||
+        !draft ||
+        expired ||
+        !["open", "awaiting_answers", "awaiting_confirmation"].includes(
+            draft.status,
+        )
+    ) {
+        return;
+    }
     let item;
     if (option.kind === "candidate" || option.kind === "food") {
         item = {
@@ -10179,18 +10195,44 @@ async function handleAction(button) {
         return;
     }
     if (action === "add-draft-manual") {
+        const draft = mealDraftReview.draft;
+        const expired =
+            Boolean(draft?.expires_at) &&
+            Number.isFinite(Date.parse(draft.expires_at)) &&
+            Date.parse(draft.expires_at) <= Date.now();
+        if (
+            !draft ||
+            expired ||
+            !["open", "awaiting_answers", "awaiting_confirmation"].includes(
+                draft.status,
+            )
+        ) {
+            return;
+        }
         mealDraftReview.pendingManual.push({
             name: "",
             quantity: 1,
             portion_label: "",
             nutrients: {},
         });
-        renderMealDraftReview(mealDraftReview.draft);
+        renderMealDraftReview(draft);
         return;
     }
     if (action === "save-draft-manual") {
         const draft = mealDraftReview.draft;
-        if (!draft) return;
+        const expired =
+            Boolean(draft?.expires_at) &&
+            Number.isFinite(Date.parse(draft.expires_at)) &&
+            Date.parse(draft.expires_at) <= Date.now();
+        if (
+            !draft ||
+            expired ||
+            !["open", "awaiting_answers", "awaiting_confirmation"].includes(
+                draft.status,
+            )
+        ) {
+            return;
+        }
         const item = draftManualPayloadFromDom(Number(button.dataset.index));
         const result = await api(
             `/api/app/meal-drafts/${encodeURIComponent(draft.id)}/items`,
@@ -10206,6 +10248,7 @@ async function handleAction(button) {
         mealDraftReview.pendingManual = [];
         renderMealDraftReview(result.draft);
         toast("Manual food added to draft.");
+        searchDraftFoods("");
         return;
     }
     if (action === "toggle-draft-item") {
