@@ -401,13 +401,44 @@ function confidenceBadge(value) {
     return `<span class="confidence-chip">${label}</span>`;
 }
 
+// Toast top layer (extracted from closed PR #342): the region is a
+// manual popover, so toasts paint in the browser's top layer above
+// modal dialogs instead of underneath them. Shown on first append,
+// hidden again once the last toast leaves.
+function showToastRegion() {
+    if (typeof toastRegion.showPopover !== "function") return;
+    if (!toastRegion.matches(":popover-open")) {
+        try {
+            toastRegion.showPopover();
+        } catch {
+            // The region stays visible through the stylesheet fallback.
+        }
+    }
+}
+
+function hideToastRegionIfEmpty() {
+    if (toastRegion.childElementCount > 0) return;
+    if (typeof toastRegion.hidePopover !== "function") return;
+    if (toastRegion.matches(":popover-open")) {
+        try {
+            toastRegion.hidePopover();
+        } catch {
+            // Nothing to hide when the popover is already closed.
+        }
+    }
+}
+
 function toast(message, kind = "success") {
     const element = document.createElement("div");
     element.className = "toast";
     element.textContent = message;
     if (kind === "error") element.style.borderColor = "var(--danger-700)";
     toastRegion.append(element);
-    window.setTimeout(() => element.remove(), 4200);
+    showToastRegion();
+    window.setTimeout(() => {
+        element.remove();
+        hideToastRegionIfEmpty();
+    }, 4200);
 }
 
 // A toast carrying one action (recipe experience R3: the grocery
@@ -424,11 +455,16 @@ function toastAction(message, actionLabel, onAction) {
     button.textContent = actionLabel;
     button.addEventListener("click", () => {
         element.remove();
+        hideToastRegionIfEmpty();
         onAction();
     });
     element.append(text, button);
     toastRegion.append(element);
-    window.setTimeout(() => element.remove(), 9000);
+    showToastRegion();
+    window.setTimeout(() => {
+        element.remove();
+        hideToastRegionIfEmpty();
+    }, 9000);
 }
 
 async function api(path, options = {}) {
@@ -7360,7 +7396,7 @@ function draftItemEditor(item, index) {
     // editor below; swiping it left (or Remove inside the editor)
     // removes it. Badges and provenance live inside the editor, off
     // the row's surface.
-    return `<article class="meal-draft-item" data-draft-item-index="${index}"><button class="meal-draft-item-toggle" type="button" data-action="toggle-draft-item" data-index="${index}" aria-expanded="${expanded}"><span class="meal-draft-item-summary"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.portion_label || "")}</small></span><span class="meal-draft-item-kcal">${calories != null ? `${number(calories)} kcal` : ""}</span><span class="meal-draft-item-chevron" aria-hidden="true">${expanded ? "▾" : "▸"}</span></button><div class="meal-draft-item-fields" ${expanded ? "" : "hidden"}><div class="meal-composer-grid"><label class="field"><span>Name</span><input data-draft-field="name" value="${escapeHtml(item.name)}" maxlength="500" required /></label>${portionField}<label class="field"><span>Quantity</span><input data-draft-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity ?? 1)}" /></label><label class="field"><span>Gram weight</span><input data-draft-field="gram_weight" type="number" min="0.01" step="0.1" value="${escapeHtml(item.gram_weight ?? "")}" /></label></div><div class="meal-composer-nutrients">${nutrientFields}</div><details class="food-audit"><summary>Provenance and assumptions</summary><div class="food-audit-body"><div>${sourceBadge(item.source_type)} ${confidenceBadge(item.confidence)}</div><div>${escapeHtml(item.provider || "Source snapshot preserved")}</div>${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noreferrer">View source</a>` : ""}${item.assumptions?.length ? `<div>Assumptions: ${escapeHtml(item.assumptions.join("; "))}</div>` : ""}</div></details><button class="button button-quiet meal-draft-item-remove" type="button" data-action="remove-draft-item" data-index="${index}">Remove</button></div></article>`;
+    return `<article class="meal-draft-item" data-draft-item-index="${index}"><button class="meal-draft-item-toggle" type="button" data-action="toggle-draft-item" data-index="${index}" aria-expanded="${expanded}"><span class="meal-draft-item-summary"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.portion_label || "")}</small></span><span class="meal-draft-item-kcal" data-draft-item-kcal>${calories != null ? `${number(calories)} kcal` : ""}</span><span class="meal-draft-item-chevron" aria-hidden="true">${expanded ? "▾" : "▸"}</span></button><div class="meal-draft-item-fields" ${expanded ? "" : "hidden"}><div class="meal-composer-grid"><label class="field"><span>Name</span><input data-draft-field="name" value="${escapeHtml(item.name)}" maxlength="500" required /></label>${portionField}<label class="field"><span>Quantity</span><input data-draft-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity ?? 1)}" /></label><label class="field"><span>Gram weight</span><input data-draft-field="gram_weight" type="number" min="0.01" step="0.1" value="${escapeHtml(item.gram_weight ?? "")}" /></label></div><div class="meal-composer-nutrients">${nutrientFields}</div><details class="food-audit"><summary>Provenance and assumptions</summary><div class="food-audit-body"><div>${sourceBadge(item.source_type)} ${confidenceBadge(item.confidence)}</div><div>${escapeHtml(item.provider || "Source snapshot preserved")}</div>${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noreferrer">View source</a>` : ""}${item.assumptions?.length ? `<div>Assumptions: ${escapeHtml(item.assumptions.join("; "))}</div>` : ""}</div></details><button class="button button-quiet meal-draft-item-remove" type="button" data-action="remove-draft-item" data-index="${index}">Remove</button></div></article>`;
 }
 
 function draftManualEditor(item, index) {
@@ -7500,6 +7536,51 @@ function refreshDraftSaveBar() {
     }
 }
 
+// Live totals for the draft review (extracted from closed PR #342):
+// while the user edits item fields, the totals strip and each row's
+// kcal line follow the DOM values immediately instead of waiting for
+// the next full re-render (which would drop focus mid-edit). Reads
+// the same per-item nutrient fields the save flow commits. #342's
+// version also refreshed the row subline with macro bits; that part
+// rode its restructured row markup and is not ported.
+function updateDraftTotalsLive() {
+    const root = document.getElementById("meal-draft-review");
+    if (!root) return;
+    const totals = { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 };
+    root.querySelectorAll("[data-draft-item-index]").forEach((editor) => {
+        const readNum = (name) => {
+            const val = editor.querySelector(
+                `[data-draft-field="${name}"]`,
+            )?.value;
+            if (val == null || val === "") return null;
+            const parsed = Number(val);
+            return Number.isFinite(parsed) ? parsed : null;
+        };
+        const cal = readNum("calories");
+        const p = readNum("protein_g");
+        const c = readNum("carbs_g");
+        const f = readNum("fat_g");
+        if (cal != null) totals.calories += cal;
+        if (p != null) totals.protein_g += p;
+        if (c != null) totals.carbs_g += c;
+        if (f != null) totals.fat_g += f;
+        const kcalEl = editor.querySelector("[data-draft-item-kcal]");
+        if (kcalEl)
+            kcalEl.textContent = cal != null ? `${number(cal)} kcal` : "";
+    });
+    const totalsBox = root.querySelector(".meal-draft-totals");
+    if (!totalsBox) return;
+    const calEl = totalsBox.querySelector("[data-draft-total='calories']");
+    const pEl = totalsBox.querySelector("[data-draft-total='protein_g']");
+    const cEl = totalsBox.querySelector("[data-draft-total='carbs_g']");
+    const fEl = totalsBox.querySelector("[data-draft-total='fat_g']");
+    if (calEl)
+        calEl.innerHTML = `${number(totals.calories)} <small>kcal</small>`;
+    if (pEl) pEl.textContent = `${number(totals.protein_g, 1)} g`;
+    if (cEl) cEl.textContent = `${number(totals.carbs_g, 1)} g`;
+    if (fEl) fEl.textContent = `${number(totals.fat_g, 1)} g`;
+}
+
 /** Commit every dirty item, then the details, threading the draft
  * version through each PATCH. Returns the freshest draft. */
 async function saveDraftChanges() {
@@ -7592,8 +7673,10 @@ function openBlockingQuestionItemNames(draft) {
 }
 
 /** A horizontal swipe left past this many px on a review row removes it. */
-function draftSwipeRemoves(startX, endX) {
-    return startX - endX >= 64;
+function draftSwipeRemoves(startX, endX, startY = 0, endY = 0) {
+    const deltaX = startX - endX;
+    const deltaY = startY - endY;
+    return deltaX >= 64 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5;
 }
 
 /** "Thu, Nov 12 · 6:42 PM" in the profile timezone — the review's meta line. */
@@ -7639,7 +7722,7 @@ function renderMealDraftReview(draft) {
         mealPhotoCapture.session?.draftId === draft.id
             ? mealPhotoCapture.session
             : null;
-    root.innerHTML = `<div class="meal-draft-review">${draft.description ? `<p class="meal-draft-desc">${escapeHtml(draft.description)}</p>` : ""}<div class="meal-draft-meta" data-draft-details><span>${escapeHtml(draftLoggedLabel(draft.logged_at))}</span>${editable ? `<select class="meal-draft-mealtype" data-draft-field="meal_type" aria-label="Meal type">${mealTypeOptionsHtml(draft.meal_type)}</select>` : `<span>${escapeHtml(draft.meal_type)}</span>`}</div>${busyText || photoBusy ? `<div class="meal-draft-status" role="status"><span class="meal-draft-spinner" aria-hidden="true"></span><span class="meal-draft-status-text"><strong>Re-analyzing your meal</strong>${busyText ? `<small>Your note: “${escapeHtml(busyText)}”</small>` : ""}</span></div>` : ""}<div class="meal-draft-totals${busyText || photoBusy ? " meal-draft-dim" : ""}"><div class="meal-draft-total meal-draft-total-lead"><span>Calories</span><strong>${number(totals.calories)} <small>kcal</small></strong></div><div class="meal-draft-total"><span>Protein</span><strong>${number(totals.protein_g)} g</strong></div><div class="meal-draft-total"><span>Carbs</span><strong>${number(totals.carbs_g)} g</strong></div><div class="meal-draft-total"><span>Fat</span><strong>${number(totals.fat_g)} g</strong></div></div><div class="meal-draft-items${busyText || photoBusy ? " meal-draft-dim" : ""}">${draft.items.map(draftItemEditor).join("") || `<p class="tiny">No foods are in this draft yet.</p>`}${editable ? mealDraftReview.pendingManual.map(draftManualEditor).join("") : ""}</div>${photoSession ? `<div class="meal-draft-photos">${photoSession.files.map((file, i) => `<span class="meal-draft-photo-chip">Photo ${i + 1}<button class="button button-quiet button-small" type="button" data-action="remove-draft-photo" data-index="${i}" aria-label="Remove photo ${i + 1}">Remove</button></span>`).join("")}${photoSession.files.length < 3 ? photoCaptureMarkup({ inputId: "meal-draft-photo-file", label: "Add another photo", multiple: true }) : ""}</div>` : ""}${blockingNames.length ? `<p class="meal-draft-blocker">${escapeHtml(blockingNames.join(", "))} ${blockingNames.length === 1 ? "has" : "have"} no nutrition values yet. Tap the row to add values, or swipe left to remove.</p>` : ""}${editable && draft.source_mode === "photo" ? `<section class="meal-draft-notebox meal-draft-add-text"><label class="field"><span>Anything else to add?</span><input class="input meal-draft-add-text-input" id="meal-draft-add-text-input" type="text" placeholder="I added a good bit of butter…" maxlength="500" autocomplete="off" value="${busyText ? escapeHtml(busyText) : ""}" ${busyText || photoBusy ? "disabled" : ""} /></label><button class="button button-secondary meal-draft-add-text-button" type="button" data-action="add-draft-text" ${busyText || photoBusy ? "disabled" : ""}>Add to draft</button>${mealDraftReview.addTextMessage ? `<p class="tiny meal-draft-add-text-message" role="status">${escapeHtml(mealDraftReview.addTextMessage)}</p>` : ""}</section>` : editable ? `<section class="meal-draft-section meal-draft-search"><div class="panel-title"><h4>Add a food</h4><button class="button button-secondary button-small" type="button" data-action="add-draft-manual">Add manual food</button></div><input class="input" id="meal-draft-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" aria-label="Search foods to add" /><div id="meal-draft-food-results" class="meal-food-results"></div></section>` : ""}${editable ? `<div class="meal-draft-actions"><button class="button button-primary meal-draft-confirm" type="button" data-action="confirm-meal-draft" ${busyText || photoBusy ? "disabled" : ""}>Confirm and log food</button><button class="button button-quiet" type="button" data-action="cancel-meal-draft" ${busyText || photoBusy ? "disabled" : ""}>Abandon draft</button></div>` : `<p class="tiny">This draft is ${escapeHtml((expired ? "expired" : draft.status).replaceAll("_", " "))}.</p>`}</div>`;
+    root.innerHTML = `<div class="meal-draft-review">${draft.description ? `<p class="meal-draft-desc">${escapeHtml(draft.description)}</p>` : ""}<div class="meal-draft-meta" data-draft-details><span>${escapeHtml(draftLoggedLabel(draft.logged_at))}</span>${editable ? `<select class="meal-draft-mealtype" data-draft-field="meal_type" aria-label="Meal type">${mealTypeOptionsHtml(draft.meal_type)}</select>` : `<span>${escapeHtml(draft.meal_type)}</span>`}</div>${busyText || photoBusy ? `<div class="meal-draft-status" role="status"><span class="meal-draft-spinner" aria-hidden="true"></span><span class="meal-draft-status-text"><strong>Re-analyzing your meal</strong>${busyText ? `<small>Your note: “${escapeHtml(busyText)}”</small>` : ""}</span></div>` : ""}<div class="meal-draft-totals${busyText || photoBusy ? " meal-draft-dim" : ""}"><div class="meal-draft-total meal-draft-total-lead"><span>Calories</span><strong data-draft-total="calories">${number(totals.calories)} <small>kcal</small></strong></div><div class="meal-draft-total"><span>Protein</span><strong data-draft-total="protein_g">${number(totals.protein_g, 1)} g</strong></div><div class="meal-draft-total"><span>Carbs</span><strong data-draft-total="carbs_g">${number(totals.carbs_g, 1)} g</strong></div><div class="meal-draft-total"><span>Fat</span><strong data-draft-total="fat_g">${number(totals.fat_g, 1)} g</strong></div></div><div class="meal-draft-items${busyText || photoBusy ? " meal-draft-dim" : ""}">${draft.items.map(draftItemEditor).join("") || `<p class="tiny">No foods are in this draft yet.</p>`}${editable ? mealDraftReview.pendingManual.map(draftManualEditor).join("") : ""}</div>${photoSession ? `<div class="meal-draft-photos">${photoSession.files.map((file, i) => `<span class="meal-draft-photo-chip">Photo ${i + 1}<button class="button button-quiet button-small" type="button" data-action="remove-draft-photo" data-index="${i}" aria-label="Remove photo ${i + 1}">Remove</button></span>`).join("")}${photoSession.files.length < 3 ? photoCaptureMarkup({ inputId: "meal-draft-photo-file", label: "Add another photo", multiple: true }) : ""}</div>` : ""}${blockingNames.length ? `<p class="meal-draft-blocker">${escapeHtml(blockingNames.join(", "))} ${blockingNames.length === 1 ? "has" : "have"} no nutrition values yet. Tap the row to add values, or swipe left to remove.</p>` : ""}${editable && draft.source_mode === "photo" ? `<section class="meal-draft-notebox meal-draft-add-text"><label class="field"><span>Anything else to add?</span><input class="input meal-draft-add-text-input" id="meal-draft-add-text-input" type="text" placeholder="I added a good bit of butter…" maxlength="500" autocomplete="off" value="${busyText ? escapeHtml(busyText) : ""}" ${busyText || photoBusy ? "disabled" : ""} /></label><button class="button button-secondary meal-draft-add-text-button" type="button" data-action="add-draft-text" ${busyText || photoBusy ? "disabled" : ""}>Add to draft</button><p id="meal-draft-add-text-status" class="tiny meal-draft-add-text-message" role="status">${mealDraftReview.addTextMessage ? escapeHtml(mealDraftReview.addTextMessage) : ""}</p></section>` : editable ? `<section class="meal-draft-section meal-draft-search"><div class="panel-title"><h4>Add a food</h4><button class="button button-secondary button-small" type="button" data-action="add-draft-manual">Add manual food</button></div><input class="input" id="meal-draft-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" aria-label="Search foods to add" /><div id="meal-draft-food-results" class="meal-food-results"></div></section>` : ""}${editable ? `<div class="meal-draft-actions"><button class="button button-primary meal-draft-confirm" type="button" data-action="confirm-meal-draft" ${busyText || photoBusy ? "disabled" : ""}>Confirm and log food</button><button class="button button-quiet" type="button" data-action="cancel-meal-draft" ${busyText || photoBusy ? "disabled" : ""}>Abandon draft</button></div>` : `<p class="tiny">This draft is ${escapeHtml((expired ? "expired" : draft.status).replaceAll("_", " "))}.</p>`}</div>`;
     applyDraftUnsavedEdits(snapshot, draft);
     if (scrollHost) scrollHost.scrollTop = scrollTop;
 }
@@ -8275,7 +8358,10 @@ function applyDraftPortionToEditor(select) {
     const portion = (item?.portions || []).find(
         (entry) => entry.id === select.value,
     );
-    if (!portion) return;
+    if (!portion) {
+        updateDraftTotalsLive();
+        return;
+    }
     const quantity =
         draftNumber(
             root.querySelector('[data-draft-field="quantity"]')?.value,
@@ -8304,6 +8390,7 @@ function applyDraftPortionToEditor(select) {
             value == null ? "" : Math.round(value * quantity * 100) / 100,
         );
     }
+    updateDraftTotalsLive();
 }
 
 // Live companion to the draftItemPayloadFromDom rescale: when the
@@ -8343,6 +8430,7 @@ function applyDraftQuantityToEditor(input) {
         setAuto(key, original.nutrients?.[key]);
     }
     setAuto("gram_weight", original.gram_weight);
+    updateDraftTotalsLive();
 }
 
 document.addEventListener("change", (event) => {
@@ -9697,6 +9785,7 @@ document.addEventListener(
             ? {
                   item: toggle.closest("[data-draft-item-index]"),
                   startX: event.touches[0].clientX,
+                  startY: event.touches[0].clientY ?? 0,
               }
             : null;
     },
@@ -9706,9 +9795,16 @@ document.addEventListener(
     "touchend",
     (event) => {
         if (!draftSwipeArm?.item) return;
-        const { item, startX } = draftSwipeArm;
+        const { item, startX, startY } = draftSwipeArm;
         draftSwipeArm = null;
-        if (draftSwipeRemoves(startX, event.changedTouches[0].clientX)) {
+        if (
+            draftSwipeRemoves(
+                startX,
+                event.changedTouches[0].clientX,
+                startY,
+                event.changedTouches[0].clientY ?? 0,
+            )
+        ) {
             requestRemoveDraftItem(Number(item.dataset.draftItemIndex), item);
         }
     },
@@ -9750,6 +9846,7 @@ document.addEventListener(
             ? {
                   card: head.closest("[data-composer-index]"),
                   startX: event.touches[0].clientX,
+                  startY: event.touches[0].clientY ?? 0,
               }
             : null;
     },
@@ -9759,9 +9856,16 @@ document.addEventListener(
     "touchend",
     (event) => {
         if (!composerSwipeArm?.card) return;
-        const { card, startX } = composerSwipeArm;
+        const { card, startX, startY } = composerSwipeArm;
         composerSwipeArm = null;
-        if (draftSwipeRemoves(startX, event.changedTouches[0].clientX)) {
+        if (
+            draftSwipeRemoves(
+                startX,
+                event.changedTouches[0].clientX,
+                startY,
+                event.changedTouches[0].clientY ?? 0,
+            )
+        ) {
             requestRemoveMealItem(Number(card.dataset.composerIndex), card);
         }
     },
@@ -12009,6 +12113,12 @@ document.addEventListener("change", async (event) => {
 document.addEventListener("input", (event) => {
     markDraftFieldDirty(event.target);
     markDraftNutrientUserEdited(event.target);
+    if (
+        event.target.closest?.("#meal-draft-review") &&
+        event.target.matches?.("[data-draft-field]")
+    ) {
+        updateDraftTotalsLive();
+    }
     if (
         event.target.closest?.("#water-form") &&
         (event.target.name === "amount" || event.target.name === "unit")

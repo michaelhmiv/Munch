@@ -82,6 +82,11 @@ function buildDraft(): DraftHarness {
         document: {
             querySelector: (selector: string) =>
                 selector.includes("data-draft-item-index") ? root : null,
+            // The apply functions end with a live-totals refresh
+            // (extracted from closed PR #342); with no review mounted
+            // in this harness it must no-op exactly as it does in
+            // production when the review is absent.
+            getElementById: () => null,
         },
         mealDraftReview,
     };
@@ -91,6 +96,8 @@ function buildDraft(): DraftHarness {
             extract("draftNumber"),
             extractOptional("draftBaseQuantity"),
             extractOptional("scaleDraftValue"),
+            extractOptional("number"),
+            extractOptional("updateDraftTotalsLive"),
             extract("draftItemPayloadFromDom"),
             extract("applyDraftPortionToEditor"),
             extractOptional("applyDraftQuantityToEditor"),

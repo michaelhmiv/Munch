@@ -84,7 +84,7 @@
             .drop.over,
             .drop:focus-within {
                 border-color: var(--accent);
-                background: var(--accent-soft);
+                background: var(--green-tint, #eef4ea);
             }
             .drop input {
                 position: absolute;
@@ -452,12 +452,11 @@
                     </article>`;
             }
             function importingView() {
-                const ratio = S.progress?.total
-                    ? S.progress.done / S.progress.total
-                    : 0;
+                const imported = S.progress?.importedRows ?? 0;
+                const total = S.progress?.totalRows ?? S.rows.length;
                 return `<article class="card">${factsBand("Import meals", "Step 4 of 4")}<div class="f-body">${stepper()}<section aria-live="polite">
                     <div><div class="eyebrow">Importing</div><h1 class="title">Saving meal history</h1><p class="subtitle">${esc(S.progress?.label || "Validating the first batch…")}</p></div>
-                    ${progress(ratio * 100, "Import progress")}
+                    ${progress("Import progress", imported, total, "rows")}
                     <div class="muted small">Batch ${fmt(S.progress?.done || 0)} of ${fmt(S.progress?.total || 0)}</div>
                 </section></div><div class="f-sticky-bar"><div class="f-sticky-actions"><button class="f-btn-primary" disabled>Importing…</button></div><div class="f-sticky-confirm"><b>Import is running.</b> Batches already shown as saved are in your log.</div></div></article>`;
             }
@@ -708,6 +707,8 @@
                 S.progress = {
                     done: 0,
                     total: batches.length,
+                    importedRows: 0,
+                    totalRows: S.rows.length,
                     label: "Validating the first batch…",
                 };
                 S.result = {
@@ -762,6 +763,7 @@
                         S.result.failed += batch.length;
                     }
                     S.progress.done = index + 1;
+                    S.progress.importedRows += batch.length;
                     render();
                 }
                 S.busy = false;

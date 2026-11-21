@@ -164,7 +164,7 @@ export function installedReturnRoute(value) {
 }
 
 export function currentInstalledAppRoute() {
-    return installedReturnRoute(location.pathname);
+    return installedReturnRoute(`${location.pathname}${location.search}`);
 }
 
 export function installedLoginUrl(returnTo = currentInstalledAppRoute()) {
@@ -234,7 +234,7 @@ export async function restoreInstalledEntryRoute(explicitRoute) {
     const requested = installedAppRoute(explicitRoute);
     if (requested) return navigateInstalledRoute(requested, true);
 
-    return installedAppRoute(location.pathname);
+    return installedAppRoute(`${location.pathname}${location.search}`);
 }
 
 function randomBase64Url(byteLength = 32) {
@@ -831,7 +831,21 @@ export async function scanInstalledBarcode() {
 App.addListener("backButton", ({ canGoBack }) => {
     const openDialog = document.querySelector("dialog[open]");
     if (openDialog) {
-        openDialog.close();
+        // Route the close through the dialog's own path: a raw
+        // .close() bypasses the close button's handler (animated
+        // close, focus restoration) and any cancel listener guarding
+        // unsaved work. (From closed PR #342.)
+        const closeButton = openDialog.querySelector(
+            '[data-action="close-dialog"]',
+        );
+        if (closeButton instanceof HTMLElement) {
+            closeButton.click();
+            return;
+        }
+        const cancelEvent = new Event("cancel", { cancelable: true });
+        if (openDialog.dispatchEvent(cancelEvent)) {
+            openDialog.close();
+        }
         return;
     }
     if (canGoBack) {

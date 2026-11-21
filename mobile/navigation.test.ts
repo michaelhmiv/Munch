@@ -58,4 +58,40 @@ describe("installed mobile navigation", () => {
             "/mobile-login.html?return_to=%2Fapp",
         );
     });
+
+    // Extracted from closed PR #342 (2026-11-21): chat deep links carry
+    // their surface seed in the query; dropping it opened the chat
+    // without its surface context. Only the whitelisted surface param
+    // survives, and only for /app/chat — every other route keeps
+    // dropping its query.
+    test("preserves a whitelisted chat surface across route mapping", () => {
+        expect(installedAppRoute("/app/chat?surface=pantry")).toBe(
+            "/app/chat?surface=pantry",
+        );
+        expect(installedAppRoute("/app/chat?surface=meal_draft-2")).toBe(
+            "/app/chat?surface=meal_draft-2",
+        );
+        expect(
+            installedRouteFromUrl(
+                "https://munch.business/app/chat?surface=today",
+            ),
+        ).toBe("/app/chat?surface=today");
+        expect(installedRouteFromUrl("munch://app/chat?surface=recipes")).toBe(
+            "/app/chat?surface=recipes",
+        );
+    });
+
+    test("drops non-whitelisted params and malformed surfaces", () => {
+        expect(installedAppRoute("/app/chat")).toBe("/app/chat");
+        expect(installedAppRoute("/app/chat?other=1")).toBe("/app/chat");
+        expect(installedAppRoute("/app/chat?surface=not%20valid!")).toBe(
+            "/app/chat",
+        );
+        expect(installedAppRoute("/app/chat?surface=")).toBe("/app/chat");
+        // Non-chat routes never keep a query, surface included.
+        expect(installedAppRoute("/app/plan?surface=pantry")).toBe("/app/plan");
+        expect(installedRouteFromUrl("munch://app/plan?date=tomorrow")).toBe(
+            "/app/plan",
+        );
+    });
 });
