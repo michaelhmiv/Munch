@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { getFoodSearchService } from "../food-providers/service.js";
 import type { FoodCandidate } from "../food-providers/types.js";
+import type { RecentMealItemMemory } from "../saved-foods/repository.js";
+import * as mealEntry from "./meal-entry.js";
 import { resolveWebMealItem, scaleNutrients } from "./meal-entry.js";
 
 function appleCandidate(overrides: Partial<FoodCandidate> = {}): FoodCandidate {
@@ -215,5 +217,114 @@ describe("calorie guard — never save a silent zero (W1a two-apples regression)
             source_type: "user_supplied",
         });
         expect(suppliedItem.nutrients.calories).toBe(0);
+    });
+});
+
+describe("recents re-add parity — quantity and per-quantity nutrients (W2 Finding 1)", () => {
+    // Lead fail-before test for Finding 1: a recent logged at quantity
+    // 2 stores quantity-scaled totals (300 kcal). The serializer must
+    // emit the logged quantity AND per-quantity nutrients (150 kcal),
+    // so the composer prefill (quantity 2 × per-quantity 150) and the
+    // server rescale land back on 300 — never 600. Accessed via the
+    // module namespace: on unmodified main serializeRecentMealItem is
+    // not exported (and emits no quantity), which is the fail-before.
+    const serializeRecentMealItem = (mealEntry as Record<string, unknown>)
+        .serializeRecentMealItem as
+        | ((record: RecentMealItemMemory) => {
+              quantity: number;
+              nutrients: Record<string, number>;
+              name: string;
+              portionLabel: string | null;
+          })
+        | undefined;
+
+    const yogurtRecent: RecentMealItemMemory = {
+        mealId: "m1",
+        itemId: "i1",
+        name: "Greek yogurt",
+        quantity: 2,
+        portionLabel: "1 cup",
+        nutrients: { calories: 300, protein_g: 20, carbs_g: 16, fat_g: 8 },
+        sourceType: "usda",
+        provider: "usda",
+        providerFoodId: "123",
+        confidence: 0.95,
+        loggedAt: "2026-11-10T12:00:00.000Z",
+    };
+
+    test("a recent originally logged at quantity 2 re-added at quantity 2 saves the original total, and at quantity 1 saves the per-quantity value", async () => {
+        expect(typeof serializeRecentMealItem).toBe("function");
+        const serialized = serializeRecentMealItem!(yogurtRecent);
+        expect(serialized.quantity).toBe(2);
+        expect(serialized.nutrients).toEqual({
+            calories: 150,
+            protein_g: 10,
+            carbs_g: 8,
+            fat_g: 4,
+        });
+
+        const atTwo = await resolveWebMealItem("user-1", {
+            name: serialized.name,
+            quantity: 2,
+            portion_label: serialized.portionLabel,
+            nutrients: serialized.nutrients,
+            source_type: "past_meal",
+        });
+        expect(atTwo.nutrients).toEqual({
+            calories: 300,
+            protein_g: 20,
+            carbs_g: 16,
+            fat_g: 8,
+        });
+
+        const atOne = await resolveWebMealItem("user-1", {
+            name: serialized.name,
+            quantity: 1,
+            portion_label: serialized.portionLabel,
+            nutrients: serialized.nutrients,
+            source_type: "past_meal",
+        });
+        expect(atOne.nutrients).toEqual({
+            calories: 150,
+            protein_g: 10,
+            carbs_g: 8,
+            fat_g: 4,
+        });
+    });
+
+    test("handles null/missing and fractional logged quantities cleanly", async () => {
+        expect(typeof serializeRecentMealItem).toBe("function");
+        const nullQuantity = serializeRecentMealItem!({
+            ...yogurtRecent,
+            quantity: null,
+            nutrients: { calories: 300 },
+        });
+        expect(nullQuantity.quantity).toBe(1);
+        expect(nullQuantity.nutrients).toEqual({ calories: 300 });
+
+        const half = serializeRecentMealItem!({
+            ...yogurtRecent,
+            quantity: 0.5,
+            nutrients: { calories: 75 },
+        });
+        expect(half.quantity).toBe(0.5);
+        expect(half.nutrients).toEqual({ calories: 150 });
+
+        const atHalf = await resolveWebMealItem("user-1", {
+            name: half.name,
+            quantity: 0.5,
+            portion_label: half.portionLabel,
+            nutrients: half.nutrients,
+            source_type: "past_meal",
+        });
+        expect(atHalf.nutrients.calories).toBe(75);
+        const atOne = await resolveWebMealItem("user-1", {
+            name: half.name,
+            quantity: 1,
+            portion_label: half.portionLabel,
+            nutrients: half.nutrients,
+            source_type: "past_meal",
+        });
+        expect(atOne.nutrients.calories).toBe(150);
     });
 });

@@ -20,6 +20,7 @@ export interface RecentMealItemMemory {
     mealId: string;
     itemId: string;
     name: string;
+    quantity: number | null;
     portionLabel: string | null;
     nutrients: Record<string, number>;
     sourceType: string;
@@ -237,6 +238,7 @@ export async function searchRecentMealItems(
                 i.id as item_id,
                 i.meal_id,
                 i.name,
+                i.quantity,
                 i.portion_label,
                 i.calories,
                 i.protein_g,
@@ -263,7 +265,7 @@ export async function searchRecentMealItems(
     });
 }
 
-function recentMealItemFromRow(
+export function recentMealItemFromRow(
     row: Record<string, unknown>,
 ): RecentMealItemMemory {
     const nutrients: Record<string, number> = {};
@@ -283,6 +285,7 @@ function recentMealItemFromRow(
         mealId: String(row.meal_id),
         itemId: String(row.item_id),
         name: String(row.name),
+        quantity: row.quantity == null ? null : Number(row.quantity),
         portionLabel:
             row.portion_label == null ? null : String(row.portion_label),
         nutrients,
@@ -306,6 +309,7 @@ export async function listRecentMealItems(
                 i.id as item_id,
                 i.meal_id,
                 i.name,
+                i.quantity,
                 i.portion_label,
                 i.calories,
                 i.protein_g,
