@@ -593,7 +593,6 @@ export async function reconcilePantry(input: {
                 const rows = await tx<Array<Record<string, unknown>>>`
                     update munch.inventory_items
                     set quantity = ${next},
-                        quantity_mode = case when quantity is null then 'approximate' else quantity_mode end,
                         stock_state = case when ${next}::numeric is not null and ${next}::numeric <= 0 then 'depleted' else stock_state end,
                         updated_by_user_id = ${input.userId}, updated_at = now(), version = version + 1
                     where id = ${op.inventoryItemId} returning *
@@ -753,6 +752,7 @@ export async function reconcilePurchase(input: {
             const isFood = line.isFood !== false;
             const actionable =
                 isFood &&
+                line.confirmed !== false &&
                 (line.confirmed === true ||
                     confidence == null ||
                     confidence >= 0.85);

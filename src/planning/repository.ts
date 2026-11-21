@@ -116,6 +116,7 @@ export interface GroceryItemInput {
     sourceRecipeRevisionId?: string;
     sourcePlannedMealId?: string;
     idempotencyKey?: string;
+    isFood?: boolean;
 }
 
 export interface SavedRecipeResult {
@@ -1752,6 +1753,7 @@ export async function addGroceryItemsInTransaction(
                     const updated = await tx<Array<Record<string, unknown>>>`
                         update munch.grocery_items
                         set quantity = ${combined},
+                            is_food = case when ${item.isFood ?? null}::boolean is not null then ${item.isFood ?? null}::boolean else is_food end,
                             note = coalesce(note, ${item.note?.trim() || null}),
                             source_recipe_id = coalesce(source_recipe_id, ${item.sourceRecipeId ?? null}),
                             source_recipe_revision_id = coalesce(source_recipe_revision_id, ${item.sourceRecipeRevisionId ?? null}),
@@ -1775,7 +1777,7 @@ export async function addGroceryItemsInTransaction(
                 grocery_list_id, name, normalized_name, quantity, unit, note,
                 food_provider, provider_food_id, source_recipe_id,
                 source_recipe_revision_id, source_planned_meal_id,
-                idempotency_key, added_by_user_id, updated_by_user_id
+                idempotency_key, is_food, added_by_user_id, updated_by_user_id
             ) values (
                 ${listId}, ${name}, ${normalized}, ${item.quantity ?? null},
                 ${unit}, ${item.note?.trim() || null},
@@ -1783,7 +1785,7 @@ export async function addGroceryItemsInTransaction(
                 ${item.sourceRecipeId ?? null},
                 ${item.sourceRecipeRevisionId ?? null},
                 ${item.sourcePlannedMealId ?? null},
-                ${item.idempotencyKey ?? null}, ${input.userId}, ${input.userId}
+                ${item.idempotencyKey ?? null}, ${item.isFood !== false}, ${input.userId}, ${input.userId}
             )
             on conflict do nothing
             returning id, name, quantity, unit, purchased_at, version

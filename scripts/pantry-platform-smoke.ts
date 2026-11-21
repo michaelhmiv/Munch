@@ -521,6 +521,154 @@ if (
     );
 }
 
+// W2 Pantry regressions (stock model honesty):
+// - Finding 1: consuming a presence-only item must not rewrite its
+//   quantity_mode to "approximate".
+// - Finding 2: an unchecked (confirmed: false) high-confidence receipt
+//   line is a veto — it must land in needs_review without stocking the
+//   Pantry or checking off the matching Grocery item.
+// - Finding 8: checking off non-food grocery items must not stock the
+//   food Pantry (migration 0049 food gate).
+const honestyAcquire = await reconcilePantry({
+    userId: owner.userId,
+    scope: personalScope,
+    sourceType: "manual",
+    idempotencyKey: "pantry-smoke-honesty-acquire",
+    operations: [
+        {
+            action: "acquire",
+            name: "Smoke olive oil spray",
+            quantityMode: "presence_only",
+            location: "pantry",
+        },
+    ],
+});
+const honestyItem = honestyAcquire.operations[0]?.item;
+if (!honestyItem) throw new Error("Honesty presence-only setup failed");
+await reconcilePantry({
+    userId: owner.userId,
+    scope: personalScope,
+    sourceType: "meal_reconciliation",
+    idempotencyKey: "pantry-smoke-honesty-consume",
+    operations: [
+        { action: "consume", inventoryItemId: honestyItem.id, quantity: 1 },
+    ],
+});
+pantry = await getPantry({
+    userId: owner.userId,
+    scope: personalScope,
+    includeDepleted: true,
+});
+const honestyRow = pantry.items.find((item) => item.id === honestyItem.id);
+if (
+    honestyRow?.quantity !== null ||
+    honestyRow?.quantity_mode !== "presence_only"
+) {
+    throw new Error(
+        `Consuming a presence-only item rewrote its mode (got quantity=${honestyRow?.quantity}, mode=${honestyRow?.quantity_mode})`,
+    );
+}
+
+const honestyGroceries = await addGroceryItems({
+    userId: owner.userId,
+    scope: personalScope,
+    items: [
+        {
+            name: "Smoke salsa",
+            quantity: 1,
+            unit: "count",
+            idempotencyKey: "pantry-smoke-honesty-salsa",
+        },
+        {
+            name: "Hand sanitizer",
+            quantity: 1,
+            unit: "count",
+            idempotencyKey: "pantry-smoke-honesty-sanitizer",
+        },
+        {
+            name: "Gallon size clear bags",
+            quantity: 1,
+            unit: "count",
+            idempotencyKey: "pantry-smoke-honesty-bags",
+        },
+    ],
+});
+const honestyReceipt = await reconcilePurchase({
+    userId: owner.userId,
+    scope: personalScope,
+    idempotencyKey: "pantry-smoke-honesty-receipt",
+    sourceLabel: "Pantry honesty smoke receipt",
+    lines: [
+        {
+            name: "Smoke salsa",
+            quantity: 1,
+            unit: "count",
+            confidence: 0.98,
+            isFood: true,
+            confirmed: false,
+        },
+        {
+            name: "Smoke checked rice",
+            quantity: 1,
+            unit: "bag",
+            confidence: 0.97,
+            isFood: true,
+            confirmed: true,
+        },
+    ],
+});
+if (
+    honestyReceipt.summary.needsReview !== 1 ||
+    honestyReceipt.summary.inventoryAdded !== 1 ||
+    honestyReceipt.summary.groceryMatched !== 0
+) {
+    throw new Error(
+        `Unchecked receipt line was not vetoed: ${JSON.stringify(honestyReceipt.summary)}`,
+    );
+}
+const honestyGroceryList = await getGroceryList({
+    userId: owner.userId,
+    scope: personalScope,
+    includePurchased: true,
+});
+const smokeSalsa = honestyGroceryList.items.find(
+    (item) => item.name === "Smoke salsa",
+);
+if (smokeSalsa?.purchased_at) {
+    throw new Error("Unchecked receipt line checked off the Grocery item");
+}
+for (const honestyItemRow of honestyGroceries.items) {
+    if (honestyItemRow.name === "Smoke salsa") continue;
+    await markGroceryItemPurchased({
+        userId: owner.userId,
+        scope: personalScope,
+        groceryItemId: String(honestyItemRow.id),
+        purchased: true,
+        expectedVersion: Number(honestyItemRow.version),
+    });
+}
+pantry = await getPantry({
+    userId: owner.userId,
+    scope: personalScope,
+    includeDepleted: true,
+});
+if (
+    pantry.items.some((item) => item.normalized_name === "smoke salsa") ||
+    pantry.items.some((item) => item.normalized_name === "hand sanitizer") ||
+    pantry.items.some(
+        (item) => item.normalized_name === "gallon size clear bags",
+    )
+) {
+    throw new Error(
+        "Vetoed receipt line or non-food Grocery checkoff leaked into Pantry",
+    );
+}
+if (
+    !pantry.items.some((item) => item.normalized_name === "smoke checked rice")
+) {
+    throw new Error("Checked receipt line was not added to Pantry");
+}
+
 // Privacy invariant: reconciliation stores structured lines, never image bytes.
 await withUserDatabase(owner.userId, async (tx) => {
     const forbiddenColumns = await tx<Array<{ column_name: string }>>`

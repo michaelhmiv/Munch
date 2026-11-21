@@ -1040,7 +1040,6 @@ export async function applyPantryDrawdown(
         const pantry = await getPantryFn({
             userId: input.userId,
             scope: input.scope,
-            candidateNames: input.requirements.map((req) => req.name),
             limit: 200,
         });
         if (!pantry.enabled) {
