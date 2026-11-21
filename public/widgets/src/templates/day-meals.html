@@ -272,14 +272,14 @@
                             "fullscreen",
                         ).catch(() => null);
                         if (!result || result.unsupported)
-                            document.getElementById("details").textContent =
-                                "Details unavailable";
+                            document.documentElement.dataset.expanded = "true";
                     });
                 document
                     .getElementById("close")
-                    ?.addEventListener("click", () =>
-                        API?.requestDisplayMode("inline"),
-                    );
+                    ?.addEventListener("click", () => {
+                        delete document.documentElement.dataset.expanded;
+                        API?.requestDisplayMode("inline");
+                    });
             }
             function dayTotals(day) {
                 let kcal = 0;
@@ -316,7 +316,6 @@
                             ? "—"
                             : `${fmt(entry.calories)} kcal`,
                     showBar: false,
-                    source: "Your logged meals",
                 });
                 if (!macros && !notes) return row;
                 return `${row.slice(0, row.lastIndexOf("</div>"))}${macros}${notes}</div>`;
@@ -342,6 +341,16 @@
                     return;
                 }
                 const compact = data.variations.length > 6;
+                const variationLabelRow = (v) =>
+                    factsLabelRow({
+                        name: v.label,
+                        ofText: `logged ${v.count}× · last ${humanDate(v.last)}`,
+                        valueText:
+                            v.typicalCalories == null
+                                ? "no macros logged"
+                                : `~${fmt(v.typicalCalories)} kcal typical`,
+                        showBar: false,
+                    });
                 const rowFor = compact
                     ? (v) =>
                           factsCompactRow({
@@ -352,27 +361,16 @@
                                       ? "—"
                                       : `~${fmt(v.typicalCalories)} kcal`,
                           })
-                    : (v) =>
-                          factsLabelRow({
-                              name: v.label,
-                              ofText: `logged ${v.count}× · last ${humanDate(v.last)}`,
-                              valueText:
-                                  v.typicalCalories == null
-                                      ? "no macros logged"
-                                      : `~${fmt(v.typicalCalories)} kcal typical`,
-                              showBar: false,
-                              source: "Your logged meals",
-                          });
+                    : variationLabelRow;
                 const inlineVars = data.variations.slice(0, 5);
-                const restVars = data.variations.slice(5);
-                const hidden = restVars.length;
+                const hidden = data.variations.length - inlineVars.length;
                 const recentHtml = data.recent.length
                     ? `<h2 class="d-section">Most recent matches</h2>${data.recent.map((entry) => entryLabelRow(entry, true)).join("")}`
                     : "";
-                const restHtml = restVars.length
-                    ? `<h2 class="d-section">${restVars.length} more variation${restVars.length === 1 ? "" : "s"}</h2>${restVars.map((v) => factsLabelRow({ name: v.label, ofText: `logged ${v.count}× · last ${humanDate(v.last)}`, valueText: v.typicalCalories == null ? "no macros logged" : `~${fmt(v.typicalCalories)} kcal typical`, showBar: false, source: "Your logged meals" })).join("")}`
-                    : "";
-                const hasFull = Boolean(restHtml || recentHtml);
+                const allVarsHtml = data.variations
+                    .map(variationLabelRow)
+                    .join("");
+                const hasFull = Boolean(hidden > 0 || recentHtml);
                 document.getElementById("root").innerHTML =
                     `<article class="card">
         ${factsBand(title, data.query || "")}
@@ -380,9 +378,9 @@
         ${factsHero(`${data.total}`, "past meals match", "", "")}
         <div class="f-src">Source · <b>Your logged meals</b></div>
         <div class="f-rule-heavy"></div>
-        ${inlineVars.map(rowFor).join("")}
+        <div${hasFull ? ' class="inline-only"' : ""}>${inlineVars.map(rowFor).join("")}</div>
         <div class="f-note">Typical amounts are the middle value across matching logs — an <b>estimate</b> for the variation, not one meal's exact numbers.</div>
-        ${hasFull ? `<button class="f-more-row inline-only" id="details">${hidden > 0 ? `…and ${hidden} more` : "View recent matches"}</button><div class="fullscreen-only">${restHtml}${recentHtml}<div class="actions"><button class="btn" id="close">Return to chat</button></div></div>` : ""}
+        ${hasFull ? `<button type="button" class="f-more-row inline-only" id="details">${hidden > 0 ? `…and ${hidden} more` : "View recent matches"}</button><div class="fullscreen-only"><h2 class="d-section">All ${data.variations.length} variation${data.variations.length === 1 ? "" : "s"}</h2>${allVarsHtml}${recentHtml}<div class="actions"><button type="button" class="btn" id="close">Return to chat</button></div></div>` : ""}
         </div>
         <div class="f-foot"><span>Every number traces to its source</span><span>Your logged meals</span></div>
     </article>`;
@@ -439,10 +437,19 @@
                 let used = 0;
                 let folded = false;
                 const inlineParts = [];
-                const fullParts = [];
+                const allFullParts = [];
                 days.forEach((day, index) => {
                     const totals = totalsByDay[index];
                     const head = multi ? dayHead(day, totals) : "";
+                    if (head) allFullParts.push(head);
+                    allFullParts.push(
+                        day.entries
+                            .map((entry) => entryLabelRow(entry, true))
+                            .join(""),
+                    );
+                    allFullParts.push(
+                        `<div class="f-prow"><span class="f-lrow-name">${multi ? `Day total · ${esc(humanDate(day.date))}` : "Day total"}</span><span class="f-crow-val num">${fmt(totals.kcal)} kcal</span></div><div class="d-macros">Protein ${fmt(totals.protein, 1)} g · Carbs ${fmt(totals.carbs, 1)} g · Fat ${fmt(totals.fat, 1)} g</div>`,
+                    );
                     if (!folded && used + day.entries.length <= 5) {
                         if (head) inlineParts.push(head);
                         inlineParts.push(day.entries.map(rowFor).join(""));
@@ -456,33 +463,10 @@
                             day.entries.slice(0, 5).map(rowFor).join(""),
                         );
                         used = 5;
-                        if (head) fullParts.push(head);
-                        fullParts.push(
-                            day.entries
-                                .slice(5)
-                                .map((entry) => entryLabelRow(entry, true))
-                                .join(""),
-                        );
-                        return;
                     }
-                    if (head) fullParts.push(head);
-                    fullParts.push(
-                        day.entries
-                            .map((entry) => entryLabelRow(entry, true))
-                            .join(""),
-                    );
-                    fullParts.push(
-                        `<div class="f-prow"><span class="f-lrow-name">Day total · ${esc(humanDate(day.date))}</span><span class="f-crow-val num">${fmt(totals.kcal)} kcal</span></div><div class="d-macros">Protein ${fmt(totals.protein, 1)} g · Carbs ${fmt(totals.carbs, 1)} g · Fat ${fmt(totals.fat, 1)} g</div>`,
-                    );
                 });
                 const hidden = totalEntries - used;
-                // Single-day fullscreen adds the per-entry macro detail for
-                // the entries already shown inline, as its own section.
-                const singleDetail =
-                    !multi && days[0].entries.length
-                        ? `<h2 class="d-section">Entry detail</h2>${days[0].entries.map((entry) => entryLabelRow(entry, true)).join("")}<div class="f-prow"><span class="f-lrow-name">Day total</span><span class="f-crow-val num">${fmt(totalsByDay[0].kcal)} kcal</span></div><div class="d-macros">Protein ${fmt(totalsByDay[0].protein, 1)} g · Carbs ${fmt(totalsByDay[0].carbs, 1)} g · Fat ${fmt(totalsByDay[0].fat, 1)} g</div>`
-                        : "";
-                const hasFull = Boolean(fullParts.length || singleDetail);
+                const hasFull = totalEntries > 0;
                 const banners =
                     (data.historyNote
                         ? factsBanner(
@@ -504,8 +488,8 @@
         <div class="f-src">Source · <b>Your logged meals</b></div>
         ${banners}
         <div class="f-rule-heavy"></div>
-        ${inlineParts.join("")}
-        ${hasFull ? `<button class="f-more-row inline-only" id="details">${hidden > 0 ? `…and ${hidden} more` : "View entry details"}</button><div class="fullscreen-only">${fullParts.join("")}${singleDetail}<div class="actions"><button class="btn" id="close">Return to chat</button></div></div>` : ""}
+        <div${hasFull ? ' class="inline-only"' : ""}>${inlineParts.join("")}</div>
+        ${hasFull ? `<button type="button" class="f-more-row inline-only" id="details">${hidden > 0 ? `…and ${hidden} more` : "View entry details"}</button><div class="fullscreen-only">${!multi ? '<h2 class="d-section" style="margin-top:4px">Entry detail</h2>' : ""}${allFullParts.join("")}<div class="actions"><button type="button" class="btn" id="close">Return to chat</button></div></div>` : ""}
         </div>
         <div class="f-foot"><span>Every number traces to its source</span><span>Your logged meals</span></div>
     </article>`;

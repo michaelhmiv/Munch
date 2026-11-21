@@ -182,18 +182,21 @@
                             "fullscreen",
                         ).catch(() => null);
                         if (!result || result.unsupported)
-                            document.getElementById("details").textContent =
-                                "Details unavailable";
+                            document.documentElement.dataset.expanded = "true";
                     });
                 document
                     .getElementById("close")
-                    ?.addEventListener("click", () =>
-                        API?.requestDisplayMode("inline"),
-                    );
+                    ?.addEventListener("click", () => {
+                        delete document.documentElement.dataset.expanded;
+                        API?.requestDisplayMode("inline");
+                    });
                 document.querySelectorAll("[data-range]").forEach((button) =>
                     button.addEventListener("click", () => {
                         RANGE = Number(button.dataset.range);
                         paint();
+                        document
+                            .querySelector(`[data-range="${RANGE}"]`)
+                            ?.focus();
                     }),
                 );
             }
@@ -253,7 +256,7 @@
                 const controls = [7, 14, 30]
                     .map(
                         (range) =>
-                            `<button class="btn btn-sm" data-range="${range}" aria-pressed="${RANGE === range}">${range} days</button>`,
+                            `<button type="button" class="btn btn-sm" data-range="${range}" aria-pressed="${RANGE === range}">${range} days</button>`,
                     )
                     .join("");
                 const summaryRows = [
@@ -303,18 +306,18 @@
         ${sparkline(points, { goal: target, label: `Weight over ${RANGE} days` })}
         <div class="row-between caption"><span>${esc(humanDate(slice[0].date))}</span><span>${target != null ? `target ${fmt(target, 1)} ${esc(unit)}` : "No target set"}</span><span>${esc(humanDate(slice[slice.length - 1].date))}</span></div>
         <div class="f-note">${esc(note)}</div>
-        <button class="f-more-row inline-only" id="details">View weight entries</button>
+        <button type="button" class="f-more-row inline-only" id="details">View weight entries</button>
         <div class="fullscreen-only">
         <div class="fullscreen-only range-controls" role="group" aria-label="Weight range">${controls}</div>
         <div class="f-rule-med"></div>
         <h2 class="f-section-title">Weight entries</h2>
-        <div class="table-wrap history-table" style="margin-top:10px"><table><thead><tr><th>Date</th><th>Weight</th></tr></thead><tbody>${rows}</tbody></table></div>
+        <div class="table-wrap history-table" style="margin-top:10px"><table><caption class="sr-only">Weight entries for the last ${RANGE} days</caption><thead><tr><th scope="col">Date</th><th scope="col" class="num">Weight</th></tr></thead><tbody>${rows}</tbody></table></div>
         <div class="f-rule-med"></div>
         <h2 class="f-section-title">Window summary</h2>
         <div class="f-src">Source · <b>Your logged weight entries</b></div>
         ${summaryRows.join("")}
         <div class="f-note">Daily weight fluctuates. Use the multi-day direction rather than a single reading.</div>
-        <div class="actions"><button class="btn" id="close">Return to chat</button></div>
+        <div class="actions"><button type="button" class="btn" id="close">Return to chat</button></div>
         </div>
         </div>
         <div class="f-foot"><span>Every number traces to its source</span><span>Your logged weight entries</span></div>

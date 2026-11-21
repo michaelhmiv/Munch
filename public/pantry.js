@@ -51,25 +51,63 @@ const reviewEl = $("#review");
 const reviewLinesEl = $("#review-lines");
 const reviewTitleEl = $("#review-title");
 const applyReviewEl = $("#apply-review");
+const dismissReviewEl = $("#dismiss-review");
 const mealIdeaForm = $("#meal-idea-form");
 const mealIdeaStatusEl = $("#meal-idea-status");
 const mealIdeasEl = $("#meal-ideas");
 
 let reviewState = null;
 
+function activeSheetStatusEl() {
+    const openSheetEl = document.querySelector("dialog.sheet[open]");
+    return openSheetEl?.querySelector(".sheet-status") || null;
+}
+
 function status(message, error = false) {
-    statusEl.textContent = message || "";
-    statusEl.style.color = error ? "#8c2f22" : "#5d5344";
+    const sheetStatus = activeSheetStatusEl();
+    if (sheetStatus) {
+        sheetStatus.textContent = message || "";
+        sheetStatus.classList.toggle("is-error", Boolean(error && message));
+        return;
+    }
+    statusEl.replaceChildren();
+    statusEl.classList.toggle("is-error", Boolean(error && message));
+    if (message) {
+        const text = document.createElement("span");
+        text.textContent = message;
+        statusEl.append(text);
+    }
+}
+
+function showUndoStatus(message, onUndo) {
+    statusEl.replaceChildren();
+    statusEl.classList.remove("is-error");
+    const text = document.createElement("span");
+    text.textContent = message;
+    const undo = document.createElement("button");
+    undo.type = "button";
+    undo.className = "status-undo";
+    undo.textContent = "Undo";
+    undo.addEventListener("click", async () => {
+        undo.disabled = true;
+        await onUndo();
+    });
+    statusEl.append(text, undo);
 }
 
 function mealStatus(message, error = false) {
     mealIdeaStatusEl.textContent = message || "";
-    mealIdeaStatusEl.style.color = error ? "#8c2f22" : "#5d5344";
+    mealIdeaStatusEl.classList.toggle("is-error", Boolean(error && message));
 }
 
 function currentScope() {
     return scopeEl.value || "personal";
 }
+
+function syncScopeVisibility() {
+    scopeEl.classList.toggle("hidden", scopeEl.options.length <= 1);
+}
+syncScopeVisibility();
 
 // Pantry enablement is the Settings feature-module flag and nothing
 // else (Nov 11): the page's old "Use Pantry" switch is gone, and
@@ -91,6 +129,7 @@ async function loadSettings() {
             option.textContent = "Household Pantry";
             scopeEl.append(option);
         }
+        syncScopeVisibility();
         workspace.classList.toggle("hidden", !pantryEnabled);
         if (pantryEnabled) await loadPantry();
     } catch (error) {
@@ -115,6 +154,39 @@ const LOCATION_LABELS = {
     unspecified: "Unsorted",
 };
 
+const sheetTriggers = new WeakMap();
+
+function clearSheetStatus(sheet) {
+    const sheetStatus = sheet?.querySelector(".sheet-status");
+    if (sheetStatus) {
+        sheetStatus.textContent = "";
+        sheetStatus.classList.remove("is-error");
+    }
+}
+
+function openSheet(sheet, trigger = null) {
+    if (!sheet) return;
+    clearSheetStatus(sheet);
+    sheetTriggers.set(
+        sheet,
+        trigger ||
+            (document.activeElement instanceof HTMLElement
+                ? document.activeElement
+                : null),
+    );
+    if (!sheet.open) sheet.showModal();
+    const firstField = sheet.querySelector(
+        'input:not([type="hidden"]):not([hidden]):not(:disabled), select:not(:disabled), textarea:not(:disabled)',
+    );
+    if (firstField instanceof HTMLElement) {
+        firstField.focus({ preventScroll: true });
+    }
+}
+
+function closeSheet(sheet) {
+    if (sheet?.open) sheet.close();
+}
+
 let editingItem = null;
 const itemEditorEl = $("#item-editor");
 const itemEditorForm = $("#item-editor-form");
@@ -122,15 +194,15 @@ const itemEditorNameEl = $("#item-editor-name");
 
 function closeItemEditor() {
     editingItem = null;
-    itemEditorEl.classList.add("hidden");
+    closeSheet(itemEditorEl);
 }
 
-// UX fix wave F6: a row tap opens the item's detail/edit sheet. The
-// name is read-only (it comes from the food's source record; no
+// UX fix wave F6: a row tap opens the item's detail/edit modal sheet.
+// The name is read-only (it comes from the food's source record; no
 // endpoint renames an inventory item) — quantity, unit, quantity
 // mode, location, status and note are editable and save through the
 // reconcile API's correct/move operations below.
-function openItemEditor(item) {
+function openItemEditor(item, trigger = null) {
     editingItem = item;
     itemEditorNameEl.textContent = item.name;
     const form = itemEditorForm;
@@ -140,9 +212,7 @@ function openItemEditor(item) {
     form.elements.location.value = item.location || "unspecified";
     form.elements.stock_state.value = item.stock_state || "available";
     form.elements.note.value = item.note ?? "";
-    itemEditorEl.classList.remove("hidden");
-    itemEditorEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    form.elements.quantity.focus({ preventScroll: true });
+    openSheet(itemEditorEl, trigger);
 }
 
 itemEditorForm.addEventListener("submit", async (event) => {
@@ -174,6 +244,8 @@ itemEditorForm.addEventListener("submit", async (event) => {
             location,
         });
     }
+    const submitter = event.submitter;
+    if (submitter) submitter.disabled = true;
     try {
         status("Saving item…");
         await api("/api/app/pantry/reconcile", {
@@ -192,6 +264,8 @@ itemEditorForm.addEventListener("submit", async (event) => {
         status(`${item.name} updated.`);
     } catch (error) {
         status(error.message, true);
+    } finally {
+        if (submitter) submitter.disabled = false;
     }
 });
 
@@ -201,21 +275,37 @@ $("#item-editor-cancel").addEventListener("click", closeItemEditor);
 // planner row open their forms as sheets (native <dialog>, modal).
 // A scan sheet closes itself when its preview lands, so the review
 // section shows in context on the page (renderReview scrolls to it).
-function closeSheet(sheet) {
-    if (sheet?.open) sheet.close();
-}
 for (const opener of document.querySelectorAll("[data-open-sheet]")) {
     opener.addEventListener("click", () => {
         const sheet = document.getElementById(opener.dataset.openSheet);
-        if (sheet && !sheet.open) sheet.showModal();
+        openSheet(sheet, opener);
     });
 }
 for (const sheet of document.querySelectorAll("dialog.sheet")) {
     sheet.addEventListener("click", (event) => {
-        if (event.target === sheet) sheet.close();
+        if (event.target !== sheet) return;
+        const rect = sheet.getBoundingClientRect();
+        const outside =
+            event.clientX < rect.left ||
+            event.clientX > rect.right ||
+            event.clientY < rect.top ||
+            event.clientY > rect.bottom;
+        if (outside) closeSheet(sheet);
+    });
+    sheet.addEventListener("close", () => {
+        clearSheetStatus(sheet);
+        if (sheet === itemEditorEl) editingItem = null;
+        const trigger = sheetTriggers.get(sheet);
+        if (
+            trigger &&
+            trigger.isConnected &&
+            typeof trigger.focus === "function"
+        ) {
+            trigger.focus({ preventScroll: true });
+        }
     });
     for (const closer of sheet.querySelectorAll("[data-close-sheet]")) {
-        closer.addEventListener("click", () => sheet.close());
+        closer.addEventListener("click", () => closeSheet(sheet));
     }
 }
 
@@ -224,7 +314,7 @@ function renderInventory(items) {
     itemCountEl.textContent = `${items.length} item${items.length === 1 ? "" : "s"}`;
     emptyEl.classList.toggle("hidden", items.length !== 0);
     // Low-stock summary (tightened mock's warn panel, from real data):
-    // one merged line naming every low item, inside the inventory head.
+    // one merged line naming every low item, inside the inventory section.
     const lowItems = items.filter((item) => item.stock_state === "low");
     lowstockEl.replaceChildren();
     lowstockEl.classList.toggle("hidden", lowItems.length === 0);
@@ -242,69 +332,209 @@ function renderInventory(items) {
     for (const item of items) {
         const row = document.createElement("div");
         row.className = `inventory-row stock-${item.stock_state}`;
-        // One merged line (density law): name · quantity · location ·
-        // provenance/mode — nothing is hidden at phone width.
+        row.setAttribute("role", "listitem");
+
+        // M3 2-line row: Line 1 = name + optional low/depleted badge;
+        // Line 2 = compact muted quantity · location · note/detail.
         const main = document.createElement("div");
-        main.className = "inventory-main";
+        main.className = "inventory-main inventory-main-edit";
+
+        const line1 = document.createElement("div");
+        line1.className = "inventory-line-1";
         const name = document.createElement("strong");
         name.textContent = item.name;
-        const meta = document.createElement("span");
-        meta.className = "meta";
-        // "exact" is the default quantity mode and carries no signal on
-        // the row; provider identity and non-default modes stay visible.
-        const detail =
-            item.food_provider && item.provider_food_id
-                ? `${item.food_provider} · verified identity`
-                : item.quantity_mode !== "exact"
-                  ? item.quantity_mode.replaceAll("_", " ")
-                  : null;
-        meta.textContent =
-            ` · ${quantityLabel(item)} · ${LOCATION_LABELS[item.location] || item.location}` +
-            (detail ? ` · ${detail}` : "");
-        main.append(name, meta);
-        // F6: the whole row is the edit affordance (the row is
-        // ≥48px tall — the full row is the tap target, not just the
-        // text block). Click / Enter / Space opens the item editor;
-        // the Finished button stays a separate target and never
-        // triggers it.
-        main.classList.add("inventory-main-edit");
+        line1.append(name);
+
+        if (item.stock_state === "low") {
+            const tag = document.createElement("span");
+            tag.className = "tag low";
+            tag.textContent = "Low stock";
+            line1.append(tag);
+        } else if (item.stock_state === "depleted") {
+            const tag = document.createElement("span");
+            tag.className = "tag depleted";
+            tag.textContent = "Depleted";
+            line1.append(tag);
+        }
+
+        const qtyText = quantityLabel(item);
+        const locText = LOCATION_LABELS[item.location] || item.location;
+        const metaParts = [qtyText, locText];
+        if (item.food_provider && item.provider_food_id) {
+            metaParts.push(`${item.food_provider} verified`);
+        } else if (
+            item.quantity_mode &&
+            item.quantity_mode !== "exact" &&
+            !(item.quantity == null && item.quantity_mode === "presence_only")
+        ) {
+            metaParts.push(item.quantity_mode.replaceAll("_", " "));
+        }
+        if (item.note) {
+            metaParts.push(item.note);
+        }
+
+        const line2 = document.createElement("div");
+        line2.className = "inventory-line-2";
+        line2.textContent = metaParts.join(" · ");
+
+        main.append(line1, line2);
         main.tabIndex = 0;
         main.setAttribute("role", "button");
-        main.setAttribute("aria-label", `Edit ${item.name}`);
+        const statusHint =
+            item.stock_state === "low"
+                ? ", low stock"
+                : item.stock_state === "depleted"
+                  ? ", depleted"
+                  : "";
+        const noteHint = item.note ? `, ${item.note}` : "";
+        main.setAttribute(
+            "aria-label",
+            `${item.name}, ${qtyText}, ${locText}${statusHint}${noteHint} — edit`,
+        );
         main.addEventListener("keydown", (event) => {
             if (event.key === "Enter" || event.key === " ") {
                 event.preventDefault();
-                openItemEditor(item);
+                openItemEditor(item, main);
             }
         });
         row.addEventListener("click", (event) => {
             if (event.target.closest("button")) return;
-            openItemEditor(item);
+            openItemEditor(item, main);
         });
-        const tag = document.createElement("span");
-        if (item.stock_state === "low") {
-            tag.className = "tag low";
-            tag.textContent = "Low stock";
-        } else if (item.stock_state === "depleted") {
-            tag.className = "tag depleted";
-            tag.textContent = "Depleted";
-        } else {
-            tag.className = "tag";
-            tag.textContent = "On hand";
+
+        const trailing = document.createElement("div");
+        trailing.className = "inventory-trailing";
+
+        if (item.quantity != null) {
+            const stepper = document.createElement("div");
+            stepper.className = "qty-stepper";
+            const currentQty = Number(item.quantity);
+
+            const minus = document.createElement("button");
+            minus.type = "button";
+            minus.className = "stepper-control";
+            minus.setAttribute("aria-label", `Decrease ${item.name} quantity`);
+            minus.disabled = currentQty <= 0;
+            const minusGlyph = document.createElement("span");
+            minusGlyph.className = "stepper-glyph";
+            minusGlyph.setAttribute("aria-hidden", "true");
+            minusGlyph.textContent = "−";
+            minus.append(minusGlyph);
+
+            const plus = document.createElement("button");
+            plus.type = "button";
+            plus.className = "stepper-control";
+            plus.setAttribute("aria-label", `Increase ${item.name} quantity`);
+            const plusGlyph = document.createElement("span");
+            plusGlyph.className = "stepper-glyph";
+            plusGlyph.setAttribute("aria-hidden", "true");
+            plusGlyph.textContent = "+";
+            plus.append(plusGlyph);
+
+            minus.addEventListener("click", async () => {
+                if (currentQty <= 0) return;
+                minus.disabled = true;
+                plus.disabled = true;
+                const delta =
+                    currentQty > 1
+                        ? 1
+                        : Math.round(currentQty * 1000) / 1000 || currentQty;
+                await reconcileOperations(
+                    [
+                        {
+                            action: "consume",
+                            inventory_item_id: item.id,
+                            quantity: delta,
+                        },
+                    ],
+                    "correction",
+                );
+            });
+
+            plus.addEventListener("click", async () => {
+                minus.disabled = true;
+                plus.disabled = true;
+                const nextQty = Math.round((currentQty + 1) * 1000) / 1000;
+                const op = {
+                    action: "correct",
+                    inventory_item_id: item.id,
+                    quantity: nextQty,
+                };
+                if (item.stock_state === "depleted") {
+                    op.stock_state = "available";
+                }
+                await reconcileOperations([op], "correction");
+            });
+
+            stepper.append(minus, plus);
+            trailing.append(stepper);
         }
-        const finished = document.createElement("button");
-        finished.type = "button";
-        finished.className = "row-action";
-        finished.textContent =
-            item.stock_state === "depleted" ? "Depleted" : "Finished";
-        finished.disabled = item.stock_state === "depleted";
-        finished.addEventListener("click", () =>
-            reconcileOperations(
-                [{ action: "consume_all", inventory_item_id: item.id }],
-                "correction",
-            ),
-        );
-        row.append(main, tag, finished);
+
+        if (item.stock_state === "depleted") {
+            const restock = document.createElement("button");
+            restock.type = "button";
+            restock.className = "row-action";
+            restock.textContent = "Restock";
+            restock.setAttribute("aria-label", `Restock ${item.name}`);
+            restock.addEventListener("click", async () => {
+                restock.disabled = true;
+                const op = {
+                    action: "correct",
+                    inventory_item_id: item.id,
+                    stock_state: "available",
+                };
+                if (item.quantity === 0) op.quantity = 1;
+                const ok = await reconcileOperations([op], "correction");
+                if (ok) status(`${item.name} restocked.`);
+            });
+            trailing.append(restock);
+        } else {
+            const finished = document.createElement("button");
+            finished.type = "button";
+            finished.className = "row-action";
+            finished.textContent = "Finished";
+            finished.setAttribute(
+                "aria-label",
+                `Mark ${item.name} as finished`,
+            );
+            finished.addEventListener("click", async () => {
+                finished.disabled = true;
+                const snapshot = {
+                    id: item.id,
+                    name: item.name,
+                    quantity: item.quantity,
+                    stock_state: item.stock_state || "available",
+                    quantity_mode: item.quantity_mode,
+                };
+                const ok = await reconcileOperations(
+                    [{ action: "consume_all", inventory_item_id: item.id }],
+                    "correction",
+                );
+                if (ok) {
+                    showUndoStatus(
+                        `Marked ${snapshot.name} as finished.`,
+                        async () => {
+                            const restored = await reconcileOperations(
+                                [
+                                    {
+                                        action: "correct",
+                                        inventory_item_id: snapshot.id,
+                                        quantity: snapshot.quantity,
+                                        stock_state: snapshot.stock_state,
+                                        quantity_mode: snapshot.quantity_mode,
+                                    },
+                                ],
+                                "correction",
+                            );
+                            if (restored) status(`${snapshot.name} restored.`);
+                        },
+                    );
+                }
+            });
+            trailing.append(finished);
+        }
+
+        row.append(main, trailing);
         inventoryEl.append(row);
     }
 }
@@ -377,25 +607,47 @@ async function reconcileOperations(operations, sourceType = "manual") {
             }),
         });
         await loadPantry();
+        return true;
     } catch (error) {
         status(error.message, true);
+        return false;
     }
 }
 
 $("#manual-add").addEventListener("submit", async (event) => {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const quantity = form.get("quantity");
+    const formEl = event.currentTarget;
+    const form = new FormData(formEl);
+    const keepOpen = event.submitter?.value === "another";
+    const quantity = String(form.get("quantity") ?? "").trim();
+    const location = String(form.get("location") || "unspecified");
+    const note = String(form.get("note") || "").trim();
     const operation = {
         action: "acquire",
         name: String(form.get("name") || "").trim(),
-        location: String(form.get("location") || "unspecified"),
+        location,
     };
     if (quantity !== "") operation.quantity = Number(quantity);
-    if (form.get("unit")) operation.unit = String(form.get("unit"));
-    await reconcileOperations([operation]);
-    event.currentTarget.reset();
-    closeSheet($("#sheet-add"));
+    const unit = String(form.get("unit") || "").trim();
+    if (unit) operation.unit = unit;
+    if (note) operation.note = note;
+    const buttons = [...formEl.querySelectorAll('button[type="submit"]')];
+    for (const b of buttons) b.disabled = true;
+    try {
+        const ok = await reconcileOperations([operation]);
+        if (!ok) return;
+        formEl.reset();
+        if (keepOpen) {
+            formEl.elements.location.value = location;
+            formEl.elements.name.focus({ preventScroll: true });
+            status(`Added ${operation.name}. Ready for another.`);
+        } else {
+            closeSheet($("#sheet-add"));
+            status(`Added ${operation.name} to Pantry.`);
+        }
+    } finally {
+        for (const b of buttons) b.disabled = false;
+    }
 });
 
 function renderReview(mode, preview, sourceLabel) {
@@ -416,27 +668,50 @@ function renderReview(mode, preview, sourceLabel) {
         check.dataset.index = String(index);
         check.checked = line.is_food && line.confidence >= 0.85;
         check.disabled = !line.is_food;
+
+        const body = document.createElement("div");
+        body.className = "review-body";
+
         const name = document.createElement("span");
         name.className = "review-name";
         name.textContent = line.name;
+
+        const meta = document.createElement("span");
+        meta.className = "review-meta";
+
         const quantity = document.createElement("span");
         quantity.className = "review-qty";
         quantity.textContent =
             line.quantity == null ? "—" : String(line.quantity);
-        const unit = document.createElement("span");
-        unit.className = "review-unit";
-        unit.textContent = line.unit || "";
+        meta.append(quantity);
+
+        if (line.unit) {
+            const unit = document.createElement("span");
+            unit.className = "review-unit";
+            unit.textContent = line.unit;
+            meta.append(unit);
+        }
+
         const confidence = document.createElement("span");
         confidence.className = "confidence";
         confidence.textContent = line.is_food
             ? `${Math.round(line.confidence * 100)}% confidence`
             : "non-food";
-        row.append(check, name, quantity, unit, confidence);
+        meta.append(confidence);
+
+        body.append(name, meta);
+        row.append(check, body);
         reviewLinesEl.append(row);
     });
     reviewEl.classList.remove("hidden");
     reviewEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
+
+dismissReviewEl?.addEventListener("click", () => {
+    reviewState = null;
+    reviewEl.classList.add("hidden");
+    status("");
+});
 
 async function previewImage(input, endpoint, mode) {
     const file = input.files?.[0];
@@ -475,6 +750,7 @@ applyReviewEl.addEventListener("click", async () => {
         ].map((input) => Number(input.dataset.index)),
     );
     try {
+        let confirmation = "";
         if (reviewState.mode === "pantry") {
             const operations = reviewState.lines
                 .map((line, index) => ({ line, index }))
@@ -506,9 +782,7 @@ applyReviewEl.addEventListener("click", async () => {
                     operations,
                 }),
             });
-            status(
-                `${operations.length} detected item${operations.length === 1 ? "" : "s"} added to Pantry.`,
-            );
+            confirmation = `${operations.length} detected item${operations.length === 1 ? "" : "s"} added to Pantry.`;
         } else {
             const lines = reviewState.lines.map((line, index) => ({
                 raw_label: line.raw_label,
@@ -529,13 +803,12 @@ applyReviewEl.addEventListener("click", async () => {
                     lines,
                 }),
             });
-            status(
-                `Receipt reconciled: ${result.summary.groceryMatched} Grocery match${result.summary.groceryMatched === 1 ? "" : "es"}, ${result.summary.inventoryAdded} new Pantry acquisition${result.summary.inventoryAdded === 1 ? "" : "s"}${result.summary.needsReview ? `, ${result.summary.needsReview} left unresolved` : ""}.`,
-            );
+            confirmation = `Receipt reconciled: ${result.summary.groceryMatched} Grocery match${result.summary.groceryMatched === 1 ? "" : "es"}, ${result.summary.inventoryAdded} new Pantry acquisition${result.summary.inventoryAdded === 1 ? "" : "s"}${result.summary.needsReview ? `, ${result.summary.needsReview} left unresolved` : ""}.`;
         }
         reviewState = null;
         reviewEl.classList.add("hidden");
         await loadPantry();
+        status(confirmation);
     } catch (error) {
         status(error.message, true);
     }

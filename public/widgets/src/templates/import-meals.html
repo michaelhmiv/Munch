@@ -84,7 +84,7 @@
             .drop.over,
             .drop:focus-within {
                 border-color: var(--accent);
-                background: var(--accent-soft);
+                background: var(--green-tint, #eef4ea);
             }
             .drop input {
                 position: absolute;
@@ -102,6 +102,15 @@
                 display: grid;
                 grid-template-columns: repeat(2, minmax(0, 1fr));
                 gap: 12px;
+            }
+            .optional-fields > summary {
+                min-height: 44px;
+                display: flex;
+                align-items: center;
+                cursor: pointer;
+                color: var(--text-dim);
+                font-size: 12.5px;
+                font-weight: 650;
             }
             .field-note {
                 overflow: hidden;
@@ -192,9 +201,14 @@
                 color: var(--facts-band-ink);
             }
             @media (max-width: 620px) {
-                .mapping,
-                .result-grid {
+                .mapping {
+                    gap: 8px;
+                }
+                .mapping-settings {
                     grid-template-columns: 1fr;
+                }
+                .result-grid {
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
                 }
                 .step span {
                     overflow: hidden;
@@ -343,7 +357,7 @@
                 return `<div class="stepper-facts" aria-label="Import progress">${labels
                     .map(
                         (label, index) =>
-                            `<span class="step-pill ${index < active ? "done" : index === active ? "active" : ""}">${index + 1} · ${label}</span>`,
+                            `<span class="step-pill ${index < active ? "done" : index === active ? "active" : ""}"${index === active ? ' aria-current="step"' : ""}>${index + 1} · ${label}</span>`,
                     )
                     .join("")}</div>`;
             }
@@ -357,18 +371,18 @@
                     .join("");
             }
             function launchView() {
-                return `<article class="card">${factsBand("Import meals", "Meal history")}<div class="f-body"><div class="launch-title">Import an export file</div><div class="f-note" style="margin-top:4px">Review the detected columns and problem rows before anything is saved.</div><div class="source-list" style="margin-top:12px">${sources()}</div><div class="actions"><button class="btn btn-primary" id="open-importer">Open importer</button></div></div><div class="f-foot"><span>Imports land in your log with their original dates</span><span>Every batch is reviewed before it lands</span></div></article>`;
+                return `<article class="card">${factsBand("Import meals", "Meal history")}<div class="f-body"><div class="launch-title">Import an export file</div><div class="f-note" style="margin-top:4px">Review the detected columns and problem rows before anything is saved.</div><div class="source-list" style="margin-top:12px">${sources()}</div><div class="actions"><button type="button" class="btn btn-primary" id="open-importer">Open importer</button></div></div><div class="f-foot"><span>Imports land in your log with their original dates</span><span>Every batch is reviewed before it lands</span></div></article>`;
             }
             function fileView() {
                 const tzWarning = CFG.tz_configured
                     ? ""
                     : `<div class="notice warning"><strong>Timezone needed.</strong> Dates without an offset will be interpreted as UTC. Set your timezone in chat before importing if that could shift meals to another day.</div>`;
-                return `<article class="card">${factsBand("Import meals", "Step 1 of 4")}<div class="f-body">${stepper()}<div><div class="eyebrow">Choose file</div><h1 class="title">Import meal history</h1><p class="subtitle">CSV exports are read locally in this view. Nothing is saved until the preview is confirmed.</p></div>
+                return `<article class="card">${factsBand("Import meals", "Step 1 of 4")}<div class="f-body">${stepper()}<div><div class="eyebrow">Choose file</div><h2 class="title">Import meal history</h2><p class="subtitle">CSV exports are read locally in this view. Nothing is saved until the preview is confirmed.</p></div>
                     ${tzWarning}
-                    ${S.errors.length ? `<div class="notice danger">${esc(S.errors[0])}</div>` : ""}
+                    ${S.errors.length ? `<div class="notice danger" role="alert">${esc(S.errors[0])}</div>` : ""}
                     <label class="drop" id="drop" style="margin-top:12px"><span><strong>Choose a CSV file</strong><span class="muted">or drag it here</span></span><input id="file" type="file" accept=".csv,text/csv,text/plain" /></label>
                     <div class="muted small" style="margin-top:10px">Supported automatically: MyFitnessPal, Cronometer, Lose It!, MacroFactor, and similar tabular exports.</div>
-                    <div class="actions"><button class="btn btn-ghost" id="close-importer">Return to chat</button></div></div><div class="f-foot"><span>Source · <b>Your export file</b></span><span>Read locally in this view</span></div></article>`;
+                    <div class="actions"><button type="button" class="btn btn-ghost" id="close-importer">Return to chat</button></div></div><div class="f-foot"><span>Source · <b>Your export file</b></span><span>Read locally in this view</span></div></article>`;
             }
             function optionList(selected) {
                 return `<option value="-1">Not in file</option>${S.table.headers
@@ -379,14 +393,36 @@
                     .join("")}`;
             }
             function mappingView() {
-                const fields = visibleFields()
-                    .map((field) => {
-                        const index = S.mapping[field.key] ?? -1;
-                        const sample =
-                            index >= 0 ? S.table.rows[0]?.[index] || "" : "";
-                        return `<label class="field"><span class="label">${esc(field.label)}${field.required ? " *" : ""}</span><select class="select map-select" data-field="${field.key}">${optionList(index)}</select><span class="field-note">${sample ? `Example: ${esc(sample)}` : "No value detected"}</span></label>`;
-                    })
-                    .join("");
+                const OPTIONAL_KEYS = new Set([
+                    "fiber_g",
+                    "sugar_g",
+                    "alcohol_g",
+                    "notes",
+                    "deleted",
+                ]);
+                const allVisible = visibleFields();
+                const coreFields = allVisible.filter(
+                    (field) => !OPTIONAL_KEYS.has(field.key),
+                );
+                const optionalFields = allVisible.filter((field) =>
+                    OPTIONAL_KEYS.has(field.key),
+                );
+                const renderField = (field) => {
+                    const index = S.mapping[field.key] ?? -1;
+                    const sample =
+                        index >= 0 ? S.table.rows[0]?.[index] || "" : "";
+                    const reqAttrs = field.required
+                        ? ' required aria-required="true"'
+                        : "";
+                    return `<label class="field"><span class="label">${esc(field.label)}${field.required ? " *" : ""}</span><select class="select map-select" data-field="${field.key}"${reqAttrs}>${optionList(index)}</select><span class="field-note">${sample ? `Example: ${esc(sample)}` : "No value detected"}</span></label>`;
+                };
+                const mappedOptional = optionalFields.filter(
+                    (field) => (S.mapping[field.key] ?? -1) >= 0,
+                ).length;
+                const fields = coreFields.map(renderField).join("");
+                const optionalHtml = optionalFields.length
+                    ? `<details class="optional-fields"><summary id="optional-summary">Optional fields (${mappedOptional} of ${optionalFields.length} mapped)</summary><div class="mapping" style="margin-top:8px">${optionalFields.map(renderField).join("")}</div></details>`
+                    : "";
                 const dateWarning = S.dateAmbiguous
                     ? `<div class="notice warning"><strong>Confirm the date order.</strong> The values can be read more than one way; the selection below controls where every meal lands.</div>`
                     : "";
@@ -396,17 +432,18 @@
                         ? `<div class="notice"><strong>Alcohol column excluded.</strong> Alcohol tracking is off, so this column will not be imported. Turn tracking on in chat before importing to retain it.</div>`
                         : "";
                 return `<article class="card">${factsBand("Import meals", "Step 2 of 4")}<div class="f-body">${stepper()}<section class="section-stack" style="padding:0">
-                    <div><div class="eyebrow">Detected ${fmt(S.table.rows.length)} rows</div><h1 class="title">Review column mapping</h1><p class="subtitle">Munch matched the common fields. Correct only what is wrong or missing.</p></div>
+                    <div><div class="eyebrow">Detected ${fmt(S.table.rows.length)} rows</div><h2 class="title">Review column mapping</h2><p class="subtitle">Munch matched the common fields. Correct only what is wrong or missing.</p></div>
                     ${S.table.warnings.map((warning) => `<div class="notice warning">${esc(warning)}</div>`).join("")}
                     ${dateWarning}${alcoholNotice}
                     <div class="mapping">${fields}</div>
-                    <div class="mapping">
+                    ${optionalHtml}
+                    <div class="mapping mapping-settings">
                         <label class="field"><span class="label">Date format</span><select class="select" id="date-format">${DATE_FORMATS.map(([value, label]) => `<option value="${value}" ${S.dateFormat === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
                         <label class="field"><span class="label">Energy unit</span><select class="select" id="energy-unit"><option value="kcal" ${S.energyUnit === "kcal" ? "selected" : ""}>Calories (kcal)</option><option value="kj" ${S.energyUnit === "kj" ? "selected" : ""}>Kilojoules (kJ)</option></select></label>
                         <label class="field"><span class="label">Source app (optional)</span><input class="input" id="source-app" value="${esc(S.sourceApp)}" placeholder="Example: MyFitnessPal" /></label>
                     </div>
-                    ${S.errors.length ? `<div class="notice danger">${esc(S.errors[0])}</div>` : ""}
-                    <div class="actions"><button class="btn btn-primary" id="to-preview">Preview import</button><button class="btn" id="back-file">Choose another file</button></div>
+                    ${S.errors.length ? `<div class="notice danger" role="alert">${esc(S.errors[0])}</div>` : ""}
+                    <div class="actions"><button type="button" class="btn btn-primary" id="to-preview">Preview import</button><button type="button" class="btn" id="back-file">Choose another file</button></div>
                 </section></div><div class="f-foot"><span>Source · <b>${esc(S.fileName || "Your export file")}</b></span><span>Nothing is saved yet</span></div></article>`;
             }
             function previewRow(row, index, compact) {
@@ -434,32 +471,31 @@
                                   previewRow(S.rows[index], index, true),
                               )
                               .join("")
-                        : `<div class="preview-wrap"><table class="preview-table"><thead><tr><th>Date</th><th>Meal</th><th>Food</th><th class="num">kcal</th><th class="num">P</th><th class="num">C</th><th class="num">F</th></tr></thead><tbody>${list.map((index) => previewRow(S.rows[index], index, false)).join("")}</tbody></table></div>`;
+                        : `<div class="preview-wrap"><table class="preview-table"><caption class="sr-only">Import preview</caption><thead><tr><th scope="col">Date</th><th scope="col">Meal</th><th scope="col">Food</th><th scope="col" class="num">kcal</th><th scope="col" class="num">P</th><th scope="col" class="num">C</th><th scope="col" class="num">F</th></tr></thead><tbody>${list.map((index) => previewRow(S.rows[index], index, false)).join("")}</tbody></table></div>`;
                 const flagged = (S.unmatched || []).filter(Boolean).length;
                 return `<article class="card">${factsBand("Import meals", "Step 3 of 4")}<div class="f-body">${stepper()}
                     ${factsHero(`${fmt(S.rows.length)}`, "meals ready to import", `${fmt(totalKcal)} kcal`, "across valid rows")}
                     <div class="f-src">Source · <b>${esc(S.sourceApp || S.fileName || "Your export file")}</b></div>
                     <div class="f-rule-heavy"></div>
                     ${S.warnings.map((warning) => `<div class="notice warning">${esc(warning)}</div>`).join("")}
-                    ${S.errors.length ? `<div class="notice danger">${esc(S.errors[0])}</div>` : ""}
+                    ${S.errors.length ? `<div class="notice danger" role="alert">${esc(S.errors[0])}</div>` : ""}
                     ${flagged ? `<div class="f-note" style="color:var(--warn)"><b>${fmt(flagged)} row${flagged === 1 ? "" : "s"} flagged.</b> No source match yet — ${flagged === 1 ? "it imports" : "they import"} as estimates.</div>` : ""}
-                    <div class="inline-only">${renderRows(inlineIndices)}${S.rows.length > 12 ? `<button class="f-more-row" id="preview-more">…and ${fmt(S.rows.length - 5)} more rows — view full preview</button>` : ""}</div>
+                    <div class="inline-only">${renderRows(inlineIndices)}${S.rows.length > 12 ? `<button type="button" class="f-more-row" id="preview-more">…and ${fmt(S.rows.length - 5)} more rows — view full preview</button>` : ""}</div>
                     <div class="fullscreen-only">${renderRows(indices)}</div>
                     ${S.skipped ? `<div class="f-note"><b>${fmt(S.skipped)} rows will be skipped</b> (unreadable date or marked deleted in the file).</div>` : ""}
                     ${!API?.canCallTools ? `<div class="notice warning">This host cannot save from the importer. Continue in chat and ask Munch to import the file data instead.</div>` : ""}
                     </div>
-                    <div class="f-sticky-bar"><div class="f-sticky-actions"><button class="f-btn-primary" id="do-import" ${!API?.canCallTools || S.rows.length === 0 ? "disabled" : ""}>Import ${fmt(S.rows.length)} meals</button><button class="btn" id="back-map">Back to mapping</button></div><div class="f-sticky-confirm"><b>Nothing is imported until you tap Import.</b> The rows above are only a preview.</div></div>
+                    <div class="f-sticky-bar"><div class="f-sticky-actions"><button type="button" class="f-btn-primary" id="do-import" ${!API?.canCallTools || S.rows.length === 0 ? "disabled" : ""}>Import ${fmt(S.rows.length)} meals</button><button type="button" class="btn" id="back-map">Back to mapping</button></div><div class="f-sticky-confirm"><b>Nothing is imported until you tap Import.</b> The rows above are only a preview.</div></div>
                     </article>`;
             }
             function importingView() {
-                const ratio = S.progress?.total
-                    ? S.progress.done / S.progress.total
-                    : 0;
+                const imported = S.progress?.importedRows ?? 0;
+                const total = S.progress?.totalRows ?? S.rows.length;
                 return `<article class="card">${factsBand("Import meals", "Step 4 of 4")}<div class="f-body">${stepper()}<section aria-live="polite">
-                    <div><div class="eyebrow">Importing</div><h1 class="title">Saving meal history</h1><p class="subtitle">${esc(S.progress?.label || "Validating the first batch…")}</p></div>
-                    ${progress(ratio * 100, "Import progress")}
+                    <div><div class="eyebrow">Importing</div><h2 class="title">Saving meal history</h2><p class="subtitle">${esc(S.progress?.label || "Validating the first batch…")}</p></div>
+                    ${progress("Import progress", imported, total, "rows")}
                     <div class="muted small">Batch ${fmt(S.progress?.done || 0)} of ${fmt(S.progress?.total || 0)}</div>
-                </section></div><div class="f-sticky-bar"><div class="f-sticky-actions"><button class="f-btn-primary" disabled>Importing…</button></div><div class="f-sticky-confirm"><b>Import is running.</b> Batches already shown as saved are in your log.</div></div></article>`;
+                </section></div><div class="f-sticky-bar"><div class="f-sticky-actions"><button type="button" class="f-btn-primary" disabled>Importing…</button></div><div class="f-sticky-confirm"><b>Import is running.</b> Batches already shown as saved are in your log.</div></div></article>`;
             }
             function doneView() {
                 const result = S.result || {
@@ -489,10 +525,10 @@
                     <div class="f-rule-heavy"></div>
                     <div class="result-grid"><div class="result-stat"><strong>${fmt(result.created)}</strong><span>Imported</span></div><div class="result-stat"><strong>${fmt(result.deduplicated)}</strong><span>Already logged</span></div><div class="result-stat"><strong>${fmt(result.failed)}</strong><span>Failed</span></div><div class="result-stat"><strong>${fmt(S.skipped)}</strong><span>Skipped</span></div></div>
                     ${warnings.map((warning) => `<div class="f-note">${esc(warning)}</div>`).join("")}
-                    ${chunkErrors.map((error) => `<div class="notice danger" style="margin-top:8px">${esc(error)}</div>`).join("")}
-                    <div class="inline-only">${errorBanners(rowErrors, 3)}${rowErrors.length > 3 ? `<div class="f-note">…and ${fmt(rowErrors.length - 3)} more row issues — open the full result to see every line.</div>` : ""}</div>
+                    ${chunkErrors.map((error) => `<div class="notice danger" role="alert" style="margin-top:8px">${esc(error)}</div>`).join("")}
+                    <div class="inline-only">${errorBanners(rowErrors, 3)}${rowErrors.length > 3 ? `<button type="button" class="f-more-row" id="result-more">Open full result (${fmt(rowErrors.length - 3)} more row issues)</button>` : ""}</div>
                     <div class="fullscreen-only">${errorBanners(rowErrors, rowErrors.length)}</div>
-                    <div class="actions"><button class="btn btn-primary" id="finish">Return to chat</button><button class="btn" id="restart">Import another file</button></div>
+                    <div class="actions"><button type="button" class="btn btn-primary" id="finish">Return to chat</button><button type="button" class="btn" id="restart">Import another file</button></div>
                 </section></div></article>`;
             }
             function render() {
@@ -708,6 +744,8 @@
                 S.progress = {
                     done: 0,
                     total: batches.length,
+                    importedRows: 0,
+                    totalRows: S.rows.length,
                     label: "Validating the first batch…",
                 };
                 S.result = {
@@ -762,6 +800,7 @@
                         S.result.failed += batch.length;
                     }
                     S.progress.done = index + 1;
+                    S.progress.importedRows += batch.length;
                     render();
                 }
                 S.busy = false;
@@ -807,6 +846,7 @@
                 document
                     .getElementById("close-importer")
                     ?.addEventListener("click", async () => {
+                        delete document.documentElement.dataset.expanded;
                         await API?.requestDisplayMode("inline");
                         S.step = "launch";
                         document.documentElement.dataset.displayMode = "inline";
@@ -838,9 +878,38 @@
                 }
                 document.querySelectorAll(".map-select").forEach((select) =>
                     select.addEventListener("change", (event) => {
-                        S.mapping[event.target.dataset.field] = Number(
-                            event.target.value,
-                        );
+                        const fieldKey = event.target.dataset.field;
+                        const colIndex = Number(event.target.value);
+                        S.mapping[fieldKey] = colIndex;
+                        const note = event.target
+                            .closest(".field")
+                            ?.querySelector(".field-note");
+                        if (note) {
+                            const sample =
+                                colIndex >= 0
+                                    ? S.table?.rows?.[0]?.[colIndex] || ""
+                                    : "";
+                            note.textContent = sample
+                                ? `Example: ${sample}`
+                                : "No value detected";
+                        }
+                        const optSummary =
+                            document.getElementById("optional-summary");
+                        if (optSummary) {
+                            const optKeys = [
+                                "fiber_g",
+                                "sugar_g",
+                                "alcohol_g",
+                                "notes",
+                                "deleted",
+                            ].filter((k) =>
+                                visibleFields().some((f) => f.key === k),
+                            );
+                            const mappedCount = optKeys.filter(
+                                (k) => (S.mapping[k] ?? -1) >= 0,
+                            ).length;
+                            optSummary.textContent = `Optional fields (${mappedCount} of ${optKeys.length} mapped)`;
+                        }
                     }),
                 );
                 document
@@ -849,6 +918,7 @@
                         S.dateFormat = event.target.value;
                         S.dateAmbiguous = false;
                         render();
+                        document.getElementById("date-format")?.focus();
                     });
                 document
                     .getElementById("energy-unit")
@@ -875,11 +945,19 @@
                         S.step = "map";
                         render();
                     });
+                const expandFull = async () => {
+                    const result = await API?.requestDisplayMode(
+                        "fullscreen",
+                    ).catch(() => null);
+                    if (!result || result.unsupported)
+                        document.documentElement.dataset.expanded = "true";
+                };
                 document
                     .getElementById("preview-more")
-                    ?.addEventListener("click", () =>
-                        API?.requestDisplayMode("fullscreen"),
-                    );
+                    ?.addEventListener("click", expandFull);
+                document
+                    .getElementById("result-more")
+                    ?.addEventListener("click", expandFull);
                 document
                     .getElementById("do-import")
                     ?.addEventListener("click", runImport);
@@ -889,6 +967,7 @@
                 document
                     .getElementById("finish")
                     ?.addEventListener("click", async () => {
+                        delete document.documentElement.dataset.expanded;
                         await API?.requestDisplayMode("inline");
                         S.step = "launch";
                         document.documentElement.dataset.displayMode = "inline";

@@ -114,14 +114,14 @@
                             "fullscreen",
                         ).catch(() => null);
                         if (!result || result.unsupported)
-                            document.getElementById("details").textContent =
-                                "Details unavailable";
+                            document.documentElement.dataset.expanded = "true";
                     });
                 document
                     .getElementById("close")
-                    ?.addEventListener("click", () =>
-                        API?.requestDisplayMode("inline"),
-                    );
+                    ?.addEventListener("click", () => {
+                        delete document.documentElement.dataset.expanded;
+                        API?.requestDisplayMode("inline");
+                    });
             }
             // Entry calories are the per-serving figure scaled by servings,
             // rounded once; day totals are the sum of those entry figures so
@@ -188,7 +188,6 @@
                     valueText:
                         entry.kcal == null ? "—" : `${fmt(entry.kcal)} kcal`,
                     showBar: false,
-                    source: "Saved recipe",
                 });
             }
             function entryCompactRow(entry) {
@@ -238,8 +237,14 @@
                 let used = 0;
                 let folded = false;
                 const inlineParts = [];
-                const fullParts = [];
+                const allFullParts = [];
                 for (const day of days) {
+                    allFullParts.push(dayHead(day));
+                    allFullParts.push(
+                        day.entries
+                            .map((entry) => entryLabelRow(entry))
+                            .join(""),
+                    );
                     if (!folded && used + day.entries.length <= budget) {
                         inlineParts.push(dayHead(day));
                         inlineParts.push(day.entries.map(rowFor).join(""));
@@ -253,21 +258,7 @@
                             day.entries.slice(0, budget).map(rowFor).join(""),
                         );
                         used = budget;
-                        fullParts.push(dayHead(day));
-                        fullParts.push(
-                            day.entries
-                                .slice(budget)
-                                .map((entry) => entryLabelRow(entry))
-                                .join(""),
-                        );
-                        continue;
                     }
-                    fullParts.push(dayHead(day));
-                    fullParts.push(
-                        day.entries
-                            .map((entry) => entryLabelRow(entry))
-                            .join(""),
-                    );
                 }
                 const hidden = totalEntries - used;
                 const banner =
@@ -285,9 +276,8 @@
         <div class="f-src">Source · <b>Saved recipes in your meal plan</b></div>
         ${banner}
         <div class="f-rule-heavy"></div>
-        ${inlineParts.join("")}
-        ${hidden > 0 ? `<button class="f-more-row inline-only" id="details">…and ${hidden} more</button>` : ""}
-        ${fullParts.length ? `<div class="fullscreen-only">${fullParts.join("")}<div class="f-rule-med"></div><div class="f-prow"><span class="f-lrow-name">Week total</span><span class="f-crow-val num">${fmt(weekTotal)} kcal</span></div><div class="actions"><button class="btn" id="close">Return to chat</button></div></div>` : ""}
+        <div${hidden > 0 ? ' class="inline-only"' : ""}>${inlineParts.join("")}</div>
+        ${hidden > 0 ? `<button type="button" class="f-more-row inline-only" id="details">…and ${hidden} more</button><div class="fullscreen-only">${allFullParts.join("")}<div class="f-rule-med"></div><div class="f-prow"><span class="f-lrow-name">Week total</span><span class="f-crow-val num">${fmt(weekTotal)} kcal</span></div><div class="actions"><button type="button" class="btn" id="close">Return to chat</button></div></div>` : ""}
         </div>
         <div class="f-foot"><span>Every number traces to its source</span><span>Saved recipes · per-serving nutrition × servings</span></div>
     </article>`;

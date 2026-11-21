@@ -8,10 +8,11 @@ import "./capture-native.js";
 const $ = (selector) => document.querySelector(selector);
 
 function status(message, error = false) {
-    const target = $("#status");
+    const openSheet = document.querySelector("dialog.sheet[open]");
+    const target = openSheet?.querySelector(".sheet-status") || $("#status");
     if (!target) return;
     target.textContent = message || "";
-    target.style.color = error ? "#8c2f22" : "#5d5344";
+    target.classList.toggle("is-error", Boolean(error && message));
 }
 
 function currentScope() {
@@ -22,28 +23,63 @@ function locationValue() {
     return $("#native-barcode-location")?.value || "unspecified";
 }
 
-function createButton(text, onClick, className = "secondary") {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = className;
-    button.textContent = text;
-    button.addEventListener("click", onClick);
-    return button;
+function createAction(text, onClick, className = "secondary") {
+    const control = document.createElement("button");
+    control.type = "button";
+    if (className) control.className = className;
+    control.textContent = text;
+    control.addEventListener("click", onClick);
+    return control;
 }
 
 function clearBarcodeReview() {
-    $("#native-barcode-review")?.remove();
+    const existing = $("#native-barcode-review");
+    if (!existing) return;
+    if (existing.open) existing.close();
+    existing.remove();
 }
 
 function renderBarcodeReview(barcode, candidate) {
     clearBarcodeReview();
-    const card = document.createElement("section");
-    card.id = "native-barcode-review";
-    card.className = "card stack";
+    const sheet = document.createElement("dialog");
+    sheet.id = "native-barcode-review";
+    sheet.className = "sheet";
+    sheet.setAttribute("aria-labelledby", "native-barcode-title");
 
-    const heading = document.createElement("div");
-    heading.innerHTML = '<p class="eyebrow">Barcode match</p><h2></h2>';
-    heading.querySelector("h2").textContent = candidate.name;
+    const head = document.createElement("div");
+    head.className = "sheet-head";
+    const handle = document.createElement("div");
+    handle.className = "sheet-handle";
+    handle.setAttribute("aria-hidden", "true");
+    const headRow = document.createElement("div");
+    headRow.className = "sheet-head-row";
+    const titleGroup = document.createElement("div");
+    titleGroup.className = "sheet-title-group";
+    const eyebrow = document.createElement("p");
+    eyebrow.className = "eyebrow";
+    eyebrow.textContent = "Barcode match";
+    const title = document.createElement("h2");
+    title.id = "native-barcode-title";
+    title.textContent = candidate.name;
+    titleGroup.append(eyebrow, title);
+
+    const close = createAction(
+        "Close",
+        () => {
+            sheet.close();
+        },
+        "sheet-close",
+    );
+    headRow.append(titleGroup, close);
+    head.append(handle, headRow);
+
+    const sheetStatus = document.createElement("p");
+    sheetStatus.className = "sheet-status";
+    sheetStatus.setAttribute("role", "status");
+    sheetStatus.setAttribute("aria-live", "polite");
+
+    const body = document.createElement("div");
+    body.className = "stack";
 
     const details = document.createElement("p");
     details.className = "muted";
@@ -56,7 +92,7 @@ function renderBarcodeReview(barcode, candidate) {
         .join(" · ");
 
     const location = document.createElement("label");
-    location.textContent = "Store in ";
+    location.textContent = "Store in";
     const select = document.createElement("select");
     select.id = "native-barcode-location";
     for (const [value, text] of [
@@ -73,10 +109,12 @@ function renderBarcodeReview(barcode, candidate) {
     location.append(select);
 
     const actions = document.createElement("div");
-    actions.style.display = "grid";
-    actions.style.gridTemplateColumns = "1fr 1fr";
-    actions.style.gap = "8px";
-    const add = createButton(
+    actions.className = "fields sheet-actions";
+    const cancel = createAction("Cancel", () => {
+        sheet.close();
+        status("");
+    });
+    const add = createAction(
         "Add to Pantry",
         async () => {
             add.disabled = true;
@@ -108,8 +146,8 @@ function renderBarcodeReview(barcode, candidate) {
                         ],
                     }),
                 });
-                status(`${candidate.name} added to Pantry.`);
                 clearBarcodeReview();
+                status(`${candidate.name} added to Pantry.`);
                 $("#refresh")?.click();
             } catch (error) {
                 status(
@@ -121,18 +159,29 @@ function renderBarcodeReview(barcode, candidate) {
         },
         "",
     );
-    const cancel = createButton("Cancel", () => {
-        clearBarcodeReview();
-        status("");
-    });
-    actions.append(add, cancel);
-    card.append(heading, details, location, actions);
+    actions.append(cancel, add);
+    body.append(details, location, actions);
+    sheet.append(head, sheetStatus, body);
 
-    const workspace = $("#workspace");
-    const inventory = $(".inventory-section");
-    if (workspace && inventory) workspace.insertBefore(card, inventory);
-    else workspace?.append(card);
-    card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    sheet.addEventListener("click", (event) => {
+        if (event.target !== sheet) return;
+        const rect = sheet.getBoundingClientRect();
+        const outside =
+            event.clientX < rect.left ||
+            event.clientX > rect.right ||
+            event.clientY < rect.top ||
+            event.clientY > rect.bottom;
+        if (outside) sheet.close();
+    });
+    sheet.addEventListener("close", () => {
+        sheet.remove();
+        $("#native-barcode-scan")?.focus({ preventScroll: true });
+    });
+
+    const host = $("#workspace") || document.body;
+    host.append(sheet);
+    sheet.showModal();
+    select.focus({ preventScroll: true });
 }
 
 async function scanBarcode() {
@@ -151,13 +200,12 @@ async function scanBarcode() {
         );
         if (!candidate) {
             status(
-                `No verified food match was found for barcode ${barcode}. Use Quick add instead.`,
+                `No verified food match was found for barcode ${barcode}. Use Add to Pantry instead.`,
                 true,
             );
             return;
         }
         renderBarcodeReview(barcode, candidate);
-        status("Review the product before adding it to Pantry.");
     } catch (error) {
         const message = String(
             error?.message || error || "Barcode scan failed.",
@@ -167,17 +215,23 @@ async function scanBarcode() {
     }
 }
 
-function injectBarcodeCard() {
-    const grid = $(".grid-two");
-    if (!grid || $("#native-barcode-card")) return;
-    const card = document.createElement("section");
-    card.id = "native-barcode-card";
-    card.className = "card stack";
-    card.innerHTML =
-        '<div><p class="eyebrow">Barcode</p><h2>Scan a packaged food</h2></div>' +
-        '<p class="muted">Use the device camera to identify a packaged food, then review the verified product before adding it.</p>';
-    card.append(createButton("Scan barcode", scanBarcode, ""));
-    grid.append(card);
+function injectBarcodeTool() {
+    const rail = $(".tools-rail");
+    if (!rail || $("#native-barcode-scan")) return;
+    const tool = document.createElement("button");
+    tool.type = "button";
+    tool.id = "native-barcode-scan";
+    tool.className = "native-rail-tool";
+    tool.setAttribute("aria-label", "Scan barcode");
+    tool.title = "Scan barcode";
+    tool.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        '<path d="M4 7V5h3M20 7V5h-3M4 17v2h3M20 17v2h-3" />' +
+        '<path d="M7 9v6M10 9v6M13 9v6M16 9v6" /></svg>';
+    tool.addEventListener("click", scanBarcode);
+    const receiptTool = rail.querySelector('[data-open-sheet="sheet-receipt"]');
+    if (receiptTool) receiptTool.after(tool);
+    else rail.append(tool);
 }
 
-injectBarcodeCard();
+injectBarcodeTool();

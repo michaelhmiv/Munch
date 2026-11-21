@@ -335,3 +335,70 @@
     border-color: color-mix(in srgb, var(--over) 38%, var(--panel-border));
     color: var(--over);
 }
+
+@media (max-width: 480px) {
+    .f-band {
+        padding: 10px 14px;
+        flex-wrap: wrap;
+        gap: 6px 10px;
+    }
+    .f-band-title {
+        overflow-wrap: anywhere;
+    }
+    .f-band-right {
+        white-space: normal;
+    }
+    .f-body {
+        padding: 12px 14px 14px;
+    }
+    .f-foot {
+        padding: 10px 14px 12px;
+    }
+    .f-sticky-bar {
+        padding: 10px 14px 12px;
+    }
+    .f-sticky-actions {
+        flex-wrap: wrap;
+    }
+    .f-sticky-actions .f-btn-primary,
+    .f-sticky-actions .btn {
+        flex: 1 1 130px;
+    }
+    .f-hero {
+        flex-wrap: wrap;
+        gap: 8px 12px;
+    }
+    .f-hero-num {
+        font-size: 34px;
+    }
+    .f-hero-num .f-hero-unit {
+        font-size: 17px;
+    }
+    .f-hero-side {
+        flex: 0 1 auto;
+        margin-left: auto;
+    }
+    .f-hero-side-v {
+        white-space: normal;
+    }
+    .f-lrow-top,
+    .f-crow,
+    .f-prow {
+        flex-wrap: wrap;
+        gap: 4px 8px;
+    }
+    .f-lrow-name,
+    .f-crow-name {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+    .f-lrow-of,
+    .f-crow-meta {
+        white-space: normal;
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+    .f-state {
+        padding: 18px 14px 20px;
+    }
+}

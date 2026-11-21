@@ -161,7 +161,10 @@
                 return data?.cook?.cook ? data.cook : data;
             }
             function eventRow(event) {
-                return `<div class="cook-event-row"><time>${esc(humanDate(event.event_at))} ${esc(event.time_precision === "approximate" ? "(approx.)" : "")}</time><p><strong>${esc(String(event.event_type || "event").replaceAll("_", " "))}</strong>${event.note ? ` · ${esc(event.note)}` : ""}${event.setpoint_temperature != null ? ` · setpoint ${esc(event.setpoint_temperature)}°${esc(event.setpoint_unit || "")}` : ""}${event.ambient_temperature != null ? ` · environment ${esc(event.ambient_temperature)}°${esc(event.ambient_unit || "")}` : ""}${event.internal_temperature != null ? ` · internal ${esc(event.internal_temperature)}°${esc(event.internal_unit || "")}` : ""}</p></div>`;
+                const dt = event.event_at
+                    ? ` datetime="${esc(event.event_at)}"`
+                    : "";
+                return `<div class="cook-event-row"><time${dt}>${esc(humanDate(event.event_at))}${event.time_precision === "approximate" ? " (approx.)" : ""}</time><p><strong>${esc(String(event.event_type || "event").replaceAll("_", " "))}</strong>${event.note ? ` · ${esc(event.note)}` : ""}${event.setpoint_temperature != null ? ` · setpoint ${esc(event.setpoint_temperature)}°${esc(event.setpoint_unit || "")}` : ""}${event.ambient_temperature != null ? ` · environment ${esc(event.ambient_temperature)}°${esc(event.ambient_unit || "")}` : ""}${event.internal_temperature != null ? ` · internal ${esc(event.internal_temperature)}°${esc(event.internal_unit || "")}` : ""}</p></div>`;
             }
             function failureList(failures) {
                 if (!failures.length) return "";
@@ -187,26 +190,31 @@
                 const row = (cook) =>
                     factsCompactRow({
                         name: cook.title || "Cook",
-                        meta: `${humanDate(cook.cook_date)} · ${cook.status || ""}`,
+                        meta: humanDate(cook.cook_date),
                         valueText: cook.status || "",
                     });
                 const inlineRows = cooks.slice(0, 5).map(row).join("");
                 const allRows = cooks.map(row).join("");
                 document.getElementById("root").innerHTML =
-                    `<article class="card">${factsBand("Cook history", right)}<div class="f-body"><div class="f-hero-cap" style="margin-top:0">Cooks that match your search, newest first.</div><div class="f-src">Source · <b>Your recorded cooks</b></div><div class="f-rule-heavy"></div><div class="inline-only">${inlineRows}${cooks.length > 5 ? `<button class="f-more-row" id="expand">View all ${cooks.length} cooks</button>` : ""}</div><div class="fullscreen-only">${allRows}<div class="actions"><button class="btn" id="close">Return to chat</button></div></div></div><div class="f-foot"><span>Every cook traces to its timeline</span><span>Your recorded cooks</span></div></article>`;
+                    `<article class="card">${factsBand("Cook history", right)}<div class="f-body"><div class="f-hero-cap" style="margin-top:0">Cooks that match your search, newest first.</div><div class="f-src">Source · <b>Your recorded cooks</b></div><div class="f-rule-heavy"></div><div class="inline-only">${inlineRows}${cooks.length > 5 ? `<button type="button" class="f-more-row" id="expand">View all ${cooks.length} cooks</button>` : ""}</div><div class="fullscreen-only">${allRows}<div class="actions"><button type="button" class="btn" id="close">Return to chat</button></div></div></div><div class="f-foot"><span>Every cook traces to its timeline</span><span>Your recorded cooks</span></div></article>`;
                 bindNav();
             }
             function bindNav() {
                 document
                     .getElementById("expand")
-                    ?.addEventListener("click", () =>
-                        API?.requestDisplayMode("fullscreen"),
-                    );
+                    ?.addEventListener("click", async () => {
+                        const result = await API?.requestDisplayMode(
+                            "fullscreen",
+                        ).catch(() => null);
+                        if (!result || result.unsupported)
+                            document.documentElement.dataset.expanded = "true";
+                    });
                 document
                     .getElementById("close")
-                    ?.addEventListener("click", () =>
-                        API?.requestDisplayMode("inline"),
-                    );
+                    ?.addEventListener("click", () => {
+                        delete document.documentElement.dataset.expanded;
+                        API?.requestDisplayMode("inline");
+                    });
             }
             function render(data) {
                 if (data?.__error) {
@@ -283,15 +291,18 @@
         ${failureList(failures)}
         ${resultText ? `<div class="cook-result"><div class="cook-result-label">Result</div><div class="cook-result-text">${esc(resultText)}</div></div>` : ""}
         <div class="f-rule-heavy"></div>
+        <div class="inline-only">
         <h2 class="f-section-title">Timeline · last ${lastEvents.length} of ${events.length}</h2>
-        <div class="inline-only">${inlineTimeline}${events.length > 5 || photos || cook.id ? `<button class="f-more-row" id="expand">Open full cook</button>` : ""}</div>
+        ${inlineTimeline}${events.length > 5 || photos || cook.id ? `<button type="button" class="f-more-row" id="expand">Open full cook</button>` : ""}
+        </div>
         <div class="fullscreen-only">
+        <h2 class="f-section-title">Timeline · ${events.length} event${events.length === 1 ? "" : "s"}</h2>
         ${fullTimeline}
         ${dishes.length ? `<div class="f-rule-med"></div><h2 class="f-section-title">Dishes</h2>${dishRows}` : ""}
-        ${photos ? `<div class="f-rule-med"></div><h2 class="f-section-title">Photos · ${media.length}</h2><div class="cook-photos" aria-label="Saved cook photos">${photos}</div>` : ""}
+        ${photos ? `<div class="f-rule-med"></div><h2 class="f-section-title">Photos · ${media.length}</h2><div class="cook-photos" role="group" aria-label="Saved cook photos">${photos}</div>` : ""}
         ${outcome?.next_time_notes && outcome?.written_feedback ? `<div class="f-rule-med"></div><h2 class="f-section-title">Next time</h2><div class="cook-result-text">${esc(outcome.next_time_notes)}</div>` : ""}
-        ${cook.id ? `<div class="f-rule-med"></div><form class="cook-update" id="cook-widget-update"><label class="field-label" for="cook-widget-message">Add an update</label><textarea id="cook-widget-message" placeholder="What happened? (optional if you add a photo)"></textarea><input id="cook-widget-photo" type="file" accept="image/jpeg,image/png,image/webp" /><div class="actions"><button class="btn btn-primary" type="submit">Save update</button><span class="cook-update-status" id="cook-widget-status" role="status"></span></div></form>` : ""}
-        <div class="actions"><button class="btn" id="close">Return to chat</button></div>
+        ${cook.id ? `<div class="f-rule-med"></div><form class="cook-update" id="cook-widget-update"><label class="label" for="cook-widget-message">Add an update</label><textarea class="textarea" id="cook-widget-message" placeholder="What happened? (optional if you add a photo)"></textarea><label class="label" for="cook-widget-photo">Add a photo (optional)</label><input id="cook-widget-photo" type="file" accept="image/jpeg,image/png,image/webp" /><div class="actions single"><button class="btn btn-primary" type="submit">Save update</button></div><span class="cook-update-status" id="cook-widget-status" role="status" aria-live="polite"></span></form>` : ""}
+        <div class="actions"><button type="button" class="btn" id="close">Return to chat</button></div>
         </div>
         </div>
         <div class="f-foot"><span>Every cook traces to its timeline</span><span>Your recorded cooks</span></div>

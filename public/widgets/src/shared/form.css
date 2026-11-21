@@ -48,13 +48,14 @@
     appearance: none;
     -webkit-appearance: none;
     width: 100%;
+    min-height: 44px;
     font: inherit;
     font-size: 13px;
     color: var(--text);
     background: var(--panel);
     border: 1px solid var(--panel-border);
     border-radius: var(--radius-sm);
-    padding: 8px 10px;
+    padding: 9px 11px;
     transition:
         border-color 0.12s ease,
         box-shadow 0.12s ease;
@@ -100,10 +101,14 @@
 .btn {
     appearance: none;
     -webkit-appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
     font: inherit;
     font-size: 13px;
     font-weight: 600;
-    padding: 8px 14px;
+    padding: 9px 14px;
     border-radius: var(--radius-sm);
     border: 1px solid var(--panel-border);
     background: var(--panel);
@@ -141,8 +146,9 @@
     background: color-mix(in srgb, var(--over) 12%, transparent);
 }
 .btn-sm {
+    min-height: 44px;
     font-size: 12px;
-    padding: 5px 9px;
+    padding: 9px 11px;
     border-radius: var(--radius-sm);
 }
 

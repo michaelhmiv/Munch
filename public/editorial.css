@@ -151,7 +151,15 @@ a:hover {
     gap: 2px;
 }
 
-.top nav a {
+.top-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 0 0 auto;
+}
+
+.top nav a,
+.top-actions a {
     min-height: 44px;
     display: inline-flex;
     align-items: center;
@@ -162,13 +170,15 @@ a:hover {
     color: var(--ink-soft);
 }
 
-.top nav a:hover {
+.top nav a:hover,
+.top-actions a:hover {
     color: var(--green);
     text-decoration: underline;
     text-underline-offset: 3px;
 }
 
-.top nav a.nav-cta {
+.top nav a.nav-cta,
+.top-actions a.nav-cta {
     color: var(--green);
     font-weight: 700;
 }
@@ -300,17 +310,32 @@ code {
 .pastehead {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 12px;
+    padding: 10px 14px;
     border-bottom: 1px solid var(--hairline);
     color: var(--ink-mute);
     font-size: 13px;
     font-weight: 700;
 }
 
-.pastehead span {
-    min-height: 44px;
+.pastehead-steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+}
+
+.pastehead-steps span {
     display: inline-flex;
     align-items: center;
-    padding: 8px 14px;
+}
+
+.pastehead-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
 }
 
 .paste {
@@ -334,11 +359,11 @@ code {
 }
 
 .copy-btn {
-    min-height: 48px;
+    min-height: 44px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 10px 20px;
+    padding: 8px 18px;
     background: var(--green);
     color: #fff;
     border: 0;
@@ -358,6 +383,10 @@ code {
     font-weight: 600;
     color: var(--green);
     margin: 0;
+}
+
+.copy-status:empty {
+    display: none;
 }
 
 .pastenote {
@@ -657,6 +686,35 @@ code {
     overflow-wrap: anywhere;
 }
 
+.field-copy-row {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.copy-chip {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 12px;
+    background: transparent;
+    color: var(--green);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.copy-chip:hover {
+    border-color: var(--green);
+    color: var(--green-deep);
+}
+
 .tabs {
     position: relative;
 }
@@ -728,7 +786,10 @@ code {
     border-color: var(--green);
 }
 
-.tabs > input:focus-visible ~ .tabbar .tablabel {
+.tabs > #t1:focus-visible ~ .tabbar .tablabel[for="t1"],
+.tabs > #t2:focus-visible ~ .tabbar .tablabel[for="t2"],
+.tabs > #t3:focus-visible ~ .tabbar .tablabel[for="t3"],
+.tabs > #t4:focus-visible ~ .tabbar .tablabel[for="t4"] {
     outline: 3px solid var(--green);
     outline-offset: 2px;
 }
@@ -800,7 +861,7 @@ code {
     }
 
     .factstrip {
-        grid-template-columns: repeat(5, 1fr);
+        grid-template-columns: repeat(4, 1fr);
     }
 
     .grid2,
@@ -829,31 +890,39 @@ code {
     }
 }
 
-/* ---------- Phone: one-row header, tighter hero ---------- */
+/* ---------- Phone: two-row header (persistent CTAs), tighter hero ---------- */
 
 @media (max-width: 759px) {
     .topin {
-        flex-wrap: nowrap;
-        padding-left: 16px;
-        padding-right: 8px;
+        flex-wrap: wrap;
+        gap: 0 8px;
+        padding: 4px 16px;
+    }
+
+    .brandlink {
+        order: 1;
+    }
+
+    .top-actions {
+        order: 2;
+        margin-left: auto;
     }
 
     .top nav {
-        flex-wrap: nowrap;
-        overflow-x: auto;
-        scrollbar-width: none;
-        margin-left: 4px;
-        min-width: 0;
+        order: 3;
+        flex: 1 0 100%;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        margin-left: 0;
+        border-top: 1px solid var(--hairline);
+        gap: 0 4px;
     }
 
-    .top nav::-webkit-scrollbar {
-        display: none;
-    }
-
-    .top nav a {
+    .top nav a,
+    .top-actions a {
         white-space: nowrap;
-        padding-left: 8px;
-        padding-right: 8px;
+        padding: 6px 6px;
+        font-size: 13.5px;
     }
 
     .brandname {
@@ -866,15 +935,27 @@ code {
     }
 
     .hero {
-        padding-top: 22px;
+        padding-top: 20px;
     }
 
     h1 {
-        font-size: 36px;
+        font-size: 34px;
     }
 
     .lead {
         font-size: 17px;
+    }
+
+    .pastehead {
+        padding: 10px 14px;
+    }
+
+    .pastehead-actions {
+        width: 100%;
+    }
+
+    .pastehead-actions .copy-btn {
+        width: 100%;
     }
 
     .paste {
@@ -883,6 +964,50 @@ code {
 
     .pastefoot {
         padding: 0 16px 16px;
+    }
+
+    .tabbar {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+        overflow-x: visible;
+        padding-bottom: 0;
+    }
+
+    .tablabel {
+        padding: 8px 10px;
+        font-size: 14px;
+    }
+
+    .auth-card {
+        padding: 20px 18px;
+    }
+
+    .auth-card h1 {
+        font-size: 28px;
+        margin: 6px 0 10px;
+        padding-bottom: 10px;
+    }
+
+    .auth-card .spacer-top {
+        margin-top: 12px;
+    }
+
+    .auth-form {
+        gap: 12px;
+        margin-top: 14px;
+    }
+
+    .auth-divider {
+        margin-top: 14px;
+    }
+
+    .auth-social {
+        margin-top: 12px;
+    }
+
+    .auth-footnote {
+        margin-top: 12px;
     }
 }
 
@@ -906,9 +1031,10 @@ code {
 
 .auth-page {
     display: grid;
-    min-height: 100vh;
+    min-height: 100dvh;
     place-items: center;
-    padding: 24px 16px;
+    padding: max(16px, env(safe-area-inset-top)) 16px
+        max(16px, env(safe-area-inset-bottom));
 }
 
 .auth-main {
@@ -919,7 +1045,7 @@ code {
     background: var(--paper-card);
     border: 1px solid var(--hairline);
     border-radius: 4px;
-    padding: clamp(26px, 6vw, 42px);
+    padding: clamp(20px, 5vw, 40px);
 }
 
 .auth-card h1 {
@@ -1075,6 +1201,10 @@ code {
     margin: 22px 0 0;
     color: var(--ink-mute);
     font-size: 13px;
+}
+
+.auth-divider[hidden] {
+    display: none;
 }
 
 .auth-divider::before,

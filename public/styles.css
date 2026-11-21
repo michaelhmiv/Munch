@@ -157,6 +157,17 @@
         color: var(--green-700);
     }
 
+    fieldset {
+        border: 0;
+        padding: 0;
+        margin: 0;
+        min-width: 0;
+    }
+
+    legend {
+        padding: 0;
+    }
+
     button,
     input,
     select,
@@ -166,7 +177,6 @@
     }
 
     :focus-visible {
-        border-radius: 6px;
         box-shadow: var(--focus);
         outline: 2px solid var(--green-600);
         outline-offset: 1px;
@@ -2153,7 +2163,8 @@
        header band that used to carry it was removed, and no later
        shorthand may reset it (that reset was the status-bar bleed). */
     .app-content {
-        padding: calc(22px + env(safe-area-inset-top)) 16px 102px;
+        padding: calc(22px + env(safe-area-inset-top)) 14px
+            calc(98px + env(safe-area-inset-bottom));
     }
 
     .mobile-bottom-nav {
@@ -2226,9 +2237,13 @@
     }
 
     .hero-actions .button,
-    .auth-actions .button,
     .consent-actions .button {
         flex: 1 1 100%;
+    }
+
+    .auth-actions .button {
+        flex: 1 1 auto;
+        min-width: 0;
     }
 
     .hero-proof {
@@ -2364,7 +2379,7 @@
 
     .panel {
         border-radius: 14px;
-        padding: 16px;
+        padding: 14px;
     }
 
     .meal-card-head {
@@ -2381,7 +2396,7 @@
 
     .toast-region {
         right: 12px;
-        bottom: 82px;
+        bottom: calc(82px + env(safe-area-inset-bottom));
         left: 12px;
     }
 
@@ -2401,10 +2416,33 @@
     }
 }
 
+/* Top-layer popover support for toast-region so toasts remain visible
+   above open <dialog>.showModal() sheets. */
+.toast-region[popover] {
+    inset: auto 20px 20px auto;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    overflow: visible;
+}
+
+.toast-region[popover]:not(:popover-open) {
+    display: none;
+}
+
+@media (max-width: 620px) {
+    .toast-region[popover] {
+        inset: auto 12px calc(82px + env(safe-area-inset-bottom)) 12px;
+    }
+}
+
 /* S4 shell hardening — honest connectivity states + safe areas.
    The offline banner is a designed state (mobile-discipline P7): it
-   floats above the mobile bottom nav, respects the gesture-bar inset
-   on every side, and never overlaps the sticky topbar. */
+   floats above the mobile bottom nav and above any active toast,
+   respects the gesture-bar inset on every side, and never overlaps
+   the sticky topbar. */
 .offline-banner {
     position: fixed;
     z-index: 400;
@@ -2424,13 +2462,10 @@
 .offline-banner[hidden] {
     display: none;
 }
-@media (max-width: 900px) {
+@media (max-width: 840px) {
     .offline-banner {
-        bottom: calc(80px + env(safe-area-inset-bottom));
+        bottom: calc(136px + env(safe-area-inset-bottom));
     }
-    /* The top safe-area inset is consumed by .app-content's mobile
-       padding-top above (the header band that used to carry it here
-       was removed). */
     .toast-region {
         bottom: calc(82px + env(safe-area-inset-bottom));
     }

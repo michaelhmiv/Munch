@@ -49,7 +49,7 @@ button {
     background: var(--panel);
     border: 1px solid var(--panel-border);
     border-radius: var(--radius);
-    overflow: hidden;
+    overflow: clip;
 }
 .card-pad {
     padding: var(--space-4);
@@ -200,7 +200,12 @@ h2 {
     cursor: not-allowed;
 }
 .btn:focus-visible,
+.f-btn-primary:focus-visible,
+.f-more-row:focus-visible,
 .link-btn:focus-visible,
+.md-close:focus-visible,
+.seg-btn:focus-visible,
+summary:focus-visible,
 [role="button"]:focus-visible,
 input:focus-visible,
 select:focus-visible,
@@ -218,6 +223,9 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
 }
 .link-btn {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
     padding: 5px 2px;
     border: 0;
     background: transparent;
@@ -378,6 +386,17 @@ th {
     letter-spacing: 0.04em;
     background: var(--panel-muted);
 }
+.table-wrap thead th {
+    position: sticky;
+    top: 0;
+    background: var(--paper-card);
+    z-index: 1;
+    box-shadow: inset 0 -1px 0 var(--panel-border);
+}
+.table-wrap td.num,
+.table-wrap th.num {
+    text-align: right;
+}
 tr:last-child td {
     border-bottom: 0;
 }
@@ -401,10 +420,16 @@ tr:last-child td {
 .fullscreen-only {
     display: none;
 }
-:root[data-display-mode="fullscreen"] .fullscreen-only {
+:root[data-display-mode="fullscreen"] .fullscreen-only,
+:root[data-expanded="true"] .fullscreen-only {
     display: block;
 }
-:root[data-display-mode="fullscreen"] .inline-only {
+:root[data-display-mode="fullscreen"] .fullscreen-only.range-controls,
+:root[data-expanded="true"] .fullscreen-only.range-controls {
+    display: flex;
+}
+:root[data-display-mode="fullscreen"] .inline-only,
+:root[data-expanded="true"] .inline-only {
     display: none !important;
 }
 

@@ -91,6 +91,8 @@ function initWidget(config) {
     function show(payload) {
         const data = config.coerce(payload);
         if (!data) return false;
+        const el = root();
+        if (el) el.removeAttribute("aria-busy");
         config.render(data, api);
         painted = true;
         return true;
@@ -247,7 +249,10 @@ function initWidget(config) {
 
     if (host) {
         const el = root();
-        if (el) el.innerHTML = config.loading || "";
+        if (el) {
+            el.setAttribute("aria-busy", "true");
+            el.innerHTML = config.loading || "";
+        }
         request(
             "ui/initialize",
             {
@@ -278,9 +283,12 @@ function initWidget(config) {
             })
             .catch((error) => {
                 console.warn("[munch-widget] initialize failed", error);
-                if (!painted && root())
-                    root().innerHTML =
-                        '<div class="card empty"><strong>Unable to open this view</strong><span>Continue in chat and try again.</span></div>';
+                const target = root();
+                if (!painted && target) {
+                    target.removeAttribute("aria-busy");
+                    target.innerHTML =
+                        '<div class="card empty" role="alert"><strong>Unable to open this view</strong><span>Continue in chat and try again.</span></div>';
+                }
             });
 
         try {

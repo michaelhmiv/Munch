@@ -160,7 +160,7 @@ export function installedReturnRoute(value) {
 }
 
 export function currentInstalledAppRoute() {
-    return installedReturnRoute(location.pathname);
+    return installedReturnRoute(`${location.pathname}${location.search}`);
 }
 
 export function installedLoginUrl(returnTo = currentInstalledAppRoute()) {
@@ -226,7 +226,7 @@ export async function restoreInstalledEntryRoute(explicitRoute) {
     const requested = installedAppRoute(explicitRoute);
     if (requested) return navigateInstalledRoute(requested, true);
 
-    return installedAppRoute(location.pathname);
+    return installedAppRoute(`${location.pathname}${location.search}`);
 }
 
 function randomBase64Url(byteLength = 32) {
@@ -433,7 +433,7 @@ export async function signInWithGoogle() {
         if (payload?.code === "OAUTH_LINK_ERROR") {
             await recordPendingLinkPrompt("google");
             throw new Error(
-                "This email already has a Munch account with a different sign-in method. Sign in with that method first (for example, your email link or Apple) — once you're in, we'll ask whether you'd like to add Google as another way to sign in to the same account.",
+                "This email already has a Munch account. Sign in with your original method first, then you can link Google.",
             );
         }
         throw new Error(
@@ -509,6 +509,12 @@ export async function signInWithApple() {
     );
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
+        if (payload?.code === "OAUTH_LINK_ERROR") {
+            await recordPendingLinkPrompt("apple");
+            throw new Error(
+                "This email already has a Munch account. Sign in with your original method first, then you can link Apple.",
+            );
+        }
         throw new Error(
             payload?.message || payload?.error || "Apple sign-in failed",
         );
@@ -790,7 +796,17 @@ export async function scanInstalledBarcode() {
 App.addListener("backButton", ({ canGoBack }) => {
     const openDialog = document.querySelector("dialog[open]");
     if (openDialog) {
-        openDialog.close();
+        const closeButton = openDialog.querySelector(
+            '[data-action="close-dialog"]',
+        );
+        if (closeButton instanceof HTMLElement) {
+            closeButton.click();
+            return;
+        }
+        const cancelEvent = new Event("cancel", { cancelable: true });
+        if (openDialog.dispatchEvent(cancelEvent)) {
+            openDialog.close();
+        }
         return;
     }
     if (canGoBack) {
@@ -798,7 +814,12 @@ App.addListener("backButton", ({ canGoBack }) => {
         return;
     }
     const route = installedAppRoute(location.pathname);
-    if (route && route !== "/app") {
+    const routePath = route ? route.split("?")[0] : null;
+    if (routePath && routePath !== "/app") {
+        if (routePath.startsWith("/app/settings/")) {
+            navigateInstalledRoute("/app/settings");
+            return;
+        }
         navigateInstalledRoute("/app");
         return;
     }

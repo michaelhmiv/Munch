@@ -101,14 +101,14 @@
                             "fullscreen",
                         ).catch(() => null);
                         if (!result || result.unsupported)
-                            document.getElementById("details").textContent =
-                                "Details unavailable";
+                            document.documentElement.dataset.expanded = "true";
                     });
                 document
                     .getElementById("close")
-                    ?.addEventListener("click", () =>
-                        API?.requestDisplayMode("inline"),
-                    );
+                    ?.addEventListener("click", () => {
+                        delete document.documentElement.dataset.expanded;
+                        API?.requestDisplayMode("inline");
+                    });
             }
             function providerLabel(provider) {
                 if (!provider) return "Your pantry entries";
@@ -136,7 +136,9 @@
                     ofText: `${item.location || "pantry"}${stockNote(item)}`,
                     valueText: qtyText(item),
                     showBar: false,
-                    source: providerLabel(item.food_provider),
+                    source: item.food_provider
+                        ? providerLabel(item.food_provider)
+                        : undefined,
                 });
             }
             function renderList(data) {
@@ -171,8 +173,7 @@
                 // The estimates banner is inline content too, so it
                 // consumes one row of the fold budget when it shows.
                 const inlineItems = items.slice(0, approximate ? 4 : 5);
-                const restItems = items.slice(inlineItems.length);
-                const hidden = restItems.length;
+                const hidden = items.length - inlineItems.length;
                 const banner = approximate
                     ? factsBanner(
                           "",
@@ -187,8 +188,8 @@
         <div class="f-src">Source · <b>Your pantry entries</b></div>
         ${banner}
         <div class="f-rule-heavy"></div>
-        ${inlineItems.map(rowFor).join("")}
-        ${hidden > 0 ? `<button class="f-more-row inline-only" id="details">…and ${hidden} more</button><div class="fullscreen-only"><div class="f-rule-med"></div><h2 class="pn-section">${hidden} more item${hidden === 1 ? "" : "s"}</h2>${restItems.map((item) => `${listLabelRow(item)}${item.note ? `<div class="pn-note">${esc(item.note)}</div>` : ""}`).join("")}<div class="actions"><button class="btn" id="close">Return to chat</button></div></div>` : ""}
+        <div${hidden > 0 ? ' class="inline-only"' : ""}>${inlineItems.map(rowFor).join("")}</div>
+        ${hidden > 0 ? `<button type="button" class="f-more-row inline-only" id="details">…and ${hidden} more</button><div class="fullscreen-only"><h2 class="pn-section" style="margin-top:4px">All ${items.length} items</h2>${items.map((item) => `${listLabelRow(item)}${item.note ? `<div class="pn-note">${esc(item.note)}</div>` : ""}`).join("")}<div class="actions"><button type="button" class="btn" id="close">Return to chat</button></div></div>` : ""}
         </div>
         <div class="f-foot"><span>Every number traces to its source</span><span>Your pantry entries</span></div>
     </article>`;
@@ -285,7 +286,6 @@
                                             ? qtyText(op.item)
                                             : "",
                                         showBar: false,
-                                        source: "Pantry change you confirmed",
                                     }),
                                 )
                                 .join("")}`,
@@ -305,11 +305,11 @@
         <div class="f-src">Source · <b>Pantry changes you confirmed</b></div>
         ${banner}
         <div class="f-rule-heavy"></div>
-        ${groupRows}
-        <button class="f-more-row inline-only" id="details">Review all ${operations.length} changes</button>
+        <div class="inline-only">${groupRows}</div>
+        <button type="button" class="f-more-row inline-only" id="details">Review all ${operations.length} changes</button>
         <div class="fullscreen-only">
         ${detail}
-        <div class="actions"><button class="btn" id="close">Return to chat</button></div>
+        <div class="actions"><button type="button" class="btn" id="close">Return to chat</button></div>
         </div>
         </div>
         <div class="f-foot"><span>Every number traces to its source</span><span>Pantry changes you confirmed</span></div>
@@ -363,7 +363,6 @@
                                                 ? line.unit || "—"
                                                 : `${fmt(line.quantity, Number(line.quantity) % 1 ? 1 : 0)}${line.unit ? ` ${line.unit}` : ""}`,
                                         showBar: false,
-                                        source: "Your purchase list",
                                     }),
                                 )
                                 .join("")}`,
@@ -386,13 +385,14 @@
                     `<article class="card">
         ${factsBand("Purchase check", `${lines.length} line${lines.length === 1 ? "" : "s"}`)}
         <div class="f-body">
+        <div class="f-src" style="margin-top:0">Source · <b>Your purchase list</b></div>
         ${banner}
         <div class="f-rule-heavy"></div>
-        ${groupRows}
-        <button class="f-more-row inline-only" id="details">Review all ${lines.length} lines</button>
+        <div class="inline-only">${groupRows}</div>
+        <button type="button" class="f-more-row inline-only" id="details">Review all ${lines.length} lines</button>
         <div class="fullscreen-only">
         ${detail}
-        <div class="actions"><button class="btn" id="close">Return to chat</button></div>
+        <div class="actions"><button type="button" class="btn" id="close">Return to chat</button></div>
         </div>
         </div>
         <div class="f-foot"><span>Every number traces to its source</span><span>Your purchase list</span></div>

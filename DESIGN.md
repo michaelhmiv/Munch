@@ -129,18 +129,20 @@ invisible overlay or a 44px row — never by inflating the drawn control.
 Checkbox: **22px drawn** inside a **44px tap area**; tapping the item name
 also toggles.
 
-Inputs and selects: height 31px (anchor), padding 5px 12px, type 1rem
-serif, border 1px rule `#8a7c63`, radius 10px, fill by surface (above).
-Focus on all controls: 2px green outline, 1px offset.
+Inputs and selects: height 44px (Amendment P7 — replaced elements cannot
+render `::after` hit overlays, so fields and selects draw directly at the
+≥44px touch target floor), padding 8px 12px, type 1rem serif, border 1px
+rule `#8a7c63`, radius 10px, fill by surface (above). Focus on all controls:
+2px green outline, 1px offset.
 
-Resolved divergence (punch-list P2, PR #329): production chrome
-previously shipped 44–48px drawn boxes with a 4px button radius.
-The anchor now governs in production — drawn geometry is 31px /
-padding 6px 14px / radius 10px, dialog cards take the board's 14px
-radius (mobile sheet 24px top unchanged), and the ≥44px hit area is
-delivered by invisible overlay or row, never by inflating the drawn
-control. The drift checks enforce the anchor geometry, not only the
-hit floor.
+Resolved divergence (punch-list P2, PR #329; amended by P7): production
+chrome previously shipped 44–48px drawn boxes with a 4px button radius.
+Buttons draw at the 31px anchor (padding 6px 14px / radius 10px) with
+≥44px hit areas delivered by invisible overlays or rows; inputs and selects
+draw at 44px (padding 8px 12px / radius 10px) because browsers do not render
+`::after` overlays on replaced form controls; dialog cards take the board's
+14px radius (mobile sheet 24px top unchanged). The drift checks enforce both
+geometries.
 
 ### Type scale and the 11px floor
 

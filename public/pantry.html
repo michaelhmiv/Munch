@@ -12,6 +12,7 @@
         <link rel="stylesheet" href="/pantry.css" />
     </head>
     <body>
+        <a class="skip-link" href="#workspace">Skip to pantry</a>
         <header class="topbar">
             <a class="brand" href="/app"
                 ><img class="mark" src="/brand/munch-mark.svg" alt="" />Munch</a
@@ -25,19 +26,24 @@
 
         <main class="shell">
             <section class="hero">
-                <div>
-                    <p class="eyebrow">Kitchen</p>
+                <div class="hero-title">
                     <h1>Pantry</h1>
-                    <p class="lede">
-                        An approximate picture of what is in your pantry,
-                        fridge, and freezer.
-                    </p>
+                    <span
+                        id="item-count"
+                        class="pill"
+                        aria-live="polite"
+                    ></span>
                 </div>
             </section>
 
-            <div id="status" class="status" aria-live="polite"></div>
+            <div
+                id="status"
+                class="status"
+                role="status"
+                aria-live="polite"
+            ></div>
 
-            <div id="workspace" class="hidden">
+            <div id="workspace" class="hidden" tabindex="-1">
                 <!-- Tools rail (tools-to-top ruling, Nov 11): the
                      Pantry tools ride a compact icon-only bar under
                      the hero — height matched to the filter row,
@@ -149,13 +155,12 @@
                     <span class="planner-row-text"
                         ><span class="planner-row-label">What can I make?</span
                         ><span class="planner-row-sub"
-                            >Meal ideas from your Pantry, fridge, and
-                            freezer</span
+                            >Meal ideas from your kitchen</span
                         ></span
                     ><span class="planner-row-arrow" aria-hidden="true">→</span>
                 </button>
 
-                <section class="toolbar">
+                <section class="toolbar" aria-label="Filter and search pantry">
                     <div class="toolbar-row">
                         <input
                             id="search"
@@ -163,12 +168,36 @@
                             placeholder="Search Pantry"
                             aria-label="Search Pantry"
                         />
-                        <select id="scope" aria-label="Pantry scope">
+                        <button
+                            id="refresh"
+                            class="secondary toolbar-refresh"
+                            type="button"
+                            aria-label="Refresh Pantry"
+                            title="Refresh Pantry"
+                        >
+                            <svg
+                                viewBox="0 0 24 24"
+                                width="18"
+                                height="18"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="1.8"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                aria-hidden="true"
+                            >
+                                <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                                <path d="M21 3v6h-6" />
+                            </svg>
+                            <span class="refresh-label">Refresh</span>
+                        </button>
+                        <select
+                            id="scope"
+                            class="hidden"
+                            aria-label="Pantry scope"
+                        >
                             <option value="personal">Personal Pantry</option>
                         </select>
-                        <button id="refresh" class="secondary" type="button">
-                            Refresh
-                        </button>
                     </div>
                     <div
                         id="location-chips"
@@ -182,7 +211,7 @@
                             data-location=""
                             aria-pressed="true"
                         >
-                            All locations
+                            All
                         </button>
                         <button
                             type="button"
@@ -219,16 +248,45 @@
                     </div>
                 </section>
 
-                <section class="card inventory-section">
-                    <div class="inventory-head">
+                <section
+                    id="review"
+                    class="card hidden"
+                    aria-labelledby="review-title"
+                >
+                    <div class="review-head">
                         <div>
-                            <p class="eyebrow">On hand</p>
-                            <h2>Your inventory</h2>
+                            <p class="eyebrow">Review</p>
+                            <h2 id="review-title">Detected items</h2>
                         </div>
-                        <span id="item-count" class="pill"></span>
+                        <div class="review-actions">
+                            <button
+                                id="dismiss-review"
+                                type="button"
+                                class="secondary"
+                            >
+                                Cancel
+                            </button>
+                            <button id="apply-review" type="button">
+                                Apply confirmed
+                            </button>
+                        </div>
                     </div>
+                    <div id="review-lines" class="review-lines"></div>
+                </section>
+
+                <section
+                    class="card inventory-section"
+                    aria-labelledby="inventory-heading"
+                >
+                    <h2 id="inventory-heading" class="sr-only">
+                        Your inventory
+                    </h2>
                     <div id="lowstock" class="lowstock hidden"></div>
-                    <div id="inventory" class="inventory-list"></div>
+                    <div
+                        id="inventory"
+                        class="inventory-list"
+                        role="list"
+                    ></div>
                     <div id="empty" class="empty hidden">
                         Nothing matches this view yet.
                     </div>
@@ -238,24 +296,63 @@
                     </p>
                 </section>
 
+                <datalist id="pantry-unit-presets">
+                    <option value="oz"></option>
+                    <option value="lb"></option>
+                    <option value="g"></option>
+                    <option value="kg"></option>
+                    <option value="cup"></option>
+                    <option value="tbsp"></option>
+                    <option value="tsp"></option>
+                    <option value="ml"></option>
+                    <option value="L"></option>
+                    <option value="count"></option>
+                    <option value="can"></option>
+                    <option value="bag"></option>
+                    <option value="box"></option>
+                    <option value="jar"></option>
+                    <option value="bottle"></option>
+                    <option value="bunch"></option>
+                    <option value="pack"></option>
+                    <option value="slice"></option>
+                    <option value="loaf"></option>
+                    <option value="dozen"></option>
+                </datalist>
+
                 <!-- UX fix wave F6: tapping an inventory row opens this
-                     detail/edit sheet (quantity, unit, location,
-                     status). Saves go through the pantry reconcile
-                     API's correct/move operations. The item name is
-                     shown read-only: it comes from the food's source
-                     record and no endpoint renames an item. -->
-                <section id="item-editor" class="card stack hidden">
-                    <div>
-                        <p class="eyebrow">Item details</p>
-                        <h2 id="item-editor-name">Item</h2>
-                        <p class="note">
-                            Quantity, unit, location and status can be corrected
-                            here. The name comes from the food&rsquo;s source
-                            record and can&rsquo;t be renamed.
-                        </p>
+                     detail/edit modal sheet (quantity, unit, location,
+                     status, mode, note). Saves go through the pantry
+                     reconcile API's correct/move operations. The item
+                     name is shown read-only: it comes from the food's
+                     source record and no endpoint renames an item. -->
+                <dialog
+                    id="item-editor"
+                    class="sheet"
+                    aria-labelledby="item-editor-name"
+                >
+                    <div class="sheet-head">
+                        <div class="sheet-handle" aria-hidden="true"></div>
+                        <div class="sheet-head-row">
+                            <div class="sheet-title-group">
+                                <p class="eyebrow">Edit item</p>
+                                <h2 id="item-editor-name">Item</h2>
+                            </div>
+                            <button
+                                type="button"
+                                class="sheet-close"
+                                data-close-sheet
+                            >
+                                Close
+                            </button>
+                        </div>
                     </div>
+                    <p
+                        class="sheet-status"
+                        role="status"
+                        aria-live="polite"
+                    ></p>
                     <form id="item-editor-form" class="stack">
-                        <div class="fields">
+                        <div class="fields fields-qty-unit">
                             <label
                                 >Quantity
                                 <input
@@ -269,42 +366,54 @@
                                 >Unit
                                 <input
                                     name="unit"
+                                    list="pantry-unit-presets"
                                     maxlength="80"
                                     placeholder="oz"
                             /></label>
                         </div>
-                        <label
-                            >Quantity mode
-                            <select name="quantity_mode">
-                                <option value="exact">Exact</option>
-                                <option value="approximate">Approximate</option>
-                                <option value="presence_only">
-                                    Just on hand (no amount)
-                                </option>
-                            </select></label
-                        >
-                        <label
-                            >Location
-                            <select name="location">
-                                <option value="unspecified">Unsorted</option>
-                                <option value="pantry">Pantry</option>
-                                <option value="fridge">Fridge</option>
-                                <option value="freezer">Freezer</option>
-                            </select></label
-                        >
-                        <label
-                            >Status
-                            <select name="stock_state">
-                                <option value="available">On hand</option>
-                                <option value="low">Low stock</option>
-                                <option value="depleted">Depleted</option>
-                            </select></label
-                        >
-                        <label
-                            >Note <input name="note" maxlength="500"
-                        /></label>
                         <div class="fields">
-                            <button type="submit">Save changes</button>
+                            <label
+                                >Location
+                                <select name="location">
+                                    <option value="unspecified">
+                                        Unsorted
+                                    </option>
+                                    <option value="pantry">Pantry</option>
+                                    <option value="fridge">Fridge</option>
+                                    <option value="freezer">Freezer</option>
+                                </select></label
+                            >
+                            <label
+                                >Status
+                                <select name="stock_state">
+                                    <option value="available">On hand</option>
+                                    <option value="low">Low stock</option>
+                                    <option value="depleted">Depleted</option>
+                                </select></label
+                            >
+                        </div>
+                        <div class="fields">
+                            <label
+                                >Quantity mode
+                                <select name="quantity_mode">
+                                    <option value="exact">Exact</option>
+                                    <option value="approximate">
+                                        Approximate
+                                    </option>
+                                    <option value="presence_only">
+                                        Just on hand
+                                    </option>
+                                </select></label
+                            >
+                            <label
+                                >Note
+                                <input
+                                    name="note"
+                                    maxlength="500"
+                                    placeholder="Optional note"
+                            /></label>
+                        </div>
+                        <div class="fields sheet-actions">
                             <button
                                 type="button"
                                 id="item-editor-cancel"
@@ -312,22 +421,10 @@
                             >
                                 Cancel
                             </button>
+                            <button type="submit">Save changes</button>
                         </div>
                     </form>
-                </section>
-
-                <section id="review" class="card hidden">
-                    <div class="review-head">
-                        <div>
-                            <p class="eyebrow">Review</p>
-                            <h2 id="review-title">Detected items</h2>
-                        </div>
-                        <button id="apply-review" type="button">
-                            Apply confirmed items
-                        </button>
-                    </div>
-                    <div id="review-lines" class="review-lines"></div>
-                </section>
+                </dialog>
 
                 <dialog
                     id="sheet-add"
@@ -335,15 +432,23 @@
                     aria-labelledby="sheet-add-title"
                 >
                     <div class="sheet-head">
-                        <h2 id="sheet-add-title">Add to Pantry</h2>
-                        <button
-                            type="button"
-                            class="sheet-close"
-                            data-close-sheet
-                        >
-                            Close
-                        </button>
+                        <div class="sheet-handle" aria-hidden="true"></div>
+                        <div class="sheet-head-row">
+                            <h2 id="sheet-add-title">Add to Pantry</h2>
+                            <button
+                                type="button"
+                                class="sheet-close"
+                                data-close-sheet
+                            >
+                                Close
+                            </button>
+                        </div>
                     </div>
+                    <p
+                        class="sheet-status"
+                        role="status"
+                        aria-live="polite"
+                    ></p>
                     <form id="manual-add" class="stack">
                         <label
                             >Name
@@ -353,7 +458,7 @@
                                 maxlength="300"
                                 placeholder="Cottage cheese"
                         /></label>
-                        <div class="fields">
+                        <div class="fields fields-qty-unit">
                             <label
                                 >Quantity
                                 <input
@@ -366,24 +471,46 @@
                                 >Unit
                                 <input
                                     name="unit"
+                                    list="pantry-unit-presets"
                                     maxlength="80"
                                     placeholder="oz"
                             /></label>
                         </div>
-                        <label
-                            >Location
-                            <select name="location">
-                                <option value="unspecified">Unsorted</option>
-                                <option value="pantry">Pantry</option>
-                                <option value="fridge">Fridge</option>
-                                <option value="freezer">Freezer</option>
-                            </select></label
-                        >
-                        <button type="submit">Add to Pantry</button>
+                        <div class="fields">
+                            <label
+                                >Location
+                                <select name="location">
+                                    <option value="unspecified">
+                                        Unsorted
+                                    </option>
+                                    <option value="pantry">Pantry</option>
+                                    <option value="fridge">Fridge</option>
+                                    <option value="freezer">Freezer</option>
+                                </select></label
+                            >
+                            <label
+                                >Note
+                                <input
+                                    name="note"
+                                    maxlength="500"
+                                    placeholder="Optional note"
+                            /></label>
+                        </div>
+                        <div class="fields sheet-actions">
+                            <button
+                                type="submit"
+                                value="another"
+                                class="secondary"
+                            >
+                                Add another
+                            </button>
+                            <button type="submit" value="close">
+                                Add to Pantry
+                            </button>
+                        </div>
                         <p class="note">
                             Approximate is fine — exact amounts, rough amounts,
-                            or just &ldquo;on hand.&rdquo; Pantry is approximate
-                            by design.
+                            or just &ldquo;on hand.&rdquo;
                         </p>
                     </form>
                 </dialog>
@@ -394,15 +521,23 @@
                     aria-labelledby="sheet-scan-title"
                 >
                     <div class="sheet-head">
-                        <h2 id="sheet-scan-title">Scan pantry</h2>
-                        <button
-                            type="button"
-                            class="sheet-close"
-                            data-close-sheet
-                        >
-                            Close
-                        </button>
+                        <div class="sheet-handle" aria-hidden="true"></div>
+                        <div class="sheet-head-row">
+                            <h2 id="sheet-scan-title">Scan pantry</h2>
+                            <button
+                                type="button"
+                                class="sheet-close"
+                                data-close-sheet
+                            >
+                                Close
+                            </button>
+                        </div>
                     </div>
+                    <p
+                        class="sheet-status"
+                        role="status"
+                        aria-live="polite"
+                    ></p>
                     <div class="capture-block">
                         <p class="muted">
                             Upload a pantry, fridge, or freezer photo. Munch
@@ -426,7 +561,7 @@
                                     Take photo
                                 </button>
                                 <button
-                                    class="photo-capture-button"
+                                    class="photo-capture-button secondary"
                                     type="button"
                                     data-capture-action="library"
                                 >
@@ -458,19 +593,27 @@
                     aria-labelledby="sheet-receipt-title"
                 >
                     <div class="sheet-head">
-                        <h2 id="sheet-receipt-title">Scan receipt</h2>
-                        <button
-                            type="button"
-                            class="sheet-close"
-                            data-close-sheet
-                        >
-                            Close
-                        </button>
+                        <div class="sheet-handle" aria-hidden="true"></div>
+                        <div class="sheet-head-row">
+                            <h2 id="sheet-receipt-title">Scan receipt</h2>
+                            <button
+                                type="button"
+                                class="sheet-close"
+                                data-close-sheet
+                            >
+                                Close
+                            </button>
+                        </div>
                     </div>
+                    <p
+                        class="sheet-status"
+                        role="status"
+                        aria-live="polite"
+                    ></p>
                     <div class="capture-block">
                         <p class="muted">
-                            Scan a receipt — Munch can match purchased foods to
-                            your Grocery list and add the rest to Pantry.
+                            Scan a receipt — Munch matches purchased foods to
+                            your Grocery list and adds the rest to Pantry.
                             Non-food lines are ignored.
                         </p>
                         <div
@@ -490,7 +633,7 @@
                                     Take photo
                                 </button>
                                 <button
-                                    class="photo-capture-button"
+                                    class="photo-capture-button secondary"
                                     type="button"
                                     data-capture-action="library"
                                 >
@@ -522,21 +665,23 @@
                     aria-labelledby="sheet-planner-title"
                 >
                     <div class="sheet-head">
-                        <h2 id="sheet-planner-title">What can I make?</h2>
-                        <button
-                            type="button"
-                            class="sheet-close"
-                            data-close-sheet
-                        >
-                            Close
-                        </button>
+                        <div class="sheet-handle" aria-hidden="true"></div>
+                        <div class="sheet-head-row">
+                            <h2 id="sheet-planner-title">What can I make?</h2>
+                            <button
+                                type="button"
+                                class="sheet-close"
+                                data-close-sheet
+                            >
+                                Close
+                            </button>
+                        </div>
                     </div>
                     <section id="meal-planner" class="planner-section">
                         <p class="muted sheet-lede">
-                            Munch checks the whole kitchen—not just the main
-                            protein—including vegetables, starches, dairy,
-                            spices, sauces, condiments, herbs, aromatics, oils,
-                            quantities, and saved recipes before it ranks meals.
+                            Checks your whole kitchen — proteins, produce,
+                            dairy, spices, sauces, condiments, and saved
+                            recipes.
                         </p>
                         <form id="meal-idea-form" class="planner-form">
                             <label
@@ -572,6 +717,7 @@
                                     id="meal-servings"
                                     name="servings"
                                     type="number"
+                                    inputmode="numeric"
                                     min="1"
                                     max="20"
                                     value="2"
@@ -582,11 +728,12 @@
                                     id="meal-max-minutes"
                                     name="max_minutes"
                                     type="number"
+                                    inputmode="numeric"
                                     min="1"
                                     max="1440"
                                     placeholder="No limit"
                             /></label>
-                            <label
+                            <label class="planner-full"
                                 >Missing items okay
                                 <select
                                     id="meal-missing-items"
@@ -617,6 +764,7 @@
                         <div
                             id="meal-idea-status"
                             class="status"
+                            role="status"
                             aria-live="polite"
                         ></div>
                         <div id="meal-ideas" class="meal-ideas"></div>

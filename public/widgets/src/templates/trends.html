@@ -199,7 +199,7 @@
                 let shapes = `<line class="axis" x1="${pad}" y1="${axisY}" x2="${width - pad}" y2="${axisY}"></line>`;
                 if (goal != null && Number.isFinite(Number(goal))) {
                     const gy = y(Number(goal));
-                    shapes += `<line class="goal" x1="${pad}" y1="${gy.toFixed(1)}" x2="${width - pad}" y2="${gy.toFixed(1)}"></line><text class="goal-label" x="${width - pad}" y="${Math.max(10, gy - 4).toFixed(1)}" text-anchor="end">goal ${esc(fmt(goal))}</text>`;
+                    shapes += `<line class="goal" x1="${pad}" y1="${gy.toFixed(1)}" x2="${width - pad}" y2="${gy.toFixed(1)}"></line>`;
                 }
                 let run = [];
                 const flush = () => {
@@ -248,18 +248,21 @@
                             "fullscreen",
                         ).catch(() => null);
                         if (!result || result.unsupported)
-                            document.getElementById("details").textContent =
-                                "Details unavailable";
+                            document.documentElement.dataset.expanded = "true";
                     });
                 document
                     .getElementById("close")
-                    ?.addEventListener("click", () =>
-                        API?.requestDisplayMode("inline"),
-                    );
+                    ?.addEventListener("click", () => {
+                        delete document.documentElement.dataset.expanded;
+                        API?.requestDisplayMode("inline");
+                    });
                 document.querySelectorAll("[data-range]").forEach((button) =>
                     button.addEventListener("click", () => {
                         RANGE = Number(button.dataset.range);
                         paint();
+                        document
+                            .querySelector(`[data-range="${RANGE}"]`)
+                            ?.focus();
                     }),
                 );
             }
@@ -311,10 +314,6 @@
                     .slice(0, 3)
                     .map((def) => metricRow(def[0], def[1], def[2], def[3]))
                     .join("");
-                const remainingRows = rowDefs
-                    .slice(3)
-                    .map((def) => metricRow(def[0], def[1], def[2], def[3]))
-                    .join("");
                 const allRows = rowDefs
                     .map((def) => metricRow(def[0], def[1], def[2], def[3]))
                     .join("");
@@ -330,37 +329,40 @@
                 const controls = [7, 14, 30]
                     .map(
                         (range) =>
-                            `<button class="btn btn-sm" data-range="${range}" aria-pressed="${RANGE === range}">${range} days</button>`,
+                            `<button type="button" class="btn btn-sm" data-range="${range}" aria-pressed="${RANGE === range}">${range} days</button>`,
                     )
                     .join("");
                 const gapLegend =
                     gaps > 0
                         ? `<span>○ ${gaps} day${gaps === 1 ? "" : "s"} with no log</span>`
                         : `<span>Every day logged</span>`;
+                const goalHeader =
+                    goals.calories != null &&
+                    Number.isFinite(Number(goals.calories))
+                        ? `<div class="row-between caption" style="margin-top:6px"><span>Daily calories</span><span>Goal ${esc(fmt(goals.calories))} kcal</span></div>`
+                        : "";
                 document.getElementById("root").innerHTML =
                     `<article class="card">
         ${factsBand("Trends", rangeLabel)}
         <div class="f-body">
         ${factsHero(`${fmt(avg.calories)} <span class="f-hero-unit">kcal</span>`, `average per logged day · ${esc(humanRange(start, end))}`, `${logged.length} of ${slice.length}`, "days logged")}
         <div class="f-src">Source · <b>Your logged meals</b></div>
+        ${goalHeader}
         ${gapSparkline(slice, goals.calories, `Daily calories over ${RANGE} days${gaps > 0 ? `, ${gaps} days with no log shown as gaps` : ""}`)}
         <div class="row-between caption"><span>${esc(humanDate(start))}</span>${gapLegend}<span>${esc(humanDate(end))}</span></div>
         <div class="f-note" style="margin-top:8px">${esc(changeText(slice))}</div>
         <div class="f-rule-heavy"></div>
-        ${inlineRows}
-        <button class="f-more-row inline-only" id="details">View full trends</button>
+        <div class="inline-only">${inlineRows}</div>
+        <button type="button" class="f-more-row inline-only" id="details">View full trends</button>
         <div class="fullscreen-only">
         <div class="fullscreen-only range-controls" role="group" aria-label="Trend range">${controls}</div>
         <div class="f-rule-med"></div>
-        <h2 class="f-section-title">More averages</h2>
-        ${remainingRows}
-        <div class="f-rule-med"></div>
         <h2 class="f-section-title">Daily values</h2>
-        <div class="table-wrap day-table" style="margin-top:10px"><table><thead><tr><th>Date</th><th>kcal</th><th>Protein</th><th>Carbs</th><th>Fat</th></tr></thead><tbody>${dayRows}</tbody></table></div>
+        <div class="table-wrap day-table" style="margin-top:10px"><table><caption class="sr-only">Daily nutrition values for the last ${RANGE} days</caption><thead><tr><th scope="col">Date</th><th scope="col" class="num">kcal</th><th scope="col" class="num">Protein</th><th scope="col" class="num">Carbs</th><th scope="col" class="num">Fat</th></tr></thead><tbody>${dayRows}</tbody></table></div>
         <div class="f-rule-med"></div>
         <h2 class="f-section-title">Average versus target</h2>
         ${allRows}
-        <div class="actions"><button class="btn" id="close">Return to chat</button></div>
+        <div class="actions"><button type="button" class="btn" id="close">Return to chat</button></div>
         </div>
         </div>
         <div class="f-foot"><span>Averages use logged days only</span><span>Your logged meals</span></div>

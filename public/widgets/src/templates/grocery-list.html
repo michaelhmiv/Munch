@@ -111,14 +111,14 @@
                             "fullscreen",
                         ).catch(() => null);
                         if (!result || result.unsupported)
-                            document.getElementById("details").textContent =
-                                "Details unavailable";
+                            document.documentElement.dataset.expanded = "true";
                     });
                 document
                     .getElementById("close")
-                    ?.addEventListener("click", () =>
-                        API?.requestDisplayMode("inline"),
-                    );
+                    ?.addEventListener("click", () => {
+                        delete document.documentElement.dataset.expanded;
+                        API?.requestDisplayMode("inline");
+                    });
             }
             function qtyText(item) {
                 if (item.quantity == null)
@@ -132,21 +132,25 @@
             function sourceOf(item) {
                 if (item.source_recipe_id) return "Planned recipe";
                 if (item.source_planned_meal_id) return "Meal plan";
-                return "Added to your list";
+                return null;
             }
             function labelRow(item) {
-                return `<div class="f-lrow"><div class="f-lrow-top"><span class="g-check${item.purchased_at ? " done" : ""}" aria-hidden="true">${item.purchased_at ? "✓" : ""}</span><span class="f-lrow-name${item.purchased_at ? " g-name-bought" : ""}">${esc(item.name)}</span><span class="f-lrow-val num">${qtyText(item)}</span></div>${item.note ? `<div class="g-note">${esc(item.note)}</div>` : ""}<div class="f-src">Source · <b>${esc(sourceOf(item))}</b></div></div>`;
+                const src = sourceOf(item);
+                const statusSr = `<span class="sr-only">${item.purchased_at ? "Purchased: " : "Still to buy: "}</span>`;
+                return `<div class="f-lrow"><div class="f-lrow-top"><span class="g-check${item.purchased_at ? " done" : ""}" aria-hidden="true">${item.purchased_at ? "✓" : ""}</span>${statusSr}<span class="f-lrow-name${item.purchased_at ? " g-name-bought" : ""}">${esc(item.name)}</span><span class="f-lrow-val num">${qtyText(item)}</span></div>${item.note ? `<div class="g-note">${esc(item.note)}</div>` : ""}${src ? `<div class="f-src">Source · <b>${esc(src)}</b></div>` : ""}</div>`;
             }
             function compactRow(item) {
+                const statusText = item.purchased_at
+                    ? "purchased"
+                    : "still to buy";
+                const detailMeta =
+                    item.note || (item.source_recipe_id ? "from a recipe" : "");
+                const meta = [statusText, detailMeta]
+                    .filter(Boolean)
+                    .join(" · ");
                 return factsCompactRow({
                     name: item.purchased_at ? `✓ ${item.name}` : item.name,
-                    meta:
-                        item.note ||
-                        (item.source_recipe_id
-                            ? "from a recipe"
-                            : item.purchased_at
-                              ? "purchased"
-                              : ""),
+                    meta,
                     valueText:
                         item.quantity == null
                             ? item.unit || "—"
@@ -184,24 +188,15 @@
                 const compact = ordered.length > 6;
                 const rowFor = compact ? compactRow : labelRow;
                 const inlineItems = ordered.slice(0, 5);
-                const restItems = ordered.slice(5);
-                const hidden = restItems.length;
-                // Fullscreen carries only the items past the inline fold,
-                // grouped the same way (still to buy, then purchased).
-                const restToBuy = restItems.filter(
-                    (item) => !item.purchased_at,
-                );
-                const restBought = restItems.filter(
-                    (item) => item.purchased_at,
-                );
+                const hidden = ordered.length - inlineItems.length;
                 const fullSections = [];
-                if (restToBuy.length)
+                if (toBuy.length)
                     fullSections.push(
-                        `<h2 class="g-section">Still to buy — ${restToBuy.length} more</h2>${restToBuy.map(labelRow).join("")}`,
+                        `<h2 class="g-section">Still to buy (${toBuy.length})</h2>${toBuy.map(labelRow).join("")}`,
                     );
-                if (restBought.length)
+                if (bought.length)
                     fullSections.push(
-                        `<h2 class="g-section">Purchased — ${restBought.length} more</h2>${restBought.map(labelRow).join("")}`,
+                        `<h2 class="g-section">Purchased (${bought.length})</h2>${bought.map(labelRow).join("")}`,
                     );
                 const note =
                     bought.length && toBuy.length
@@ -214,9 +209,9 @@
         ${factsHero(`${toBuy.length} <span class="f-hero-unit">items</span>`, "still to buy", `${ordered.length}`, "on the list")}
         <div class="f-src">Source · <b>Your grocery list</b></div>
         <div class="f-rule-heavy"></div>
-        ${inlineItems.map(rowFor).join("")}
+        <div${hidden > 0 ? ' class="inline-only"' : ""}>${inlineItems.map(rowFor).join("")}</div>
         ${note}
-        ${hidden > 0 ? `<button class="f-more-row inline-only" id="details">…and ${hidden} more</button><div class="fullscreen-only">${fullSections.join("")}<div class="actions"><button class="btn" id="close">Return to chat</button></div></div>` : ""}
+        ${hidden > 0 ? `<button type="button" class="f-more-row inline-only" id="details">…and ${hidden} more</button><div class="fullscreen-only">${fullSections.join("")}<div class="actions"><button type="button" class="btn" id="close">Return to chat</button></div></div>` : ""}
         </div>
         <div class="f-foot"><span>Every number traces to its source</span><span>Your grocery list · read-only checklist</span></div>
     </article>`;

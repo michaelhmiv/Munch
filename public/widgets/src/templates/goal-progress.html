@@ -161,14 +161,14 @@
                             "fullscreen",
                         ).catch(() => null);
                         if (!result || result.unsupported)
-                            document.getElementById("details").textContent =
-                                "Details unavailable";
+                            document.documentElement.dataset.expanded = "true";
                     });
                 document
                     .getElementById("close")
-                    ?.addEventListener("click", () =>
-                        API?.requestDisplayMode("inline"),
-                    );
+                    ?.addEventListener("click", () => {
+                        delete document.documentElement.dataset.expanded;
+                        API?.requestDisplayMode("inline");
+                    });
             }
             function renderTargets(data) {
                 const goals = data.goals || {};
@@ -365,7 +365,7 @@
                         : "";
                 const detailHtml =
                     weightHtml || mealHtml || secondaryRows
-                        ? `<div class="fullscreen-only"><div class="f-rule-med"></div>${secondaryRows}${weightHtml}${mealHtml}<div class="actions"><button class="btn" id="close">Return to chat</button></div></div>`
+                        ? `<div class="fullscreen-only"><div class="f-rule-med"></div>${secondaryRows}${weightHtml}${mealHtml}<div class="actions"><button type="button" class="btn" id="close">Return to chat</button></div></div>`
                         : "";
                 document.getElementById("root").innerHTML =
                     `<article class="card">
@@ -376,7 +376,7 @@
         <div class="f-rule-heavy"></div>
         ${rows}
         <div class="f-note">${esc(insight)}</div>
-        ${detailHtml ? `<button class="f-more-row inline-only" id="details">View details</button>` : ""}
+        ${detailHtml ? `<button type="button" class="f-more-row inline-only" id="details">View details</button>` : ""}
         ${detailHtml}
         </div>
         <div class="f-foot"><span>Every number traces to its source</span><span>Logged meals · USDA FoodData Central · Open Food Facts</span></div>

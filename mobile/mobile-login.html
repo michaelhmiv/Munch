@@ -11,6 +11,7 @@
         <link rel="stylesheet" href="/editorial.css" />
     </head>
     <body class="auth-page">
+        <a class="skip-link" href="#mobile-login-main">Skip to sign in</a>
         <div
             id="offline-banner"
             class="offline-banner"
@@ -21,8 +22,8 @@
             You're offline — sign-in needs a connection. If you already have a
             session, it stays saved on this device.
         </div>
-        <main class="auth-main">
-            <section class="auth-card">
+        <main id="mobile-login-main" class="auth-main">
+            <section class="auth-card" aria-labelledby="mobile-login-heading">
                 <span class="brand">
                     <img
                         class="brand-logo"
@@ -32,10 +33,10 @@
                     <span>Munch</span>
                 </span>
                 <p class="section-kicker spacer-top">Sign in</p>
-                <h1>Welcome back.</h1>
+                <h1 id="mobile-login-heading">Welcome back.</h1>
                 <p>
-                    Sign in without a Munch password. We’ll email you a secure,
-                    single-use link.
+                    Enter your email for a single-use sign-in link — no password
+                    needed.
                 </p>
                 <form id="mobile-login-form" class="auth-form">
                     <label class="field" for="email">
@@ -45,6 +46,8 @@
                             name="email"
                             type="email"
                             inputmode="email"
+                            enterkeyhint="send"
+                            placeholder="you@example.com"
                             autocomplete="email"
                             autocapitalize="none"
                             spellcheck="false"
@@ -56,6 +59,9 @@
                         Email me a sign-in link
                     </button>
                 </form>
+                <div class="auth-divider" id="social-divider" hidden>
+                    <span>or</span>
+                </div>
                 <div class="auth-social">
                     <button
                         id="apple-sign-in"
@@ -114,11 +120,11 @@
                     id="mobile-login-status"
                     class="auth-status-line"
                     role="status"
+                    aria-atomic="true"
                 ></p>
                 <p class="auth-footnote">
-                    Your installed-app session is stored securely on this
-                    device. Munch does not receive or store your Google or Apple
-                    password.
+                    Your session stays saved securely on this device. Munch
+                    never sees your Google or Apple password.
                 </p>
             </section>
         </main>

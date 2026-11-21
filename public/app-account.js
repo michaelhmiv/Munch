@@ -240,7 +240,7 @@ function settingsIndex(data) {
     ];
     return settingsShell(
         "settings",
-        `${sectionHeading("Settings", "Your Munch settings", "Everything related to your account has one clear home. Household management lives in the Household workspace.")}<div class="settings-index-grid">${cards
+        `${sectionHeading("Settings", "Your Munch settings", "Account, preferences, billing and data.")}<div class="settings-index-grid">${cards
             .map(
                 ([href, title, description, label]) =>
                     `<a class="settings-index-card" href="${href}"><span class="settings-card-label">${esc(label)}</span><div><h3>${esc(title)}</h3><p>${esc(description)}</p></div><span class="settings-chevron" aria-hidden="true">›</span></a>`,
@@ -250,15 +250,18 @@ function settingsIndex(data) {
 }
 
 function timezoneField(profile) {
-    return `<label class="settings-field"><span>Timezone</span><small>Controls which local day meals, water and weight belong to.</small><select name="timezone" id="settings-timezone" data-current-timezone="${esc(profile.timezone || "UTC")}" required><option value="${esc(profile.timezone || "UTC")}">${esc(profile.timezone || "UTC")}</option></select></label>`;
+    return `<div class="settings-field"><label for="settings-timezone"><span>Timezone</span></label><small>Controls which local day meals, water and weight belong to.</small><div class="field-row-inline-submit"><select name="timezone" id="settings-timezone" data-current-timezone="${esc(profile.timezone || "UTC")}" required><option value="${esc(profile.timezone || "UTC")}">${esc(profile.timezone || "UTC")}</option></select><button class="button button-secondary button-small" type="button" data-action="detect-timezone">Use device</button></div></div>`;
 }
 
 function profilePage(data) {
     const profile = data.profile || {};
     const alcoholEnabled = profile.alcohol_tracking_enabled === true;
+    const drinkUnitNote = alcoholEnabled
+        ? "Display preference only — does not change stored nutrition."
+        : "Used when alcohol tracking is on. Display only.";
     return settingsShell(
         "settings-profile",
-        `${sectionHeading("Profile", "Profile & preferences", "Set how Munch groups and displays your records without mixing these choices into billing or household controls.")}<div class="account-identity-card"><div class="account-avatar" aria-hidden="true">${esc((data.user?.email || "M").slice(0, 1).toUpperCase())}</div><div><strong>${esc(data.user?.email || "Munch account")}</strong><span>${esc(planLabel(data))}</span></div><a href="/app/settings/billing">View plan</a></div><form id="settings-profile-form" class="settings-stack">${settingGroup("Display & units", "These choices affect presentation only.", `${timezoneField(profile)}<fieldset class="settings-field"><legend>Weight unit</legend><small>Used when Munch displays saved weights.</small><div class="segmented-control"><label><input type="radio" name="preferred_weight_unit" value="" ${!profile.preferred_weight_unit ? "checked" : ""}><span>Ask each time</span></label><label><input type="radio" name="preferred_weight_unit" value="lb" ${profile.preferred_weight_unit === "lb" ? "checked" : ""}><span>lb</span></label><label><input type="radio" name="preferred_weight_unit" value="kg" ${profile.preferred_weight_unit === "kg" ? "checked" : ""}><span>kg</span></label></div></fieldset>${toggleRow("widgets_enabled", "ChatGPT visual cards", "Show Munch visual widgets in supported ChatGPT clients.", profile.widgets_enabled !== false)}`)}${settingGroup("Optional tracking", "Keep optional tracking controls separate from your core profile.", `${toggleRow("alcohol_tracking_enabled", "Alcohol tracking", "Enable alcohol-specific fields and summaries when you choose to log drinks.", alcoholEnabled)}<label class="settings-field"><span>Drink units</span><small>Used for alcohol-related displays when tracking is enabled.</small><select name="preferred_drink_unit" ${alcoholEnabled ? "" : 'aria-describedby="drink-unit-note"'}><option value="" ${!profile.preferred_drink_unit ? "selected" : ""}>Default</option><option value="us" ${profile.preferred_drink_unit === "us" ? "selected" : ""}>US standard drinks</option><option value="uk" ${profile.preferred_drink_unit === "uk" ? "selected" : ""}>UK units</option></select><small id="drink-unit-note">This preference does not change the underlying nutrition record.</small></label>`)}<div class="settings-savebar"><span class="settings-save-status" role="status" aria-live="polite"></span><button class="button button-primary" type="submit">Save preferences</button></div></form>`,
+        `${sectionHeading("Profile", "Profile & preferences", "Timezone, units and display preferences.")}<div class="account-identity-card"><div class="account-avatar" aria-hidden="true">${esc((data.user?.email || "M").slice(0, 1).toUpperCase())}</div><div><strong>${esc(data.user?.email || "Munch account")}</strong><span>${esc(planLabel(data))}</span></div><a href="/app/settings/billing">View plan</a></div><form id="settings-profile-form" class="settings-stack">${settingGroup("Display & units", "These choices affect presentation only.", `${timezoneField(profile)}<fieldset class="settings-field"><legend>Weight unit</legend><small>Used when Munch displays saved weights.</small><div class="segmented-control"><label><input type="radio" name="preferred_weight_unit" value="" ${!profile.preferred_weight_unit ? "checked" : ""}><span>Ask each time</span></label><label><input type="radio" name="preferred_weight_unit" value="lb" ${profile.preferred_weight_unit === "lb" ? "checked" : ""}><span>lb</span></label><label><input type="radio" name="preferred_weight_unit" value="kg" ${profile.preferred_weight_unit === "kg" ? "checked" : ""}><span>kg</span></label></div></fieldset>${toggleRow("widgets_enabled", "ChatGPT visual cards", "Show Munch visual widgets in supported ChatGPT clients.", profile.widgets_enabled !== false)}`)}${settingGroup("Optional tracking", "Optional log fields.", `${toggleRow("alcohol_tracking_enabled", "Alcohol tracking", "Enable alcohol-specific fields and summaries when you log drinks.", alcoholEnabled)}<label class="settings-field"><span>Drink units</span><select name="preferred_drink_unit" aria-describedby="drink-unit-note"><option value="" ${!profile.preferred_drink_unit ? "selected" : ""}>Default</option><option value="us" ${profile.preferred_drink_unit === "us" ? "selected" : ""}>US standard drinks</option><option value="uk" ${profile.preferred_drink_unit === "uk" ? "selected" : ""}>UK units</option></select><small id="drink-unit-note">${esc(drinkUnitNote)}</small></label>`)}<div class="settings-savebar"><span class="settings-save-status" role="status" aria-live="polite"></span><button class="button button-primary" type="submit">Save preferences</button></div></form>`,
     );
 }
 
@@ -276,7 +279,7 @@ const FEATURE_MODULE_DESCRIPTIONS = {
 };
 
 function featureToggleRow(module, enabled) {
-    return `<label class="settings-toggle-row"><span><strong>${esc(FEATURE_MODULE_LABELS[module])}</strong><small>${esc(FEATURE_MODULE_DESCRIPTIONS[module])}</small></span><span class="switch"><input type="checkbox" data-feature-toggle="${esc(module)}" ${enabled ? "checked" : ""}><span aria-hidden="true"></span></span></label>`;
+    return `<label class="settings-toggle-row"><span><strong>${esc(FEATURE_MODULE_LABELS[module])}</strong><small>${esc(FEATURE_MODULE_DESCRIPTIONS[module])}</small></span><span class="switch"><input type="checkbox" role="switch" data-feature-toggle="${esc(module)}" ${enabled ? "checked" : ""}><span aria-hidden="true"></span></span></label>`;
 }
 
 function featuresPage(data) {
@@ -286,7 +289,7 @@ function featuresPage(data) {
     ).length;
     return settingsShell(
         "settings-features",
-        `${sectionHeading("Settings", "Features", "Turn off the parts of Munch you don't use. A module that is off disappears from navigation, the chat agent and guidance — and its data is kept, returning exactly as it was when you turn it back on.")}<div class="settings-stack">${settingGroup("Optional modules", `${enabledCount} of ${FEATURE_MODULE_KEYS.length} on. Today, meal logging, History and Trends are the core and always stay.`, `<button class="settings-action-row" type="button" data-action="features-just-logging"><span><strong>Just logging</strong><small>Turn all five off at once. You can still switch any of them back on below.</small></span><span aria-hidden="true">›</span></button>${FEATURE_MODULE_KEYS.map((key) => featureToggleRow(key, features[key])).join("")}<p class="settings-note" role="status" aria-live="polite" data-features-status></p>`)}</div>`,
+        `${sectionHeading("Settings", "Features", "Hide optional modules you don't use. Turning a module off keeps its data.")}<div class="settings-stack">${settingGroup("Optional modules", `${enabledCount} of ${FEATURE_MODULE_KEYS.length} on. Today, logging, History and Trends always stay on.`, `<button class="settings-action-row" type="button" data-action="features-just-logging"><span><strong>Just logging</strong><small>Turn all five off at once. You can still switch any of them back on below.</small></span><span aria-hidden="true">›</span></button>${FEATURE_MODULE_KEYS.map((key) => featureToggleRow(key, features[key])).join("")}<p class="settings-note" role="status" aria-live="polite" data-features-status></p>`)}</div>`,
     );
 }
 
@@ -335,7 +338,7 @@ function settingGroup(title, description, body, className = "") {
 }
 
 function toggleRow(name, title, description, checked) {
-    return `<label class="settings-toggle-row"><span><strong>${esc(title)}</strong><small>${esc(description)}</small></span><span class="switch"><input type="checkbox" name="${esc(name)}" ${checked ? "checked" : ""}><span aria-hidden="true"></span></span></label>`;
+    return `<label class="settings-toggle-row"><span><strong>${esc(title)}</strong><small>${esc(description)}</small></span><span class="switch"><input type="checkbox" role="switch" name="${esc(name)}" ${checked ? "checked" : ""}><span aria-hidden="true"></span></span></label>`;
 }
 
 function nutrientInput(name, label, value, unit, options = {}) {
@@ -354,7 +357,7 @@ function goalsPage(data) {
                   .replace(/\.0$/, "");
     return settingsShell(
         "settings-goals",
-        `${sectionHeading("Nutrition", "Nutrition targets", "These are targets you choose. Munch stores and compares against them; it does not prescribe medical or dietary goals.")}<form id="settings-goals-form" class="settings-stack">${settingGroup("Daily energy & macros", "Leave any field blank if you do not want a target for it.", `<div class="settings-form-grid">${nutrientInput("daily_calories", "Calories", goals.daily_calories, "kcal", { step: "1" })}${nutrientInput("daily_protein_g", "Protein", goals.daily_protein_g, "g")}${nutrientInput("daily_carbs_g", "Carbohydrates", goals.daily_carbs_g, "g")}${nutrientInput("daily_fat_g", "Fat", goals.daily_fat_g, "g")}</div>`)}${settingGroup("Additional targets", "Optional targets remain separate from the primary macro summary.", `<div class="settings-form-grid">${nutrientInput("daily_fiber_g", "Fiber", goals.daily_fiber_g, "g")}${nutrientInput("daily_sugar_g", "Sugar", goals.daily_sugar_g, "g")}${nutrientInput("daily_water_ml", "Water", goals.daily_water_ml, "mL", { step: "1" })}${nutrientInput("daily_alcohol_g", "Alcohol", goals.daily_alcohol_g, "g")}</div><div class="settings-form-grid settings-form-grid-single spacer-top"><label class="settings-field compact"><span>Target weight</span><small>Optional. Uses your current display unit.</small><div class="input-with-unit"><input name="target_weight" type="number" min="1" step="0.1" value="${esc(targetWeight)}" inputmode="decimal"><span>${esc(unit)}</span></div><input type="hidden" name="unit" value="${esc(unit)}"></label></div>`)}<div class="settings-savebar"><span class="settings-save-status" role="status" aria-live="polite"></span><button class="button button-primary" type="submit">Preview target changes</button><button class="button button-secondary" type="button" data-action="guidance-preferences">Guidance preferences</button></div></form><section class="panel spacer-top" id="goal-guidance-review"><p>Loading goal review and history…</p></section><section class="panel spacer-top" id="goal-change-preview" aria-live="polite"></section>`,
+        `${sectionHeading("Nutrition", "Nutrition targets", "Targets you choose. Munch compares against them; it does not prescribe medical or dietary goals.")}<form id="settings-goals-form" class="settings-stack">${settingGroup("Daily energy & macros", "Leave any field blank if you do not want a target for it.", `<div class="settings-form-grid settings-goals-grid">${nutrientInput("daily_calories", "Calories", goals.daily_calories, "kcal", { step: "1" })}${nutrientInput("daily_protein_g", "Protein", goals.daily_protein_g, "g")}${nutrientInput("daily_carbs_g", "Carbohydrates", goals.daily_carbs_g, "g")}${nutrientInput("daily_fat_g", "Fat", goals.daily_fat_g, "g")}</div>`)}${settingGroup("Additional targets", "Optional targets kept separate from the primary macro summary.", `<div class="settings-form-grid settings-goals-grid">${nutrientInput("daily_fiber_g", "Fiber", goals.daily_fiber_g, "g")}${nutrientInput("daily_sugar_g", "Sugar", goals.daily_sugar_g, "g")}${nutrientInput("daily_water_ml", "Water", goals.daily_water_ml, "mL", { step: "1" })}${nutrientInput("daily_alcohol_g", "Alcohol", goals.daily_alcohol_g, "g")}<label class="settings-field compact"><span>Target weight</span><div class="input-with-unit"><input name="target_weight" type="number" min="1" step="0.1" value="${esc(targetWeight)}" inputmode="decimal"><span>${esc(unit)}</span></div><input type="hidden" name="unit" value="${esc(unit)}"></label></div>`)}<div class="settings-savebar"><span class="settings-save-status" role="status" aria-live="polite"></span><button class="button button-primary" type="submit">Preview target changes</button><button class="button button-secondary" type="button" data-action="guidance-preferences">Guidance preferences</button></div></form><section class="panel spacer-top" id="goal-guidance-review"><p>Loading goal review and history…</p></section><section class="panel spacer-top" id="goal-change-preview" tabindex="-1" aria-live="polite"></section>`,
     );
 }
 
@@ -393,7 +396,7 @@ function goalsSegmentedField(name, legend, note, options, current) {
 function goalsIntakePage(intake) {
     const data = intake || {};
     const listText = (list) => (Array.isArray(list) ? list.join(", ") : "");
-    return `${sectionHeading("Munch", "Your goals", "Suggestions, meal ideas and the assistant work from what you put here — your goal in your words, not one Munch picks for you. Every question is optional, and you can change or clear any of it whenever you like.")}<form id="goals-intake-form" class="settings-stack">${settingGroup("Your goal", "This is the goal everything else factors around.", `<label class="settings-field"><span>What are you trying to do?</span><textarea name="stated_goal" rows="3" maxlength="500" placeholder="e.g. Lower my fat intake at dinner">${esc(data.stated_goal || "")}</textarea></label>`)}${settingGroup("A few quick questions", "Rough answers are fine. Skip any of them — an unanswered question changes nothing.", `${goalsSegmentedField("activity_band", "How active is a typical day?", "Moving around, on your feet, exercise — all of it together, roughly.", GOALS_ACTIVITY_OPTIONS, data.activity_band || "")}${goalsSegmentedField("eating_pattern", "How do you mostly eat?", "", GOALS_EATING_OPTIONS, data.eating_pattern || "")}${goalsSegmentedField("hardest_meal", "Which meal is hardest to get right?", "", GOALS_HARDEST_MEAL_OPTIONS, data.hardest_meal || "")}<label class="settings-field"><span>Never suggest these</span><small>Foods you dislike, or that haven't worked for you. Comma-separated.</small><input name="never_suggest" value="${esc(listText(data.never_suggest))}" maxlength="600" placeholder="e.g. cilantro, protein shakes"></label><label class="settings-field"><span>Allergies</span><small>Anything listed here is never suggested or planned for you, anywhere in Munch. Comma-separated.</small><input name="allergies" value="${esc(listText(data.allergies))}" maxlength="600" placeholder="e.g. peanuts, shellfish"></label>`)}<div class="settings-savebar"><span class="settings-save-status" role="status" aria-live="polite"></span><button class="button button-primary" type="submit">Save</button></div></form>`;
+    return `<a class="settings-mobile-back mobile-subroute-back" href="/app/more">← More</a>${sectionHeading("Munch", "Your goals", "Used by suggestions, meal ideas and the assistant. Every field is optional.")}<form id="goals-intake-form" class="settings-stack">${settingGroup("Your goal", "What everything else factors around.", `<label class="settings-field"><span>What are you trying to do?</span><textarea name="stated_goal" rows="3" maxlength="500" placeholder="e.g. Lower my fat intake at dinner">${esc(data.stated_goal || "")}</textarea></label>`)}${settingGroup("A few quick questions", "Rough answers are fine — skip any you like.", `${goalsSegmentedField("activity_band", "How active is a typical day?", "Moving around, on your feet, exercise — all of it together, roughly.", GOALS_ACTIVITY_OPTIONS, data.activity_band || "")}${goalsSegmentedField("eating_pattern", "How do you mostly eat?", "", GOALS_EATING_OPTIONS, data.eating_pattern || "")}${goalsSegmentedField("hardest_meal", "Which meal is hardest to get right?", "", GOALS_HARDEST_MEAL_OPTIONS, data.hardest_meal || "")}<label class="settings-field"><span>Never suggest these</span><small>Foods you dislike, or that haven't worked for you. Comma-separated.</small><input name="never_suggest" value="${esc(listText(data.never_suggest))}" maxlength="600" placeholder="e.g. cilantro, protein shakes"></label><label class="settings-field"><span>Allergies</span><small>Anything listed here is never suggested or planned for you, anywhere in Munch. Comma-separated.</small><input name="allergies" value="${esc(listText(data.allergies))}" maxlength="600" placeholder="e.g. peanuts, shellfish"></label>`)}<div class="settings-savebar"><span class="settings-save-status" role="status" aria-live="polite"></span><button class="button button-primary" type="submit">Save</button></div></form>`;
 }
 
 async function billingPage(data, ctx) {
@@ -495,19 +498,39 @@ async function billingPage(data, ctx) {
     const aiFeaturesGroup = settingGroup(
         "AI features",
         "Photo scans, meal ideas, recipe imports, plan suggestions and meal-photo estimates are included for every account on the website and in the app — no per-use charges, no balances. Manual entry always works too.",
-        `<div class="plan-summary"><div><span>Access</span><strong>Included for everyone</strong></div>${statusPill("Included", "success")}</div>`,
+        `<div class="plan-summary"><div style="flex:1"><span>Access</span><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap"><strong>Included for everyone</strong>${statusPill("Included", "success")}</div></div></div>`,
+    );
+    const planTitle = androidFree
+        ? data.androidEntitlements?.adFree
+            ? "Free · ad-free"
+            : billingSummary
+        : billingSummary;
+    const planBadge = statusPill(
+        householdProvided
+            ? "Household seat"
+            : directPremium
+              ? status || "Premium"
+              : androidFree && data.androidEntitlements?.adFree
+                ? "Ads off"
+                : "Free",
+        directPremium ||
+            householdProvided ||
+            (androidFree && data.androidEntitlements?.adFree)
+            ? "success"
+            : "neutral",
     );
     return settingsShell(
         "settings-billing",
-        `${sectionHeading("Billing", "Plan & billing", androidFree ? "Android access and ads are managed separately from website billing." : "See exactly how your Munch access is funded. Manage payment and cancellation with the provider that owns the active subscription.")}<div class="settings-stack">${settingGroup(androidFree ? "Android access" : "Current plan", detail, `<div class="plan-summary"><div><span>${androidFree ? "Android plan" : "Plan"}</span><strong>${esc(androidFree ? (data.androidEntitlements?.adFree ? "Free · ad-free" : billingSummary) : billingSummary)}</strong></div>${statusPill(householdProvided ? "Household seat" : directPremium ? status || "Premium" : androidFree && data.androidEntitlements?.adFree ? "Ads off" : "Free", directPremium || householdProvided || (androidFree && data.androidEntitlements?.adFree) ? "success" : "neutral")}</div>${periodLine ? `<p class="settings-note">${esc(periodLine)}</p>` : ""}${androidFree && data.subscription?.provider === "stripe" ? `<p class="settings-note">Your existing Munch Premium subscription remains active for website and connected-client access. Its billing is managed on the Munch website — the button below takes you there.</p>` : ""}${chargeCard}<div class="settings-actions">${action}</div>`)}${aiFeaturesGroup}${androidFree ? "" : settingGroup("Household pricing", "Discounted seats are part of a collaborative household, not standalone Premium accounts.", `<div class="pricing-rule"><strong>${premiumPrice}</strong><span>Premium owner</span></div><div class="pricing-rule"><strong>+${seatPrice}</strong><span>per additional active household member</span></div><p class="settings-note">Household recipes, meal plans and grocery lists are shared automatically while a discounted seat is active. Personal meals, water, weight and goals remain private.</p><a class="text-link" href="/app/household">Manage household →</a>`)}</div>`,
+        `${sectionHeading("Billing", "Plan & billing", androidFree ? "Android access and ads are managed separately from website billing." : "See how your Munch access is funded and manage payment with your subscription provider.")}<div class="settings-stack">${settingGroup(androidFree ? "Android access" : "Current plan", detail, `<div class="plan-summary"><div style="flex:1"><span>${androidFree ? "Android plan" : "Plan"}</span><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap"><strong>${esc(planTitle)}</strong>${planBadge}</div></div></div>${periodLine ? `<p class="settings-note">${esc(periodLine)}</p>` : ""}${androidFree && data.subscription?.provider === "stripe" ? `<p class="settings-note">Your existing Munch Premium subscription remains active for website and connected-client access. Its billing is managed on the Munch website — the button below takes you there.</p>` : ""}${chargeCard}<div class="settings-actions">${action}</div>`)}${aiFeaturesGroup}${androidFree ? "" : settingGroup("Household pricing", "Discounted seats are part of a collaborative household, not standalone Premium accounts.", `<div class="pricing-rule"><strong>${premiumPrice}</strong><span>Premium owner</span></div><div class="pricing-rule"><strong>+${seatPrice}</strong><span>per additional active household member</span></div><p class="settings-note">Household recipes, meal plans and grocery lists are shared automatically while a discounted seat is active. Personal meals, water, weight and goals remain private.</p><a class="text-link" href="/app/household">Manage household →</a>`)}</div>`,
     );
 }
 
 function connectionsPage(data) {
     const connections = data.connections || [];
+    const accountEmail = data.user?.email || "your Munch account";
     return settingsShell(
         "settings-connections",
-        `${sectionHeading("Access", "Connections", "Review the ChatGPT and MCP clients that can call Munch on your behalf.", statusPill(`${connections.length} active`, connections.length ? "success" : "neutral"))}${settingGroup("Connected account", "Every connection listed here uses this Munch account.", `<div class="account-detail-row"><span>Email</span><strong>${esc(data.user?.email || "Unavailable")}</strong></div>`)}${
+        `${sectionHeading("Access", "Connections", `ChatGPT and MCP clients authorized for ${accountEmail}.`, statusPill(`${connections.length} active`, connections.length ? "success" : "neutral"))}${
             connections.length
                 ? `<div class="connection-list">${connections
                       .map(
@@ -523,7 +546,7 @@ function connectionsPage(data) {
 function dataPage() {
     return settingsShell(
         "settings-data",
-        `${sectionHeading("Data", "Data & privacy", "Import or export your records and review the policies that define how Munch handles them.")}<div class="settings-stack">${settingGroup("Import & export", "Your export is generated as a private, short-lived download.", `<div class="settings-action-list"><button class="settings-action-row" data-action="open-import"><span><strong>Import meal history</strong><small>Upload, preview and confirm a supported CSV export.</small></span><span aria-hidden="true">›</span></button><button class="settings-action-row" data-action="export-meals"><span><strong>Export meal history</strong><small>Download only your logged meals as a CSV file.</small></span><span aria-hidden="true">↓</span></button><button class="settings-action-row" data-action="export-account"><span><strong>Export complete account data</strong><small>Download your personal data and household records you are authorized to view.</small></span><span aria-hidden="true">↓</span></button></div>`)}${window.MunchAds ? settingGroup("Advertising privacy", "Review or change the privacy choices used before ads are requested.", `<div class="settings-action-list"><button class="settings-action-row" data-action="ad-privacy-options"><span><strong>Advertising privacy choices</strong><small>Review or change your ad consent choices.</small></span><span aria-hidden="true">›</span></button></div>`) : ""}${settingGroup("Privacy & security", "Policies open in a new website page without changing your Munch records.", `<div class="settings-action-list"><a class="settings-action-row" href="/privacy"><span><strong>Privacy policy</strong><small>Data handling, household boundaries and retention.</small></span><span aria-hidden="true">›</span></a><a class="settings-action-row" href="/security"><span><strong>Security</strong><small>Security practices and vulnerability reporting.</small></span><span aria-hidden="true">›</span></a></div>`)}</div>`,
+        `${sectionHeading("Data", "Data & privacy", "Import or export your records and review Munch policies.")}<div class="settings-stack">${settingGroup("Import & export", "Your export is generated as a private, short-lived download.", `<div class="settings-action-list"><button class="settings-action-row" data-action="open-import"><span><strong>Import meal history</strong><small>Upload, preview and confirm a supported CSV export.</small></span><span aria-hidden="true">›</span></button><button class="settings-action-row" data-action="export-meals"><span><strong>Export meal history</strong><small>Download only your logged meals as a CSV file.</small></span><span aria-hidden="true">↓</span></button><button class="settings-action-row" data-action="export-account"><span><strong>Export complete account data</strong><small>Download your personal data and household records you are authorized to view.</small></span><span aria-hidden="true">↓</span></button></div>`)}${window.MunchAds ? settingGroup("Advertising privacy", "Review or change the privacy choices used before ads are requested.", `<div class="settings-action-list"><button class="settings-action-row" data-action="ad-privacy-options"><span><strong>Advertising privacy choices</strong><small>Review or change your ad consent choices.</small></span><span aria-hidden="true">›</span></button></div>`) : ""}${settingGroup("Privacy & security", "Policies open in a new tab without changing your Munch records.", `<div class="settings-action-list"><a class="settings-action-row" href="/privacy" target="_blank" rel="noopener"><span><strong>Privacy policy</strong><small>Data handling, household boundaries and retention.</small></span><span aria-hidden="true">›</span></a><a class="settings-action-row" href="/security" target="_blank" rel="noopener"><span><strong>Security</strong><small>Security practices and vulnerability reporting.</small></span><span aria-hidden="true">›</span></a></div>`)}</div>`,
     );
 }
 
@@ -614,7 +637,7 @@ async function hydrateSignInMethods(ctx) {
 function accountPage(data) {
     return settingsShell(
         "settings-account",
-        `${sectionHeading("Account", "Account", "Identity, sign-in methods, session controls and permanent account deletion are kept together and clearly separated from everyday preferences.")}<div class="settings-stack">${settingGroup("Signed-in account", "Your email is the identity used for magic-link sign in.", `<div class="account-detail-row"><span>Email</span><strong>${esc(data.user?.email || "Unavailable")}</strong></div><div class="settings-actions"><button class="button button-secondary" data-action="logout">Sign out</button></div>`)}<div data-sign-in-methods-host>${signInMethodsLoadingGroup()}</div>${settingGroup("Danger zone", "Permanent deletion cannot be undone. Paid household owners must dissolve their household first.", `<label class="settings-field"><span>Type DELETE MY MUNCH ACCOUNT to confirm</span><input id="delete-account-confirmation" autocomplete="off" placeholder="DELETE MY MUNCH ACCOUNT"></label><div class="settings-actions"><button class="button button-danger" data-action="account-delete">Permanently delete account</button></div>`, "settings-danger")}</div>`,
+        `${sectionHeading("Account", "Account", "Sign-in methods, session controls and permanent account deletion.")}<div class="settings-stack">${settingGroup("Signed-in account", "Your email is the identity used for magic-link sign in.", `<div class="account-detail-row"><span>Email</span><strong>${esc(data.user?.email || "Unavailable")}</strong></div><div class="settings-actions"><button class="button button-secondary" data-action="logout">Sign out</button></div>`)}<div data-sign-in-methods-host>${signInMethodsLoadingGroup()}</div>${settingGroup("Danger zone", "Permanent deletion cannot be undone. Paid household owners must dissolve their household first.", `<details class="danger-disclosure"><summary>Delete account…</summary><div class="settings-stack"><label class="settings-field"><span>Type DELETE MY MUNCH ACCOUNT to confirm</span><input id="delete-account-confirmation" autocomplete="off" placeholder="DELETE MY MUNCH ACCOUNT"></label><div class="settings-actions"><button class="button button-danger" data-action="account-delete">Permanently delete account</button></div></div></details>`, "settings-danger")}</div>`,
     );
 }
 
@@ -658,7 +681,7 @@ function morePage(features) {
         ],
         ["/help", "Help", "Connection and product help", "?"],
     ];
-    return `${sectionHeading("Munch", "More", "Everything that does not need a permanent spot in the mobile navigation.")}<div class="more-grid">${items.map(([href, title, description, icon]) => `<a class="more-card" href="${href}"><span class="more-icon" aria-hidden="true">${icon}</span><div><h3>${esc(title)}</h3><p>${esc(description)}</p></div><span class="settings-chevron" aria-hidden="true">›</span></a>`).join("")}</div>`;
+    return `<section class="operate-view settings-view more-page">${sectionHeading("Munch", "More", "Trends, history, goals, household and settings.")}<div class="more-grid">${items.map(([href, title, description, icon]) => `<a class="more-card" href="${href}"><span class="more-icon" aria-hidden="true">${icon}</span><div><h3>${esc(title)}</h3><p>${esc(description)}</p></div><span class="settings-chevron" aria-hidden="true">›</span></a>`).join("")}</div></section>`;
 }
 
 // S6 slice 8 — inline confirmations for the Household destructive
@@ -700,7 +723,7 @@ function showHouseholdInlineConfirm(
     dismissButton.textContent = dismissLabel;
     box.append(noteElement, confirmButton, dismissButton);
     insertAfter.insertAdjacentElement("afterend", box);
-    confirmButton.focus();
+    dismissButton.focus();
 }
 
 function dismissHouseholdInlineConfirm(button) {
@@ -719,7 +742,7 @@ function householdMemberCard(member, owner, seatPrice, androidFree) {
     const isOwner = member.role === "owner";
     const controls =
         owner && !isOwner
-            ? `<div class="member-controls"><select aria-label="Role for ${esc(member.displayName)}" data-household-role="${esc(member.membershipId)}"><option value="member" ${member.role === "member" ? "selected" : ""}>Member · can edit shared data</option><option value="viewer" ${member.role === "viewer" ? "selected" : ""}>Viewer · read only</option></select><button class="button button-secondary button-small" data-action="household-role-save" data-membership-id="${esc(member.membershipId)}">Save role</button><button class="button button-quiet button-small" data-action="household-member-remove" data-membership-id="${esc(member.membershipId)}" data-member-name="${esc(member.displayName)}">Remove</button></div>`
+            ? `<details class="member-manage-disclosure"><summary>Manage</summary><div class="member-controls"><select aria-label="Role for ${esc(member.displayName)}" data-household-role="${esc(member.membershipId)}"><option value="member" ${member.role === "member" ? "selected" : ""}>Member · can edit shared data</option><option value="viewer" ${member.role === "viewer" ? "selected" : ""}>Viewer · read only</option></select><button class="button button-secondary button-small" data-action="household-role-save" data-membership-id="${esc(member.membershipId)}">Save role</button><button class="button button-quiet button-small" data-action="household-member-remove" data-membership-id="${esc(member.membershipId)}" data-member-name="${esc(member.displayName)}">Remove</button></div></details>`
             : "";
     const accessDescription = androidFree
         ? "Included on Android"
@@ -739,18 +762,19 @@ async function householdPage(ctx) {
     const androidFree =
         Boolean(window.MunchAds) &&
         data.entitlementSource === "android_free_baseline";
+    const mobileBack = `<a class="settings-mobile-back mobile-subroute-back" href="/app/more">← More</a>`;
     if (!data.household) {
         if (androidFree && data.canCreateHousehold === true) {
-            return `${sectionHeading("Shared workspace", "Create a household", "Share recipes, meal plans and grocery lists while keeping personal nutrition records private.")}<div class="household-hero-grid"><section class="settings-group"><header><h3>Start your household</h3><p>Household sharing is included on Android. Inviting members does not add a charge.</p></header><form id="household-create-form" class="settings-group-body"><label class="settings-field"><span>Household name</span><input name="name" maxlength="120" placeholder="The Smith household" required></label><label class="settings-field"><span>Your display name</span><input name="display_name" maxlength="80" placeholder="Michael" required></label><button class="button button-primary" type="submit">Create household</button></form></section><aside class="household-privacy-card"><span class="settings-card-label">Privacy boundary</span><h3>Shared by default</h3><p>Recipes, meal plans and grocery lists are collaborative for household members.</p><h3>Still personal</h3><p>Meals, macros, water, weight, goals and personal nutrition history remain private.</p></aside></div>`;
+            return `${mobileBack}${sectionHeading("Shared workspace", "Create a household", "Share recipes, meal plans and grocery lists while keeping personal nutrition records private.")}<div class="household-hero-grid"><section class="settings-group"><header><h3>Start your household</h3><p>Household sharing is included on Android. Inviting members does not add a charge.</p></header><form id="household-create-form" class="settings-group-body"><label class="settings-field"><span>Household name</span><input name="name" maxlength="120" placeholder="The Smith household" required></label><label class="settings-field"><span>Your display name</span><input name="display_name" maxlength="80" placeholder="Michael" required></label><button class="button button-primary" type="submit">Create household</button></form></section><aside class="household-privacy-card"><span class="settings-card-label">Privacy boundary</span><h3>Shared by default</h3><p>Recipes, meal plans and grocery lists are collaborative for household members.</p><h3>Still personal</h3><p>Meals, macros, water, weight, goals and personal nutrition history remain private.</p></aside></div>`;
         }
         if (data.tier === "premium" && data.canCreateHousehold === true) {
-            return `${sectionHeading("Shared workspace", "Create a household", "Share recipes, meal plans and grocery lists while keeping personal nutrition records private.")}<div class="household-hero-grid"><section class="settings-group"><header><h3>Start your household</h3><p>Your Premium account is included. Each additional active member is ${seatPrice}/month after they accept.</p></header><form id="household-create-form" class="settings-group-body"><label class="settings-field"><span>Household name</span><input name="name" maxlength="120" placeholder="The Smith household" required></label><label class="settings-field"><span>Your display name</span><input name="display_name" maxlength="80" placeholder="Michael" required></label><button class="button button-primary" type="submit">Create household</button></form></section><aside class="household-privacy-card"><span class="settings-card-label">Privacy boundary</span><h3>Shared by default</h3><p>Recipes, meal plans and grocery lists are collaborative for household members.</p><h3>Still personal</h3><p>Meals, macros, water, weight, goals and personal nutrition history remain private.</p></aside></div>`;
+            return `${mobileBack}${sectionHeading("Shared workspace", "Create a household", "Share recipes, meal plans and grocery lists while keeping personal nutrition records private.")}<div class="household-hero-grid"><section class="settings-group"><header><h3>Start your household</h3><p>Your Premium account is included. Each additional active member is ${seatPrice}/month after they accept.</p></header><form id="household-create-form" class="settings-group-body"><label class="settings-field"><span>Household name</span><input name="name" maxlength="120" placeholder="The Smith household" required></label><label class="settings-field"><span>Your display name</span><input name="display_name" maxlength="80" placeholder="Michael" required></label><button class="button button-primary" type="submit">Create household</button></form></section><aside class="household-privacy-card"><span class="settings-card-label">Privacy boundary</span><h3>Shared by default</h3><p>Recipes, meal plans and grocery lists are collaborative for household members.</p><h3>Still personal</h3><p>Meals, macros, water, weight, goals and personal nutrition history remain private.</p></aside></div>`;
         }
         const householdMessage =
             data.tier === "premium"
                 ? "Your current Premium subscription covers your personal features. Discounted household seats are currently available through Munch website billing."
                 : `Premium owners can create a household and add additional members for ${seatPrice}/month each.`;
-        return `<div class="settings-empty household-empty"><span class="more-icon" aria-hidden="true">⌂</span><h2>No household is connected</h2><p>${esc(householdMessage)}</p><a class="button button-primary" href="/app/settings/billing">View plan & billing</a></div>`;
+        return `${mobileBack}<div class="settings-empty household-empty"><span class="more-icon" aria-hidden="true">⌂</span><h2>No household is connected</h2><p>${esc(householdMessage)}</p><a class="button button-primary" href="/app/settings/billing">View plan & billing</a></div>`;
     }
     const household = data.household;
     const owner = household.role === "owner";
@@ -787,7 +811,7 @@ async function householdPage(ctx) {
               androidFree
                   ? "This permanently deletes shared household records. Each member's personal records remain with their account."
                   : "This removes all paid member seats and permanently deletes shared household records. Personal member records remain with each account.",
-              `<label class="settings-field"><span>Type DISSOLVE HOUSEHOLD to confirm</span><input id="dissolve-household-confirmation" autocomplete="off" placeholder="DISSOLVE HOUSEHOLD"></label><div class="settings-actions"><button class="button button-danger" data-action="household-dissolve">Dissolve household</button></div>`,
+              `<details class="danger-disclosure"><summary>Dissolve household…</summary><div class="settings-stack"><label class="settings-field"><span>Type DISSOLVE HOUSEHOLD to confirm</span><input id="dissolve-household-confirmation" autocomplete="off" placeholder="DISSOLVE HOUSEHOLD"></label><div class="settings-actions"><button class="button button-danger" data-action="household-dissolve">Dissolve household</button></div></div></details>`,
               "settings-danger",
           )
         : settingGroup(
@@ -799,7 +823,7 @@ async function householdPage(ctx) {
               "settings-danger",
           );
     const additionalSeatLimit = Math.max(0, policy.householdMemberLimit - 1);
-    return `${sectionHeading("Shared workspace", household.householdName, `You appear as ${household.displayName}. Household collaboration is ${data.canWrite ? "active" : "read only"} for your role.`)}<div class="household-layout"><div class="household-primary"><section class="settings-group"><header><div class="household-section-title"><div><h3>Members</h3><p>${data.members.length} of ${policy.householdMemberLimit} household accounts</p></div>${statusPill(`${Math.max(0, additionalSeatLimit - activeNonOwnerCount)} ${androidFree ? "places" : "seats"} available`, "neutral")}</div></header><div class="household-member-list">${data.members.map((member) => householdMemberCard(member, owner, seatPrice, androidFree)).join("")}</div>${pendingMarkup}</section>${invite}${billing}${danger}</div><aside class="household-sidebar"><section class="household-privacy-card"><span class="settings-card-label">Always shared</span><h3>Collaborative household</h3><ul><li>Household recipes</li><li>Meal plans and calendar</li><li>Grocery lists</li></ul><span class="settings-card-label spacer-top">Always private</span><ul><li>Personal meal history</li><li>Macros and goals</li><li>Water and weight</li><li>Personal saved foods</li></ul><a class="text-link" href="/privacy#households">Review household privacy →</a></section><a class="button button-secondary household-billing-link" href="/app/settings/billing">Plan & billing</a></aside></div>`;
+    return `${mobileBack}${sectionHeading("Shared workspace", household.householdName, `You appear as ${household.displayName}. Household collaboration is ${data.canWrite ? "active" : "read only"} for your role.`)}<div class="household-layout"><div class="household-primary"><section class="settings-group"><header><div class="household-section-title"><div><h3>Members</h3><p>${data.members.length} of ${policy.householdMemberLimit} household accounts</p></div>${statusPill(`${Math.max(0, additionalSeatLimit - activeNonOwnerCount)} ${androidFree ? "places" : "seats"} available`, "neutral")}</div></header><div class="household-member-list">${data.members.map((member) => householdMemberCard(member, owner, seatPrice, androidFree)).join("")}</div>${pendingMarkup}</section>${invite}${billing}${danger}</div><aside class="household-sidebar"><section class="household-privacy-card"><span class="settings-card-label">Always shared</span><h3>Collaborative household</h3><ul><li>Household recipes</li><li>Meal plans and calendar</li><li>Grocery lists</li></ul><span class="settings-card-label spacer-top">Always private</span><ul><li>Personal meal history</li><li>Macros and goals</li><li>Water and weight</li><li>Personal saved foods</li></ul><a class="text-link" href="/privacy#households">Review household privacy →</a></section><a class="button button-secondary household-billing-link" href="/app/settings/billing">Plan & billing</a></aside></div>`;
 }
 
 function hydrateTimezoneSelect() {
@@ -847,7 +871,7 @@ export async function renderAccountRoute(route, ctx) {
         } catch {
             intake = null;
         }
-        ctx.content.innerHTML = `<div class="operate-view goals-view">${goalsIntakePage(intake)}</div>`;
+        ctx.content.innerHTML = `<div class="operate-view settings-view goals-view">${goalsIntakePage(intake)}</div>`;
         return;
     }
     if (route === "household") {
@@ -950,7 +974,7 @@ function showSettingsInlineConfirm(
     dismissButton.textContent = dismissLabel;
     box.append(noteElement, confirmButton, dismissButton);
     (insertAfter ?? anchor).insertAdjacentElement("afterend", box);
-    confirmButton.focus();
+    dismissButton.focus();
 }
 
 function dismissSettingsInlineConfirm(button) {
@@ -978,6 +1002,19 @@ function showSettingsAlert(ctx, message) {
 function saveStatus(form, message) {
     const status = form.querySelector(".settings-save-status");
     if (status) status.textContent = message;
+}
+
+function formatGoalPreviewValue(key, value, weightUnit) {
+    if (value == null) return "No target";
+    if (key === "target_weight_g") {
+        const converted = weightFromGrams(Number(value), weightUnit)
+            .toFixed(1)
+            .replace(/\.0$/, "");
+        return `${converted} ${weightUnit}`;
+    }
+    if (key === "daily_calories") return `${value} kcal`;
+    if (key === "daily_water_ml") return `${value} mL`;
+    return `${value} g`;
 }
 
 export async function handleAccountSubmit(form, ctx) {
@@ -1098,10 +1135,16 @@ export async function handleAccountSubmit(form, ctx) {
                     .filter((key) => current[key] !== proposed[key])
                     .map(
                         (key) =>
-                            `<tr><th>${esc(labels[key])}</th><td>${current[key] == null ? "No target" : esc(current[key])}</td><td>${proposed[key] == null ? "No target" : esc(proposed[key])}</td></tr>`,
+                            `<tr><th>${esc(labels[key])}</th><td>${esc(formatGoalPreviewValue(key, current[key], weightUnit))}</td><td>${esc(formatGoalPreviewValue(key, proposed[key], weightUnit))}</td></tr>`,
                     )
                     .join("");
                 previewPanel.innerHTML = `<div class="panel-title"><div><h3>Review target changes</h3><span>Current and proposed values</span></div></div>${changes ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Target</th><th>Current</th><th>Proposed</th></tr></thead><tbody>${changes}</tbody></table></div>` : `<p>No target values changed.</p>`}<button class="button button-primary spacer-top" type="button" data-action="confirm-goal-change" ${changes ? "" : "disabled"}>Confirm target changes</button>`;
+                previewPanel.setAttribute("tabindex", "-1");
+                previewPanel.scrollIntoView({
+                    behavior: "smooth",
+                    block: "nearest",
+                });
+                previewPanel.focus({ preventScroll: true });
             }
             saveStatus(form, "Preview ready");
         } finally {
@@ -1157,6 +1200,25 @@ export async function handleAccountSubmit(form, ctx) {
 
 export async function handleAccountAction(button, ctx) {
     const action = button.dataset.action;
+    if (action === "detect-timezone") {
+        const select = document.getElementById("settings-timezone");
+        const detected = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+        if (!detected || !(select instanceof HTMLSelectElement)) {
+            ctx.toast("Could not detect device timezone.", "error");
+            return true;
+        }
+        if (!Array.from(select.options).some((opt) => opt.value === detected)) {
+            const option = document.createElement("option");
+            option.value = detected;
+            option.textContent = detected.replaceAll("_", " ");
+            select.prepend(option);
+        }
+        select.value = detected;
+        ctx.toast(
+            `Timezone set to ${detected.replaceAll("_", " ")}. Save preferences to apply.`,
+        );
+        return true;
+    }
     if (action === "features-just-logging") {
         // Feature toggles (T1): the one-tap preset — every optional
         // module off at once. Individual switches stay adjustable on

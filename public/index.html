@@ -68,9 +68,11 @@
                     <a href="#how">How it works</a>
                     <a href="#pricing">Pricing</a>
                     <a href="/help">Help</a>
+                </nav>
+                <div class="top-actions">
                     <a href="/account/login?return_to=/app">Sign in</a>
                     <a class="nav-cta" href="/connect">Connect</a>
-                </nav>
+                </div>
             </div>
         </header>
 
@@ -91,9 +93,26 @@
                     aria-label="Copy and paste to connect Munch to your AI"
                 >
                     <div class="pastehead">
-                        <span>1 · Copy this</span>
-                        <span>2 · Paste it into your AI</span>
-                        <span>3 · It walks you through connecting</span>
+                        <div class="pastehead-steps">
+                            <span>1 · Copy this</span>
+                            <span>2 · Paste into your AI</span>
+                            <span>3 · Follow the prompts</span>
+                        </div>
+                        <div class="pastehead-actions">
+                            <button
+                                class="copy-btn"
+                                type="button"
+                                data-copy-target="paste-text"
+                            >
+                                Copy the block
+                            </button>
+                            <p
+                                class="copy-status"
+                                data-copy-status
+                                role="status"
+                                aria-live="polite"
+                            ></p>
+                        </div>
                     </div>
                     <pre class="paste" id="paste-text">
 Connect me to Munch, my nutrition tracker.
@@ -117,21 +136,6 @@ munch.business, where Premium is managed on the website.
 
 When the connection is live, confirm it worked — then ask me if I want to
 log my first meal or set a nutrition goal.</pre>
-                    <div class="pastefoot">
-                        <button
-                            class="copy-btn"
-                            type="button"
-                            data-copy-target="paste-text"
-                        >
-                            Copy the block
-                        </button>
-                        <p
-                            class="copy-status"
-                            data-copy-status
-                            role="status"
-                            aria-live="polite"
-                        ></p>
-                    </div>
                 </section>
                 <p class="pastenote">
                     No password, ever. Sign-in is a single-use email link — and
@@ -515,6 +519,8 @@ log my first meal or set a nutrition goal.</pre>
             (function () {
                 var buttons = document.querySelectorAll("[data-copy-target]");
                 buttons.forEach(function (button) {
+                    var originalLabel = button.textContent.trim();
+                    var resetTimer = null;
                     button.addEventListener("click", function () {
                         var target = document.getElementById(
                             button.getAttribute("data-copy-target"),
@@ -528,6 +534,10 @@ log my first meal or set a nutrition goal.</pre>
                                 status.textContent =
                                     "Copied — now paste it into your AI chat.";
                             button.textContent = "Copied";
+                            if (resetTimer) clearTimeout(resetTimer);
+                            resetTimer = setTimeout(function () {
+                                button.textContent = originalLabel;
+                            }, 2500);
                         }
                         function fallback() {
                             var area = document.createElement("textarea");
@@ -543,7 +553,7 @@ log my first meal or set a nutrition goal.</pre>
                             } catch (error) {
                                 if (status)
                                     status.textContent =
-                                        "Select the block above and copy it.";
+                                        "Select the block below and copy it.";
                             }
                             document.body.removeChild(area);
                         }

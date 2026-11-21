@@ -290,12 +290,16 @@ function barStatInner(m, b) {
         b.target != null
             ? `<div class="wval"${valStyle}>${fmt(b.val, m.decimals)}<span class="wsub">/ ${fmt(b.target, m.decimals)} ${m.unit}</span></div>`
             : `<div class="wval">${fmt(b.val, m.decimals)}<span class="wsub">${m.unit}</span></div>`;
+    const barAttrs =
+        b.target != null && b.target > 0
+            ? ` role="progressbar" aria-label="${esc(m.label)}" aria-valuemin="0" aria-valuemax="${b.target}" aria-valuenow="${b.val}"${b.over ? ` aria-valuetext="${esc(`${fmt(b.val, m.decimals)} ${m.unit} (${Math.round(b.pct)}% of ${fmt(b.target, m.decimals)} ${m.unit}, over target)`)}"` : ""}`
+            : ' aria-hidden="true"';
     return `
         <div class="wtop">
           <div class="mlabel"><span class="dot" style="background:${m.color}"></span>${m.label}</div>
           ${right}
         </div>
-        <div class="wbar"><div class="wfill" style="width:${fillPct.toFixed(1)}%;background:${m.color}"></div></div>
+        <div class="wbar"${barAttrs}><div class="wfill" style="width:${fillPct.toFixed(1)}%;background:${m.color}"></div></div>
         <div class="mgoal wgoal">${esc(b.goalLine)}</div>`;
 }
 
@@ -395,7 +399,7 @@ function macroPanel(vals, goal, wording, meals, opts) {
         : "";
     // The breakdown renders into this region on tap; hidden until then.
     const detail = interactive
-        ? `<div class="macro-detail" hidden aria-live="polite"></div>`
+        ? `<div class="macro-detail" hidden role="region" aria-label="Macro breakdown"></div>`
         : "";
     return `
       <div class="macro-panel"${interactive ? " data-macro-panel" : ""}>
@@ -474,7 +478,7 @@ function macroDetailBody(m, ctx) {
     const head = `
       <div class="md-head">
         <span class="md-title"><span class="dot" style="background:${m.color}"></span>${esc(m.label)} ${subs ? "breakdown" : "by meal"}</span>
-        <button class="md-close" data-macro-close aria-label="Close breakdown">✕</button>
+        <button type="button" class="md-close" data-macro-close aria-label="Close breakdown">✕</button>
       </div>`;
     if (!ctx.meals) return `${head}${subs}`;
     // Both parts present → the meal list needs its own heading to stay legible.
@@ -508,6 +512,7 @@ function macroToggle(cell) {
     }
     const m = MACROS.find((mm) => mm.key === key);
     if (!m) return;
+    detail.setAttribute("aria-label", `${m.label} breakdown`);
     detail.innerHTML = macroDetailBody(m, __macroCtx);
     detail.dataset.open = key;
     detail.hidden = false;
@@ -525,7 +530,10 @@ if (typeof document !== "undefined" && !window.__macroWired) {
                 const cell = panel.querySelector(
                     `[data-macro="${detail.dataset.open}"]`,
                 );
-                if (cell) macroToggle(cell);
+                if (cell) {
+                    macroToggle(cell);
+                    cell.focus();
+                }
             }
             return;
         }

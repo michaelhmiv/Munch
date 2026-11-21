@@ -28,48 +28,55 @@
                 >
                 <nav class="app-nav" aria-label="Application navigation">
                     <a data-route="today" href="/app"
-                        ><span class="nav-icon">◉</span><span>Today</span></a
+                        ><span class="nav-icon" aria-hidden="true">◉</span
+                        ><span>Today</span></a
                     >
                     <a data-route="log" href="/app/log"
-                        ><span class="nav-icon">▤</span><span>History</span></a
+                        ><span class="nav-icon" aria-hidden="true">▤</span
+                        ><span>History</span></a
                     >
                     <a data-route="trends" href="/app/trends"
-                        ><span class="nav-icon">↗</span><span>Trends</span></a
+                        ><span class="nav-icon" aria-hidden="true">↗</span
+                        ><span>Trends</span></a
                     >
                     <!-- Chat v2 placement (Contextual only): there is
                          deliberately NO global Chat nav entry — the
                          agent is reached from the Today, Meal Plan,
                          Pantry, and Trends entry rows only. -->
                     <a data-route="recipes" href="/app/recipes"
-                        ><span class="nav-icon">◇</span><span>Recipes</span></a
+                        ><span class="nav-icon" aria-hidden="true">◇</span
+                        ><span>Recipes</span></a
                     >
                     <a data-route="cooks" href="/app/cooks"
-                        ><span class="nav-icon">♨</span><span>Cooks</span></a
+                        ><span class="nav-icon" aria-hidden="true">♨</span
+                        ><span>Cooks</span></a
                     >
                     <a data-route="plan" href="/app/plan"
-                        ><span class="nav-icon">□</span
+                        ><span class="nav-icon" aria-hidden="true">□</span
                         ><span>Meal Plan</span></a
                     >
                     <a data-route="groceries" href="/app/groceries"
-                        ><span class="nav-icon">✓</span
+                        ><span class="nav-icon" aria-hidden="true">✓</span
                         ><span>Groceries</span></a
                     >
                     <a data-route="pantry" href="/app/pantry"
-                        ><span class="nav-icon">▦</span><span>Pantry</span></a
+                        ><span class="nav-icon" aria-hidden="true">▦</span
+                        ><span>Pantry</span></a
                     >
                     <a data-route="household" href="/app/household"
-                        ><span class="nav-icon">⌂</span
+                        ><span class="nav-icon" aria-hidden="true">⌂</span
                         ><span>Household</span></a
                     >
                 </nav>
                 <div class="sidebar-bottom">
                     <nav class="app-nav" aria-label="Account navigation">
                         <a data-route="settings" href="/app/settings"
-                            ><span class="nav-icon">⚙</span
+                            ><span class="nav-icon" aria-hidden="true">⚙</span
                             ><span>Settings</span></a
                         >
                         <a href="/help"
-                            ><span class="nav-icon">?</span><span>Help</span></a
+                            ><span class="nav-icon" aria-hidden="true">?</span
+                            ><span>Help</span></a
                         >
                     </nav>
                 </div>
@@ -203,6 +210,7 @@
         <div
             class="toast-region"
             id="toast-region"
+            popover="manual"
             aria-live="polite"
             aria-atomic="true"
         ></div>

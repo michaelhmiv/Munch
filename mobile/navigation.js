@@ -3,11 +3,17 @@ const APP_ROUTE_PATTERN = /^\/app(?:\/|$)/;
 export function installedAppRoute(value) {
     if (typeof value !== "string") return null;
     const trimmed = value.trim();
-    if (!APP_ROUTE_PATTERN.test(trimmed)) return null;
+    if (!trimmed.startsWith("/")) return null;
     try {
         const parsed = new URL(trimmed, "https://installed.munch.invalid");
         if (parsed.origin !== "https://installed.munch.invalid") return null;
         if (!APP_ROUTE_PATTERN.test(parsed.pathname)) return null;
+        if (parsed.pathname === "/app/chat") {
+            const surface = parsed.searchParams.get("surface");
+            if (surface && /^[a-z0-9_-]{1,32}$/i.test(surface)) {
+                return `/app/chat?surface=${encodeURIComponent(surface)}`;
+            }
+        }
         return parsed.pathname;
     } catch {
         return null;
@@ -25,7 +31,7 @@ export function installedRouteFromUrl(value) {
             parsed.protocol === "https:" &&
             parsed.hostname === "munch.business"
         ) {
-            return installedAppRoute(parsed.pathname);
+            return installedAppRoute(`${parsed.pathname}${parsed.search}`);
         }
         if (parsed.protocol !== "munch:") return null;
         // Derive the route from the raw string, not from the parsed
@@ -38,10 +44,16 @@ export function installedRouteFromUrl(value) {
         // segment is the link host, the rest is the in-app route).
         const raw = String(value);
         const afterScheme = raw.slice(raw.indexOf(":") + 1).replace(/^\/+/, "");
-        const segments = afterScheme.split("/").filter(Boolean);
+        const withoutHash = afterScheme.split("#")[0];
+        const queryIndex = withoutHash.indexOf("?");
+        const pathPart =
+            queryIndex === -1 ? withoutHash : withoutHash.slice(0, queryIndex);
+        const queryPart =
+            queryIndex === -1 ? "" : withoutHash.slice(queryIndex);
+        const segments = pathPart.split("/").filter(Boolean);
         if (segments[0] !== "app") return null;
         segments.shift();
-        const route = `/${["app", ...segments].join("/")}`;
+        const route = `/${["app", ...segments].join("/")}${queryPart}`;
         return installedAppRoute(route);
     } catch {
         return null;

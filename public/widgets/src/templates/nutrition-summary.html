@@ -195,12 +195,14 @@
         ${factsHero(`${fmt(avg.calories)} <span class="f-hero-unit">kcal</span>`, "average per logged day", `${logged} of ${rangeDays}`, "days logged")}
         <div class="f-src">Source · <b>Your logged meals</b></div>
         <div class="f-rule-heavy"></div>
+        <div class="inline-only">
         ${metricRow("Protein", avg.protein_g || 0, goals.protein_g, "g")}
         ${metricRow("Carbs", avg.carbs_g || 0, goals.carbs_g, "g")}
         ${metricRow("Fat", avg.fat_g || 0, goals.fat_g, "g")}
         ${avg.water_ml != null || goals.water_ml != null ? metricRow("Water", avg.water_ml || 0, goals.water_ml, "ml") : ""}
+        </div>
         ${insight}
-        <button class="f-more-row inline-only" id="details">View daily breakdown</button>
+        <button type="button" class="f-more-row inline-only" id="details">View daily breakdown</button>
         <div class="fullscreen-only">
         <div class="f-rule-med"></div>
         <h2 class="f-section-title">Daily calories</h2>
@@ -217,7 +219,7 @@
         ${avg.sugar_g != null || goals.sugar_g != null ? metricRow("Sugar", avg.sugar_g || 0, goals.sugar_g, "g") : ""}
         ${avg.water_ml != null || goals.water_ml != null ? metricRow("Water", avg.water_ml || 0, goals.water_ml, "ml") : ""}
         ${recordedNote}
-        <div class="actions"><button class="btn" id="close">Return to chat</button></div>
+        <div class="actions"><button type="button" class="btn" id="close">Return to chat</button></div>
         </div>
         </div>
         <div class="f-foot"><span>Every number traces to its source</span><span>Logged meals · USDA FoodData Central · Open Food Facts</span></div>
@@ -229,14 +231,14 @@
                             "fullscreen",
                         ).catch(() => null);
                         if (!result || result.unsupported)
-                            document.getElementById("details").textContent =
-                                "Details unavailable";
+                            document.documentElement.dataset.expanded = "true";
                     });
                 document
                     .getElementById("close")
-                    ?.addEventListener("click", () =>
-                        API?.requestDisplayMode("inline"),
-                    );
+                    ?.addEventListener("click", () => {
+                        delete document.documentElement.dataset.expanded;
+                        API?.requestDisplayMode("inline");
+                    });
             }
             initWidget({
                 name: "nutrition-summary-widget",

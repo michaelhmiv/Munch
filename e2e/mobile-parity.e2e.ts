@@ -2858,10 +2858,11 @@ test("S6 slice 8: Household destructive flows use inline confirmations, never th
     await bootPackagedApp(page);
     await gotoRoute(page, "/app/household");
 
-    // Remove member: the first click only asks, in place after the row.
+    // Remove member: expand the compact Manage disclosure, then first click asks in place.
     const memberRow = page.locator(".household-member", {
         hasText: "Fixture Member",
     });
+    await memberRow.locator(".member-manage-disclosure > summary").click();
     const remove = memberRow.locator('[data-action="household-member-remove"]');
     await remove.click();
     const confirmRemove = page.locator(
@@ -2919,8 +2920,9 @@ test("S6 slice 8: Household destructive flows use inline confirmations, never th
     await expect(page.locator(".pending-invite")).toHaveCount(0);
     expect(nativeDialogs).toEqual([]);
 
-    // Dissolve: the typed phrase still gates the flow, then the
-    // inline confirmation replaces the native dialog.
+    // Dissolve: open the compact Danger disclosure, then the typed phrase
+    // still gates the flow and inline confirmation replaces native dialog.
+    await page.locator(".danger-disclosure > summary").click();
     await page
         .locator("#dissolve-household-confirmation")
         .fill("DISSOLVE HOUSEHOLD");
@@ -3207,8 +3209,9 @@ test("S6 slice 9 regression: unlink and account deletion use inline confirmation
     ).toBeVisible();
     expect(nativeDialogs).toEqual([]);
 
-    // Account deletion: the typed phrase stays the first gate, the
-    // inline confirmation is the final say — nothing posts before it.
+    // Account deletion: expand the compact Danger disclosure, then the
+    // typed phrase stays the first gate and inline confirmation is final.
+    await page.locator(".danger-disclosure > summary").click();
     await page
         .locator("#delete-account-confirmation")
         .fill("DELETE MY MUNCH ACCOUNT");

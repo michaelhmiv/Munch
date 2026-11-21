@@ -382,15 +382,15 @@
         <div class="f-hero-cap">${items.length} food${items.length === 1 ? "" : "s"} · ${matched} matched to a source · ${estimated.length} estimated${low.length ? ` · ${low.length} needs review` : ""}</div>
         ${question ? `<div class="question-line${low.length ? " warn" : ""}"><strong>Needs input</strong><br />${esc(question)}</div>` : ""}
         <div class="f-rule-heavy"></div>
-        <div>${itemHtml || factsState("empty", "No items found", "Continue in chat to identify the meal.")}</div>
-        ${hiddenCount > 0 ? `<button class="f-more-row inline-only" id="details">…and ${hiddenCount} more · view all foods</button>` : hasDetail ? `<button class="f-more-row inline-only" id="details">View estimate details</button>` : ""}
+        <div${compact ? ' class="inline-only"' : ""}>${itemHtml || factsState("empty", "No items found", "Continue in chat to identify the meal.")}</div>
+        ${hiddenCount > 0 ? `<button type="button" class="f-more-row inline-only" id="details">…and ${hiddenCount} more · view all foods</button>` : hasDetail ? `<button type="button" class="f-more-row inline-only" id="details">View estimate details</button>` : ""}
         <div class="f-rule-med"></div>
         <div class="f-prow" style="border-bottom:0"><span class="f-lrow-name" style="font-size:15px;font-weight:700">Total</span><span class="f-crow-meta">${esc(macroText(totals))}</span><span class="mr-total-val num">${fmt(totals.calories)} kcal</span></div>
         ${allFoodsHtml}
         ${detailHtml}
-        <div class="fullscreen-only"><div class="actions"><button class="btn" id="close">Return to chat</button></div></div>
+        <div class="fullscreen-only"><div class="actions"><button type="button" class="btn" id="close">Return to chat</button></div></div>
         </div>
-        <div class="f-sticky-bar"><div class="f-sticky-actions"><button class="f-btn-primary" id="confirm" ${review.ready_for_confirmation ? "" : "disabled"}>Log meal</button><button class="btn" id="adjust">Adjust</button></div><div class="f-sticky-confirm"><b>Nothing is saved until you tap Log meal.</b></div><div class="status" id="status" role="status" aria-live="polite"></div></div>
+        <div class="f-sticky-bar"><div class="f-sticky-actions"><button type="button" class="f-btn-primary" id="confirm" ${review.ready_for_confirmation ? "" : "disabled"}>Log meal</button><button type="button" class="btn" id="adjust">Adjust</button></div><div class="f-sticky-confirm"><b>Nothing is saved until you tap Log meal.</b></div><div class="status" id="status" role="status" aria-live="polite"></div></div>
     </article>`;
                 document
                     .getElementById("confirm")
@@ -405,14 +405,14 @@
                             "fullscreen",
                         ).catch(() => null);
                         if (!result || result.unsupported)
-                            document.getElementById("details").textContent =
-                                "Details unavailable";
+                            document.documentElement.dataset.expanded = "true";
                     });
                 document
                     .getElementById("close")
-                    ?.addEventListener("click", () =>
-                        API?.requestDisplayMode("inline"),
-                    );
+                    ?.addEventListener("click", () => {
+                        delete document.documentElement.dataset.expanded;
+                        API?.requestDisplayMode("inline");
+                    });
             }
             function setBusy(value, message) {
                 BUSY = value;
@@ -482,7 +482,7 @@
                         : [];
                     const title = displayTitle(REVIEW, items);
                     document.getElementById("root").innerHTML =
-                        `<article class="card">${factsBand("Meal logged", REVIEW.meal_type || "meal")}<div class="f-body"><div class="row"><div class="icon-badge success">✓</div><div><div class="eyebrow">Meal logged</div><h1>${esc(title)}</h1><div class="meta num">${fmt(totals.calories)} kcal · P ${fmt(totals.protein_g, 1)}g · C ${fmt(totals.carbs_g, 1)}g · F ${fmt(totals.fat_g, 1)}g</div></div></div></div><div class="f-foot"><span>Every number traces to its source</span><span>Your logged meals</span></div></article>`;
+                        `<article class="card">${factsBand("Meal logged", REVIEW.meal_type || "meal")}<div class="f-body"><div class="row"><div class="icon-badge success">✓</div><div><div class="eyebrow">Meal logged</div><h2 class="title">${esc(title)}</h2><div class="meta num">${fmt(totals.calories)} kcal · P ${fmt(totals.protein_g, 1)}g · C ${fmt(totals.carbs_g, 1)}g · F ${fmt(totals.fat_g, 1)}g</div></div></div></div><div class="f-foot"><span>Every number traces to its source</span><span>Your logged meals</span></div></article>`;
                 } catch (error) {
                     setBusy(false, error?.message || "Unable to log the meal.");
                 }

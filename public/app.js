@@ -82,6 +82,7 @@ const state = {
     rangeSelection: emptyRangeSelection(),
     rangeDayData: null,
     shoppingMode: false,
+    hideCheckedGroceries: false,
     // "Already have it": pantry items the run-out prompt has already
     // covered this session ("scope:pantry_item_id") — asked once per
     // list session, never nagged again.
@@ -374,13 +375,42 @@ function confidenceBadge(value) {
     return `<span class="confidence-chip">${label}</span>`;
 }
 
+function showToastRegion() {
+    if (
+        toastRegion &&
+        typeof toastRegion.showPopover === "function" &&
+        !toastRegion.matches(":popover-open")
+    ) {
+        try {
+            toastRegion.showPopover();
+        } catch {}
+    }
+}
+
+function hideToastRegionIfEmpty() {
+    if (
+        toastRegion &&
+        toastRegion.childElementCount === 0 &&
+        typeof toastRegion.hidePopover === "function" &&
+        toastRegion.matches(":popover-open")
+    ) {
+        try {
+            toastRegion.hidePopover();
+        } catch {}
+    }
+}
+
 function toast(message, kind = "success") {
     const element = document.createElement("div");
     element.className = "toast";
     element.textContent = message;
     if (kind === "error") element.style.borderColor = "var(--danger-700)";
     toastRegion.append(element);
-    window.setTimeout(() => element.remove(), 4200);
+    showToastRegion();
+    window.setTimeout(() => {
+        element.remove();
+        hideToastRegionIfEmpty();
+    }, 4200);
 }
 
 // A toast carrying one action (recipe experience R3: the grocery
@@ -397,11 +427,16 @@ function toastAction(message, actionLabel, onAction) {
     button.textContent = actionLabel;
     button.addEventListener("click", () => {
         element.remove();
+        hideToastRegionIfEmpty();
         onAction();
     });
     element.append(text, button);
     toastRegion.append(element);
-    window.setTimeout(() => element.remove(), 9000);
+    showToastRegion();
+    window.setTimeout(() => {
+        element.remove();
+        hideToastRegionIfEmpty();
+    }, 9000);
 }
 
 async function api(path, options = {}) {
@@ -556,10 +591,12 @@ function setActiveRoute(route) {
         "settings",
         "settings-profile",
         "settings-goals",
+        "settings-features",
         "settings-billing",
         "settings-connections",
         "settings-data",
         "settings-account",
+        "chat",
     ]);
     const primaryRoute = route.startsWith("settings-") ? "settings" : route;
     document.querySelectorAll("[data-route]").forEach((link) => {
@@ -717,7 +754,7 @@ function waterPresetChipsMarkup() {
 }
 
 function addWaterDialogMarkup() {
-    return `${waterPresetChipsMarkup()}<div class="form-divider"><span>Or enter an amount</span></div><form id="water-form" class="auth-form"><div class="field"><span>Amount</span><div class="amount-row"><input class="amount-input" name="amount" type="number" step="any" required value="12" /><select class="unit-select" name="unit" aria-label="Amount unit"><option value="ml">ml</option><option value="oz" selected>fl oz</option></select></div><p class="convert-hint">≈ ${number(waterOzToMl(12))} ml</p></div><label class="field"><span>Notes</span><input name="notes" placeholder="Optional" /></label><button class="button button-primary" type="submit">Add water</button></form>`;
+    return `${waterPresetChipsMarkup()}<div class="form-divider"><span>Or enter an amount</span></div><form id="water-form" class="auth-form"><div class="field"><label for="water-amount-input"><span>Amount</span></label><div class="amount-row"><input class="amount-input" id="water-amount-input" name="amount" type="number" step="any" inputmode="decimal" aria-label="Water amount" required value="12" /><select class="unit-select" name="unit" aria-label="Amount unit"><option value="ml">ml</option><option value="oz" selected>fl oz</option></select></div><p class="convert-hint">≈ ${number(waterOzToMl(12))} ml</p></div><label class="field"><span>Notes</span><input name="notes" placeholder="Optional" /></label><button class="button button-primary" type="submit">Add water</button></form>`;
 }
 
 // The live stored-ml hint under the manual amount row: visible only
@@ -737,6 +774,12 @@ function updateWaterConvertHint(form) {
     }
 }
 
+function formatWaterAmount(ml) {
+    const value = Number(ml || 0);
+    const flOz = value / WATER_ML_PER_FL_OZ;
+    return `${number(flOz, 1)} fl oz · ${number(value)} ml`;
+}
+
 // F8 via F2: the Water card's decomposition carries the day's entries
 // and the Add water action, so both live one tap from the top of
 // Today instead of below the entire Meals list.
@@ -746,7 +789,7 @@ function waterMetricDetail(entries) {
         .map((entry) =>
             metricDetailRow(
                 `${formatTime(entry.logged_at ?? entry.loggedAt)}${entry.notes ? ` · ${entry.notes}` : ""}`,
-                `${number(entry.amount_ml ?? entry.amountMl)} ml`,
+                formatWaterAmount(entry.amount_ml ?? entry.amountMl),
             ),
         )
         .join("");
@@ -807,8 +850,14 @@ function portionEnteredText(portion) {
 function mealItems(items, meal) {
     if (!items?.length)
         return `<div class="food-items"><div class="food-row"><div><strong>Legacy aggregate entry</strong><small>Item-level details were not recorded for this meal.</small></div></div></div>`;
-    const row = (item) =>
-        `<div class="food-row"><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.portionLabel || (item.quantity ? `${number(item.quantity, 2)} serving` : "Portion not recorded"))}</small><div class="demo-source-row">${sourceBadge(item.sourceType)}${confidenceBadge(item.confidence)}</div>${item.assumptions?.length ? `<small>Assumptions: ${escapeHtml(item.assumptions.join("; "))}</small>` : ""}</div><strong>${item.calories == null ? "—" : `${number(item.calories)} kcal`}</strong></div>`;
+    const row = (item) => {
+        const macroBits = [
+            item.proteinG == null ? "" : `${number(item.proteinG, 1)}g P`,
+            item.carbsG == null ? "" : `${number(item.carbsG, 1)}g C`,
+            item.fatG == null ? "" : `${number(item.fatG, 1)}g F`,
+        ].filter(Boolean);
+        return `<div class="food-row"><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.portionLabel || (item.quantity ? `${number(item.quantity, 2)} serving` : "Portion not recorded"))}</small><div class="demo-source-row">${sourceBadge(item.sourceType)}${confidenceBadge(item.confidence)}</div>${item.assumptions?.length ? `<small>Assumptions: ${escapeHtml(item.assumptions.join("; "))}</small>` : ""}</div><div style="text-align:right"><strong>${item.calories == null ? "—" : `${number(item.calories)} kcal`}</strong>${macroBits.length ? `<small>${escapeHtml(macroBits.join(" · "))}</small>` : ""}</div></div>`;
+    };
     const portion = meal?.recipePortion;
     if (!portion) {
         return `<div class="food-items">${items.map(row).join("")}</div>`;
@@ -838,13 +887,13 @@ function mealItems(items, meal) {
 function waterEntryRows(entries) {
     const visible = [...(entries || [])].reverse().slice(0, 100);
     if (!visible.length)
-        return `<div class="empty-state"><div><h3>No water entries</h3><p>Add a hydration entry to track intake here.</p></div></div>`;
+        return `<p class="empty-state-compact">No water logged yet.</p>`;
     return `<div class="food-items">${visible
         .map((entry) => {
             const id = entry.id;
             const amount = entry.amount_ml ?? entry.amountMl;
             const loggedAt = entry.logged_at ?? entry.loggedAt;
-            return `<div class="food-row"><div><strong>${number(amount)} ml</strong><small>${escapeHtml(formatTime(loggedAt))}${entry.loggedOn ? ` · ${escapeHtml(formatDate(entry.loggedOn, { year: true }))}` : ""}${entry.notes ? ` · ${escapeHtml(entry.notes)}` : ""}</small></div><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="edit-water" data-id="${escapeHtml(id)}">Edit</button><button class="button button-quiet button-small" type="button" data-action="delete-water" data-id="${escapeHtml(id)}">Delete</button></div></div>`;
+            return `<div class="food-row"><div><strong>${escapeHtml(formatWaterAmount(amount))}</strong><small>${escapeHtml(formatTime(loggedAt))}${entry.loggedOn ? ` · ${escapeHtml(formatDate(entry.loggedOn, { year: true }))}` : ""}${entry.notes ? ` · ${escapeHtml(entry.notes)}` : ""}</small></div><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="edit-water" data-id="${escapeHtml(id)}">Edit</button><button class="button button-quiet button-small" type="button" data-action="delete-water" data-id="${escapeHtml(id)}">Delete</button></div></div>`;
         })
         .join(
             "",
@@ -854,7 +903,7 @@ function waterEntryRows(entries) {
 function weightEntryRows(entries, fallbackUnit) {
     const visible = [...(entries || [])].reverse().slice(0, 100);
     if (!visible.length)
-        return `<div class="empty-state"><div><h3>No weight entries</h3><p>Add a measurement to build a trend.</p></div></div>`;
+        return `<p class="empty-state-compact">No weight logged yet.</p>`;
     return `<div class="food-items">${visible
         .map((entry) => {
             const id = entry.id;
@@ -872,14 +921,21 @@ function weightEntryRows(entries, fallbackUnit) {
         )}</div>${entries.length > visible.length ? `<p class="tiny">Showing the most recent ${visible.length} of ${entries.length} entries.</p>` : ""}`;
 }
 
-function mealCard(meal) {
+function mealCard(meal, { grouped = false } = {}) {
     mealDescriptionsById.set(
         String(meal.id),
         meal.description || "Untitled meal",
     );
     mealTypesById.set(String(meal.id), meal.meal_type || "snack");
     const type = meal.meal_type || "snack";
-    return `<article class="meal-card" data-meal-id="${escapeHtml(meal.id)}"><div class="meal-card-head"><div><h4>${escapeHtml(mealDisplayName(meal))}</h4><div class="meal-meta"><span>${escapeHtml(formatTime(meal.logged_at))}</span><span>${escapeHtml(type)}</span>${meal.notes ? `<span>${escapeHtml(meal.notes)}</span>` : ""}</div></div><strong>${meal.calories == null ? "—" : `${number(meal.calories)} kcal`}</strong></div><div class="meal-macros"><span class="macro-chip">Protein ${number(meal.protein_g, 1)}g</span><span class="macro-chip">Carbs ${number(meal.carbs_g, 1)}g</span><span class="macro-chip">Fat ${number(meal.fat_g, 1)}g</span>${meal.fiber_g == null ? "" : `<span class="macro-chip">Fiber ${number(meal.fiber_g, 1)}g</span>`}${meal.sugar_g == null ? "" : `<span class="macro-chip">Sugar ${number(meal.sugar_g, 1)}g</span>`}</div>${mealItems(meal.items, meal)}<div class="auth-actions"><button class="button button-secondary button-small" data-action="view-meal-details" data-id="${escapeHtml(meal.id)}">View details</button><button class="button button-secondary button-small" data-action="edit-meal" data-id="${escapeHtml(meal.id)}">Edit</button><button class="button button-quiet button-small" data-action="duplicate-meal" data-id="${escapeHtml(meal.id)}">Duplicate</button><button class="button button-quiet button-small" data-action="delete-meal" data-id="${escapeHtml(meal.id)}">Delete</button></div></article>`;
+    const macroParts = [
+        `${number(meal.protein_g, 1)}g P`,
+        `${number(meal.carbs_g, 1)}g C`,
+        `${number(meal.fat_g, 1)}g F`,
+        meal.fiber_g == null ? "" : `${number(meal.fiber_g, 1)}g fiber`,
+        meal.sugar_g == null ? "" : `${number(meal.sugar_g, 1)}g sugar`,
+    ].filter(Boolean);
+    return `<article class="meal-card" data-meal-id="${escapeHtml(meal.id)}"><div class="meal-card-head"><div><h4>${escapeHtml(mealDisplayName(meal))}</h4><div class="meal-meta"><span>${escapeHtml(formatTime(meal.logged_at))}</span>${grouped ? "" : `<span>${escapeHtml(type)}</span>`}${meal.notes ? `<span>${escapeHtml(meal.notes)}</span>` : ""}</div></div><strong>${meal.calories == null ? "—" : `${number(meal.calories)} kcal`}</strong></div><div class="meal-macros"><span class="macro-chip">${escapeHtml(macroParts.join(" · "))}</span></div>${mealItems(meal.items, meal)}<div class="auth-actions meal-card-actions"><button class="button button-quiet button-small" data-action="view-meal-details" data-id="${escapeHtml(meal.id)}">Details</button><button class="button button-secondary button-small" data-action="edit-meal" data-id="${escapeHtml(meal.id)}">Edit</button><button class="button button-quiet button-small" data-action="duplicate-meal" data-id="${escapeHtml(meal.id)}">Duplicate</button><button class="button button-quiet button-small" data-action="delete-meal" data-id="${escapeHtml(meal.id)}">Delete</button></div></article>`;
 }
 
 function groupedMeals(meals) {
@@ -891,11 +947,15 @@ function groupedMeals(meals) {
     return `<div class="meal-groups">${order
         .map((type) => {
             const entries = groups[type] || [];
+            const label = type[0].toUpperCase() + type.slice(1);
+            if (!entries.length) {
+                return `<div class="slot-empty-row"><div><span class="meal-dot ${type}"></span><strong>${label}</strong></div><button class="button button-quiet button-small" type="button" data-action="add-meal" data-meal-type="${type}">+ Add</button></div>`;
+            }
             const total = entries.reduce(
                 (sum, meal) => sum + (meal.calories || 0),
                 0,
             );
-            return `<section class="meal-group"><header class="meal-group-header"><div><span class="meal-dot ${type}"></span><strong>${type[0].toUpperCase() + type.slice(1)}</strong></div><span>${entries.length ? `${number(total)} kcal` : "No entries"}</span></header>${entries.length ? entries.map(mealCard).join("") : `<div class="meal-card"><p>No ${type} logged.</p></div>`}</section>`;
+            return `<section class="meal-group"><header class="meal-group-header"><div><span class="meal-dot ${type}"></span><strong>${label}</strong></div><span>${number(total)} kcal</span></header>${entries.map((meal) => mealCard(meal, { grouped: true })).join("")}</section>`;
         })
         .join("")}</div>`;
 }
@@ -949,7 +1009,7 @@ async function renderToday() {
     // account. A future day swaps the totals for the Planned
     // projection, drops the ad slot (it belongs to a lived day), and
     // lists planned meals where logged meals would sit.
-    content.innerHTML = `<div class="operate-view today-view"><div class="page-heading"><div class="today-heading-row"><h2>${escapeHtml(formatDate(state.date, { weekday: true }))}</h2>${isFutureDay ? `<span class="day-kind-chip">Planned</span>` : ""}<div class="today-heading-icons"><button class="button button-secondary button-small trends-icon-btn" type="button" data-action="open-calendar" aria-label="Open calendar" title="Calendar"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg></button><button class="button button-secondary button-small trends-icon-btn" type="button" data-action="open-trends" aria-label="Open Trends" title="Trends"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><rect x="4" y="12" width="3.4" height="7" rx="1"/><rect x="10.3" y="7" width="3.4" height="12" rx="1"/><rect x="16.6" y="9.5" width="3.4" height="9.5" rx="1"/></svg></button></div></div><div class="auth-actions"></div></div><section class="panel">${macrosSection}</section>${isFutureDay ? "" : todayAdSlotMarkup()}<div class="dashboard-grid"><section class="panel panel-span-8">${mealsPanel}</section><aside class="panel panel-span-4"><div class="panel-title"><h3>Daily details</h3></div><div class="summary-grid" style="grid-template-columns:1fr 1fr">${metricCard("Water", data.water.totalMl, " ml", goals.daily_water_ml, false, { key: "today-water", targetLink: true, headAction: { action: "add-water", label: "Add water" }, body: waterMetricDetail(data.water.entries) })}${metricCard("Weight", latestWeightValue, ` ${weightUnit}`, null, false, { key: "today-weight", headAction: { action: "add-weight", label: "Add weight" }, body: weightMetricDetail(data.weight, weightUnit) })}</div><div class="panel-title spacer-top"><h3>Hydration entries</h3><span>${state.waterEntries.length}</span></div>${waterEntryRows(state.waterEntries)}<div class="panel-title spacer-top"><h3>Weight entries</h3><span>${state.weightEntries.length}</span></div>${weightEntryRows(state.weightEntries, weightUnit)}${data.drafts?.length ? `<div class="panel-title spacer-top"><h3>Pending drafts</h3><span>${data.drafts.length}</span></div><div class="meal-groups">${data.drafts.map(pendingDraftCard).join("")}</div>` : ""}${
+    content.innerHTML = `<div class="operate-view today-view"><div class="page-heading"><div class="today-heading-row"><h2>${escapeHtml(formatDate(state.date, { weekday: true }))}</h2>${isFutureDay ? `<span class="day-kind-chip">Planned</span>` : ""}<div class="today-heading-icons"><button class="button button-secondary button-small trends-icon-btn" type="button" data-action="open-calendar" aria-label="Open calendar" title="Calendar"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg></button><button class="button button-secondary button-small trends-icon-btn" type="button" data-action="open-trends" aria-label="Open Trends" title="Trends"><svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true"><rect x="4" y="12" width="3.4" height="7" rx="1"/><rect x="10.3" y="7" width="3.4" height="12" rx="1"/><rect x="16.6" y="9.5" width="3.4" height="9.5" rx="1"/></svg></button></div></div><div class="auth-actions"></div></div><section class="panel">${macrosSection}</section>${isFutureDay ? "" : todayAdSlotMarkup()}<div class="dashboard-grid"><section class="panel panel-span-8">${mealsPanel}</section><aside class="panel panel-span-4"><div class="panel-title"><h3>Daily details</h3></div><div class="summary-grid" style="grid-template-columns:1fr 1fr">${metricCard("Water", data.water.totalMl, " ml", goals.daily_water_ml, false, { key: "today-water", targetLink: true, headAction: { action: "add-water", label: "Add water" }, body: waterMetricDetail(data.water.entries) })}${metricCard("Weight", latestWeightValue, ` ${weightUnit}`, null, false, { key: "today-weight", headAction: { action: "add-weight", label: "Add weight" }, body: weightMetricDetail(data.weight, weightUnit) })}</div>${state.waterEntries.length ? `<div class="panel-title spacer-top"><h3>Hydration entries</h3><span>${state.waterEntries.length}</span></div>${waterEntryRows(state.waterEntries)}` : ""}${state.weightEntries.length ? `<div class="panel-title spacer-top"><h3>Weight entries</h3><span>${state.weightEntries.length}</span></div>${weightEntryRows(state.weightEntries, weightUnit)}` : ""}${data.drafts?.length ? `<div class="panel-title spacer-top"><h3>Pending drafts</h3><span>${data.drafts.length}</span></div><div class="meal-groups">${data.drafts.map(pendingDraftCard).join("")}</div>` : ""}${
         !isFutureDay && data.plannedMeals?.length
             ? `<div class="panel-title spacer-top"><h3>Planned today</h3><span>${data.plannedMeals.length}</span></div>${data.plannedMeals
                   .map((meal) => {
@@ -975,7 +1035,10 @@ async function renderToday() {
                       } else if (data.isToday) {
                           actions = `${plannedLogButton(meal, "Log as planned")}${viewButton}`;
                       }
-                      return `<div class="food-row"><div><strong>${escapeHtml(meal.recipe_name)}</strong><small>${escapeHtml(meal.meal_slot || "Meal")} · ${number(meal.servings, 1)} servings</small></div><span>${meal.nutrition_per_serving?.calories ? `${number(meal.nutrition_per_serving.calories * meal.servings)} kcal` : ""}</span><span class="planned-actions">${actions}</span></div>`;
+                      const kcalText = meal.nutrition_per_serving?.calories
+                          ? ` · ${number(meal.nutrition_per_serving.calories * meal.servings)} kcal`
+                          : "";
+                      return `<div class="food-row planned-row"><div><strong>${escapeHtml(meal.recipe_name)}</strong><small>${escapeHtml(meal.meal_slot || "Meal")} · ${number(meal.servings, 1)} servings${escapeHtml(kcalText)}</small></div><span class="planned-actions">${actions}</span></div>`;
                   })
                   .join("")}`
             : ""
@@ -1339,34 +1402,53 @@ function openRangeMacroBreakdown(key) {
     if (!config || !data) return;
     const format = (value) =>
         `${number(value || 0, config.digits)}${config.unit}`;
-    const aggregateMacro =
-        data.aggregate.daysWithMeals > 0 ? data.aggregate.macros[key] : null;
+    const plannedField = {
+        calories: "calories",
+        protein: "proteinG",
+        carbs: "carbsG",
+        fat: "fatG",
+    }[key];
+    const hasLogged = data.aggregate.daysWithMeals > 0;
+    const plannedTotal = data.aggregate.plannedTotals?.[plannedField] ?? null;
+    const plannedOnly = !hasLogged && plannedTotal != null;
+    const mixed = hasLogged && plannedTotal != null;
+    const aggregateMacro = hasLogged ? data.aggregate.macros[key] : null;
     const rangeTotal = aggregateMacro
         ? aggregateMacro.total
-        : data.aggregate.plannedTotals?.[
-              {
-                  calories: "calories",
-                  protein: "proteinG",
-                  carbs: "carbsG",
-                  fat: "fatG",
-              }[key]
-          ] || 0;
+        : plannedTotal || 0;
+    const totalLabel = plannedOnly
+        ? "Planned total"
+        : mixed
+          ? "Logged total"
+          : "Range total";
     const rows = data.days
         .map((day) => {
             const actual = day.totals[config.totalsField] || 0;
             const plannedValue =
                 day.plannedProjection?.totals[config.totalsField];
             const plannedNote =
-                plannedValue != null
-                    ? `<span class="macro-sheet-item-portion">Planned ${format(plannedValue)} — not counted in the range total</span>`
+                !plannedOnly && plannedValue != null
+                    ? `<span class="macro-sheet-item-portion">Planned ${format(plannedValue)} — separate from logged total</span>`
                     : "";
-            return `<div class="macro-sheet-item"><span class="macro-sheet-item-name">${escapeHtml(formatDate(day.date, { weekday: true }))}${plannedNote}</span><span class="macro-sheet-item-value">${day.meals.length ? format(actual) : "—"}</span></div>`;
+            const rowValue = plannedOnly
+                ? plannedValue != null
+                    ? format(plannedValue)
+                    : "—"
+                : day.meals.length
+                  ? format(actual)
+                  : "—";
+            return `<div class="macro-sheet-item"><span class="macro-sheet-item-name">${escapeHtml(formatDate(day.date, { weekday: true }))}${plannedNote}</span><span class="macro-sheet-item-value">${rowValue}</span></div>`;
         })
         .join("");
+    const summaryNote = mixed
+        ? ` logged across ${number(data.aggregate.days)} days · Planned ${format(plannedTotal)}`
+        : plannedOnly
+          ? ` planned across ${number(data.aggregate.days)} days`
+          : ` across ${number(data.aggregate.days)} days`;
     openDialog(
         `${config.label} — ${formatRangeLabel(data.start, data.end)}`,
-        `<p class="macro-sheet-total"><b>${format(rangeTotal)}</b> across ${number(data.aggregate.days)} days</p><div class="macro-sheet-group">${rows}</div>`,
-        `<div class="macro-sheet-foot"><span>Range total</span><b>${format(rangeTotal)}</b></div>`,
+        `<p class="macro-sheet-total"><b>${format(rangeTotal)}</b>${summaryNote}</p><div class="macro-sheet-group">${rows}</div>`,
+        `<div class="macro-sheet-foot"><span>${totalLabel}</span><b>${format(rangeTotal)}</b></div>`,
     );
 }
 
@@ -1566,9 +1648,10 @@ function paintCalendar() {
     // the toggle as off; QC-gate F1). aria-pressed="true" is the
     // styling hook: direction C's filled primary (app-overrides.css).
     const rangeTogglePressed = calendarView.picking || Boolean(selection.range);
+    const quickRow = `<div class="auth-actions cal-quick-row" role="group" aria-label="Quick jump"><button type="button" class="button button-secondary button-small" data-action="calendar-jump-today">Today</button><button type="button" class="button button-secondary button-small" data-action="calendar-quick-range" data-days="7">Last 7d</button><button type="button" class="button button-secondary button-small" data-action="calendar-quick-range" data-days="30">Last 30d</button></div>`;
     openDialog(
         "Calendar",
-        `<div class="cal-nav"><button type="button" class="cal-chevron" data-action="calendar-prev-month" aria-label="Previous month">‹</button><span class="cal-nav-label">${escapeHtml(title)}</span><button type="button" class="cal-chevron" data-action="calendar-next-month" aria-label="Next month">›</button></div><div class="cal-week" aria-hidden="true">${["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((day) => `<span>${day}</span>`).join("")}</div><div class="cal-grid">${cells}</div>${rangeStatus}<button type="button" class="cal-history-row" data-action="calendar-history"><span>Search history</span><span aria-hidden="true">›</span></button>`,
+        `<div class="cal-nav"><button type="button" class="cal-chevron" data-action="calendar-prev-month" aria-label="Previous month">‹</button><span class="cal-nav-label">${escapeHtml(title)}</span><button type="button" class="cal-chevron" data-action="calendar-next-month" aria-label="Next month">›</button></div>${quickRow}<div class="cal-week" aria-hidden="true">${["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((day) => `<span>${day}</span>`).join("")}</div><div class="cal-grid">${cells}</div>${rangeStatus}<button type="button" class="cal-history-row" data-action="calendar-history"><span>Search history</span><span aria-hidden="true">›</span></button>`,
         "",
         `<button class="button button-secondary range-toggle" type="button" data-action="calendar-range-mode" aria-pressed="${rangeTogglePressed ? "true" : "false"}">Range</button>`,
     );
@@ -1768,7 +1851,7 @@ function plannedDayMeals(plannedMeals) {
             return `<section class="meal-group"><header class="meal-group-header"><div><span class="meal-dot ${escapeHtml(slot)}"></span><strong>${escapeHtml(label)}</strong></div><span>${anyCounted ? `${number(counted)} kcal planned` : "Nutrition not counted"}</span></header>${entries
                 .map(
                     (meal) =>
-                        `<div class="food-row"><div><strong>${escapeHtml(meal.recipe_name)}</strong><small>${number(meal.servings, 1)} servings</small></div><span>${meal.nutrition_per_serving?.calories ? `${number(meal.nutrition_per_serving.calories * meal.servings)} kcal` : "Nutrition not counted"}</span><button class="button button-quiet button-small" type="button" data-action="view-recipe" data-id="${escapeHtml(meal.recipe_id)}">View recipe</button></div>`,
+                        `<div class="food-row planned-row"><div><strong>${escapeHtml(meal.recipe_name)}</strong><small>${number(meal.servings, 1)} servings · ${meal.nutrition_per_serving?.calories ? `${number(meal.nutrition_per_serving.calories * meal.servings)} kcal` : "Nutrition not counted"}</small></div><span class="planned-actions"><button class="button button-quiet button-small" type="button" data-action="view-recipe" data-id="${escapeHtml(meal.recipe_id)}">View recipe</button></span></div>`,
                 )
                 .join("")}</section>`;
         })
@@ -1835,18 +1918,27 @@ async function renderLog() {
     const resultText = query
         ? `${number(data.meals.length)} matching meal${data.meals.length === 1 ? "" : "s"} from ${escapeHtml(formatDate(start))} through ${escapeHtml(formatDate(state.date))}.`
         : `Review meals, item-level provenance, notes, and totals from ${escapeHtml(formatDate(start))} through ${escapeHtml(formatDate(state.date))}.`;
-    content.innerHTML = `<div class="operate-view log-view"><div class="page-heading"><div><h2>${escapeHtml(heading)}</h2><p>${resultText}</p></div><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="manage-saved-foods">Saved foods</button><button class="button button-secondary button-small" data-action="date-prev">Previous</button><button class="button button-secondary button-small" data-action="date-today">Today</button><button class="button button-secondary button-small" data-action="date-next">Next</button></div></div><section class="panel"><form id="meal-history-search-form" class="meal-composer-search-row"><label class="field" style="flex:1"><span>Search meal history</span><input class="input" id="meal-history-search" name="query" type="search" value="${escapeHtml(query)}" placeholder="Search chicken, peanut butter, restaurant…" autocomplete="off" /></label><div class="auth-actions"><button class="button button-primary button-small" type="submit">Search</button>${query ? '<button class="button button-quiet button-small" type="button" data-action="clear-meal-search">Clear</button>' : ""}</div></form><div class="auth-actions spacer-top log-range-row" role="group" aria-label="History range">${rangeButtons}</div></section><section class="panel spacer-top"><div class="summary-grid">${metricCard("Calories", data.totals.calories, " kcal", null, true, { key: "log-calories", body: mealMetricDetail(data.meals, "calories", " kcal", { groupByDay: historyDays > 1 }) })}${metricCard("Protein", data.totals.proteinG, "g", null, false, { key: "log-protein", body: mealMetricDetail(data.meals, "protein_g", "g", { groupByDay: historyDays > 1 }) })}${metricCard("Carbohydrates", data.totals.carbsG, "g", null, false, { key: "log-carbs", body: mealMetricDetail(data.meals, "carbs_g", "g", { groupByDay: historyDays > 1 }) })}${metricCard("Fat", data.totals.fatG, "g", null, false, { key: "log-fat", body: mealMetricDetail(data.meals, "fat_g", "g", { groupByDay: historyDays > 1 }) })}</div></section>${mealSearchSummary(data.search)}<div class="spacer-top">${data.meals.length ? groupedMeals(data.meals) : `<div class="empty-state"><div><h3>${query ? "No matching meals" : "No meals logged"}</h3><p>${query ? "Try another keyword or expand the date range." : "Log a meal to build your history."}</p></div></div>`}</div></div>`;
+    content.innerHTML = `<div class="operate-view log-view"><a class="mobile-subroute-back" href="/app/more">← More</a><div class="page-heading"><div><h2>${escapeHtml(heading)}</h2><p>${resultText}</p></div><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="manage-saved-foods">Saved foods</button><button class="button button-secondary button-small" data-action="date-prev">Previous</button><button class="button button-secondary button-small" data-action="date-today">Today</button><button class="button button-secondary button-small" data-action="date-next">Next</button></div></div><section class="panel"><form id="meal-history-search-form" class="meal-composer-search-row"><label class="field" style="flex:1"><span>Search meal history</span><input class="input" id="meal-history-search" name="query" type="search" value="${escapeHtml(query)}" placeholder="Search chicken, peanut butter, restaurant…" autocomplete="off" /></label><div class="auth-actions"><button class="button button-primary button-small" type="submit">Search</button>${query ? '<button class="button button-quiet button-small" type="button" data-action="clear-meal-search">Clear</button>' : ""}</div></form><div class="auth-actions spacer-top log-range-row" role="group" aria-label="History range">${rangeButtons}</div></section><section class="panel spacer-top"><div class="summary-grid">${metricCard("Calories", data.totals.calories, " kcal", null, true, { key: "log-calories", body: mealMetricDetail(data.meals, "calories", " kcal", { groupByDay: historyDays > 1 }) })}${metricCard("Protein", data.totals.proteinG, "g", null, false, { key: "log-protein", body: mealMetricDetail(data.meals, "protein_g", "g", { groupByDay: historyDays > 1 }) })}${metricCard("Carbohydrates", data.totals.carbsG, "g", null, false, { key: "log-carbs", body: mealMetricDetail(data.meals, "carbs_g", "g", { groupByDay: historyDays > 1 }) })}${metricCard("Fat", data.totals.fatG, "g", null, false, { key: "log-fat", body: mealMetricDetail(data.meals, "fat_g", "g", { groupByDay: historyDays > 1 }) })}</div></section>${mealSearchSummary(data.search)}<div class="spacer-top">${data.meals.length ? groupedMeals(data.meals) : `<div class="empty-state"><div><h3>${query ? "No matching meals" : "No meals logged"}</h3><p>${query ? "Try another keyword or expand the date range." : "Log a meal to build your history."}</p></div></div>`}</div></div>`;
 }
 
 function savedFoodListMarkup(foods) {
     if (!foods?.length) {
-        return `<div class="empty-state"><div><h3>No saved foods yet</h3><p>Search for a verified food below to save a reusable snapshot.</p></div></div>`;
+        return `<p class="empty-state-compact">No saved foods yet. Search above to save a reusable snapshot.</p>`;
     }
     return `<div class="food-items">${foods
         .map((food) => {
             const snapshot = food.food || {};
             const portion = foodPortion(snapshot, food.defaultPortionId);
-            return `<div class="food-row"><div><strong>${escapeHtml(food.label)}</strong><small>${sourceBadge(food.provider || snapshot.provider)} ${escapeHtml(foodTitle(snapshot))} · ${escapeHtml(portion?.label || "Choose a portion when logging")} · used ${number(food.useCount)} time${food.useCount === 1 ? "" : "s"}</small></div><button class="button button-quiet button-small" type="button" data-action="delete-saved-food" data-id="${escapeHtml(food.id)}">Remove</button></div>`;
+            const n = portion?.nutrients || {};
+            const macroSummary = [
+                n.calories == null ? "" : `${number(n.calories)} kcal`,
+                n.protein_g == null ? "" : `${number(n.protein_g, 1)}g P`,
+                n.carbs_g == null ? "" : `${number(n.carbs_g, 1)}g C`,
+                n.fat_g == null ? "" : `${number(n.fat_g, 1)}g F`,
+            ]
+                .filter(Boolean)
+                .join(" · ");
+            return `<div class="food-row"><div><strong>${escapeHtml(food.label)}</strong><small>${sourceBadge(food.provider || snapshot.provider)} ${escapeHtml(foodTitle(snapshot))} · ${escapeHtml(portion?.label || "Choose a portion when logging")}${macroSummary ? ` · ${escapeHtml(macroSummary)}` : ""} · used ${number(food.useCount)} time${food.useCount === 1 ? "" : "s"}</small></div><button class="button button-quiet button-small" type="button" data-action="delete-saved-food" data-id="${escapeHtml(food.id)}" aria-label="Remove ${escapeHtml(food.label)}">Remove</button></div>`;
         })
         .join("")}</div>`;
 }
@@ -2149,9 +2241,10 @@ function trendsBarChart(card) {
         .map((day, i) => {
             const show = bucketed
                 ? days.length <= 14 || i % 2 === 0
-                : days.length <= 31 ||
-                  i % 7 === 0 ||
-                  Number(day.date.slice(8, 10)) === 1;
+                : days.length <= 14 ||
+                  i === 0 ||
+                  i === days.length - 1 ||
+                  i % 5 === 0;
             const label = bucketed
                 ? chart.bucket === "month"
                     ? trendsMonthLabel(day.date)
@@ -2260,7 +2353,7 @@ function trendsDonutChart(card) {
                 `<div class="trends-legend-row"><span class="trends-legend-dot" style="background:${colors[segment.key] || "#6E7462"}"></span><span>${escapeHtml(segment.label)}</span><b>${segment.share}%</b><small>${number(segment.grams)} g</small></div>`,
         )
         .join("");
-    const toggle = `<div class="trends-toggle" role="group" aria-label="Macro split view"><button type="button" class="${mode === "snapshot" ? "is-on" : ""}" data-action="trends-donut-mode" data-cardkey="${key}" data-mode="snapshot">Snapshot</button><button type="button" class="${mode === "columns" ? "is-on" : ""}" data-action="trends-donut-mode" data-cardkey="${key}" data-mode="columns">Over time</button></div>`;
+    const toggle = `<div class="trends-toggle" role="group" aria-label="Macro split view"><button type="button" class="${mode === "snapshot" ? "is-on" : ""}" data-action="trends-donut-mode" data-cardkey="${key}" data-mode="snapshot" aria-pressed="${mode === "snapshot" ? "true" : "false"}">Snapshot</button><button type="button" class="${mode === "columns" ? "is-on" : ""}" data-action="trends-donut-mode" data-cardkey="${key}" data-mode="columns" aria-pressed="${mode === "columns" ? "true" : "false"}">Over time</button></div>`;
     if (mode === "columns") {
         const columns = chart.columns
             .map((column) => {
@@ -2392,7 +2485,8 @@ function trendsConsistencyChart(card) {
                 `<span style="flex:${span.weeks}">${span.month ? escapeHtml(formatDate(`${span.month}-01`).split(" ")[0]) : ""}</span>`,
         )
         .join("");
-    return `<div class="trends-heat-wrap"><div class="trends-months">${months}</div><div class="trends-heat">${blanks}${chart.cells.map(cell).join("")}</div></div>`;
+    const minTrackWidth = Math.max(240, Math.round(columns.length * 14.5));
+    return `<div class="trends-heat-wrap"><div class="trends-heat-scroll"><div class="trends-months" style="min-width:${minTrackWidth}px">${months}</div><div class="trends-heat" style="min-width:${minTrackWidth}px">${blanks}${chart.cells.map(cell).join("")}</div></div></div>`;
 }
 
 function trendsWindowChart(card) {
@@ -2490,7 +2584,7 @@ function paintTrends() {
         flushPair();
         cardsHtml = parts.join("");
     }
-    content.innerHTML = `<div class="operate-view trends-view"><div class="page-heading"><div><h2>Trends</h2><p>${rangeLabel} · ${escapeHtml(formatDate(data.startDate))} – ${escapeHtml(formatDate(data.endDate))}</p></div><div class="trends-controls"><div class="trends-pills" role="group" aria-label="Trends range">${TRENDS_RANGES.map((range) => `<button type="button" class="trends-pill${range.key === rangeKey ? " is-on" : ""}" data-action="trends-range" data-range="${range.key}"${range.days ? ` data-days="${range.days}"` : ""} aria-pressed="${range.key === rangeKey}">${range.label}</button>`).join("")}</div><div class="trends-actions"><button class="button ${editing ? "button-primary" : "button-secondary"} button-small" type="button" data-action="trends-edit-toggle">${editing ? "Done" : "Edit"}</button><button class="button button-secondary button-small" type="button" data-action="trends-add">+ Chart</button></div></div></div>${cardsHtml}${trendsDigestMarkup(data)}</div>`;
+    content.innerHTML = `<div class="operate-view trends-view"><a class="mobile-subroute-back" href="/app/more">← More</a><div class="page-heading"><div><h2>Trends</h2><p>${rangeLabel} · ${escapeHtml(formatDate(data.startDate))} – ${escapeHtml(formatDate(data.endDate))}</p></div><div class="trends-controls"><div class="trends-pills" role="group" aria-label="Trends range">${TRENDS_RANGES.map((range) => `<button type="button" class="trends-pill${range.key === rangeKey ? " is-on" : ""}" data-action="trends-range" data-range="${range.key}"${range.days ? ` data-days="${range.days}"` : ""} aria-pressed="${range.key === rangeKey}">${range.label}</button>`).join("")}</div><div class="trends-actions"><button class="button ${editing ? "button-primary" : "button-secondary"} button-small" type="button" data-action="trends-edit-toggle">${editing ? "Done" : "Edit"}</button><button class="button button-secondary button-small" type="button" data-action="trends-add">+ Chart</button></div></div></div>${cardsHtml}${trendsDigestMarkup(data)}</div>`;
 }
 
 async function renderTrends() {
@@ -2667,7 +2761,26 @@ function openTrendsWeekdaySheet(cardKey, dow) {
 async function renderFoods() {
     setLoading("Loading saved foods…");
     const data = await api("/api/app/foods");
-    content.innerHTML = `<div class="operate-view foods-view"><div class="page-heading"><div><h2>Saved foods</h2><p>${data.total} reusable food${data.total === 1 ? "" : "s"}${data.limit ? ` of ${data.limit}` : ""}.</p></div><div class="auth-actions"><input class="input" id="food-filter" type="search" placeholder="Filter saved foods" aria-label="Filter saved foods" /></div></div><section class="panel"><div id="food-list">${data.foods.length ? `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Food</th><th>Source</th><th>Default portion</th><th>Used</th><th>Last used</th></tr></thead><tbody>${data.foods.map((food) => `<tr data-food-label="${escapeHtml(food.label.toLowerCase())}"><td><strong>${escapeHtml(food.label)}</strong><br /><small>${escapeHtml(food.food?.brand || food.food?.name || "")}</small></td><td>${sourceBadge(food.provider)}</td><td>${escapeHtml(food.defaultPortionId || "Choose when logging")}</td><td>${number(food.useCount)}</td><td>${food.lastUsedAt ? escapeHtml(formatDate(food.lastUsedAt.slice(0, 10), { year: true })) : "Never"}</td></tr>`).join("")}</tbody></table></div>` : `<div class="empty-state"><div><h3>No saved foods yet</h3><p>Confirm a provider food in your AI assistant, then save it for reuse.</p></div></div>`}</div></section></div>`;
+    const cards = (data.foods || [])
+        .map((food) => {
+            const snapshot = food.food || {};
+            const portion = foodPortion(snapshot, food.defaultPortionId);
+            const n = portion?.nutrients || {};
+            const macros = [
+                n.calories == null ? "" : `${number(n.calories)} kcal`,
+                n.protein_g == null ? "" : `${number(n.protein_g, 1)}g P`,
+                n.carbs_g == null ? "" : `${number(n.carbs_g, 1)}g C`,
+                n.fat_g == null ? "" : `${number(n.fat_g, 1)}g F`,
+            ]
+                .filter(Boolean)
+                .join(" · ");
+            const lastUsed = food.lastUsedAt
+                ? `Last used ${escapeHtml(formatDate(food.lastUsedAt.slice(0, 10), { year: true }))}`
+                : "Never used";
+            return `<article class="meal-card" data-food-label="${escapeHtml(food.label.toLowerCase())}"><div class="meal-card-head"><div><h4>${escapeHtml(food.label)}</h4><div class="meal-meta"><span>${sourceBadge(food.provider || snapshot.provider)}</span><span>${escapeHtml(portion?.label || "Choose when logging")}</span></div></div><strong>${n.calories == null ? "—" : `${number(n.calories)} kcal`}</strong></div>${macros ? `<div class="meal-macros"><span class="macro-chip">${escapeHtml(macros)}</span></div>` : ""}<p class="tiny spacer-top">${escapeHtml(foodTitle(snapshot))} · Used ${number(food.useCount)}× · ${lastUsed}</p></article>`;
+        })
+        .join("");
+    content.innerHTML = `<div class="operate-view foods-view"><a class="mobile-subroute-back" href="/app/more">← More</a><div class="page-heading"><div><h2>Saved foods</h2><p>${data.total} reusable food${data.total === 1 ? "" : "s"}${data.limit ? ` of ${data.limit}` : ""}.</p></div><div class="auth-actions"><button class="button button-primary button-small" type="button" data-action="manage-saved-foods">Manage saved foods</button></div></div><section class="panel"><div class="field"><input class="input" id="food-filter" type="search" placeholder="Filter saved foods…" aria-label="Filter saved foods" /></div><div id="food-list" class="meal-groups spacer-top">${data.foods.length ? cards : `<p class="empty-state-compact">No saved foods yet. Tap Manage saved foods to save a verified snapshot.</p>`}</div></section></div>`;
 }
 
 async function planningData() {
@@ -2765,6 +2878,16 @@ function visibleRecipes(recipes, query, sort) {
 // its own add-to-grocery action untouched. Feature toggles (T7): the
 // Plan segment hides with Meal Plan off, exactly as the old
 // Add-to-plan button did.
+function recipeTimeSummary(recipe) {
+    const prep = Number(recipe?.preparation_minutes || 0);
+    const cook = Number(recipe?.cooking_minutes || 0);
+    const total = prep + cook;
+    if (total <= 0) return "";
+    if (prep > 0 && cook > 0)
+        return `${total}m (${prep}m prep · ${cook}m cook)`;
+    return `${total}m`;
+}
+
 function recipeCardHtml(recipe) {
     const planSegment = featureFlags().plan
         ? `<button class="button button-secondary button-small" type="button" data-action="plan-recipe" data-id="${escapeHtml(recipe.recipe_id)}">Plan</button>`
@@ -2772,7 +2895,23 @@ function recipeCardHtml(recipe) {
     const lastCooked = recipe.last_logged_at
         ? ` · last cooked ${escapeHtml(formatDate(String(recipe.last_logged_at).slice(0, 10)))}`
         : "";
-    return `<section class="panel recipe-panel" data-recipe-name="${escapeHtml(recipe.name.toLowerCase())}"><span class="source-chip ${recipe.ownership === "household" ? "source-saved" : "source-usda"}">${escapeHtml(recipe.ownership)}</span><h3 class="recipe-title">${escapeHtml(recipe.name)}</h3><p class="recipe-meta">${number(recipe.servings, 1)} servings · ${escapeHtml(recipe.nutrition_status)} nutrition · per serving: <strong>${number(recipe.nutrition_per_serving?.calories)} kcal · P ${number(recipe.nutrition_per_serving?.protein_g, 1)}g · C ${number(recipe.nutrition_per_serving?.carbs_g, 1)}g · F ${number(recipe.nutrition_per_serving?.fat_g, 1)}g</strong> · Scheduled ${number(recipe.times_scheduled)} times · logged ${number(recipe.times_logged)} times${lastCooked}</p><div class="auth-actions recipe-panel-actions"><button class="button button-secondary button-small" type="button" data-action="view-recipe" data-id="${escapeHtml(recipe.recipe_id)}">View</button><button class="button button-secondary button-small" type="button" data-action="log-recipe" data-id="${escapeHtml(recipe.recipe_id)}" data-revision="${escapeHtml(recipe.revision_id || "")}">Log</button>${planSegment}</div></section>`;
+    const prep = Number(recipe.preparation_minutes || 0);
+    const cook = Number(recipe.cooking_minutes || 0);
+    const totalMin = prep + cook;
+    const per = recipe.nutrition_per_serving || {};
+    const macroStrip =
+        recipe.nutrition_status === "unavailable"
+            ? "Nutrition unavailable"
+            : [
+                  `${number(per.calories)} kcal`,
+                  `${number(per.protein_g, 1)}P`,
+                  `${number(per.carbs_g, 1)}C`,
+                  `${number(per.fat_g, 1)}F`,
+                  totalMin > 0 ? `${totalMin}m` : "",
+              ]
+                  .filter(Boolean)
+                  .join(" · ");
+    return `<section class="panel recipe-panel" data-recipe-name="${escapeHtml(recipe.name.toLowerCase())}"><span class="source-chip ${recipe.ownership === "household" ? "source-saved" : "source-usda"}">${escapeHtml(recipe.ownership)}</span><h3 class="recipe-title">${escapeHtml(recipe.name)}</h3><p class="recipe-meta"><strong>${escapeHtml(macroStrip)}</strong> · ${number(recipe.servings, 1)} servings · ${escapeHtml(recipe.nutrition_status)} nutrition · logged ${number(recipe.times_logged)} times${lastCooked}</p><div class="auth-actions recipe-panel-actions"><button class="button button-secondary button-small" type="button" data-action="view-recipe" data-id="${escapeHtml(recipe.recipe_id)}">View</button><button class="button button-secondary button-small" type="button" data-action="log-recipe" data-id="${escapeHtml(recipe.recipe_id)}" data-revision="${escapeHtml(recipe.revision_id || "")}">Log</button>${planSegment}</div></section>`;
 }
 
 function recipeCardsHtml() {
@@ -2913,13 +3052,13 @@ function recipePlanSectionMarkup(planEnabled) {
     // grocery list.
     const groceriesOn = featureFlags().groceries;
     const groceryBlock = groceriesOn
-        ? `<div class="panel-title spacer-top"><div><h3>Explicit grocery items</h3><span>Munch does not infer pantry inventory.</span></div><button class="button button-secondary button-small" type="button" data-action="add-recipe-grocery">Add grocery item</button></div><div id="recipe-compose-groceries"></div>`
+        ? `<div class="panel-title spacer-top"><div><h3>Explicit grocery items</h3><span>Only items you still need</span></div><button class="button button-secondary button-small" type="button" data-action="add-recipe-grocery">Add grocery item</button></div><div id="recipe-compose-groceries"></div>`
         : "";
     const summary = groceriesOn
-        ? "Save the recipe, schedule it, and add only the groceries you explicitly still need."
-        : "Save the recipe and schedule it.";
+        ? "Save, schedule, and add only the groceries you still need."
+        : "Save and schedule this recipe.";
     const disabled = planEnabled ? "" : " disabled";
-    return `<section class="recipe-editor-section"><label class="checkbox-row"><input type="checkbox" name="add_to_plan" data-recipe-plan-toggle${planEnabled ? " checked" : ""} /><span>Also add to plan</span></label><div data-recipe-plan-fields${planEnabled ? "" : " hidden"}><div class="panel-title"><div><h3>Plan this recipe</h3><span>${summary}</span></div></div><div class="meal-composer-grid"><label class="field"><span>Planned date</span><input name="planned_date" type="date" value="${escapeHtml(state.date)}" required${disabled} /></label><label class="field"><span>Meal slot</span><select name="meal_slot"${disabled}><option value="breakfast">Breakfast</option><option value="lunch">Lunch</option><option value="dinner" selected>Dinner</option><option value="snack">Snack</option></select></label><label class="field"><span>Servings planned</span><input name="planned_servings" type="number" min="0.01" step="0.01" value="1" required${disabled} /></label></div><label class="field"><span>Planning note</span><input name="note" maxlength="500" placeholder="Optional note for this planned meal"${disabled} /></label>${groceryBlock}</div></section>`;
+    return `<section class="recipe-editor-section"><label class="checkbox-row"><input type="checkbox" name="add_to_plan" data-recipe-plan-toggle${planEnabled ? " checked" : ""} /><span>Also add to plan</span></label><div data-recipe-plan-fields${planEnabled ? "" : " hidden"}><div class="panel-title"><div><h3>Plan this recipe</h3><span>${summary}</span></div></div><div class="field-row-2up"><label class="field"><span>Planned date</span><input name="planned_date" type="date" value="${escapeHtml(state.date)}" required${disabled} /></label><label class="field"><span>Meal slot</span><select name="meal_slot"${disabled}><option value="breakfast">Breakfast</option><option value="lunch">Lunch</option><option value="dinner" selected>Dinner</option><option value="snack">Snack</option></select></label></div><div class="field-row-qty-unit"><label class="field"><span>Servings</span><input name="planned_servings" type="number" min="0.01" step="0.01" inputmode="decimal" value="1" required${disabled} /></label><label class="field"><span>Planning note</span><input name="note" maxlength="500" placeholder="Optional note"${disabled} /></label></div>${groceryBlock}</div></section>`;
 }
 
 function recipePlanSubmitLabel(form, planOn) {
@@ -2991,21 +3130,31 @@ function recipeFormMarkup(mode, recipe = null, options = {}) {
                     `<option value="${unit}"${unit === selected ? " selected" : ""}>${unit}</option>`,
             )
             .join("");
-    const yieldFields = `<div class="meal-composer-grid"><div class="field"><span>Total yield — volume (optional)</span><div class="yield-edit-row"><input name="yield_volume_quantity" type="number" min="0" step="any" value="${escapeHtml(recipe?.yields?.volume?.quantity ?? "")}" /><select name="yield_volume_unit">${yieldUnitOptions(YIELD_VOLUME_UNITS, recipe?.yields?.volume?.unit || "cup")}</select></div></div><div class="field"><span>Total yield — weight (optional)</span><div class="yield-edit-row"><input name="yield_weight_quantity" type="number" min="0" step="any" value="${escapeHtml(recipe?.yields?.weight?.quantity ?? "")}" /><select name="yield_weight_unit">${yieldUnitOptions(YIELD_WEIGHT_UNITS, recipe?.yields?.weight?.unit || "g")}</select></div></div></div>`;
-    return `<form id="${formId}" class="auth-form"${editing ? ` data-id="${escapeHtml(recipe.id)}" data-version="${escapeHtml(recipe.version)}"` : ""}><div class="meal-composer-grid"><label class="field"><span>Recipe name</span><input name="name" value="${escapeHtml(recipe?.name || "")}" maxlength="200" required /></label><label class="field"><span>Servings</span><input name="servings" type="number" min="0.01" step="0.01" value="${escapeHtml(recipe?.servings ?? 2)}" required /></label></div>${yieldFields}${scopeOptions}<label class="field"><span>Description</span><textarea name="description" rows="2" maxlength="2000" placeholder="What is this recipe for?">${escapeHtml(recipe?.description || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Prep time (minutes)</span><input name="preparation_minutes" type="number" min="0" step="1" value="${escapeHtml(recipe?.preparation_minutes ?? "")}" /></label><label class="field"><span>Cook time (minutes)</span><input name="cooking_minutes" type="number" min="0" step="1" value="${escapeHtml(recipe?.cooking_minutes ?? "")}" /></label></div><section class="recipe-editor-section"><div class="panel-title"><div><h3>Ingredients</h3><span>Search verified foods or add your own.</span></div><button class="button button-secondary button-small" type="button" data-action="add-recipe-ingredient">Add ingredient</button></div><div class="meal-composer-search"><div class="meal-composer-search-row"><input class="input" id="recipe-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><span class="tiny">Food search facts are stored with this revision.</span></div><div id="recipe-food-results" class="meal-food-results"></div></div><div id="recipe-ingredients" class="meal-selected-items"></div></section><label class="field"><span>Instructions</span><textarea name="instructions" rows="6" maxlength="20000" placeholder="One step per line" required>${escapeHtml(recipe?.instructions?.join("\n") || "")}</textarea><small class="tiny">Put each instruction on its own line.</small></label><div class="meal-composer-grid"><label class="field"><span>Source title</span><input name="source_title" maxlength="500" value="${escapeHtml(sourceTitle)}" placeholder="Optional cookbook, site, or note" /></label>${sourceTypeField}</div>${sourceUrlField}${planSectionOn ? recipePlanSectionMarkup(planEnabled) : ""}<button class="button button-primary" type="submit">${submitLabel}</button></form>`;
+    const yieldFields = `<div class="field-row-2up"><div class="field"><span>Volume yield</span><div class="yield-edit-row"><input name="yield_volume_quantity" type="number" min="0" step="any" inputmode="decimal" value="${escapeHtml(recipe?.yields?.volume?.quantity ?? "")}" /><select name="yield_volume_unit" aria-label="Volume yield unit">${yieldUnitOptions(YIELD_VOLUME_UNITS, recipe?.yields?.volume?.unit || "cup")}</select></div></div><div class="field"><span>Weight yield</span><div class="yield-edit-row"><input name="yield_weight_quantity" type="number" min="0" step="any" inputmode="decimal" value="${escapeHtml(recipe?.yields?.weight?.quantity ?? "")}" /><select name="yield_weight_unit" aria-label="Weight yield unit">${yieldUnitOptions(YIELD_WEIGHT_UNITS, recipe?.yields?.weight?.unit || "g")}</select></div></div></div>`;
+    return `<form id="${formId}" class="auth-form"${editing ? ` data-id="${escapeHtml(recipe.id)}" data-version="${escapeHtml(recipe.version)}"` : ""}><label class="field"><span>Recipe name</span><input name="name" value="${escapeHtml(recipe?.name || "")}" maxlength="200" required /></label><div class="field-row-3up"><label class="field"><span>Servings</span><input name="servings" type="number" min="0.01" step="0.01" inputmode="decimal" value="${escapeHtml(recipe?.servings ?? 2)}" required /></label><label class="field"><span>Prep (m)</span><input name="preparation_minutes" type="number" min="0" step="1" inputmode="numeric" value="${escapeHtml(recipe?.preparation_minutes ?? "")}" /></label><label class="field"><span>Cook (m)</span><input name="cooking_minutes" type="number" min="0" step="1" inputmode="numeric" value="${escapeHtml(recipe?.cooking_minutes ?? "")}" /></label></div>${scopeOptions}<label class="field"><span>Description</span><textarea name="description" rows="2" maxlength="2000" placeholder="What is this recipe for?">${escapeHtml(recipe?.description || "")}</textarea></label><section class="recipe-editor-section"><div class="panel-title"><div><h3>Ingredients</h3><span>Search verified foods or add your own.</span></div><button class="button button-secondary button-small" type="button" data-action="add-recipe-ingredient">Add ingredient</button></div><div class="meal-composer-search"><div class="meal-composer-search-row meal-composer-search-row-slim"><input class="input" id="recipe-food-search" type="search" aria-label="Search foods for ingredients" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /></div><div id="recipe-food-results" class="meal-food-results"></div></div><div id="recipe-ingredients" class="meal-selected-items"></div></section><label class="field"><span>Instructions</span><textarea name="instructions" rows="5" maxlength="20000" placeholder="One step per line" required>${escapeHtml(recipe?.instructions?.join("\n") || "")}</textarea><small class="tiny">One step per line.</small></label><details class="more-nutrients"><summary>Yields &amp; source (optional)</summary><div class="auth-form spacer-top">${yieldFields}<div class="field-row-2up"><label class="field"><span>Source title</span><input name="source_title" maxlength="500" value="${escapeHtml(sourceTitle)}" placeholder="Cookbook, site, or note" /></label>${sourceTypeField}</div>${sourceUrlField}</div></details>${planSectionOn ? recipePlanSectionMarkup(planEnabled) : ""}<div class="dialog-footer-sticky"><button class="button button-primary" type="submit">${submitLabel}</button></div></form>`;
 }
 
 function renderRecipeIngredients() {
     const root = document.getElementById("recipe-ingredients");
     if (!root) return;
     if (recipeComposer.ingredients.length === 0) {
-        root.innerHTML = `<div class="empty-state"><div><strong>No ingredients yet.</strong><p>Search for a food or add a manual ingredient.</p></div></div>`;
+        root.innerHTML = `<p class="empty-state-compact">No ingredients yet. Search above or tap Add ingredient.</p>`;
         return;
     }
+    const primaryKeys = ["calories", "protein_g", "carbs_g", "fat_g"];
+    const secondaryKeys = recipeNutrientFields.filter(
+        (key) => !primaryKeys.includes(key),
+    );
+    const nutrientFieldHtml = (key, nutrients) =>
+        `<label class="field"><span>${escapeHtml(key.replace("_g", " (g)").replace("sodium_mg", "sodium (mg)"))}</span><input data-recipe-field="${key}" type="number" min="0" step="0.1" inputmode="decimal" value="${escapeHtml(nutrients[key] ?? "")}" /></label>`;
     root.innerHTML = recipeComposer.ingredients
         .map((ingredient, index) => {
             const nutrients = ingredient.nutrients || {};
-            return `<article class="meal-composer-item recipe-ingredient-editor" data-recipe-ingredient-index="${index}"><div class="meal-composer-item-head"><div><strong>${escapeHtml(ingredient.name || "New ingredient")}</strong><small>${sourceBadge(ingredient.sourceType || "user_supplied")} ${ingredient.provider ? escapeHtml(ingredient.provider) : "Nutrition can be entered below"}</small></div><button class="button button-quiet button-small" type="button" data-action="remove-recipe-ingredient" data-index="${index}">Remove</button></div><div class="meal-composer-grid"><label class="field"><span>Name</span><input data-recipe-field="name" value="${escapeHtml(ingredient.name || "")}" maxlength="300" required /></label><label class="field"><span>Quantity</span><input data-recipe-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(ingredient.quantity ?? "")}" /></label><label class="field"><span>Unit</span><input data-recipe-field="unit" maxlength="80" value="${escapeHtml(ingredient.unit || "")}" placeholder="cup, gram, serving…" /></label><label class="field"><span>Preparation</span><input data-recipe-field="preparation" maxlength="200" value="${escapeHtml(ingredient.preparation || "")}" placeholder="chopped, warmed…" /></label></div><label class="checkbox-row"><input data-recipe-field="optional" type="checkbox" ${ingredient.optional ? "checked" : ""} /> Optional ingredient</label><div class="meal-composer-nutrients">${recipeNutrientFields.map((key) => `<label class="field"><span>${escapeHtml(key.replace("_g", " (g)").replace("sodium_mg", "sodium (mg)"))}</span><input data-recipe-field="${key}" type="number" min="0" step="0.1" value="${escapeHtml(nutrients[key] ?? "")}" /></label>`).join("")}</div></article>`;
+            const calLabel =
+                nutrients.calories == null
+                    ? "Nutrition (optional)"
+                    : `Nutrition · ${number(nutrients.calories)} kcal`;
+            return `<article class="meal-composer-item recipe-ingredient-editor" data-recipe-ingredient-index="${index}"><div class="meal-composer-item-head"><div><strong>${escapeHtml(ingredient.name || "New ingredient")}</strong><small>${sourceBadge(ingredient.sourceType || "user_supplied")} ${ingredient.provider ? escapeHtml(ingredient.provider) : "Manual"}</small></div><button class="button button-quiet button-small" type="button" data-action="remove-recipe-ingredient" data-index="${index}">Remove</button></div><label class="field"><span>Name</span><input data-recipe-field="name" value="${escapeHtml(ingredient.name || "")}" maxlength="300" required /></label><div class="field-row-qty-unit"><label class="field"><span>Quantity</span><input data-recipe-field="quantity" type="number" min="0.01" step="0.01" inputmode="decimal" value="${escapeHtml(ingredient.quantity ?? "")}" /></label><label class="field"><span>Unit</span><input data-recipe-field="unit" maxlength="80" value="${escapeHtml(ingredient.unit || "")}" placeholder="cup, g, serving…" /></label></div><label class="field"><span>Preparation</span><input data-recipe-field="preparation" maxlength="200" value="${escapeHtml(ingredient.preparation || "")}" placeholder="chopped, warmed…" /></label><label class="checkbox-row"><input data-recipe-field="optional" type="checkbox" ${ingredient.optional ? "checked" : ""} /> Optional ingredient</label><details class="more-nutrients"><summary>${escapeHtml(calLabel)}</summary><div class="macro-grid-2x2 spacer-top">${primaryKeys.map((key) => nutrientFieldHtml(key, nutrients)).join("")}</div>${secondaryKeys.length ? `<div class="form-grid spacer-top">${secondaryKeys.map((key) => nutrientFieldHtml(key, nutrients)).join("")}</div>` : ""}</details></article>`;
         })
         .join("");
 }
@@ -3014,13 +3163,13 @@ function renderRecipeComposeGroceries() {
     const root = document.getElementById("recipe-compose-groceries");
     if (!root) return;
     if (recipeCompose.groceryItems.length === 0) {
-        root.innerHTML = `<div class="empty-state"><div><strong>No grocery items added.</strong><p>Add only ingredients you explicitly still need.</p></div></div>`;
+        root.innerHTML = `<p class="empty-state-compact">No grocery items added yet.</p>`;
         return;
     }
     root.innerHTML = recipeCompose.groceryItems
         .map(
             (item, index) =>
-                `<article class="meal-composer-item" data-recipe-grocery-index="${index}"><div class="meal-composer-item-head"><div><strong>${escapeHtml(item.name || "New grocery item")}</strong><small>Added only to the selected planning scope</small></div><button class="button button-quiet button-small" type="button" data-action="remove-recipe-grocery" data-index="${index}">Remove</button></div><div class="meal-composer-grid"><label class="field"><span>Name</span><input data-recipe-grocery-field="name" value="${escapeHtml(item.name || "")}" maxlength="300" required /></label><label class="field"><span>Quantity</span><input data-recipe-grocery-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity ?? "")}" /></label><label class="field"><span>Unit</span><input data-recipe-grocery-field="unit" maxlength="80" value="${escapeHtml(item.unit || "")}" placeholder="bunch, can, oz…" /></label><label class="field"><span>Note</span><input data-recipe-grocery-field="note" maxlength="500" value="${escapeHtml(item.note || "")}" placeholder="Optional" /></label></div></article>`,
+                `<article class="meal-composer-item" data-recipe-grocery-index="${index}"><div class="meal-composer-item-head"><div><strong>${escapeHtml(item.name || "New grocery item")}</strong><small>Added to selected scope</small></div><button class="button button-quiet button-small" type="button" data-action="remove-recipe-grocery" data-index="${index}">Remove</button></div><label class="field"><span>Name</span><input data-recipe-grocery-field="name" value="${escapeHtml(item.name || "")}" maxlength="300" required /></label><div class="field-row-qty-unit"><label class="field"><span>Quantity</span><input data-recipe-grocery-field="quantity" type="number" min="0.01" step="0.01" inputmode="decimal" value="${escapeHtml(item.quantity ?? "")}" /></label><label class="field"><span>Unit</span><input data-recipe-grocery-field="unit" maxlength="80" value="${escapeHtml(item.unit || "")}" placeholder="bunch, can, oz…" /></label></div><label class="field"><span>Note</span><input data-recipe-grocery-field="note" maxlength="500" value="${escapeHtml(item.note || "")}" placeholder="Optional" /></label></article>`,
         )
         .join("");
 }
@@ -3660,7 +3809,16 @@ function recipeDetailBodyMarkup(recipe) {
                 : `yield ${yieldAmountText(entry.quantity, entry.unit)}`,
         )
         .join(" · ");
-    return `<div class="recipe-detail"><p class="recipe-meta">${number(recipe.servings, 3)} servings${detailYield ? ` · ${escapeHtml(detailYield)}` : ""} · revision ${number(recipe.revision_number)} · ${escapeHtml(recipe.nutrition_status)} nutrition</p><div class="auth-actions recipe-detail-actions">${recipeDetailActionsHtml}</div>${recipeNutritionPanelMarkup(recipe)}<div class="recipe-section-head"><h3>Ingredients</h3>${recipeGroceriesButtonMarkup(recipe)}</div><ul class="food-items recipe-ingredients">${ingredients}</ul><h3 class="spacer-top">Instructions</h3><ol class="recipe-instructions">${instructions}</ol><p class="tiny spacer-top">Every ingredient includes the source snapshot used to calculate this revision. Editing creates a new revision; historical logs stay pinned.</p></div>`;
+    const prepMin = Number(recipe.preparation_minutes || 0);
+    const cookMin = Number(recipe.cooking_minutes || 0);
+    const totalMin = prepMin + cookMin;
+    const timeSummary =
+        totalMin <= 0
+            ? ""
+            : prepMin > 0 && cookMin > 0
+              ? `${totalMin}m (${prepMin}m prep · ${cookMin}m cook)`
+              : `${totalMin}m`;
+    return `<div class="recipe-detail"><p class="recipe-meta">${number(recipe.servings, 3)} servings${timeSummary ? ` · ${escapeHtml(timeSummary)}` : ""}${detailYield ? ` · ${escapeHtml(detailYield)}` : ""} · rev ${number(recipe.revision_number)} · ${escapeHtml(recipe.nutrition_status)} nutrition</p><div class="auth-actions recipe-detail-actions">${recipeDetailActionsHtml}</div>${recipeNutritionPanelMarkup(recipe)}<div class="recipe-section-head"><h3>Ingredients</h3>${recipeGroceriesButtonMarkup(recipe)}</div><ul class="food-items recipe-ingredients">${ingredients}</ul><h3 class="spacer-top">Instructions</h3><ol class="recipe-instructions">${instructions}</ol><p class="tiny spacer-top">Every ingredient includes the source snapshot used to calculate this revision. Editing creates a new revision; historical logs stay pinned.</p></div>`;
 }
 
 function renderRecipeDetail(recipe, editing = false) {
@@ -3777,7 +3935,7 @@ function recipeDetailIngredientEditRowsMarkup() {
     return recipeComposer.ingredients
         .map(
             (ingredient, index) =>
-                `<div class="edit-row" data-recipe-detail-ingredient-index="${index}"><input class="f-name" data-detail-field="name" value="${escapeHtml(ingredient.name)}" maxlength="300" required aria-label="Ingredient name"><input class="f-qty" data-detail-field="quantity" type="number" min="0" step="any" value="${ingredient.quantity ?? ""}" aria-label="Quantity"><input class="f-unit" data-detail-field="unit" value="${escapeHtml(ingredient.unit || "")}" maxlength="80" aria-label="Unit"><button class="f-remove" type="button" data-action="remove-recipe-detail-ingredient" data-index="${index}">Remove</button></div>`,
+                `<div class="edit-row edit-row-stacked" data-recipe-detail-ingredient-index="${index}"><input class="f-name" data-detail-field="name" value="${escapeHtml(ingredient.name)}" maxlength="300" required aria-label="Ingredient name" placeholder="Ingredient"><div class="field-row-inline-submit"><div class="field-row-qty-unit"><input class="f-qty" data-detail-field="quantity" type="number" min="0" step="any" inputmode="decimal" value="${ingredient.quantity ?? ""}" aria-label="Quantity" placeholder="Qty"><input class="f-unit" data-detail-field="unit" value="${escapeHtml(ingredient.unit || "")}" maxlength="80" aria-label="Unit" placeholder="Unit"></div><button class="f-remove" type="button" data-action="remove-recipe-detail-ingredient" data-index="${index}" aria-label="Remove ${escapeHtml(ingredient.name || "ingredient")}">Remove</button></div></div>`,
         )
         .join("");
 }
@@ -4048,9 +4206,9 @@ function portionPickerContext(recipe) {
 function recipePortionPickerMarkup(ctx, startMode) {
     const hasNutrition = ctx.totals?.calories != null;
     const modeButton = (mode, label) =>
-        `<button class="mode-btn" type="button" role="tab" data-mode="${mode}" aria-selected="${mode === startMode ? "true" : "false"}">${label}</button>`;
+        `<button class="mode-btn" id="portion-tab-${mode}" type="button" role="tab" data-mode="${mode}" aria-selected="${mode === startMode ? "true" : "false"}" aria-controls="portion-panel-${mode}">${label}</button>`;
     const panelAttrs = (mode) =>
-        `data-panel="${mode}"${mode === startMode ? "" : " hidden"}`;
+        `id="portion-panel-${mode}" role="tabpanel" aria-labelledby="portion-tab-${mode}" data-panel="${mode}"${mode === startMode ? "" : " hidden"}`;
     const fractionChip = (num, den, label) =>
         `<button class="frac-chip" type="button" data-num="${num}" data-den="${den}" aria-pressed="${num === 1 && den === 4 ? "true" : "false"}">${label}</button>`;
     return `<div class="recipe-portion-picker">
@@ -4068,8 +4226,8 @@ function recipePortionPickerMarkup(ctx, startMode) {
             </div>
         </div>
         <div class="mode-panel" ${panelAttrs("amount")}>
-            <p class="yield-line"><span data-yield-text></span><button class="button button-quiet button-small" type="button" data-yield-adjust>Adjust</button></p>
-            <div class="yield-adjust" data-yield-adjust-row hidden>
+            <p class="yield-line"><span data-yield-text></span><button class="button button-quiet button-small" type="button" data-yield-adjust aria-expanded="false" aria-controls="portion-yield-adjust">Adjust</button></p>
+            <div class="yield-adjust" id="portion-yield-adjust" data-yield-adjust-row hidden>
                 <span class="field-label">Total yield</span>
                 <div class="amount-row">
                     <input class="picker-input" data-yield-qty type="number" min="0" step="any" inputmode="decimal" aria-label="Total yield amount" />
@@ -4101,8 +4259,8 @@ function recipePortionPickerMarkup(ctx, startMode) {
             <div class="portion-tile"><span class="portion-tile-label">Carbohydrates</span><span class="portion-tile-value"><span data-tile="carbs_g"></span><small> g</small></span><span class="portion-tile-sub">whole recipe ${number(ctx.totals.carbs_g, 1)} g</span></div>
             <div class="portion-tile"><span class="portion-tile-label">Fat</span><span class="portion-tile-value"><span data-tile="fat_g"></span><small> g</small></span><span class="portion-tile-sub">whole recipe ${number(ctx.totals.fat_g, 1)} g</span></div>
         </div>
-        <button type="button" class="portion-micros-toggle" data-micros-toggle aria-expanded="false"><span>Micronutrients</span><span aria-hidden="true">▾</span></button>
-        <div class="portion-micros" data-micros hidden>
+        <button type="button" class="portion-micros-toggle" data-micros-toggle aria-expanded="false" aria-controls="portion-micros-panel"><span>Micronutrients</span><span aria-hidden="true">▾</span></button>
+        <div class="portion-micros" id="portion-micros-panel" data-micros hidden>
             <div class="portion-micro-row"><span>Fiber</span><span data-tile="fiber_g"></span></div>
             <div class="portion-micro-row"><span>Sugar</span><span data-tile="sugar_g"></span></div>
             <div class="portion-micro-row"><span>Sodium</span><span data-tile="sodium_mg"></span></div>
@@ -4342,7 +4500,8 @@ function wireRecipePortionPicker(form, ctx, options = {}) {
             microsToggle.setAttribute("aria-expanded", open ? "true" : "false");
         });
     }
-    root.querySelector("[data-yield-adjust]")?.addEventListener("click", () => {
+    const yieldAdjustBtn = root.querySelector("[data-yield-adjust]");
+    yieldAdjustBtn?.addEventListener("click", () => {
         if (adjustRow.hasAttribute("hidden")) {
             const familyYield = activeYield();
             yieldQtyInput.value = familyYield
@@ -4352,8 +4511,10 @@ function wireRecipePortionPicker(form, ctx, options = {}) {
                 ? familyYield.unit
                 : state.unit || "cup";
             adjustRow.removeAttribute("hidden");
+            yieldAdjustBtn.setAttribute("aria-expanded", "true");
         } else {
             adjustRow.setAttribute("hidden", "");
+            yieldAdjustBtn.setAttribute("aria-expanded", "false");
         }
     });
     root.querySelector("[data-yield-save]")?.addEventListener(
@@ -4509,15 +4670,15 @@ async function openPlannedLog(meal) {
     }
     const picker = recipe
         ? recipePortionPickerMarkup(portionPickerContext(recipe), "servings")
-        : `<label>Servings eaten<input name="servings_consumed" type="number" min="0.001" step="any" value="${escapeHtml(String(meal.servings))}" required /></label>`;
+        : `<label class="field"><span>Servings eaten</span><input name="servings_consumed" type="number" min="0.001" step="any" inputmode="decimal" value="${escapeHtml(String(meal.servings))}" required /></label>`;
     openDialog(
         `Log ${meal.recipe_name} as planned`,
         `<form id="planned-log-form" class="auth-form" data-id="${escapeHtml(meal.recipe_id)}" data-revision="${escapeHtml(meal.recipe_revision_id)}" data-planned-meal-id="${escapeHtml(meal.planned_meal_id)}">
-            <p>Use the saved ingredients and nutrition exactly as stored. Choose how much you ate.</p>
+            <p class="tiny">Use the saved ingredients and nutrition as stored. Choose how much you ate.</p>
             ${picker}
-            <label>Meal<select name="meal_type">${slotOptions}</select></label>
-            <label>Notes<textarea name="notes" rows="2" maxlength="2000"></textarea></label>
-            <button class="button button-primary" type="submit" data-log-submit>Log meal</button>
+            <label class="field"><span>Meal</span><select name="meal_type">${slotOptions}</select></label>
+            <label class="field"><span>Notes</span><input name="notes" maxlength="2000" placeholder="Optional" /></label>
+            <div class="dialog-footer-sticky"><button class="button button-primary" type="submit" data-log-submit>Log meal</button></div>
         </form>`,
     );
     if (recipe) {
@@ -4550,7 +4711,7 @@ async function openRecipeLog(id, revisionId, options = {}) {
     const pantryOn = featureFlags().pantry;
     const fromPantryDefault = Boolean(options.fromPantryDefault);
     const pantryFields = pantryOn
-        ? `<label class="checkbox-row"><input type="checkbox" name="from_pantry" ${fromPantryDefault ? "checked" : ""} /> From my pantry</label><label class="field" data-cooked-field ${fromPantryDefault ? "" : "hidden"}><span>Servings cooked</span><input name="servings_cooked" type="number" min="0.01" step="0.01" value="1" /></label>`
+        ? `<label class="checkbox-row"><input type="checkbox" name="from_pantry" ${fromPantryDefault ? "checked" : ""} /> From my pantry</label><label class="field" data-cooked-field ${fromPantryDefault ? "" : "hidden"}><span>Servings cooked</span><input name="servings_cooked" type="number" min="0.01" step="0.01" inputmode="decimal" value="1" /></label>`
         : "";
     // The portion picker needs the recipe's yields and totals; it
     // opens in the last-used mode. If the payload cannot load, the
@@ -4565,12 +4726,12 @@ async function openRecipeLog(id, revisionId, options = {}) {
     const startMode = recipe ? rememberedRecipeLogMode() : "servings";
     const picker = recipe
         ? recipePortionPickerMarkup(portionPickerContext(recipe), startMode)
-        : `<label class="field"><span>Servings eaten</span><input name="servings_consumed" type="number" min="0.01" step="0.01" value="1" required /></label>`;
+        : `<label class="field"><span>Servings eaten</span><input name="servings_consumed" type="number" min="0.01" step="0.01" inputmode="decimal" value="1" required /></label>`;
     openDialog(
         "Log saved recipe",
-        `<form id="recipe-log-form" class="auth-form" data-id="${escapeHtml(id)}" data-revision="${escapeHtml(revisionId || "")}"><p>Use the saved ingredients and nutrition exactly as stored. Choose how much you ate.</p>${pantryFields}${picker}<label class="field"><span>Meal type</span><select name="meal_type">${mealTypeOptionsHtml(
+        `<form id="recipe-log-form" class="auth-form" data-id="${escapeHtml(id)}" data-revision="${escapeHtml(revisionId || "")}"><p class="tiny">Use the saved ingredients and nutrition as stored. Choose how much you ate.</p>${pantryFields}${picker}<label class="field"><span>Meal type</span><select name="meal_type">${mealTypeOptionsHtml(
             defaultMealType(new Date(), state.bootstrap?.profile?.timezone),
-        )}</select></label><label class="field"><span>Notes</span><input name="notes" maxlength="4000" placeholder="Optional" /></label><button class="button button-primary" type="submit" data-log-submit>Log meal</button></form>`,
+        )}</select></label><label class="field"><span>Notes</span><input name="notes" maxlength="4000" placeholder="Optional" /></label><div class="dialog-footer-sticky"><button class="button button-primary" type="submit" data-log-submit>Log meal</button></div></form>`,
     );
     if (recipe) {
         wireRecipePortionPicker(
@@ -4652,9 +4813,9 @@ function showPendingOutlierPrompt() {
 function openRecipePlan(id) {
     openDialog(
         "Add recipe to meal plan",
-        `<form id="recipe-plan-form" class="auth-form" data-id="${escapeHtml(id)}"><label class="field"><span>Date</span><input name="planned_date" type="date" value="${escapeHtml(state.date)}" required /></label><label class="field"><span>Meal slot</span><select name="meal_slot">${mealTypeOptionsHtml(
+        `<form id="recipe-plan-form" class="auth-form" data-id="${escapeHtml(id)}"><div class="field-row-2up"><label class="field"><span>Date</span><input name="planned_date" type="date" value="${escapeHtml(state.date)}" required /></label><label class="field"><span>Meal slot</span><select name="meal_slot">${mealTypeOptionsHtml(
             defaultMealType(new Date(), state.bootstrap?.profile?.timezone),
-        )}</select></label><label class="field"><span>Servings planned</span><input name="servings" type="number" min="0.01" step="0.01" value="1" required /></label><button class="button button-primary" type="submit">Add to plan</button></form>`,
+        )}</select></label></div><label class="field"><span>Servings planned</span><input name="servings" type="number" min="0.01" step="0.01" inputmode="decimal" value="1" required /></label><button class="button button-primary" type="submit">Add to plan</button></form>`,
     );
 }
 
@@ -4664,7 +4825,7 @@ function openRecipeGroceries(id, name, servings) {
     const recipeServings = Number(servings) || 1;
     openDialog(
         "Add to grocery list",
-        `<form id="recipe-groceries-form" class="auth-form" data-id="${escapeHtml(id)}"><p>Every ingredient in <strong>${escapeHtml(name || "this recipe")}</strong> that isn't marked optional goes on your grocery list. Items already on the list merge by name and unit — quantities add.</p><label class="field"><span>Servings you're cooking</span><input name="servings" type="number" min="0.01" step="0.01" value="${escapeHtml(recipeServings)}" required /></label><p class="tiny">The recipe makes ${number(recipeServings, 3)} servings; ingredient amounts scale to the servings you enter.</p><button class="button button-primary" type="submit">Add to grocery list</button></form>`,
+        `<form id="recipe-groceries-form" class="auth-form" data-id="${escapeHtml(id)}"><p>Every ingredient in <strong>${escapeHtml(name || "this recipe")}</strong> that isn't marked optional goes on your grocery list. Items already on the list merge by name and unit — quantities add.</p><label class="field"><span>Servings you're cooking</span><input name="servings" type="number" min="0.01" step="0.01" inputmode="decimal" value="${escapeHtml(recipeServings)}" required /></label><p class="tiny">The recipe makes ${number(recipeServings, 3)} servings; ingredient amounts scale to the servings you enter.</p><button class="button button-primary" type="submit">Add to grocery list</button></form>`,
     );
 }
 
@@ -4698,15 +4859,46 @@ async function renderPlan() {
         0,
     );
     const weekSummary = plannedCount
-        ? ` ${number(plannedCount)} planned across ${daysPlanned} of 7 days · ${number(totalCalories / Math.max(daysPlanned, 1))} kcal daily average on planned days.`
-        : "";
-    content.innerHTML = `<div class="operate-view plan-view"><div class="page-heading"><div><h2>Week of ${escapeHtml(formatDate(start))}</h2><p>Planned meals stay separate from logged meals.${weekSummary}</p></div><div class="auth-actions">${brainChatLink("meal_plan", "Talk to the AI about this plan")}<button class="button button-primary button-small" type="button" data-action="guided-planner">Guided planner</button><button class="button button-secondary button-small" type="button" data-action="guidance-preferences">Preferences</button><button class="button button-secondary button-small" data-action="date-week-prev">Previous week</button><button class="button button-secondary button-small" data-action="date-today">This week</button><button class="button button-secondary button-small" data-action="date-week-next">Next week</button></div></div><div class="meal-groups">${weekDays(
+        ? `${number(plannedCount)} planned across ${daysPlanned} of 7 days · ${number(totalCalories / Math.max(daysPlanned, 1))} kcal/day avg`
+        : "No meals planned this week yet.";
+    content.innerHTML = `<div class="operate-view plan-view"><div class="page-heading"><div><h2>Week of ${escapeHtml(formatDate(start))}</h2><p>${weekSummary}</p></div><div class="auth-actions">${brainChatLink("meal_plan", "Talk to the AI about this plan")}<button class="button button-primary button-small" type="button" data-action="guided-planner">Guided planner</button><button class="button button-secondary button-small" type="button" data-action="guidance-preferences">Preferences</button></div></div><div class="plan-week-bar" role="group" aria-label="Week navigation"><button class="button button-secondary button-small" type="button" data-action="date-week-prev">← Previous</button><button class="button button-secondary button-small" type="button" data-action="date-today">This week</button><button class="button button-secondary button-small" type="button" data-action="date-week-next">Next →</button></div><div class="meal-groups">${weekDays(
         start,
     )
-        .map(
-            (date) =>
-                `<section class="meal-group plan-day"><header class="meal-group-header"><div><strong>${escapeHtml(formatDate(date, { weekday: true }))}</strong></div><span>${(byDate[date] || []).length} planned</span></header>${(byDate[date] || []).length ? (byDate[date] || []).map((meal) => `<article class="meal-card plan-meal-card"><div class="meal-card-head"><div><h4>${escapeHtml(meal.recipe_name)}</h4><div class="meal-meta"><span>${escapeHtml(meal.meal_slot || "Meal")}</span><span>${escapeHtml(meal.ownership)}</span>${meal.created_by ? `<span>Added by ${escapeHtml(meal.created_by)}</span>` : ""}${meal.logged ? `<span>Logged</span>` : ""}</div></div><strong class="plan-servings">${number(meal.servings, 1)} servings</strong></div><div class="meal-macros"><span class="macro-chip">${number((meal.nutrition_per_serving?.calories || 0) * meal.servings)} kcal</span><span class="macro-chip">P ${number((meal.nutrition_per_serving?.protein_g || 0) * meal.servings, 1)}g</span></div><div class="auth-actions">${planCardActions(meal)}</div></article>`).join("") : `<p class="plan-empty">No meals planned.</p>`}</section>`,
-        )
+        .map((date) => {
+            const meals = byDate[date] || [];
+            const dayCal = meals.reduce(
+                (sum, meal) =>
+                    sum +
+                    (meal.nutrition_per_serving?.calories || 0) * meal.servings,
+                0,
+            );
+            const dayProtein = meals.reduce(
+                (sum, meal) =>
+                    sum +
+                    (meal.nutrition_per_serving?.protein_g || 0) *
+                        meal.servings,
+                0,
+            );
+            const dayMeta = meals.length
+                ? `${meals.length} planned · ${number(dayCal)} kcal · ${number(dayProtein, 1)}g P`
+                : "No meals";
+            return `<section class="meal-group plan-day"><header class="meal-group-header"><div><strong>${escapeHtml(formatDate(date, { weekday: true }))}</strong></div><div class="auth-actions"><span>${escapeHtml(dayMeta)}</span><button class="button button-quiet button-small" type="button" data-action="plan-day-add" aria-label="Plan meals for ${escapeHtml(formatDate(date, { weekday: true }))}">+</button></div></header>${
+                meals.length
+                    ? meals
+                          .map((meal) => {
+                              const n = meal.nutrition_per_serving || {};
+                              const macroLine = [
+                                  `${number((n.calories || 0) * meal.servings)} kcal`,
+                                  `${number((n.protein_g || 0) * meal.servings, 1)}g P`,
+                                  `${number((n.carbs_g || 0) * meal.servings, 1)}g C`,
+                                  `${number((n.fat_g || 0) * meal.servings, 1)}g F`,
+                              ].join(" · ");
+                              return `<article class="meal-card plan-meal-card"><div class="meal-card-head"><div><h4>${escapeHtml(meal.recipe_name)}</h4><div class="meal-meta"><span>${escapeHtml(meal.meal_slot || "Meal")}</span><span>${escapeHtml(meal.ownership)}</span>${meal.created_by ? `<span>Added by ${escapeHtml(meal.created_by)}</span>` : ""}${meal.logged ? `<span>Logged</span>` : ""}</div></div><strong class="plan-servings">${number(meal.servings, 1)} servings</strong></div><div class="meal-macros"><span class="macro-chip">${escapeHtml(macroLine)}</span></div><div class="auth-actions">${planCardActions(meal)}</div></article>`;
+                          })
+                          .join("")
+                    : `<p class="empty-state-compact">No meals planned.</p>`
+            }</section>`;
+        })
         .join("")}</div></div>`;
 }
 
@@ -4726,11 +4918,11 @@ function csvList(value) {
 
 function preferenceTextField(label, key, preferences) {
     const value = (preferences[key] || []).join(", ");
-    return `<label class="field"><span>${escapeHtml(label)}</span><input class="input" name="${escapeHtml(key)}" value="${escapeHtml(value)}" maxlength="1200" placeholder="Separate items with commas" /></label>`;
+    return `<label class="field"><span>${escapeHtml(label)}</span><input class="input" name="${escapeHtml(key)}" value="${escapeHtml(value)}" maxlength="1200" placeholder="Comma-separated" /></label>`;
 }
 
 function guidancePreferencesMarkup(preferences) {
-    return `<form id="guidance-preferences-form" class="auth-form" data-version="${escapeHtml(preferences.version)}"><p>These preferences guide suggestions and safety checks. They do not change logged meals or set nutrition targets.</p><label class="field"><span>Objective</span><select name="objective"><option value="track_only" ${preferences.objective === "track_only" ? "selected" : ""}>Track only</option><option value="maintain" ${preferences.objective === "maintain" ? "selected" : ""}>Maintain weight</option><option value="gain" ${preferences.objective === "gain" ? "selected" : ""}>Gain weight</option><option value="lose" ${preferences.objective === "lose" ? "selected" : ""}>Lose weight</option></select></label><label class="check-row"><input type="checkbox" name="suggestions_enabled" ${preferences.suggestions_enabled ? "checked" : ""} /><span>Allow optional goal review prompts</span></label>${preferenceTextField("Allergies", "allergies", preferences)}${preferenceTextField("Excluded ingredients", "excluded_ingredients", preferences)}${preferenceTextField("Disliked ingredients", "disliked_ingredients", preferences)}${preferenceTextField("Liked ingredients", "liked_ingredients", preferences)}${preferenceTextField("Cuisines", "cuisines", preferences)}${preferenceTextField("Flavor preferences", "flavors", preferences)}${preferenceTextField("Available equipment", "equipment", preferences)}${preferenceTextField("Preferred cooking methods", "preferred_methods", preferences)}${preferenceTextField("Avoided cooking methods", "avoided_methods", preferences)}<label class="field"><span>Cooking difficulty</span><select name="difficulty"><option value="any" ${preferences.difficulty === "any" ? "selected" : ""}>Any</option><option value="easy" ${preferences.difficulty === "easy" ? "selected" : ""}>Easy</option><option value="moderate" ${preferences.difficulty === "moderate" ? "selected" : ""}>Moderate</option><option value="advanced" ${preferences.difficulty === "advanced" ? "selected" : ""}>Advanced</option></select></label><div class="form-grid"><label class="field"><span>Max prep minutes</span><input class="input" name="max_prep_minutes" type="number" min="1" max="1440" value="${escapeHtml(preferences.max_prep_minutes ?? "")}" /></label><label class="field"><span>Max total minutes</span><input class="input" name="max_total_minutes" type="number" min="1" max="1440" value="${escapeHtml(preferences.max_total_minutes ?? "")}" /></label><label class="field"><span>Usual servings</span><input class="input" name="servings" type="number" min="0.25" max="50" step="0.25" value="${escapeHtml(preferences.servings)}" /></label><label class="field"><span>Repeat window days</span><input class="input" name="repeat_window_days" type="number" min="0" max="365" value="${escapeHtml(preferences.repeat_window_days)}" /></label></div><label class="check-row"><input type="checkbox" name="allow_repeats" ${preferences.allow_repeats ? "checked" : ""} /><span>Allow recipe repeats</span></label><button class="button button-primary" type="submit">Save preferences</button></form>`;
+    return `<form id="guidance-preferences-form" class="auth-form" data-version="${escapeHtml(preferences.version)}"><p class="tiny">Guides plan suggestions and safety checks without altering logged meals or targets.</p><div class="field-row-2up"><label class="field"><span>Objective</span><select name="objective"><option value="track_only" ${preferences.objective === "track_only" ? "selected" : ""}>Track only</option><option value="maintain" ${preferences.objective === "maintain" ? "selected" : ""}>Maintain weight</option><option value="gain" ${preferences.objective === "gain" ? "selected" : ""}>Gain weight</option><option value="lose" ${preferences.objective === "lose" ? "selected" : ""}>Lose weight</option></select></label><label class="field"><span>Difficulty</span><select name="difficulty"><option value="any" ${preferences.difficulty === "any" ? "selected" : ""}>Any</option><option value="easy" ${preferences.difficulty === "easy" ? "selected" : ""}>Easy</option><option value="moderate" ${preferences.difficulty === "moderate" ? "selected" : ""}>Moderate</option><option value="advanced" ${preferences.difficulty === "advanced" ? "selected" : ""}>Advanced</option></select></label></div><label class="check-row"><input type="checkbox" name="suggestions_enabled" ${preferences.suggestions_enabled ? "checked" : ""} /><span>Allow optional goal review prompts</span></label><details class="editor-item-disclosure" open><summary><span><strong>Dietary &amp; restrictions</strong><small>Allergies, exclusions, dislikes</small></span></summary><div class="auth-form spacer-top">${preferenceTextField("Allergies", "allergies", preferences)}${preferenceTextField("Excluded ingredients", "excluded_ingredients", preferences)}${preferenceTextField("Disliked ingredients", "disliked_ingredients", preferences)}</div></details><details class="editor-item-disclosure"><summary><span><strong>Tastes &amp; cuisines</strong><small>Liked ingredients, cuisines, flavors</small></span></summary><div class="auth-form spacer-top">${preferenceTextField("Liked ingredients", "liked_ingredients", preferences)}${preferenceTextField("Cuisines", "cuisines", preferences)}${preferenceTextField("Flavor preferences", "flavors", preferences)}</div></details><details class="editor-item-disclosure"><summary><span><strong>Cooking setup &amp; limits</strong><small>Equipment, methods, time, servings</small></span></summary><div class="auth-form spacer-top">${preferenceTextField("Available equipment", "equipment", preferences)}${preferenceTextField("Preferred cooking methods", "preferred_methods", preferences)}${preferenceTextField("Avoided cooking methods", "avoided_methods", preferences)}<div class="form-grid"><label class="field"><span>Max prep (m)</span><input class="input" name="max_prep_minutes" type="number" min="1" max="1440" inputmode="numeric" value="${escapeHtml(preferences.max_prep_minutes ?? "")}" /></label><label class="field"><span>Max total (m)</span><input class="input" name="max_total_minutes" type="number" min="1" max="1440" inputmode="numeric" value="${escapeHtml(preferences.max_total_minutes ?? "")}" /></label><label class="field"><span>Usual servings</span><input class="input" name="servings" type="number" min="0.25" max="50" step="0.25" inputmode="decimal" value="${escapeHtml(preferences.servings)}" /></label><label class="field"><span>Repeat window (d)</span><input class="input" name="repeat_window_days" type="number" min="0" max="365" inputmode="numeric" value="${escapeHtml(preferences.repeat_window_days)}" /></label></div><label class="check-row"><input type="checkbox" name="allow_repeats" ${preferences.allow_repeats ? "checked" : ""} /><span>Allow recipe repeats</span></label></div></details><div class="dialog-footer-sticky"><button class="button button-primary" type="submit">Save preferences</button></div></form>`;
 }
 
 async function openGuidancePreferences() {
@@ -4780,20 +4972,20 @@ async function openGuidedPlanner() {
     const rows = weekDays(weekStart)
         .map(
             (date) =>
-                `<div class="meal-card guided-plan-row" data-guided-date="${date}"><div class="meal-card-head"><strong>${escapeHtml(formatDate(date, { weekday: true }))}</strong><label class="field"><span>Saved recipe</span><select class="input" name="recipe_choice">${recipeOptions}</select></label></div><div class="form-grid"><label class="field"><span>Meal slot</span><select class="input" name="meal_slot">${mealTypeOptionsHtml(
+                `<div class="meal-card guided-plan-row" data-guided-date="${date}"><strong>${escapeHtml(formatDate(date, { weekday: true }))}</strong><label class="field"><span>Saved recipe</span><select class="input" name="recipe_choice">${recipeOptions}</select></label><div class="field-row-2up"><label class="field"><span>Meal slot</span><select class="input" name="meal_slot">${mealTypeOptionsHtml(
                     defaultMealType(
                         new Date(),
                         state.bootstrap?.profile?.timezone,
                     ),
-                )}</select></label><label class="field"><span>Servings</span><input class="input" name="servings" type="number" min="0.25" max="50" step="0.25" value="${escapeHtml(context.preferences.servings || 1)}" /></label></div></div>`,
+                )}</select></label><label class="field"><span>Servings</span><input class="input" name="servings" type="number" min="0.25" max="50" step="0.25" inputmode="decimal" value="${escapeHtml(context.preferences.servings || 1)}" /></label></div></div>`,
         )
         .join("");
     const existingPlanNote = currentPlan.length
-        ? `<p class="tiny spacer-top">Already scheduled: ${currentPlan.map((meal) => `${escapeHtml(meal.planned_date)} ${escapeHtml(meal.meal_slot || "meal")} — ${escapeHtml(meal.recipe_name)}`).join("; ")}. These stay in place unless you choose to replace a matching slot.</p>`
+        ? `<p class="tiny spacer-top">Already scheduled: ${currentPlan.map((meal) => `${escapeHtml(meal.planned_date)} ${escapeHtml(meal.meal_slot || "meal")} — ${escapeHtml(meal.recipe_name)}`).join("; ")}.</p>`
         : "";
     openDialog(
         "Guided weekly plan",
-        `<p>Choose saved recipes for any days, or ask the website model for recipe proposals. Every proposal is checked and its nutrition is resolved by Munch before you review it.</p>${existingPlanNote}<div class="auth-actions spacer-top guided-plan-pref-action"><button class="button button-secondary button-small" type="button" data-action="guidance-preferences">Edit preferences</button></div><form id="guided-plan-form" class="auth-form" data-start="${weekStart}" data-end="${weekEnd}">${scopeSelector}<div class="spacer-top">${rows}</div><label class="check-row spacer-top"><input type="checkbox" name="replace_existing" /><span>Replace existing meals in the date and meal slots I include</span></label><details class="spacer-top"><summary>Temporary plan overrides</summary><p class="tiny">Enable a field to replace its saved preference for this plan only.</p>${["allergies", "excluded_ingredients", "equipment"].map((key) => `<label class="check-row"><input type="checkbox" data-guided-override="${key}" /><span>Override ${key.replaceAll("_", " ")}</span></label><label class="field"><span>${key.replaceAll("_", " ")}</span><input class="input" name="override_${key}" placeholder="Comma-separated list" /></label>`).join("")}</details><label class="field spacer-top"><span>Optional request for recipe variety</span><textarea class="input" name="request" maxlength="800" rows="2" placeholder="For example, include two vegetarian dinners"></textarea></label><div class="auth-actions"><button class="button button-primary" type="submit">Create saved-recipe draft</button><button class="button button-secondary" type="button" data-action="guided-ai-create">Suggest recipes with AI</button></div>${recipes.length ? "" : `<p class="tiny">No saved recipes yet. Use AI suggestions or create recipes in the Recipe library first.</p>`}</form>`,
+        `<p class="tiny">Pick saved recipes per day or ask AI for proposals. Nutrition is resolved by Munch before you confirm.</p>${existingPlanNote}<div class="auth-actions spacer-top guided-plan-pref-action"><button class="button button-secondary button-small" type="button" data-action="guidance-preferences">Edit preferences</button></div><form id="guided-plan-form" class="auth-form" data-start="${weekStart}" data-end="${weekEnd}">${scopeSelector}<div class="meal-groups spacer-top">${rows}</div><label class="check-row spacer-top"><input type="checkbox" name="replace_existing" /><span>Replace existing meals in matching slots</span></label><details class="more-nutrients spacer-top"><summary>Temporary plan overrides</summary><div class="auth-form spacer-top"><p class="tiny">Replace a saved preference for this plan only.</p>${["allergies", "excluded_ingredients", "equipment"].map((key) => `<label class="check-row"><input type="checkbox" data-guided-override="${key}" /><span>Override ${key.replaceAll("_", " ")}</span></label><label class="field"><span>${key.replaceAll("_", " ")}</span><input class="input" name="override_${key}" placeholder="Comma-separated list" /></label>`).join("")}</div></details><label class="field spacer-top"><span>Optional variety note</span><textarea class="input" name="request" maxlength="800" rows="2" placeholder="For example, include two vegetarian dinners"></textarea></label><div class="auth-actions dialog-footer-sticky"><button class="button button-primary" type="submit">Create saved-recipe draft</button><button class="button button-secondary" type="button" data-action="guided-ai-create">Suggest recipes with AI</button></div>${recipes.length ? "" : `<p class="tiny">No saved recipes yet. Use AI suggestions or create recipes in the Recipe library first.</p>`}</form>`,
     );
 }
 
@@ -4953,6 +5145,34 @@ function dismissPlanDraftInlineConfirm() {
     actions.innerHTML = planDraftActionsMarkup(blockers);
 }
 
+function generatedRecipeSummaryMarkup(recipe) {
+    if (!recipe || typeof recipe !== "object") return "";
+    const title = recipe.name
+        ? `<strong>${escapeHtml(recipe.name)}</strong>`
+        : "";
+    const servings =
+        recipe.servings != null ? `${number(recipe.servings, 1)} servings` : "";
+    const ingredients = Array.isArray(recipe.ingredients)
+        ? recipe.ingredients
+              .map((ing) =>
+                  typeof ing === "string"
+                      ? ing
+                      : [
+                            ing.quantity != null ? number(ing.quantity, 2) : "",
+                            ing.unit || "",
+                            ing.name || "",
+                        ]
+                            .filter(Boolean)
+                            .join(" "),
+              )
+              .filter(Boolean)
+        : [];
+    const ingText = ingredients.length
+        ? `<p class="tiny">${escapeHtml(ingredients.slice(0, 8).join(", "))}${ingredients.length > 8 ? ` + ${ingredients.length - 8} more` : ""}</p>`
+        : "";
+    return `<div class="guided-recipe-summary">${title}${servings ? ` <span class="tiny">· ${escapeHtml(servings)}</span>` : ""}${ingText}</div>`;
+}
+
 async function renderGuidedDraftReview(draft) {
     if (
         !state.guided.context ||
@@ -4983,7 +5203,11 @@ async function renderGuidedDraftReview(draft) {
                     ? `<label class="field"><span>Recipe source</span><select class="input" name="source_type"><option value="saved" ${isGenerated ? "" : "selected"}>Saved recipe</option><option value="generated" ${isGenerated ? "selected" : ""}>Recipe draft</option></select></label>`
                     : `<input type="hidden" name="source_type" value="${isGenerated ? "generated" : "saved"}" />`;
             const nutrition = item.nutrition?.per_serving || {};
-            return `<div class="meal-card guided-draft-item" data-guided-item="${item.position}"><input type="hidden" name="date" value="${escapeHtml(item.date)}" /><div class="meal-card-head"><strong>${escapeHtml(formatDate(item.date, { weekday: true }))} · ${escapeHtml(item.meal_slot)}</strong><span>${escapeHtml(item.nutrition_status)}</span></div>${sourceControl}${!isGenerated || draft.mode === "mixed" ? `<label class="field"><span>Saved recipe</span><select class="input" name="recipe_choice"><option value="">Choose a saved recipe</option>${savedRecipeChoices(item.recipe_id, item.recipe_revision_id, recipes)}</select></label>` : ""}${isGenerated || draft.mode === "mixed" ? `<label class="field"><span>${isGenerated ? "Editable recipe proposal (nutrition is calculated separately)" : "Recipe proposal"}</span><textarea class="input" name="generated_recipe" rows="8" ${isGenerated ? "" : "disabled"}>${isGenerated ? escapeHtml(JSON.stringify(item.generated_recipe, null, 2)) : ""}</textarea></label>` : ""}<div class="meal-macros"><span class="macro-chip">${number(nutrition.calories)} kcal/serving</span><span class="macro-chip">P ${number(nutrition.protein_g, 1)}g</span><span class="macro-chip">C ${number(nutrition.carbs_g, 1)}g</span><span class="macro-chip">F ${number(nutrition.fat_g, 1)}g</span></div>${item.blockers?.length ? `<p class="error-text">Blocked: ${item.blockers.map(escapeHtml).join("; ")}</p>` : ""}${item.warnings?.length ? `<ul class="tiny">${item.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>` : ""}</div>`;
+            const generatedBlock =
+                isGenerated || draft.mode === "mixed"
+                    ? `${isGenerated ? generatedRecipeSummaryMarkup(item.generated_recipe) : ""}<details class="more-nutrients"><summary>Edit raw recipe JSON</summary><label class="field spacer-top"><span class="sr-only">Recipe proposal JSON</span><textarea class="input" name="generated_recipe" rows="7" ${isGenerated ? "" : "disabled"}>${isGenerated ? escapeHtml(JSON.stringify(item.generated_recipe, null, 2)) : ""}</textarea></label></details>`
+                    : "";
+            return `<div class="meal-card guided-draft-item" data-guided-item="${item.position}"><input type="hidden" name="date" value="${escapeHtml(item.date)}" /><div class="meal-card-head"><strong>${escapeHtml(formatDate(item.date, { weekday: true }))} · ${escapeHtml(item.meal_slot)}</strong><span>${escapeHtml(item.nutrition_status)}</span></div>${sourceControl}${!isGenerated || draft.mode === "mixed" ? `<label class="field"><span>Saved recipe</span><select class="input" name="recipe_choice"><option value="">Choose a saved recipe</option>${savedRecipeChoices(item.recipe_id, item.recipe_revision_id, recipes)}</select></label>` : ""}${generatedBlock}<div class="meal-macros"><span class="macro-chip">${number(nutrition.calories)} kcal/serving · ${number(nutrition.protein_g, 1)}g P · ${number(nutrition.carbs_g, 1)}g C · ${number(nutrition.fat_g, 1)}g F</span></div>${item.blockers?.length ? `<p class="error-text">Blocked: ${item.blockers.map(escapeHtml).join("; ")}</p>` : ""}${item.warnings?.length ? `<ul class="tiny">${item.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>` : ""}</div>`;
         })
         .join("");
     // Feature toggles (T7): the committed plan's grocery-review
@@ -4994,11 +5218,11 @@ async function renderGuidedDraftReview(draft) {
         : "";
     const editForm =
         draft.status === "draft"
-            ? `<form id="guided-plan-edit-form" class="auth-form" data-version="${draft.version}">${items}<div class="auth-actions">${planDraftActionsMarkup(blockers)}</div></form>`
+            ? `<form id="guided-plan-edit-form" class="auth-form" data-version="${draft.version}">${items}<div class="auth-actions dialog-footer-sticky">${planDraftActionsMarkup(blockers)}</div></form>`
             : `<div class="meal-groups">${items}</div>${groceryStep}<p class="tiny spacer-top">The plan is scheduled. Nothing has been logged as eaten, and no groceries have been added.</p>`;
     openDialog(
         draft.status === "committed" ? "Plan committed" : "Review meal plan",
-        `<p>${draft.items.length} meal${draft.items.length === 1 ? "" : "s"} · ${escapeHtml(draft.start_date)} to ${escapeHtml(draft.end_date)}. ${draft.status === "draft" ? "Review every blocker and warning before confirming." : ""}</p>${editForm}`,
+        `<p class="tiny">${draft.items.length} meal${draft.items.length === 1 ? "" : "s"} · ${escapeHtml(draft.start_date)} to ${escapeHtml(draft.end_date)}. ${draft.status === "draft" ? "Review any blockers or warnings before confirming." : ""}</p>${editForm}`,
     );
 }
 
@@ -5151,7 +5375,9 @@ function showPendingPantryRunOutPrompts() {
 
 function groceryItemRowMarkup(item, scope, editable) {
     const detail = `${item.quantity == null ? "" : ` · ${formatRecipeQuantity(item.quantity, item.unit) ?? number(item.quantity, 2)} ${escapeHtml(item.unit || "")}`}${item.note ? ` · ${escapeHtml(item.note)}` : ""}${item.added_by ? ` · Added by ${escapeHtml(item.added_by)}` : ""}`;
-    return `<article class="grocery-item-row ${item.purchased_at ? "is-purchased" : ""}" data-grocery-item-id="${escapeHtml(item.grocery_item_id)}" data-quantity="${escapeHtml(item.quantity ?? "")}" data-unit="${escapeHtml(item.unit || "")}" data-note="${escapeHtml(item.note || "")}"><label class="grocery-check"><input class="grocery-check-input" type="checkbox" data-action="toggle-grocery-purchased" data-id="${escapeHtml(item.grocery_item_id)}" data-version="${escapeHtml(item.version)}" data-scope="${scope}" ${item.purchased_at ? "checked" : ""} ${editable ? "" : "disabled"} aria-label="${escapeHtml(item.name)} purchased" /></label><div class="grocery-item-main" data-action="toggle-grocery-by-name"><strong>${escapeHtml(item.name)}</strong><span class="grocery-item-detail">${detail}</span>${groceryPantryBadgeMarkup(item)}</div>${editable ? `<div class="grocery-item-actions"><button class="button button-secondary button-small" type="button" data-action="edit-grocery" data-id="${escapeHtml(item.grocery_item_id)}" data-version="${escapeHtml(item.version)}" data-scope="${scope}">Edit</button><button class="button button-quiet button-small" type="button" data-action="remove-grocery" data-id="${escapeHtml(item.grocery_item_id)}" data-version="${escapeHtml(item.version)}" data-scope="${scope}">Remove</button></div>` : ""}</article>`;
+    const hideRow = Boolean(state.hideCheckedGroceries && item.purchased_at);
+    const showActions = editable && !state.shoppingMode;
+    return `<article class="grocery-item-row ${item.purchased_at ? "is-purchased" : ""}" data-grocery-item-id="${escapeHtml(item.grocery_item_id)}" data-quantity="${escapeHtml(item.quantity ?? "")}" data-unit="${escapeHtml(item.unit || "")}" data-note="${escapeHtml(item.note || "")}"${hideRow ? " hidden" : ""}><label class="grocery-check"><input class="grocery-check-input" type="checkbox" data-action="toggle-grocery-purchased" data-id="${escapeHtml(item.grocery_item_id)}" data-version="${escapeHtml(item.version)}" data-scope="${scope}" ${item.purchased_at ? "checked" : ""} ${editable ? "" : "disabled"} aria-label="${escapeHtml(item.name)} purchased" /></label><div class="grocery-item-main" data-action="toggle-grocery-by-name"><strong>${escapeHtml(item.name)}</strong><span class="grocery-item-detail">${detail}</span>${groceryPantryBadgeMarkup(item)}</div>${showActions ? `<div class="grocery-item-actions"><button class="button button-secondary button-small" type="button" data-action="edit-grocery" data-id="${escapeHtml(item.grocery_item_id)}" data-version="${escapeHtml(item.version)}" data-scope="${scope}" aria-label="Edit ${escapeHtml(item.name)}">Edit</button><button class="button button-quiet button-small" type="button" data-action="remove-grocery" data-id="${escapeHtml(item.grocery_item_id)}" data-version="${escapeHtml(item.version)}" data-scope="${scope}" aria-label="Remove ${escapeHtml(item.name)}">Remove</button></div>` : ""}</article>`;
 }
 
 // S6 slice 6 — inline confirmations for the Groceries destructive
@@ -5219,6 +5445,7 @@ function syncGroceryPurchasedInPlace(input, updatedItem, purchased) {
     const row = input.closest(".grocery-item-row");
     if (!row) return;
     row.classList.toggle("is-purchased", purchased);
+    row.hidden = Boolean(state.hideCheckedGroceries && purchased);
     const version = updatedItem?.version;
     if (version != null) {
         for (const stamped of row.querySelectorAll("[data-version]")) {
@@ -5347,16 +5574,26 @@ async function refreshShortfall() {
 }
 
 function paintShortfallIndicator() {
-    const active = Boolean(state.shortfall?.items?.length);
+    const count = state.shortfall?.items?.length || 0;
+    const active = count > 0;
     document.querySelectorAll('a[data-route="groceries"]').forEach((anchor) => {
         let dot = anchor.querySelector(".nav-shortfall-dot");
-        if (active && !dot) {
-            dot = document.createElement("span");
-            dot.className = "nav-shortfall-dot";
-            dot.setAttribute("aria-hidden", "true");
-            anchor.append(dot);
+        if (active) {
+            anchor.setAttribute(
+                "aria-label",
+                `Groceries (${count} shortfall item${count === 1 ? "" : "s"})`,
+            );
+            if (!dot) {
+                dot = document.createElement("span");
+                dot.className = "nav-shortfall-dot";
+                dot.setAttribute("aria-hidden", "true");
+                dot.style.pointerEvents = "none";
+                anchor.append(dot);
+            }
+        } else {
+            anchor.removeAttribute("aria-label");
+            if (dot) dot.remove();
         }
-        if (!active && dot) dot.remove();
     });
 }
 
@@ -5395,7 +5632,7 @@ function shortfallRowMarkup(item, index) {
         ? ""
         : item.added
           ? `<button class="button button-secondary button-small" type="button" disabled>Added</button>`
-          : `<button class="button button-secondary button-small" type="button" data-action="shortfall-add" data-index="${index}">Add</button>`;
+          : `<button class="button button-secondary button-small" type="button" data-action="shortfall-add" data-index="${index}" aria-label="Add ${escapeHtml(item.name)} to grocery list">Add</button>`;
     return `<div class="shortfall-row"><div class="shortfall-row-main"><strong>${escapeHtml(item.name)}</strong><span>${need} · ${reasons} · ${pantry}</span>${pantryFlagMarkup(item.pantry_flag)}${contradiction}</div>${action}</div>`;
 }
 
@@ -5434,6 +5671,57 @@ async function addShortfallItems(items) {
     for (const item of items) item.added = true;
 }
 
+const GROCERY_QUICK_ADD_UNITS = new Set([
+    "cup",
+    "cups",
+    "tbsp",
+    "tsp",
+    "oz",
+    "fl",
+    "lb",
+    "lbs",
+    "g",
+    "kg",
+    "ml",
+    "l",
+    "whole",
+    "clove",
+    "cloves",
+    "can",
+    "cans",
+    "bag",
+    "bags",
+    "box",
+    "boxes",
+    "bunch",
+    "carton",
+    "cartons",
+    "bottle",
+    "bottles",
+    "pack",
+    "packs",
+    "pkg",
+    "jar",
+    "jars",
+    "slice",
+    "slices",
+    "loaf",
+    "dozen",
+]);
+
+function parseGroceryQuickAdd(raw) {
+    const text = String(raw || "").trim();
+    const match = text.match(/^(\d+(?:\.\d+)?)\s+(?:([a-zA-Z]+)\s+)?(.+)$/);
+    if (!match) return { name: text, quantity: null, unit: undefined };
+    const qty = Number(match[1]);
+    const maybeUnit = match[2] ? match[2].toLowerCase() : "";
+    if (maybeUnit && GROCERY_QUICK_ADD_UNITS.has(maybeUnit)) {
+        return { name: match[3].trim(), quantity: qty, unit: match[2] };
+    }
+    const combinedName = [match[2], match[3]].filter(Boolean).join(" ").trim();
+    return { name: combinedName, quantity: qty, unit: undefined };
+}
+
 async function renderGroceries() {
     setLoading("Loading grocery lists…");
     await refreshShortfall();
@@ -5446,6 +5734,13 @@ async function renderGroceries() {
     const listSummary = allItems.length
         ? ` ${allItems.length} item${allItems.length === 1 ? "" : "s"} · ${totalPurchased} checked.`
         : "";
+    const firstEditable = (data.groceries || []).find((list) =>
+        Boolean(data.permissions?.[list.scope]),
+    );
+    const quickAddBar =
+        firstEditable && !state.shoppingMode
+            ? `<form id="grocery-quick-add-form" class="grocery-quick-add field-row-inline-submit" data-scope="${firstEditable.scope}"><input class="input" name="entry" type="text" aria-label="Quick-add grocery item" placeholder='Quick add (e.g. "2 cups milk" or "spinach")…' maxlength="300" autocomplete="off" required /><button class="button button-primary button-small" type="submit">Add</button></form>`
+            : "";
     const lists = (data.groceries || [])
         .map((list) => {
             const editable = Boolean(data.permissions?.[list.scope]);
@@ -5467,10 +5762,10 @@ async function renderGroceries() {
                         `<div class="grocery-group"><div class="grocery-group-head"><h4>${group.label}</h4><span class="grocery-group-count">${group.items.length} item${group.items.length === 1 ? "" : "s"}</span></div><div class="grocery-items">${group.items.map((item) => groceryItemRowMarkup(item, list.scope, editable)).join("")}</div></div>`,
                 )
                 .join("");
-            return `<section class="panel grocery-list" data-grocery-scope="${list.scope}"><div class="panel-title"><div><h3>${list.scope === "household" ? "Household list" : "Personal list"}</h3><span>${list.scope === "household" && data.permissions?.householdRole ? `${escapeHtml(data.permissions.householdRole)} · ` : ""}<span class="grocery-list-counts">${list.items.length} items · ${purchasedCount} checked</span></span></div><div class="auth-actions grocery-list-actions">${listAddButton}${editable && purchasedCount ? `<button class="button button-quiet button-small" type="button" data-action="clear-purchased" data-scope="${list.scope}" data-count="${purchasedCount}">Clear purchased</button>` : ""}</div></div>${list.items.length ? groupedItems : `<div class="empty-state"><div><h3>The list is empty</h3><p>Add an item manually or ask your AI assistant to record an explicit shopping need.</p>${editable ? `<div class="auth-actions spacer-top"><button class="button button-primary button-small" type="button" data-action="add-grocery" data-scope="${list.scope}">Add item</button></div>` : ""}</div></div>`}</section>`;
+            return `<section class="panel grocery-list" data-grocery-scope="${list.scope}"><div class="panel-title"><div><h3>${list.scope === "household" ? "Household list" : "Personal list"}</h3><span>${list.scope === "household" && data.permissions?.householdRole ? `${escapeHtml(data.permissions.householdRole)} · ` : ""}<span class="grocery-list-counts">${list.items.length} items · ${purchasedCount} checked</span></span></div><div class="auth-actions grocery-list-actions">${listAddButton}${editable && purchasedCount ? `<button class="button button-quiet button-small" type="button" data-action="clear-purchased" data-scope="${list.scope}" data-count="${purchasedCount}">Clear purchased</button>` : ""}</div></div>${list.items.length ? groupedItems : `<p class="empty-state-compact">The list is empty. Use quick-add above or tap Add item.</p>`}</section>`;
         })
         .join("");
-    content.innerHTML = `<div class="operate-view groceries-view"><div class="page-heading"><div><h2>Groceries${state.shortfall?.items?.length ? `<button class="shortfall-badge" type="button" data-action="shortfall-open" aria-label="Short for this week — view the rundown">!</button>` : ""}</h2><p>Explicit lists only.<span class="grocery-total-counts">${listSummary}</span></p>${state.shoppingMode ? `<p class="shopping-mode-caption">Bigger targets, distractions hidden — for checking off in the store</p>` : ""}</div><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="shopping-mode" aria-pressed="${state.shoppingMode ? "true" : "false"}">${state.shoppingMode ? "Exit shopping mode" : "Shopping mode"}</button></div></div>${lists || `<section class="panel"><div class="empty-state"><div><h3>No grocery lists</h3><p>Grocery lists are not available for this account.</p></div></div></section>`}</div>`;
+    content.innerHTML = `<div class="operate-view groceries-view"><div class="page-heading"><div><h2>Groceries${state.shortfall?.items?.length ? `<button class="shortfall-badge" type="button" data-action="shortfall-open" aria-label="Short for this week — view the rundown">!</button>` : ""}</h2><p>Explicit lists only.<span class="grocery-total-counts">${listSummary}</span></p>${state.shoppingMode ? `<p class="shopping-mode-caption">Bigger targets, distractions hidden — for checking off in the store</p>` : ""}</div><div class="auth-actions">${totalPurchased ? `<button class="button button-quiet button-small" type="button" data-action="toggle-hide-checked" aria-pressed="${state.hideCheckedGroceries ? "true" : "false"}">${state.hideCheckedGroceries ? "Show checked" : "Hide checked"}</button>` : ""}<button class="button button-secondary button-small" type="button" data-action="shopping-mode" aria-pressed="${state.shoppingMode ? "true" : "false"}">${state.shoppingMode ? "Exit shopping mode" : "Shopping mode"}</button></div></div>${quickAddBar}${lists || `<section class="panel"><div class="empty-state"><div><h3>No grocery lists</h3><p>Grocery lists are not available for this account.</p></div></div></section>`}</div>`;
 }
 
 function cookCardActionsMarkup(cook) {
@@ -5521,17 +5816,23 @@ function cookSummaryCard(cook) {
           escapeHtml(cook.title) +
           '" loading="lazy" />'
         : "";
-    const sourceNote = cook.source_cook_id
-        ? " · based on an earlier attempt"
-        : "";
-    const meta =
-        escapeHtml(formatDate(cook.cook_date, { year: true })) +
-        " · " +
-        number(cook.photo_count) +
-        " saved photo" +
-        (Number(cook.photo_count) === 1 ? "" : "s") +
-        sourceNote;
-    return `<article class="cook-card cook-panel" data-cook-id="${escapeHtml(cook.id)}"><div class="cook-card-main">${photo}<div class="cook-card-copy"><span class="cook-status">${cook.status === "active" ? "Active" : "Finished"}</span><h3 class="cook-title">${escapeHtml(cook.title)}</h3><p class="cook-card-meta">${meta}</p>${cook.notes ? '<p class="cook-notes">' + escapeHtml(cook.notes) + "</p>" : ""}</div></div><div class="cook-card-actions-row"><div class="auth-actions cook-actions" data-cook-actions data-context="card" data-id="${escapeHtml(cook.id)}" data-status="${escapeHtml(cook.status)}">${cookCardActionsMarkup(cook)}</div><label class="cook-select"><input type="checkbox" data-cook-select="${escapeHtml(cook.id)}" aria-label="Select ${escapeHtml(cook.title)} for comparison" /> Compare</label></div></article>`;
+    const dishCount = cook.dish_count ?? cook.dishes?.length ?? null;
+    const totalSteps =
+        cook.total_steps_count ?? cook.step_progress?.total ?? null;
+    const checkedSteps =
+        cook.checked_steps_count ?? cook.step_progress?.checked ?? null;
+    const metaParts = [
+        escapeHtml(formatDate(cook.cook_date, { year: true })),
+        dishCount != null && Number(dishCount) > 0
+            ? `${number(dishCount)} dish${Number(dishCount) === 1 ? "" : "es"}`
+            : "",
+        totalSteps != null && Number(totalSteps) > 0
+            ? `${number(checkedSteps ?? 0)}/${number(totalSteps)} steps`
+            : "",
+        `${number(cook.photo_count)} photo${Number(cook.photo_count) === 1 ? "" : "s"}`,
+        cook.source_cook_id ? "repeat attempt" : "",
+    ].filter(Boolean);
+    return `<article class="cook-card cook-panel" data-cook-id="${escapeHtml(cook.id)}"><div class="cook-card-main">${photo}<div class="cook-card-copy"><span class="cook-status">${cook.status === "active" ? "Active" : "Finished"}</span><h3 class="cook-title">${escapeHtml(cook.title)}</h3><p class="cook-card-meta">${metaParts.join(" · ")}</p>${cook.notes ? '<p class="cook-notes">' + escapeHtml(cook.notes) + "</p>" : ""}</div></div><div class="cook-card-actions-row"><div class="auth-actions cook-actions" data-cook-actions data-context="card" data-id="${escapeHtml(cook.id)}" data-status="${escapeHtml(cook.status)}">${cookCardActionsMarkup(cook)}</div><label class="cook-select"><input type="checkbox" data-cook-select="${escapeHtml(cook.id)}" aria-label="Select ${escapeHtml(cook.title)} for comparison" /> Compare</label></div></article>`;
 }
 
 async function renderCooks() {
@@ -5574,11 +5875,11 @@ async function renderCooks() {
           : active.length
             ? '<p class="cook-none-line">No finished cooks yet.</p>'
             : '<div class="empty-state"><div><h3>No cooks yet</h3><p>Start before cooking, add a photo and message while cooking, or record a past attempt.</p><button class="button button-primary button-small spacer-top" type="button" data-action="new-cook">Start your first cook</button></div></div>';
-    content.innerHTML = `<div class="operate-view cooks-view"><div class="page-heading"><div><h2>Cooks</h2></div><div class="auth-actions"><button class="button button-primary button-small" type="button" data-action="new-cook">Start cook</button><button class="button button-secondary button-small" type="button" data-action="compare-cooks">Compare selected</button></div></div><section class="panel cook-search-panel"><form id="cook-search-form" class="cook-search-form"><div class="cook-search-row"><label class="field cook-search-query"><span>Search history</span><input class="input" name="query" type="search" value="${escapeHtml(state.cookQuery)}" placeholder="Search wings, notes, updates…" autocomplete="off" /></label><button class="button button-primary button-small" type="submit">Search history</button></div><details class="cook-filters"${hasFilters ? " open" : ""}><summary>Filters${[filters.dish, filters.method, filters.flavor, filters.dateFrom, filters.dateTo].filter(Boolean).length + (filters.status !== "all" ? 1 : 0) ? ` · ${[filters.dish, filters.method, filters.flavor, filters.dateFrom, filters.dateTo].filter(Boolean).length + (filters.status !== "all" ? 1 : 0)} set` : ""}</summary><div class="cook-filter-grid"><label class="field"><span>Dish</span><input class="input" name="dish" value="${escapeHtml(filters.dish)}" placeholder="Dish" /></label><label class="field"><span>Method</span><input class="input" name="method" value="${escapeHtml(filters.method)}" placeholder="Method" /></label><label class="field"><span>Flavor / seasoning</span><input class="input" name="flavor" value="${escapeHtml(filters.flavor)}" placeholder="Flavor / seasoning" /></label><label class="field"><span>Status</span><select name="status" aria-label="Cook status"><option value="all" ${filters.status === "all" ? "selected" : ""}>All statuses</option><option value="active" ${filters.status === "active" ? "selected" : ""}>Active</option><option value="finished" ${filters.status === "finished" ? "selected" : ""}>Finished</option></select></label><label class="field"><span>From</span><input class="input" name="date_from" type="date" value="${escapeHtml(filters.dateFrom)}" /></label><label class="field"><span>To</span><input class="input" name="date_to" type="date" value="${escapeHtml(filters.dateTo)}" /></label></div></details>${hasFilters ? '<div class="auth-actions cook-search-actions"><button class="button button-quiet button-small" type="button" data-action="clear-cook-search">Clear search</button></div>' : ""}<p class="tiny cook-search-note">Searches cook history directly, including original updates, timeline notes, results, dish labels, seasoning, method, and date.</p></form></section>${activeMarkup}<section class="panel"><div class="panel-title"><div><h3>${hasFilters ? "Matching history" : "Recent history"}</h3><span>${cooks.length} cook${cooks.length === 1 ? "" : "s"}</span></div></div>${historyMarkup}</section></div>`;
+    content.innerHTML = `<div class="operate-view cooks-view"><a class="mobile-subroute-back" href="/app/more">← More</a><div class="page-heading"><div><h2>Cooks</h2></div><div class="auth-actions"><button class="button button-primary button-small" type="button" data-action="new-cook">Start cook</button><button class="button button-secondary button-small" type="button" data-action="compare-cooks">Compare selected</button></div></div><section class="panel cook-search-panel"><form id="cook-search-form" class="cook-search-form"><div class="cook-search-row"><label class="field cook-search-query"><span>Search history</span><input class="input" name="query" type="search" value="${escapeHtml(state.cookQuery)}" placeholder="Search wings, notes, updates…" autocomplete="off" /></label><button class="button button-primary button-small" type="submit">Search history</button></div><details class="cook-filters"${hasFilters ? " open" : ""}><summary>Filters${[filters.dish, filters.method, filters.flavor, filters.dateFrom, filters.dateTo].filter(Boolean).length + (filters.status !== "all" ? 1 : 0) ? ` · ${[filters.dish, filters.method, filters.flavor, filters.dateFrom, filters.dateTo].filter(Boolean).length + (filters.status !== "all" ? 1 : 0)} set` : ""}</summary><div class="cook-filter-grid"><label class="field"><span>Dish</span><input class="input" name="dish" value="${escapeHtml(filters.dish)}" placeholder="Dish" /></label><label class="field"><span>Method</span><input class="input" name="method" value="${escapeHtml(filters.method)}" placeholder="Method" /></label><label class="field"><span>Flavor / seasoning</span><input class="input" name="flavor" value="${escapeHtml(filters.flavor)}" placeholder="Flavor / seasoning" /></label><label class="field"><span>Status</span><select name="status" aria-label="Cook status"><option value="all" ${filters.status === "all" ? "selected" : ""}>All statuses</option><option value="active" ${filters.status === "active" ? "selected" : ""}>Active</option><option value="finished" ${filters.status === "finished" ? "selected" : ""}>Finished</option></select></label><label class="field"><span>From</span><input class="input" name="date_from" type="date" value="${escapeHtml(filters.dateFrom)}" /></label><label class="field"><span>To</span><input class="input" name="date_to" type="date" value="${escapeHtml(filters.dateTo)}" /></label></div></details>${hasFilters ? '<div class="auth-actions cook-search-actions"><button class="button button-quiet button-small" type="button" data-action="clear-cook-search">Clear search</button></div>' : ""}<p class="tiny cook-search-note">Searches cook history directly, including original updates, timeline notes, results, dish labels, seasoning, method, and date.</p></form></section>${activeMarkup}<section class="panel"><div class="panel-title"><div><h3>${hasFilters ? "Matching history" : "Recent history"}</h3><span>${cooks.length} cook${cooks.length === 1 ? "" : "s"}</span></div></div>${historyMarkup}</section></div>`;
 }
 
 function cookDishFormMarkup() {
-    return `<div class="cook-create-dish" data-cook-dish><div class="panel-title"><h3>Dish</h3><span>Labels and actual ingredients are editable later.</span></div><label class="field"><span>Dish name</span><input name="dish_name" maxlength="200" placeholder="Wings, mac and cheese…" required /></label><div class="meal-composer-grid"><label class="field"><span>Method</span><input name="method" maxlength="500" placeholder="Smoked, grilled…" /></label><label class="field"><span>Flavor</span><input name="flavor" maxlength="500" placeholder="Lemon pepper, spicy…" /></label><label class="field"><span>Cut / ingredient</span><input name="ingredient_or_cut" maxlength="500" placeholder="Bone-in thighs…" /></label><label class="field"><span>Equipment</span><input name="equipment" maxlength="500" placeholder="Pellet smoker…" /></label></div><label class="field"><span>Actual ingredients (optional, one per line)</span><textarea name="actual_ingredients" rows="2" maxlength="6000" placeholder="Chicken wings\nLemon pepper\nOil"></textarea></label></div>`;
+    return `<div class="cook-create-dish" data-cook-dish><div class="panel-title"><h3>Dish</h3><span>Editable later</span></div><label class="field"><span>Dish name</span><input name="dish_name" maxlength="200" placeholder="Wings, mac and cheese…" required /></label><div class="field-row-2up"><label class="field"><span>Method</span><input name="method" maxlength="500" placeholder="Smoked, grilled…" /></label><label class="field"><span>Equipment</span><input name="equipment" maxlength="500" placeholder="Pellet smoker…" /></label></div><div class="field-row-2up"><label class="field"><span>Flavor</span><input name="flavor" maxlength="500" placeholder="Lemon pepper, spicy…" /></label><label class="field"><span>Cut / ingredient</span><input name="ingredient_or_cut" maxlength="500" placeholder="Bone-in thighs…" /></label></div><label class="field"><span>Actual ingredients (optional, one per line)</span><textarea name="actual_ingredients" rows="2" maxlength="6000" placeholder="Chicken wings\nLemon pepper\nOil"></textarea></label></div>`;
 }
 
 function openCookCreate() {
@@ -5587,13 +5888,13 @@ function openCookCreate() {
         : '<input type="hidden" name="scope" value="personal" />';
     openDialog(
         "Start a cook",
-        `<form id="cook-create-form" class="auth-form" enctype="multipart/form-data"><p>Create a cook before, during, or after the fact. This does not log a meal or change pantry inventory.</p>${scopeOptions}<label class="field"><span>Cook title</span><input name="title" maxlength="200" placeholder="Smoked lemon pepper wings" required /></label><div class="meal-composer-grid"><label class="field"><span>Date</span><input name="cook_date" type="date" value="${escapeHtml(state.date)}" required /></label><label class="field"><span>Timezone</span><input name="timezone" value="${escapeHtml(state.bootstrap?.profile?.timezone || "UTC")}" maxlength="100" /></label></div><section id="cook-create-dishes" class="cook-create-dishes">${cookDishFormMarkup()}</section><button class="button button-quiet button-small" type="button" data-action="add-cook-dish">Add another dish</button><label class="field"><span>What are you doing?</span><textarea name="message" rows="3" maxlength="20000" placeholder="I’m starting these wings. I heated the grill to 250°F a couple minutes ago."></textarea></label><div class="field">${photoCaptureMarkup({ name: "photos", label: "Photos", multiple: true })}<small class="tiny">JPEG, PNG, or WebP; up to 8 MB each. Notes are kept if a photo transfer fails.</small></div><button class="button button-primary" type="submit">Create cook</button></form>`,
+        `<form id="cook-create-form" class="auth-form" enctype="multipart/form-data"><p class="tiny">Create a cook before, during, or after the fact. Does not log a meal or change pantry.</p>${scopeOptions}<label class="field"><span>Cook title</span><input name="title" maxlength="200" placeholder="Smoked lemon pepper wings" required /></label><div class="field-row-2up"><label class="field"><span>Date</span><input name="cook_date" type="date" value="${escapeHtml(state.date)}" required /></label><label class="field"><span>Timezone</span><input name="timezone" value="${escapeHtml(state.bootstrap?.profile?.timezone || "UTC")}" maxlength="100" /></label></div><section id="cook-create-dishes" class="cook-create-dishes">${cookDishFormMarkup()}</section><button class="button button-quiet button-small" type="button" data-action="add-cook-dish">Add another dish</button><label class="field"><span>What are you doing?</span><textarea name="message" rows="2" maxlength="20000" placeholder="I’m starting these wings. I heated the grill to 250°F a couple minutes ago."></textarea></label><div class="field">${photoCaptureMarkup({ name: "photos", label: "Photos", multiple: true })}<small class="tiny">JPEG, PNG, or WebP; up to 8 MB each.</small></div><div class="dialog-footer-sticky"><button class="button button-primary" type="submit">Create cook</button></div></form>`,
     );
 }
 
 function cookTimelineMarkup(detail) {
     if (!detail.events?.length)
-        return '<div class="empty-state"><div><strong>No timeline events yet.</strong><p>Describe what happened in the update box and Munch will append supported events.</p></div></div>';
+        return '<p class="empty-state-compact">No timeline events yet. Record an update above to append events.</p>';
     const rows = detail.events
         .map(
             (event) =>
@@ -5790,7 +6091,10 @@ function cookDetailMarkup(detail) {
               )
               .join("") +
           "</div>"
-        : '<p class="tiny">No saved photos yet.</p>';
+        : '<p class="empty-state-compact">No saved photos yet.</p>';
+    const photosSection = detail.media?.length
+        ? `<section class="cook-detail-section"><div class="panel-title"><div><h3>Photos</h3><span>${detail.media.length} saved</span></div></div>${photoMarkup}</section>`
+        : `<details class="editor-item-disclosure"><summary><span><strong>Photos</strong><small>0 saved</small></span></summary><div class="spacer-top">${photoMarkup}</div></details>`;
     const dishes = detail.dishes
         .map(
             (dish) =>
@@ -5808,11 +6112,7 @@ function cookDetailMarkup(detail) {
                         .join(" · ") || "No labels yet",
                 ) +
                 "</span>" +
-                (dish.recipe_id
-                    ? "<small>Linked recipe revision " +
-                      escapeHtml(dish.recipe_revision_id || "") +
-                      "</small>"
-                    : "") +
+                (dish.recipe_id ? "<small>Linked to recipe</small>" : "") +
                 '</div><div class="auth-actions cook-dish-actions">' +
                 '<button class="button button-quiet button-small" type="button" data-action="edit-cook-dish" data-id="' +
                 escapeHtml(dish.id) +
@@ -5857,13 +6157,13 @@ function cookDetailMarkup(detail) {
               .join("") +
           "</details>"
         : "";
-    return `<div class="cook-detail-view"><div class="cook-detail-head"><div><p class="section-kicker">${escapeHtml(cook.status === "active" ? "Active cook" : "Completed cook")}</p><h2>${escapeHtml(cook.title)}</h2><p class="tiny">${escapeHtml(formatDate(cook.cook_date, { year: true }))} · ${escapeHtml(cook.timezone)} · version ${number(cook.version)}</p></div><div class="auth-actions cook-actions" data-cook-actions data-context="detail" data-id="${escapeHtml(cook.id)}" data-status="${escapeHtml(cook.status)}">${cookDetailActionsMarkup(cook)}</div></div>${cook.original_message ? '<details class="cook-original"><summary>Original context</summary><p>' + escapeHtml(cook.original_message) + "</p></details>" : ""}${cookModeMarkup(detail)}${cook.status === "active" ? cookUpdateStripMarkup(cook) : ""}<section class="cook-detail-section"><div class="panel-title"><div><h3>Dishes</h3><span>${detail.dishes.length} recorded</span></div></div><div class="cook-dishes">${dishes}</div></section><section class="cook-detail-section"><div class="panel-title"><div><h3>Photos</h3><span>${detail.media.length} saved</span></div></div>${photoMarkup}</section><section class="cook-detail-section"><div class="panel-title"><div><h3>Timeline</h3><span>${detail.events.length} event${detail.events.length === 1 ? "" : "s"}</span></div></div>${cookTimelineMarkup(detail)}</section>${cook.status === "active" ? "" : `<section class="cook-detail-section"><div class="panel-title"><div><h3>Record an update</h3><span>One message can add multiple events and photos.</span></div></div>${cookUpdateFormMarkup(cook)}</section>`}<section class="cook-detail-section"><div class="panel-title"><div><h3>Result</h3><span>User observations stay separate from suggestions.</span></div></div><form id="cook-outcome-form" class="auth-form" data-id="${escapeHtml(cook.id)}" data-version="${escapeHtml(outcome?.version || "")}"><label class="field"><span>Feedback</span><textarea name="written_feedback" rows="3" maxlength="20000" placeholder="What did it taste and feel like?">${escapeHtml(outcome?.written_feedback || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Overall assessment (1–5)</span><input name="overall_assessment" type="number" min="1" max="5" step="0.1" value="${escapeHtml(outcome?.overall_assessment || "")}" /></label><label class="field"><span>Characteristics JSON</span><input name="characteristics" value="${escapeHtml(JSON.stringify(outcome?.characteristics || {}))}" placeholder='{"smoke_intensity":"medium"}' /></label></div><label class="field"><span>What worked</span><textarea name="worked" rows="2" maxlength="10000">${escapeHtml(outcome?.worked || "")}</textarea></label><label class="field"><span>What disappointed you</span><textarea name="disappointed" rows="2" maxlength="10000">${escapeHtml(outcome?.disappointed || "")}</textarea></label><label class="field"><span>Change next time</span><textarea name="next_time_notes" rows="2" maxlength="10000">${escapeHtml(outcome?.next_time_notes || "")}</textarea></label><label class="checkbox-row"><input name="is_preferred" type="checkbox" ${outcome?.is_preferred ? "checked" : ""} /> Preferred attempt</label><button class="button button-primary" type="submit">Save result</button></form></section><section class="cook-detail-section"><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="cook-recipe-draft" data-id="${escapeHtml(cook.id)}">Save as recipe</button><button class="button button-secondary button-small" type="button" data-action="set-preferred-cook" data-id="${escapeHtml(cook.id)}">Choose preferred attempt</button></div>${updateMarkup}</section></div>`;
+    return `<div class="cook-detail-view"><div class="cook-detail-head"><div><p class="section-kicker">${escapeHtml(cook.status === "active" ? "Active cook" : "Completed cook")}</p><p class="tiny">${escapeHtml(formatDate(cook.cook_date, { year: true }))} · ${escapeHtml(cook.timezone)}</p></div><div class="auth-actions cook-actions" data-cook-actions data-context="detail" data-id="${escapeHtml(cook.id)}" data-status="${escapeHtml(cook.status)}">${cookDetailActionsMarkup(cook)}</div></div>${cook.original_message ? '<details class="cook-original"><summary>Original context</summary><p>' + escapeHtml(cook.original_message) + "</p></details>" : ""}${cookModeMarkup(detail)}${cook.status === "active" ? cookUpdateStripMarkup(cook) : ""}<section class="cook-detail-section"><div class="panel-title"><div><h3>Dishes</h3><span>${detail.dishes.length} recorded</span></div></div><div class="cook-dishes">${dishes}</div></section>${photosSection}<details class="editor-item-disclosure"><summary><span><strong>Timeline</strong><small>${detail.events.length} event${detail.events.length === 1 ? "" : "s"}</small></span></summary><div class="spacer-top">${cookTimelineMarkup(detail)}</div></details>${cook.status === "active" ? "" : `<section class="cook-detail-section"><div class="panel-title"><div><h3>Record an update</h3><span>One message can add multiple events and photos.</span></div></div>${cookUpdateFormMarkup(cook)}</section>`}<details class="editor-item-disclosure"><summary><span><strong>Result</strong><small>${outcome?.overall_assessment ? `Rated ${number(outcome.overall_assessment, 1)}/5` : "Record observations & rating"}</small></span></summary><form id="cook-outcome-form" class="auth-form spacer-top" data-id="${escapeHtml(cook.id)}" data-version="${escapeHtml(outcome?.version || "")}"><label class="field"><span>Feedback</span><textarea name="written_feedback" rows="2" maxlength="20000" placeholder="What did it taste and feel like?">${escapeHtml(outcome?.written_feedback || "")}</textarea></label><label class="field"><span>Overall assessment (1–5)</span><input name="overall_assessment" type="number" min="1" max="5" step="0.1" inputmode="decimal" value="${escapeHtml(outcome?.overall_assessment || "")}" /></label><label class="field"><span>What worked</span><textarea name="worked" rows="2" maxlength="10000">${escapeHtml(outcome?.worked || "")}</textarea></label><label class="field"><span>What disappointed you</span><textarea name="disappointed" rows="2" maxlength="10000">${escapeHtml(outcome?.disappointed || "")}</textarea></label><label class="field"><span>Change next time</span><textarea name="next_time_notes" rows="2" maxlength="10000">${escapeHtml(outcome?.next_time_notes || "")}</textarea></label><details class="more-nutrients"><summary>Advanced characteristics (JSON)</summary><label class="field spacer-top"><span>Characteristics JSON</span><input name="characteristics" value="${escapeHtml(JSON.stringify(outcome?.characteristics || {}))}" placeholder='{"smoke_intensity":"medium"}' /></label></details><label class="checkbox-row"><input name="is_preferred" type="checkbox" ${outcome?.is_preferred ? "checked" : ""} /> Preferred attempt</label><button class="button button-primary" type="submit">Save result</button></form></details><section class="cook-detail-section"><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="cook-recipe-draft" data-id="${escapeHtml(cook.id)}">Save as recipe</button><button class="button button-secondary button-small" type="button" data-action="set-preferred-cook" data-id="${escapeHtml(cook.id)}">Choose preferred attempt</button></div>${updateMarkup}</section></div>`;
 }
 
 function openCookDishEditor(dish, cookId, cookVersion) {
     openDialog(
         "Edit cook dish",
-        `<form id="cook-dish-edit-form" class="auth-form" data-id="${escapeHtml(dish.id)}" data-cook-id="${escapeHtml(cookId)}" data-cook-version="${escapeHtml(cookVersion)}"><p>Update the actual dish and labels without changing a linked recipe revision.</p><label class="field"><span>Dish name</span><input name="name" maxlength="200" value="${escapeHtml(dish.name)}" required /></label><div class="meal-composer-grid"><label class="field"><span>Method</span><input name="method" maxlength="500" value="${escapeHtml(dish.method || "")}" /></label><label class="field"><span>Flavor</span><input name="flavor" maxlength="500" value="${escapeHtml(dish.flavor || "")}" /></label><label class="field"><span>Cut / ingredient</span><input name="ingredient_or_cut" maxlength="500" value="${escapeHtml(dish.ingredient_or_cut || "")}" /></label><label class="field"><span>Equipment</span><input name="equipment" maxlength="500" value="${escapeHtml(dish.equipment || "")}" /></label></div><label class="field"><span>Dish notes</span><textarea name="notes" rows="3" maxlength="20000">${escapeHtml(dish.notes || "")}</textarea></label><label class="field"><span>Actual ingredients JSON</span><textarea name="actual_ingredients" rows="6" maxlength="20000">${escapeHtml(JSON.stringify(dish.actual_ingredients || [], null, 2))}</textarea></label><button class="button button-primary" type="submit">Save dish</button></form>`,
+        `<form id="cook-dish-edit-form" class="auth-form" data-id="${escapeHtml(dish.id)}" data-cook-id="${escapeHtml(cookId)}" data-cook-version="${escapeHtml(cookVersion)}"><p class="tiny">Update the actual dish and labels without changing a linked recipe.</p><label class="field"><span>Dish name</span><input name="name" maxlength="200" value="${escapeHtml(dish.name)}" required /></label><div class="field-row-2up"><label class="field"><span>Method</span><input name="method" maxlength="500" value="${escapeHtml(dish.method || "")}" /></label><label class="field"><span>Equipment</span><input name="equipment" maxlength="500" value="${escapeHtml(dish.equipment || "")}" /></label></div><div class="field-row-2up"><label class="field"><span>Flavor</span><input name="flavor" maxlength="500" value="${escapeHtml(dish.flavor || "")}" /></label><label class="field"><span>Cut / ingredient</span><input name="ingredient_or_cut" maxlength="500" value="${escapeHtml(dish.ingredient_or_cut || "")}" /></label></div><label class="field"><span>Dish notes</span><textarea name="notes" rows="2" maxlength="20000">${escapeHtml(dish.notes || "")}</textarea></label><details class="more-nutrients"><summary>Actual ingredients (JSON)</summary><label class="field spacer-top"><span>Actual ingredients JSON</span><textarea name="actual_ingredients" rows="5" maxlength="20000">${escapeHtml(JSON.stringify(dish.actual_ingredients || [], null, 2))}</textarea></label></details><button class="button button-primary" type="submit">Save dish</button></form>`,
     );
 }
 
@@ -5875,7 +6175,7 @@ async function openCook(id) {
 function openCookEdit(cook) {
     openDialog(
         "Edit cook details",
-        `<form id="cook-edit-form" class="auth-form" data-id="${escapeHtml(cook.id)}" data-version="${escapeHtml(cook.version)}"><label class="field"><span>Title</span><input name="title" maxlength="200" value="${escapeHtml(cook.title)}" required /></label><div class="meal-composer-grid"><label class="field"><span>Date</span><input name="cook_date" type="date" value="${escapeHtml(cook.cook_date)}" required /></label><label class="field"><span>Status</span><select name="status"><option value="active" ${cook.status === "active" ? "selected" : ""}>Active</option><option value="finished" ${cook.status === "finished" ? "selected" : ""}>Finished</option></select></label></div><label class="field"><span>Notes</span><textarea name="notes" rows="4" maxlength="20000">${escapeHtml(cook.notes || "")}</textarea></label><button class="button button-primary" type="submit">Save details</button></form>`,
+        `<form id="cook-edit-form" class="auth-form" data-id="${escapeHtml(cook.id)}" data-version="${escapeHtml(cook.version)}"><label class="field"><span>Title</span><input name="title" maxlength="200" value="${escapeHtml(cook.title)}" required /></label><div class="field-row-2up"><label class="field"><span>Date</span><input name="cook_date" type="date" value="${escapeHtml(cook.cook_date)}" required /></label><label class="field"><span>Status</span><select name="status"><option value="active" ${cook.status === "active" ? "selected" : ""}>Active</option><option value="finished" ${cook.status === "finished" ? "selected" : ""}>Finished</option></select></label></div><label class="field"><span>Notes</span><textarea name="notes" rows="3" maxlength="20000">${escapeHtml(cook.notes || "")}</textarea></label><button class="button button-primary" type="submit">Save details</button></form>`,
     );
 }
 
@@ -5898,7 +6198,7 @@ function openCookEventEditor(eventRecord, cookId) {
     ];
     openDialog(
         "Correct timeline event",
-        `<form id="cook-event-edit-form" class="auth-form" data-id="${escapeHtml(eventRecord.id)}" data-cook-id="${escapeHtml(cookId)}" data-version="${escapeHtml(eventRecord.version)}"><label class="field"><span>Event</span><select name="event_type">${types.map((type) => '<option value="' + type + '" ' + (eventRecord.event_type === type ? "selected" : "") + ">" + type.replaceAll("_", " ") + "</option>").join("")}</select></label><label class="field"><span>Event time (UTC)</span><input name="event_at" type="datetime-local" value="${escapeHtml(localTime)}" required /></label><label class="field"><span>Note</span><textarea name="note" rows="3" maxlength="20000">${escapeHtml(eventRecord.note || eventRecord.original_message || "")}</textarea></label><div class="meal-composer-grid"><label class="field"><span>Setpoint</span><input name="setpoint_temperature" type="number" step="0.1" value="${escapeHtml(eventRecord.setpoint_temperature ?? "")}" /></label><label class="field"><span>Setpoint unit</span><select name="setpoint_unit"><option value="F" ${eventRecord.setpoint_unit === "F" ? "selected" : ""}>°F</option><option value="C" ${eventRecord.setpoint_unit === "C" ? "selected" : ""}>°C</option></select></label><label class="field"><span>Cooking environment</span><input name="ambient_temperature" type="number" step="0.1" value="${escapeHtml(eventRecord.ambient_temperature ?? "")}" /></label><label class="field"><span>Environment unit</span><select name="ambient_unit"><option value="F" ${eventRecord.ambient_unit === "F" ? "selected" : ""}>°F</option><option value="C" ${eventRecord.ambient_unit === "C" ? "selected" : ""}>°C</option></select></label><label class="field"><span>Internal</span><input name="internal_temperature" type="number" step="0.1" value="${escapeHtml(eventRecord.internal_temperature ?? "")}" /></label><label class="field"><span>Internal unit</span><select name="internal_unit"><option value="F" ${eventRecord.internal_unit === "F" ? "selected" : ""}>°F</option><option value="C" ${eventRecord.internal_unit === "C" ? "selected" : ""}>°C</option></select></label></div><button class="button button-primary" type="submit">Save correction</button></form>`,
+        `<form id="cook-event-edit-form" class="auth-form" data-id="${escapeHtml(eventRecord.id)}" data-cook-id="${escapeHtml(cookId)}" data-version="${escapeHtml(eventRecord.version)}"><div class="field-row-2up"><label class="field"><span>Event</span><select name="event_type">${types.map((type) => '<option value="' + type + '" ' + (eventRecord.event_type === type ? "selected" : "") + ">" + type.replaceAll("_", " ") + "</option>").join("")}</select></label><label class="field"><span>Event time (UTC)</span><input name="event_at" type="datetime-local" value="${escapeHtml(localTime)}" required /></label></div><label class="field"><span>Note</span><textarea name="note" rows="2" maxlength="20000">${escapeHtml(eventRecord.note || eventRecord.original_message || "")}</textarea></label><div class="field-row-qty-unit"><label class="field"><span>Setpoint</span><input name="setpoint_temperature" type="number" step="0.1" inputmode="decimal" value="${escapeHtml(eventRecord.setpoint_temperature ?? "")}" /></label><label class="field"><span>Unit</span><select name="setpoint_unit" aria-label="Setpoint unit"><option value="F" ${eventRecord.setpoint_unit === "F" ? "selected" : ""}>°F</option><option value="C" ${eventRecord.setpoint_unit === "C" ? "selected" : ""}>°C</option></select></label></div><div class="field-row-qty-unit"><label class="field"><span>Environment</span><input name="ambient_temperature" type="number" step="0.1" inputmode="decimal" value="${escapeHtml(eventRecord.ambient_temperature ?? "")}" /></label><label class="field"><span>Unit</span><select name="ambient_unit" aria-label="Environment unit"><option value="F" ${eventRecord.ambient_unit === "F" ? "selected" : ""}>°F</option><option value="C" ${eventRecord.ambient_unit === "C" ? "selected" : ""}>°C</option></select></label></div><div class="field-row-qty-unit"><label class="field"><span>Internal</span><input name="internal_temperature" type="number" step="0.1" inputmode="decimal" value="${escapeHtml(eventRecord.internal_temperature ?? "")}" /></label><label class="field"><span>Unit</span><select name="internal_unit" aria-label="Internal unit"><option value="F" ${eventRecord.internal_unit === "F" ? "selected" : ""}>°F</option><option value="C" ${eventRecord.internal_unit === "C" ? "selected" : ""}>°C</option></select></label></div><button class="button button-primary" type="submit">Save correction</button></form>`,
     );
 }
 
@@ -5911,7 +6211,7 @@ async function openCookRecipeDraft(cookId) {
     const recipe = draft.draft;
     openDialog(
         "Review recipe from cook",
-        `<form id="cook-recipe-form" class="auth-form" data-cook-id="${escapeHtml(cookId)}" data-dish-id="${escapeHtml(draft.source_dish_id)}"><p>${escapeHtml(draft.review_note)}</p>${draft.missing_fields?.length ? '<p class="notice warning">Still needed: ' + escapeHtml(draft.missing_fields.join(", ")) + "</p>" : ""}<label class="field"><span>Name</span><input name="name" maxlength="200" value="${escapeHtml(recipe.name)}" required /></label><label class="field"><span>Servings</span><input name="servings" type="number" min="0.01" step="0.01" value="${escapeHtml(recipe.servings ?? "")}" required /></label><label class="field"><span>Actual ingredients JSON</span><textarea name="ingredients_json" rows="7" required>${escapeHtml(JSON.stringify(recipe.ingredients || [], null, 2))}</textarea><small class="tiny">Edit this before saving; Munch will resolve nutrition only at save time.</small></label><label class="field"><span>Instructions</span><textarea name="instructions" rows="7" required>${escapeHtml((recipe.instructions || []).join("\n"))}</textarea><small class="tiny">One step per line.</small></label><button class="button button-primary" type="submit">Save reviewed recipe</button></form>`,
+        `<form id="cook-recipe-form" class="auth-form" data-cook-id="${escapeHtml(cookId)}" data-dish-id="${escapeHtml(draft.source_dish_id)}"><p class="tiny">${escapeHtml(draft.review_note)}</p>${draft.missing_fields?.length ? '<p class="notice warning">Still needed: ' + escapeHtml(draft.missing_fields.join(", ")) + "</p>" : ""}<div class="field-row-2up"><label class="field"><span>Name</span><input name="name" maxlength="200" value="${escapeHtml(recipe.name)}" required /></label><label class="field"><span>Servings</span><input name="servings" type="number" min="0.01" step="0.01" inputmode="decimal" value="${escapeHtml(recipe.servings ?? "")}" required /></label></div><label class="field"><span>Actual ingredients JSON</span><textarea name="ingredients_json" rows="6" required>${escapeHtml(JSON.stringify(recipe.ingredients || [], null, 2))}</textarea><small class="tiny">Edit before saving; Munch resolves nutrition at save time.</small></label><label class="field"><span>Instructions</span><textarea name="instructions" rows="6" required>${escapeHtml((recipe.instructions || []).join("\n"))}</textarea><small class="tiny">One step per line.</small></label><div class="dialog-footer-sticky"><button class="button button-primary" type="submit">Save reviewed recipe</button></div></form>`,
     );
 }
 
@@ -5961,19 +6261,21 @@ function openCookComparison(comparison) {
     );
 }
 
+const GROCERY_UNIT_DATALIST = `<datalist id="grocery-unit-presets"><option value="whole"></option><option value="lb"></option><option value="oz"></option><option value="cup"></option><option value="tbsp"></option><option value="tsp"></option><option value="g"></option><option value="kg"></option><option value="ml"></option><option value="carton"></option><option value="can"></option><option value="bag"></option><option value="box"></option><option value="bunch"></option><option value="bottle"></option><option value="pack"></option><option value="dozen"></option></datalist>`;
+
 function openGroceryAdd(scope) {
     openDialog(
         scope === "household"
             ? "Add household grocery"
             : "Add personal grocery",
-        `<form id="grocery-add-form" class="auth-form" data-scope="${escapeHtml(scope)}"><label class="field"><span>Item</span><input name="name" maxlength="300" required placeholder="Onions, oat milk…" /></label><div class="meal-composer-grid"><label class="field"><span>Quantity</span><input name="quantity" type="number" min="0.01" step="0.01" placeholder="Optional" /></label><label class="field"><span>Unit</span><input name="unit" maxlength="80" placeholder="whole, lb, carton…" /></label></div><label class="field"><span>Note</span><textarea name="note" rows="2" maxlength="500" placeholder="Optional preparation or brand note"></textarea></label><button class="button button-primary" type="submit">Add to list</button></form>`,
+        `<form id="grocery-add-form" class="auth-form" data-scope="${escapeHtml(scope)}"><label class="field"><span>Item</span><input name="name" maxlength="300" required placeholder="Onions, oat milk…" /></label><div class="field-row-qty-unit"><label class="field"><span>Quantity</span><input name="quantity" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="Optional" /></label><label class="field"><span>Unit</span><input name="unit" maxlength="80" list="grocery-unit-presets" placeholder="whole, lb, carton…" /></label></div>${GROCERY_UNIT_DATALIST}<label class="field"><span>Note</span><input name="note" maxlength="500" placeholder="Optional preparation or brand note" /></label><button class="button button-primary" type="submit">Add to list</button></form>`,
     );
 }
 
 function openGroceryEdit(item, scope) {
     openDialog(
         "Edit grocery item",
-        `<form id="grocery-edit-form" class="auth-form" data-id="${escapeHtml(item.grocery_item_id)}" data-version="${escapeHtml(item.version)}" data-scope="${escapeHtml(scope)}"><label class="field"><span>Item</span><input name="name" maxlength="300" required value="${escapeHtml(item.name)}" /></label><div class="meal-composer-grid"><label class="field"><span>Quantity</span><input name="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity ?? "")}" placeholder="Optional" /></label><label class="field"><span>Unit</span><input name="unit" maxlength="80" value="${escapeHtml(item.unit || "")}" placeholder="whole, lb, carton…" /></label></div><label class="field"><span>Note</span><textarea name="note" rows="2" maxlength="500">${escapeHtml(item.note || "")}</textarea></label><button class="button button-primary" type="submit">Save item</button></form>`,
+        `<form id="grocery-edit-form" class="auth-form" data-id="${escapeHtml(item.grocery_item_id)}" data-version="${escapeHtml(item.version)}" data-scope="${escapeHtml(scope)}"><label class="field"><span>Item</span><input name="name" maxlength="300" required value="${escapeHtml(item.name)}" /></label><div class="field-row-qty-unit"><label class="field"><span>Quantity</span><input name="quantity" type="number" min="0.01" step="0.01" inputmode="decimal" value="${escapeHtml(item.quantity ?? "")}" placeholder="Optional" /></label><label class="field"><span>Unit</span><input name="unit" maxlength="80" list="grocery-unit-presets" value="${escapeHtml(item.unit || "")}" placeholder="whole, lb, carton…" /></label></div>${GROCERY_UNIT_DATALIST}<label class="field"><span>Note</span><input name="note" maxlength="500" value="${escapeHtml(item.note || "")}" placeholder="Optional preparation or brand note" /></label><button class="button button-primary" type="submit">Save item</button></form>`,
     );
 }
 
@@ -6052,7 +6354,7 @@ function chatDraftCard(message) {
             return `<li><span>${escapeHtml(entry.name)}</span><small>${label}</small></li>`;
         })
         .join("");
-    return `<div class="chat-draft-card"><p class="chat-draft-kicker">Meal draft proposed</p>${rows ? `<ul class="chat-draft-items">${rows}</ul>` : ""}<p class="chat-draft-note">Nothing is logged yet. Review the draft, check portions, and confirm it there to log the meal.</p><button class="button button-primary button-small" type="button" data-action="open-meal-draft" data-id="${escapeHtml(message.draftId)}">Review draft</button></div>`;
+    return `<div class="chat-draft-card"><p class="chat-draft-kicker">Meal draft proposed</p>${rows ? `<ul class="chat-draft-items">${rows}</ul>` : ""}<p class="chat-draft-note">Nothing is logged yet. Review and confirm the draft to log this meal.</p><button class="button button-primary button-small" type="button" data-action="open-meal-draft" data-id="${escapeHtml(message.draftId)}">Review draft</button></div>`;
 }
 
 function chatToolTraceMarkup(message) {
@@ -6074,11 +6376,11 @@ function chatMessageMarkup(message) {
 }
 
 function chatGateMarkup() {
-    return `<div class="operate-view chat-view"><div class="page-heading"><div><h2>Chat</h2><p>The AI chat agent is part of Munch Premium.</p></div></div><section class="panel chat-gate" data-testid="chat-gate"><h3>A Premium feature</h3><p>${escapeHtml(chatState.gateMessage || "The Munch chat agent is part of Munch Premium ($3.99/month).")}</p><ul class="chat-premium-list"><li>Ad-free in the app</li><li>MCP access for your own AI</li><li>This chat agent — a thinking partner over your pantry, goals, and history</li></ul><div class="auth-actions"><a class="button button-primary" href="/app/settings/billing">View plan &amp; billing</a></div></section></div>`;
+    return `<div class="operate-view chat-view"><a class="mobile-subroute-back" href="/app">← Back</a><div class="page-heading"><div><h2>Chat</h2><p>The AI chat agent is part of Munch Premium.</p></div></div><section class="panel chat-gate" data-testid="chat-gate"><h3>A Premium feature</h3><p>${escapeHtml(chatState.gateMessage || "The Munch chat agent is part of Munch Premium ($3.99/month).")}</p><ul class="chat-premium-list"><li>Ad-free in the app</li><li>MCP access for your own AI</li><li>This chat agent — a thinking partner over your pantry, goals, and history</li></ul><div class="auth-actions"><a class="button button-primary" href="/app/settings/billing">View plan &amp; billing</a></div></section></div>`;
 }
 
 function chatUnavailableMarkup() {
-    return `<div class="operate-view chat-view"><div class="page-heading"><div><h2>Chat</h2></div></div><section class="panel chat-gate" data-testid="chat-unavailable"><h3>Chat is unavailable right now</h3><p>Premium status could not be verified, so the chat agent is closed rather than guessing. Try again in a moment.</p><div class="auth-actions"><button class="button button-primary" type="button" data-action="chat-retry">Try again</button></div></section></div>`;
+    return `<div class="operate-view chat-view"><a class="mobile-subroute-back" href="/app">← Back</a><div class="page-heading"><div><h2>Chat</h2></div></div><section class="panel chat-gate" data-testid="chat-unavailable"><h3>Chat is unavailable right now</h3><p>Premium status could not be verified, so the chat agent is closed rather than guessing. Try again in a moment.</p><div class="auth-actions"><button class="button button-primary" type="button" data-action="chat-retry">Try again</button></div></section></div>`;
 }
 
 function chatSeedStripMarkup() {
@@ -6097,7 +6399,7 @@ function renderChatView() {
     const messages = chatState.messages;
     let thread;
     if (messages.length) {
-        thread = `${chatSeedStripMarkup()}<div class="chat-thread">${messages.map(chatMessageMarkup).join("")}</div>`;
+        thread = `${chatSeedStripMarkup()}<div class="chat-thread" role="log" aria-live="polite">${messages.map(chatMessageMarkup).join("")}</div>`;
     } else if (seed) {
         // Concept-2 seeded opening: the context strip, an opener
         // written from that context, and starters derived from it —
@@ -6108,14 +6410,14 @@ function renderChatView() {
                     `<button class="button button-secondary" type="button" data-action="chat-starter" data-prompt="${escapeHtml(starter)}">${escapeHtml(starter)}</button>`,
             )
             .join("");
-        thread = `${chatSeedStripMarkup()}<div class="chat-thread"><article class="chat-message chat-message-assistant"><p class="chat-message-role">Munch</p><p class="chat-message-body">${escapeHtml(seed.opener || "")}</p></article></div>${starters ? `<div class="chat-starters chat-starters-seeded">${starters}</div>` : ""}`;
+        thread = `${chatSeedStripMarkup()}<div class="chat-thread" role="log" aria-live="polite"><article class="chat-message chat-message-assistant"><p class="chat-message-role">Munch</p><p class="chat-message-body">${escapeHtml(seed.opener || "")}</p></article></div>${starters ? `<div class="chat-starters chat-starters-seeded">${starters}</div>` : ""}`;
     } else {
-        thread = `<section class="panel chat-empty" data-testid="chat-empty"><h3>A thinking partner over your own data</h3><p>Ask about your pantry, today's log, or your goals — the agent reads them live through Munch's own tools, or ask it to log a meal and it will set up a draft for you to review and confirm. Nutrition it quotes comes from your logged, provider-grounded records; it never invents figures.</p><div class="chat-starters"><button class="button button-secondary" type="button" data-action="chat-starter" data-prompt="What can I make with what's in my pantry?">What can I make with my pantry?</button><button class="button button-secondary" type="button" data-action="chat-starter" data-prompt="How is today looking against my goals?">How is today looking?</button><button class="button button-secondary" type="button" data-action="chat-starter" data-prompt="What have I been eating a lot of lately?">What have I been eating lately?</button></div></section>`;
+        thread = `<section class="panel chat-empty" data-testid="chat-empty"><h3>Ask about your data</h3><p>Ask about your pantry, today's log, or goals — or draft a meal to review before logging.</p><div class="chat-starters"><button class="button button-secondary" type="button" data-action="chat-starter" data-prompt="What can I make with what's in my pantry?">What can I make with my pantry?</button><button class="button button-secondary" type="button" data-action="chat-starter" data-prompt="How is today looking against my goals?">How is today looking?</button><button class="button button-secondary" type="button" data-action="chat-starter" data-prompt="What have I been eating a lot of lately?">What have I been eating lately?</button></div></section>`;
     }
     const subline = seed
-        ? `Premium · started from ${escapeHtml(CHAT_SURFACE_LABELS[seed.surface] || "a surface")}.`
-        : "Premium · reads your data live; proposals become drafts.";
-    content.innerHTML = `<div class="operate-view chat-view"><div class="page-heading"><div><h2>Chat</h2><p>${subline}</p></div><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="chat-new">New chat</button></div></div>${thread}${chatState.error ? `<p class="chat-error" role="alert">${escapeHtml(chatState.error)}</p>` : ""}<form id="chat-form" class="chat-composer"><label class="chat-composer-label" for="chat-input">Message the agent</label><textarea id="chat-input" name="message" rows="2" maxlength="4000" placeholder="Ask about your pantry, today, or a meal to log…" ${chatState.sending ? "disabled" : ""}>${escapeHtml(chatState.pendingText)}</textarea><div class="chat-composer-row"><small>Proposals become drafts — nothing is logged until you confirm.</small><button class="button button-primary" type="submit" ${chatState.sending ? "disabled" : ""}>${chatState.sending ? "Thinking…" : "Send"}</button></div></form></div>`;
+        ? `From ${escapeHtml(CHAT_SURFACE_LABELS[seed.surface] || "workspace")}`
+        : "";
+    content.innerHTML = `<div class="operate-view chat-view"><a class="mobile-subroute-back" href="/app">← Back</a><div class="page-heading"><div><h2>Chat</h2>${subline ? `<p>${subline}</p>` : ""}</div><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="chat-new">New chat</button></div></div>${thread}${chatState.error ? `<p class="chat-error" role="alert">${escapeHtml(chatState.error)}</p>` : ""}<form id="chat-form" class="chat-composer"><label class="chat-composer-label sr-only" for="chat-input">Message Munch</label><textarea id="chat-input" name="message" rows="2" maxlength="4000" placeholder="Ask about your pantry, today, or a meal to log…" ${chatState.sending ? "disabled" : ""}>${escapeHtml(chatState.pendingText)}</textarea><div class="chat-composer-row"><small>Meal proposals open as drafts first.</small><button class="button button-primary" type="submit" ${chatState.sending ? "disabled" : ""}>${chatState.sending ? "Thinking…" : "Send"}</button></div></form></div>`;
     const threadElement = content.querySelector(".chat-thread");
     if (threadElement) threadElement.scrollTop = threadElement.scrollHeight;
 }
@@ -6326,6 +6628,11 @@ async function renderRoute() {
             state.date = dateInTimezone(
                 state.bootstrap.profile?.timezone || "UTC",
             );
+            const prefUnit = savedWeightUnit(
+                state.bootstrap.profile?.preferred_weight_unit,
+            );
+            document.documentElement.dataset.preferredWeightUnit =
+                prefUnit || "";
         }
         // Collision prompt check: after the session is known-good, once.
         void maybeShowLinkPrompt();
@@ -6431,6 +6738,8 @@ function findMeal(id) {
     return card ? card.querySelector("h4")?.textContent || "Meal" : "Meal";
 }
 
+let lastDialogTrigger = null;
+
 function openDialog(title, body, actions = "", headerActions = "") {
     // A new dialog supersedes a pending animated close: several flows
     // close one dialog and immediately open the next (guided draft
@@ -6438,11 +6747,25 @@ function openDialog(title, body, actions = "", headerActions = "") {
     // the replacement content.
     window.clearTimeout(dialogCloseTimer);
     dialog.classList.remove("is-closing");
+    if (!dialog.open && document.activeElement instanceof HTMLElement) {
+        lastDialogTrigger = document.activeElement;
+    }
     const header = headerActions
-        ? `<div class="panel-title"><h2 style="font-size:1.6rem">${escapeHtml(title)}</h2><div class="sheet-actions">${headerActions}<button class="button button-quiet button-small dialog-close" type="button" data-action="close-dialog" aria-label="Close">Close</button></div></div>`
-        : `<div class="panel-title"><h2 style="font-size:1.6rem">${escapeHtml(title)}</h2><button class="button button-quiet button-small dialog-close" type="button" data-action="close-dialog" aria-label="Close">Close</button></div>`;
-    dialog.innerHTML = `<div class="auth-card" style="min-width:min(92vw,520px);max-height:85vh;overflow:auto">${header}${body}${actions}</div>`;
+        ? `<div class="panel-title"><h2 id="app-dialog-title">${escapeHtml(title)}</h2><div class="sheet-actions">${headerActions}<button class="button button-quiet button-small dialog-close" type="button" data-action="close-dialog" aria-label="Close">Close</button></div></div>`
+        : `<div class="panel-title"><h2 id="app-dialog-title">${escapeHtml(title)}</h2><button class="button button-quiet button-small dialog-close" type="button" data-action="close-dialog" aria-label="Close">Close</button></div>`;
+    dialog.innerHTML = `<div class="auth-card">${header}${body}${actions}</div>`;
+    dialog.setAttribute("aria-labelledby", "app-dialog-title");
     if (!dialog.open) dialog.showModal();
+}
+
+function restoreDialogFocus() {
+    const trigger = lastDialogTrigger;
+    lastDialogTrigger = null;
+    if (trigger && trigger.isConnected) {
+        try {
+            trigger.focus();
+        } catch {}
+    }
 }
 
 // Motion pass (design-authority-addendum-motion rule 3): dialog exits
@@ -6461,14 +6784,25 @@ function closeAppDialog() {
         window.clearTimeout(dialogCloseTimer);
         dialog.classList.remove("is-closing");
         dialog.close();
+        restoreDialogFocus();
         return;
     }
     dialog.classList.add("is-closing");
     dialogCloseTimer = window.setTimeout(() => {
         dialog.classList.remove("is-closing");
         if (dialog.open) dialog.close();
+        restoreDialogFocus();
     }, 130);
 }
+
+dialog.addEventListener("click", (event) => {
+    if (
+        event.target === dialog &&
+        !dialog.querySelector("[data-patch-close]")
+    ) {
+        closeAppDialog();
+    }
+});
 
 dialog.addEventListener("cancel", (event) => {
     // Esc takes the same animated exit as every other close path.
@@ -7134,12 +7468,14 @@ function draftManualPayloadFromDom(index) {
 }
 
 function draftItemEditor(item, index) {
-    const nutrientFields = draftNutrientFields
-        .map(
-            (key) =>
-                `<label class="field"><span>${escapeHtml(draftNutrientLabel(key))}</span><input data-draft-field="${key}" type="number" min="0" step="0.1" value="${escapeHtml(item.nutrients?.[key] ?? "")}" /></label>`,
-        )
-        .join("");
+    const primaryKeys = ["calories", "protein_g", "carbs_g", "fat_g"];
+    const secondaryNutrientFields = draftNutrientFields.filter(
+        (key) => !primaryKeys.includes(key),
+    );
+    const renderField = (key) =>
+        `<label class="field"><span>${escapeHtml(draftNutrientLabel(key))}</span><input data-draft-field="${key}" type="number" min="0" step="0.1" inputmode="decimal" value="${escapeHtml(item.nutrients?.[key] ?? "")}" /></label>`;
+    const primaryFields = primaryKeys.map(renderField).join("");
+    const secondaryFields = secondaryNutrientFields.map(renderField).join("");
     const portionField = draftPortionField(item);
     // Photo-flow P3: item editors are collapsed by default — the
     // review reads as a compact list (name, provenance, kcal, portion)
@@ -7148,23 +7484,34 @@ function draftItemEditor(item, index) {
     const expanded = mealDraftReview.expandedItems.has(
         item.id ?? `index:${index}`,
     );
-    const calories = item.nutrients?.calories;
+    const n = item.nutrients || {};
+    const calories = n.calories;
+    const macroBits = [
+        n.protein_g == null ? "" : `${number(n.protein_g, 1)}g P`,
+        n.carbs_g == null ? "" : `${number(n.carbs_g, 1)}g C`,
+        n.fat_g == null ? "" : `${number(n.fat_g, 1)}g F`,
+    ].filter(Boolean);
+    const subline = [item.portion_label || "", macroBits.join(" · ")]
+        .filter(Boolean)
+        .join(" · ");
     // Simplified review (owner-approved 2026-11-12): the row IS the
     // item — name, portion, kcal — tapping it opens the quantity/unit
     // editor below; swiping it left (or Remove inside the editor)
     // removes it. Badges and provenance live inside the editor, off
     // the row's surface.
-    return `<article class="meal-draft-item" data-draft-item-index="${index}"><button class="meal-draft-item-toggle" type="button" data-action="toggle-draft-item" data-index="${index}" aria-expanded="${expanded}"><span class="meal-draft-item-summary"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.portion_label || "")}</small></span><span class="meal-draft-item-kcal">${calories != null ? `${number(calories)} kcal` : ""}</span><span class="meal-draft-item-chevron" aria-hidden="true">${expanded ? "▾" : "▸"}</span></button><div class="meal-draft-item-fields" ${expanded ? "" : "hidden"}><div class="meal-composer-grid"><label class="field"><span>Name</span><input data-draft-field="name" value="${escapeHtml(item.name)}" maxlength="500" required /></label>${portionField}<label class="field"><span>Quantity</span><input data-draft-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity ?? 1)}" /></label><label class="field"><span>Gram weight</span><input data-draft-field="gram_weight" type="number" min="0.01" step="0.1" value="${escapeHtml(item.gram_weight ?? "")}" /></label></div><div class="meal-composer-nutrients">${nutrientFields}</div><details class="food-audit"><summary>Provenance and assumptions</summary><div class="food-audit-body"><div>${sourceBadge(item.source_type)} ${confidenceBadge(item.confidence)}</div><div>${escapeHtml(item.provider || "Source snapshot preserved")}</div>${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noreferrer">View source</a>` : ""}${item.assumptions?.length ? `<div>Assumptions: ${escapeHtml(item.assumptions.join("; "))}</div>` : ""}</div></details><button class="button button-quiet meal-draft-item-remove" type="button" data-action="remove-draft-item" data-index="${index}">Remove</button></div></article>`;
+    return `<article class="meal-draft-item" data-draft-item-index="${index}"><button class="meal-draft-item-toggle" type="button" data-action="toggle-draft-item" data-index="${index}" aria-expanded="${expanded}"><span class="meal-draft-item-summary"><strong>${escapeHtml(item.name)}</strong><small data-draft-item-subline>${escapeHtml(subline)}</small></span><span class="meal-draft-item-kcal" data-draft-item-kcal>${calories != null ? `${number(calories)} kcal` : ""}</span><span class="meal-draft-item-chevron" aria-hidden="true">${expanded ? "▾" : "▸"}</span></button><div class="meal-draft-item-fields" ${expanded ? "" : "hidden"}><label class="field"><span>Name</span><input data-draft-field="name" value="${escapeHtml(item.name)}" maxlength="500" required /></label><div class="field-row-qty-unit"><label class="field"><span>Quantity</span><input data-draft-field="quantity" type="number" min="0.01" step="0.01" inputmode="decimal" value="${escapeHtml(item.quantity ?? 1)}" /></label>${portionField.selectHtml}</div>${portionField.customLabelHtml}<div class="macro-grid-2x2">${primaryFields}</div><details class="more-nutrients"><summary>More nutrients &amp; weight</summary><div class="form-grid"><label class="field"><span>Gram weight</span><input data-draft-field="gram_weight" type="number" min="0.01" step="0.1" inputmode="decimal" value="${escapeHtml(item.gram_weight ?? "")}" /></label>${secondaryFields}</div></details><details class="food-audit"><summary>Provenance and assumptions</summary><div class="food-audit-body"><div>${sourceBadge(item.source_type)} ${confidenceBadge(item.confidence)}</div><div>${escapeHtml(item.provider || "Source snapshot preserved")}</div>${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank" rel="noreferrer">View source</a>` : ""}${item.assumptions?.length ? `<div>Assumptions: ${escapeHtml(item.assumptions.join("; "))}</div>` : ""}</div></details><button class="button button-quiet meal-draft-item-remove" type="button" data-action="remove-draft-item" data-index="${index}">Remove</button></div></article>`;
 }
 
 function draftManualEditor(item, index) {
-    const nutrientFields = draftNutrientFields
-        .map(
-            (key) =>
-                `<label class="field"><span>${escapeHtml(draftNutrientLabel(key))}</span><input data-draft-field="${key}" type="number" min="0" step="0.1" value="${escapeHtml(item.nutrients?.[key] ?? "")}" /></label>`,
-        )
-        .join("");
-    return `<article class="meal-draft-item meal-composer-item" data-draft-pending-index="${index}"><div class="meal-composer-item-head"><div><strong>New manual food</strong><small>${sourceBadge("user_supplied")} Enter the nutrition used</small></div><button class="button button-primary button-small" type="button" data-action="save-draft-manual" data-index="${index}">Add item</button></div><div class="meal-composer-grid"><label class="field"><span>Name</span><input data-draft-field="name" value="${escapeHtml(item.name || "")}" maxlength="500" required /></label><label class="field"><span>Portion</span><input data-draft-field="portion_label" value="${escapeHtml(item.portion_label || "")}" placeholder="1 bowl, 1 slice…" /></label><label class="field"><span>Quantity</span><input data-draft-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity ?? 1)}" /></label><label class="field"><span>Gram weight</span><input data-draft-field="gram_weight" type="number" min="0.01" step="0.1" value="${escapeHtml(item.gram_weight ?? "")}" /></label></div><div class="meal-composer-nutrients">${nutrientFields}</div></article>`;
+    const primaryKeys = ["calories", "protein_g", "carbs_g", "fat_g"];
+    const secondaryNutrientFields = draftNutrientFields.filter(
+        (key) => !primaryKeys.includes(key),
+    );
+    const renderField = (key) =>
+        `<label class="field"><span>${escapeHtml(draftNutrientLabel(key))}</span><input data-draft-field="${key}" type="number" min="0" step="0.1" inputmode="decimal" value="${escapeHtml(item.nutrients?.[key] ?? "")}" /></label>`;
+    const primaryFields = primaryKeys.map(renderField).join("");
+    const secondaryFields = secondaryNutrientFields.map(renderField).join("");
+    return `<article class="meal-draft-item meal-composer-item" data-draft-pending-index="${index}"><div class="meal-composer-item-head"><div><strong>New manual food</strong><small>${sourceBadge("user_supplied")} Enter the nutrition used</small></div><button class="button button-primary button-small" type="button" data-action="save-draft-manual" data-index="${index}">Add item</button></div><label class="field"><span>Name</span><input data-draft-field="name" value="${escapeHtml(item.name || "")}" maxlength="500" required /></label><div class="field-row-qty-unit"><label class="field"><span>Quantity</span><input data-draft-field="quantity" type="number" min="0.01" step="0.01" inputmode="decimal" value="${escapeHtml(item.quantity ?? 1)}" /></label><label class="field"><span>Portion</span><input data-draft-field="portion_label" value="${escapeHtml(item.portion_label || "")}" placeholder="1 bowl, 1 slice…" /></label></div><div class="macro-grid-2x2">${primaryFields}</div><details class="more-nutrients"><summary>More nutrients &amp; weight</summary><div class="form-grid"><label class="field"><span>Gram weight</span><input data-draft-field="gram_weight" type="number" min="0.01" step="0.1" inputmode="decimal" value="${escapeHtml(item.gram_weight ?? "")}" /></label>${secondaryFields}</div></details></article>`;
 }
 
 // --- Photo-flow P4: ONE save model for the draft review -----------
@@ -7294,6 +7641,58 @@ function refreshDraftSaveBar() {
     }
 }
 
+function updateDraftTotalsLive() {
+    const root = document.getElementById("meal-draft-review");
+    if (!root) return;
+    const totals = { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 };
+    root.querySelectorAll("[data-draft-item-index]").forEach((editor) => {
+        const readNum = (name) => {
+            const val = editor.querySelector(
+                `[data-draft-field="${name}"]`,
+            )?.value;
+            if (val == null || val === "") return null;
+            const parsed = Number(val);
+            return Number.isFinite(parsed) ? parsed : null;
+        };
+        const cal = readNum("calories");
+        const p = readNum("protein_g");
+        const c = readNum("carbs_g");
+        const f = readNum("fat_g");
+        if (cal != null) totals.calories += cal;
+        if (p != null) totals.protein_g += p;
+        if (c != null) totals.carbs_g += c;
+        if (f != null) totals.fat_g += f;
+        const kcalEl = editor.querySelector("[data-draft-item-kcal]");
+        if (kcalEl)
+            kcalEl.textContent = cal != null ? `${number(cal)} kcal` : "";
+        const subEl = editor.querySelector("[data-draft-item-subline]");
+        if (subEl) {
+            const portionLabel =
+                editor.querySelector('[data-draft-field="portion_label"]')
+                    ?.value || "";
+            const macroBits = [
+                p == null ? "" : `${number(p, 1)}g P`,
+                c == null ? "" : `${number(c, 1)}g C`,
+                f == null ? "" : `${number(f, 1)}g F`,
+            ].filter(Boolean);
+            subEl.textContent = [portionLabel, macroBits.join(" · ")]
+                .filter(Boolean)
+                .join(" · ");
+        }
+    });
+    const totalsBox = root.querySelector(".meal-draft-totals");
+    if (!totalsBox) return;
+    const calEl = totalsBox.querySelector("[data-draft-total='calories']");
+    const pEl = totalsBox.querySelector("[data-draft-total='protein_g']");
+    const cEl = totalsBox.querySelector("[data-draft-total='carbs_g']");
+    const fEl = totalsBox.querySelector("[data-draft-total='fat_g']");
+    if (calEl)
+        calEl.innerHTML = `${number(totals.calories)} <small>kcal</small>`;
+    if (pEl) pEl.textContent = `${number(totals.protein_g, 1)} g`;
+    if (cEl) cEl.textContent = `${number(totals.carbs_g, 1)} g`;
+    if (fEl) fEl.textContent = `${number(totals.fat_g, 1)} g`;
+}
+
 /** Commit every dirty item, then the details, threading the draft
  * version through each PATCH. Returns the freshest draft. */
 async function saveDraftChanges() {
@@ -7385,8 +7784,10 @@ function openBlockingQuestionItemNames(draft) {
 }
 
 /** A horizontal swipe left past this many px on a review row removes it. */
-function draftSwipeRemoves(startX, endX) {
-    return startX - endX >= 64;
+function draftSwipeRemoves(startX, endX, startY = 0, endY = 0) {
+    const deltaX = startX - endX;
+    const deltaY = startY - endY;
+    return deltaX >= 64 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5;
 }
 
 /** "Thu, Nov 12 · 6:42 PM" in the profile timezone — the review's meta line. */
@@ -7429,7 +7830,7 @@ function renderMealDraftReview(draft) {
         mealPhotoCapture.session?.draftId === draft.id
             ? mealPhotoCapture.session
             : null;
-    root.innerHTML = `<div class="meal-draft-review">${draft.description ? `<p class="meal-draft-desc">${escapeHtml(draft.description)}</p>` : ""}<div class="meal-draft-meta" data-draft-details><span>${escapeHtml(draftLoggedLabel(draft.logged_at))}</span>${editable ? `<select class="meal-draft-mealtype" data-draft-field="meal_type" aria-label="Meal type">${mealTypeOptionsHtml(draft.meal_type)}</select>` : `<span>${escapeHtml(draft.meal_type)}</span>`}</div>${busyText || photoBusy ? `<div class="meal-draft-status" role="status"><span class="meal-draft-spinner" aria-hidden="true"></span><span class="meal-draft-status-text"><strong>Re-analyzing your meal</strong>${busyText ? `<small>Your note: “${escapeHtml(busyText)}”</small>` : ""}</span></div>` : ""}<div class="meal-draft-totals${busyText || photoBusy ? " meal-draft-dim" : ""}"><div class="meal-draft-total meal-draft-total-lead"><span>Calories</span><strong>${number(totals.calories)} <small>kcal</small></strong></div><div class="meal-draft-total"><span>Protein</span><strong>${number(totals.protein_g)} g</strong></div><div class="meal-draft-total"><span>Carbs</span><strong>${number(totals.carbs_g)} g</strong></div><div class="meal-draft-total"><span>Fat</span><strong>${number(totals.fat_g)} g</strong></div></div><div class="meal-draft-items${busyText || photoBusy ? " meal-draft-dim" : ""}">${draft.items.map(draftItemEditor).join("") || `<p class="tiny">No foods are in this draft yet.</p>`}${mealDraftReview.pendingManual.map(draftManualEditor).join("")}</div>${photoSession ? `<div class="meal-draft-photos">${photoSession.files.map((file, i) => `<span class="meal-draft-photo-chip">Photo ${i + 1}<button class="button button-quiet button-small" type="button" data-action="remove-draft-photo" data-index="${i}" aria-label="Remove photo ${i + 1}">Remove</button></span>`).join("")}${photoSession.files.length < 3 ? photoCaptureMarkup({ inputId: "meal-draft-photo-file", label: "Add another photo", multiple: true }) : ""}</div>` : ""}${blockingNames.length ? `<p class="meal-draft-blocker">${escapeHtml(blockingNames.join(", "))} ${blockingNames.length === 1 ? "has" : "have"} no nutrition values yet. Tap the row to add values, or swipe left to remove.</p>` : ""}${editable && draft.source_mode === "photo" ? `<section class="meal-draft-notebox meal-draft-add-text"><label class="field"><span>Anything else to add?</span><input class="input meal-draft-add-text-input" id="meal-draft-add-text-input" type="text" placeholder="I added a good bit of butter…" maxlength="500" autocomplete="off" value="${busyText ? escapeHtml(busyText) : ""}" ${busyText || photoBusy ? "disabled" : ""} /></label><button class="button button-secondary meal-draft-add-text-button" type="button" data-action="add-draft-text" ${busyText || photoBusy ? "disabled" : ""}>Add to draft</button>${mealDraftReview.addTextMessage ? `<p class="tiny meal-draft-add-text-message" role="status">${escapeHtml(mealDraftReview.addTextMessage)}</p>` : ""}</section>` : ""}${editable ? `<div class="meal-draft-actions"><button class="button button-primary meal-draft-confirm" type="button" data-action="confirm-meal-draft" ${busyText || photoBusy ? "disabled" : ""}>Confirm and log meal</button><button class="button button-quiet" type="button" data-action="cancel-meal-draft" ${busyText || photoBusy ? "disabled" : ""}>Abandon draft</button></div>` : `<p class="tiny">This draft is ${escapeHtml(draft.status.replaceAll("_", " "))}.</p>`}</div>`;
+    root.innerHTML = `<div class="meal-draft-review">${draft.description ? `<p class="meal-draft-desc">${escapeHtml(draft.description)}</p>` : ""}<div class="meal-draft-meta" data-draft-details><span>${escapeHtml(draftLoggedLabel(draft.logged_at))}</span>${editable ? `<select class="meal-draft-mealtype" data-draft-field="meal_type" aria-label="Meal type">${mealTypeOptionsHtml(draft.meal_type)}</select>` : `<span>${escapeHtml(draft.meal_type)}</span>`}</div>${busyText || photoBusy ? `<div class="meal-draft-status" role="status"><span class="meal-draft-spinner" aria-hidden="true"></span><span class="meal-draft-status-text"><strong>Re-analyzing your meal</strong>${busyText ? `<small>Your note: “${escapeHtml(busyText)}”</small>` : ""}</span></div>` : ""}<div class="meal-draft-totals${busyText || photoBusy ? " meal-draft-dim" : ""}"><div class="meal-draft-total meal-draft-total-lead"><span>Calories</span><strong data-draft-total="calories">${number(totals.calories)} <small>kcal</small></strong></div><div class="meal-draft-total"><span>Protein</span><strong data-draft-total="protein_g">${number(totals.protein_g, 1)} g</strong></div><div class="meal-draft-total"><span>Carbs</span><strong data-draft-total="carbs_g">${number(totals.carbs_g, 1)} g</strong></div><div class="meal-draft-total"><span>Fat</span><strong data-draft-total="fat_g">${number(totals.fat_g, 1)} g</strong></div></div><div class="meal-draft-items${busyText || photoBusy ? " meal-draft-dim" : ""}">${draft.items.map(draftItemEditor).join("") || `<p class="empty-state-compact">No foods are in this draft yet.</p>`}${mealDraftReview.pendingManual.map(draftManualEditor).join("")}</div>${photoSession ? `<div class="meal-draft-photos">${photoSession.files.map((file, i) => `<span class="meal-draft-photo-chip">Photo ${i + 1}<button class="button button-quiet button-small" type="button" data-action="remove-draft-photo" data-index="${i}" aria-label="Remove photo ${i + 1}">Remove</button></span>`).join("")}${photoSession.files.length < 3 ? photoCaptureMarkup({ inputId: "meal-draft-photo-file", label: "Add another photo", multiple: true }) : ""}</div>` : ""}${blockingNames.length ? `<p class="meal-draft-blocker">${escapeHtml(blockingNames.join(", "))} ${blockingNames.length === 1 ? "has" : "have"} no nutrition values yet. Tap the row to add values, or swipe left to remove.</p>` : ""}${editable && draft.source_mode === "photo" ? `<section class="meal-draft-notebox meal-draft-add-text"><div class="field"><label for="meal-draft-add-text-input"><span>Anything else to add?</span></label><div class="field-row-inline-submit"><input class="input meal-draft-add-text-input" id="meal-draft-add-text-input" type="text" placeholder="I added a good bit of butter…" maxlength="500" autocomplete="off" value="${busyText ? escapeHtml(busyText) : ""}" ${busyText || photoBusy ? "disabled" : ""} /><button class="button button-secondary meal-draft-add-text-button" type="button" data-action="add-draft-text" ${busyText || photoBusy ? "disabled" : ""}>Add to draft</button></div></div><p id="meal-draft-add-text-status" class="tiny meal-draft-add-text-message" role="status">${mealDraftReview.addTextMessage ? escapeHtml(mealDraftReview.addTextMessage) : ""}</p></section>` : ""}${editable ? `<div class="meal-draft-actions dialog-footer-sticky"><button class="button button-primary meal-draft-confirm" type="button" data-action="confirm-meal-draft" ${busyText || photoBusy ? "disabled" : ""}>Confirm and log meal</button><button class="button button-quiet" type="button" data-action="cancel-meal-draft" ${busyText || photoBusy ? "disabled" : ""}>Abandon draft</button></div>` : `<p class="tiny">This draft is ${escapeHtml(draft.status.replaceAll("_", " "))}.</p>`}</div>`;
     applyDraftUnsavedEdits(snapshot, draft);
     if (scrollHost) scrollHost.scrollTop = scrollTop;
 }
@@ -7887,11 +8288,13 @@ function foodPortion(food, portionId) {
     );
 }
 
-function foodMacroLine(food, portionId) {
+function foodMacroLine(food, portionId, quantity = 1) {
     const portion = foodPortion(food, portionId);
     if (!portion) return "No declared portion";
     const nutrients = portion.nutrients || {};
-    return `${escapeHtml(portion.label)} · ${number(nutrients.calories)} kcal · P ${number(nutrients.protein_g, 1)}g · C ${number(nutrients.carbs_g, 1)}g · F ${number(nutrients.fat_g, 1)}g`;
+    const qty = Number(quantity);
+    const scale = Number.isFinite(qty) && qty > 0 ? qty : 1;
+    return `${escapeHtml(portion.label)} · ${number((nutrients.calories || 0) * scale)} kcal · P ${number((nutrients.protein_g || 0) * scale, 1)}g · C ${number((nutrients.carbs_g || 0) * scale, 1)}g · F ${number((nutrients.fat_g || 0) * scale, 1)}g`;
 }
 
 /**
@@ -7910,27 +8313,41 @@ function portionOptionLabelJs(portion) {
 function draftPortionField(item) {
     const portions = item.portions || [];
     if (!portions.length) {
-        return `<label class="field"><span>Portion</span><input data-draft-field="portion_label" value="${escapeHtml(item.portion_label || "")}" placeholder="1 bowl, 1 slice…" /></label>`;
+        return {
+            selectHtml: `<label class="field"><span>Portion</span><input data-draft-field="portion_label" value="${escapeHtml(item.portion_label || "")}" placeholder="1 bowl, 1 slice…" /></label>`,
+            customLabelHtml: "",
+        };
     }
     const selectedId = item.source_snapshot?.selected_portion_id;
+    const isCustom = selectedId === "__custom__";
     const options = portions
         .map(
             (portion) =>
                 `<option value="${escapeHtml(portion.id)}" ${portion.id === selectedId ? "selected" : ""}>${escapeHtml(portionOptionLabelJs(portion))}</option>`,
         )
         .join("");
-    return `<label class="field"><span>Portion</span><select data-draft-field="portion_id">${options}<option value="__custom__">Custom portion…</option></select></label><label class="field"><span>Portion label</span><input data-draft-field="portion_label" value="${escapeHtml(item.portion_label || "")}" placeholder="1 bowl, 1 slice…" /></label>`;
+    return {
+        selectHtml: `<label class="field"><span>Portion</span><select data-draft-field="portion_id">${options}<option value="__custom__" ${isCustom ? "selected" : ""}>Custom portion…</option></select></label>`,
+        customLabelHtml: `<label class="field" data-draft-custom-portion-label ${isCustom ? "" : "hidden"}><span>Portion label</span><input data-draft-field="portion_label" value="${escapeHtml(item.portion_label || "")}" placeholder="1 bowl, 1 slice…" /></label>`,
+    };
 }
 
 function applyDraftPortionToEditor(select) {
     const root = select.closest("[data-draft-item-index]");
     if (!root) return;
+    const customLabel = root.querySelector("[data-draft-custom-portion-label]");
+    if (customLabel) {
+        customLabel.hidden = select.value !== "__custom__";
+    }
     const index = Number(root.dataset.draftItemIndex);
     const item = mealDraftReview.draft?.items?.[index];
     const portion = (item?.portions || []).find(
         (entry) => entry.id === select.value,
     );
-    if (!portion) return;
+    if (!portion) {
+        updateDraftTotalsLive();
+        return;
+    }
     const quantity =
         draftNumber(
             root.querySelector('[data-draft-field="quantity"]')?.value,
@@ -7953,6 +8370,7 @@ function applyDraftPortionToEditor(select) {
             value == null ? "" : Math.round(value * quantity * 100) / 100,
         );
     }
+    updateDraftTotalsLive();
 }
 
 document.addEventListener("change", (event) => {
@@ -8032,18 +8450,29 @@ function renderMealComposerItems() {
     const root = document.getElementById("meal-selected-items");
     if (!root) return;
     if (mealComposer.items.length === 0) {
-        root.innerHTML = `<div class="empty-state"><div><strong>No foods selected yet.</strong><p>Search for a food, choose a recent item, or add a manual food.</p></div></div>`;
+        root.innerHTML = `<p class="empty-state-compact">No foods selected yet. Search above, pick a recent item, or add a manual food.</p>`;
         updateMealComposerStrip();
         return;
     }
+    const manualPrimary = [
+        ["calories", "Calories"],
+        ["protein_g", "Protein (g)"],
+        ["carbs_g", "Carbs (g)"],
+        ["fat_g", "Fat (g)"],
+    ];
+    const manualSecondary = [
+        ["fiber_g", "Fiber (g)"],
+        ["sugar_g", "Sugar (g)"],
+        ["sodium_mg", "Sodium (mg)"],
+    ];
     root.innerHTML = mealComposer.items
         .map((item, index) => {
             if (item.kind === "food") {
                 const portions = item.food.portions || [];
-                return `<article class="meal-composer-item" data-composer-index="${index}"><div class="meal-composer-item-head"><div><strong>${escapeHtml(foodTitle(item.food))}</strong><small>${sourceBadge(item.savedFoodId ? "saved_food" : item.food.provider)} ${confidenceBadge(item.food.confidence)}</small></div><button class="button button-quiet button-small" type="button" data-action="remove-meal-item" data-index="${index}">Remove</button></div><div class="meal-composer-grid"><label class="field"><span>Portion</span><select data-composer-field="portion_id">${portions.map((portion) => `<option value="${escapeHtml(portion.id)}" ${!item.customPortion && portion.id === item.portionId ? "selected" : ""}>${escapeHtml(portionOptionLabelJs(portion))}</option>`).join("")}<option value="__custom__" ${item.customPortion ? "selected" : ""}>Custom portion…</option></select></label><label class="field"><span>Quantity</span><input data-composer-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity || 1)}" /></label>${item.customPortion ? `<label class="field"><span>Custom portion</span><input data-composer-field="portion_label" value="${escapeHtml(item.portionLabel || "")}" placeholder="e.g. 1 large glass" /></label><label class="field"><span>Gram weight</span><input data-composer-field="gram_weight" type="number" min="0.01" step="0.1" value="${escapeHtml(item.customGramWeight || "")}" /></label>` : ""}</div><small class="meal-composer-macros">${foodMacroLine(item.food, item.portionId)}</small></article>`;
+                return `<article class="meal-composer-item" data-composer-index="${index}"><div class="meal-composer-item-head"><div><strong>${escapeHtml(foodTitle(item.food))}</strong><small>${sourceBadge(item.savedFoodId ? "saved_food" : item.food.provider)} ${confidenceBadge(item.food.confidence)}</small></div><button class="button button-quiet button-small" type="button" data-action="remove-meal-item" data-index="${index}">Remove</button></div><div class="field-row-qty-unit"><label class="field"><span>Quantity</span><input data-composer-field="quantity" type="number" min="0.01" step="0.01" inputmode="decimal" value="${escapeHtml(item.quantity || 1)}" /></label><label class="field"><span>Portion</span><select data-composer-field="portion_id">${portions.map((portion) => `<option value="${escapeHtml(portion.id)}" ${!item.customPortion && portion.id === item.portionId ? "selected" : ""}>${escapeHtml(portionOptionLabelJs(portion))}</option>`).join("")}<option value="__custom__" ${item.customPortion ? "selected" : ""}>Custom portion…</option></select></label></div>${item.customPortion ? `<div class="field-row-2up"><label class="field"><span>Custom portion</span><input data-composer-field="portion_label" value="${escapeHtml(item.portionLabel || "")}" placeholder="e.g. 1 large glass" /></label><label class="field"><span>Gram weight</span><input data-composer-field="gram_weight" type="number" min="0.01" step="0.1" inputmode="decimal" value="${escapeHtml(item.customGramWeight || "")}" /></label></div>` : ""}<small class="meal-composer-macros">${foodMacroLine(item.food, item.portionId, item.quantity || 1)}</small></article>`;
             }
             const nutrients = item.nutrients || {};
-            return `<article class="meal-composer-item" data-composer-index="${index}"><div class="meal-composer-item-head"><div><strong>${item.kind === "recent" ? escapeHtml(item.name) : "Manual food"}</strong><small>${sourceBadge(item.sourceType || "user_supplied")} ${item.kind === "recent" ? (item.fromUsuals ? "From your usuals" : "From recent meal history") : "Enter the nutrition used"}</small></div><button class="button button-quiet button-small" type="button" data-action="remove-meal-item" data-index="${index}">Remove</button></div><div class="meal-composer-grid"><label class="field"><span>Name</span><input data-composer-field="name" value="${escapeHtml(item.name || "")}" required /></label><label class="field"><span>Portion</span><input data-composer-field="portion_label" value="${escapeHtml(item.portionLabel || "")}" placeholder="1 bowl, 1 slice…" /></label><label class="field"><span>Quantity</span><input data-composer-field="quantity" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quantity || 1)}" /></label></div><div class="meal-composer-nutrients">${["calories", "protein_g", "carbs_g", "fat_g", "fiber_g", "sugar_g", "sodium_mg"].map((key) => `<label class="field"><span>${escapeHtml(key.replaceAll("_g", " (g)").replace("sodium_mg", "sodium (mg)"))}</span><input data-composer-field="${key}" type="number" min="0" step="0.1" value="${escapeHtml(nutrients[key] ?? "")}" /></label>`).join("")}</div></article>`;
+            return `<article class="meal-composer-item" data-composer-index="${index}"><div class="meal-composer-item-head"><div><strong>${item.kind === "recent" ? escapeHtml(item.name) : "Manual food"}</strong><small>${sourceBadge(item.sourceType || "user_supplied")} ${item.kind === "recent" ? (item.fromUsuals ? "From your usuals" : "From recent meal history") : "Enter the nutrition used"}</small></div><button class="button button-quiet button-small" type="button" data-action="remove-meal-item" data-index="${index}">Remove</button></div><label class="field"><span>Name</span><input data-composer-field="name" value="${escapeHtml(item.name || "")}" required /></label><div class="field-row-qty-unit"><label class="field"><span>Quantity</span><input data-composer-field="quantity" type="number" min="0.01" step="0.01" inputmode="decimal" value="${escapeHtml(item.quantity || 1)}" /></label><label class="field"><span>Portion</span><input data-composer-field="portion_label" value="${escapeHtml(item.portionLabel || "")}" placeholder="1 bowl, 1 slice…" /></label></div><div class="macro-grid-2x2">${manualPrimary.map(([key, label]) => `<label class="field"><span>${escapeHtml(label)}</span><input data-composer-field="${key}" type="number" min="0" step="0.1" inputmode="decimal" value="${escapeHtml(nutrients[key] ?? "")}" /></label>`).join("")}</div><details class="more-nutrients"><summary>More nutrients (Fiber, Sugar, Sodium)</summary><div class="form-grid">${manualSecondary.map(([key, label]) => `<label class="field"><span>${escapeHtml(label)}</span><input data-composer-field="${key}" type="number" min="0" step="0.1" inputmode="decimal" value="${escapeHtml(nutrients[key] ?? "")}" /></label>`).join("")}</div></details></article>`;
         })
         .join("");
     updateMealComposerStrip();
@@ -8167,15 +8596,13 @@ function focusMealComposerItem(index) {
     field?.focus({ preventScroll: true });
 }
 
-// Composer wave C3 (approved 2026-11-11): a result row lists every
-// portion/unit the food can be logged in, not only the headline.
-// The headline portion still carries the row's kcal figure (search-
-// units brief item 2); the full set rides the sub-line in received
-// (natural-first) order. Candidates carry the server's portions
-// list; saved foods carry the full food object.
-function portionsListLine(portions) {
-    return (portions || [])
-        .map((portion) => portion.label)
+function compactSearchMacros(nutrients) {
+    if (!nutrients) return "";
+    return [
+        nutrients.protein_g == null ? "" : `${number(nutrients.protein_g, 1)}P`,
+        nutrients.carbs_g == null ? "" : `${number(nutrients.carbs_g, 1)}C`,
+        nutrients.fat_g == null ? "" : `${number(nutrients.fat_g, 1)}F`,
+    ]
         .filter(Boolean)
         .join(" · ");
 }
@@ -8195,11 +8622,14 @@ function renderMealSearchResults(data) {
                         candidateId: candidate.candidate_id,
                     });
                     const portion = candidate.default_portion;
-                    const portionsLine =
-                        portionsListLine(candidate.portions) ||
-                        portion?.label ||
-                        "Details available after selection";
-                    return `<button class="meal-search-result" type="button" data-action="select-meal-option" data-key="${key}"><span><strong>${escapeHtml([candidate.brand, candidate.name].filter(Boolean).join(" — ") || candidate.name)}</strong><small>${sourceBadge(candidate.provider)} ${escapeHtml(portionsLine)}</small></span><span>${portion?.calories == null ? "" : `${number(portion.calories)} kcal`}</span></button>`;
+                    const macros = compactSearchMacros(portion);
+                    const sub = [
+                        portion?.label || "Details available after selection",
+                        macros,
+                    ]
+                        .filter(Boolean)
+                        .join(" · ");
+                    return `<button class="meal-search-result" type="button" data-action="select-meal-option" data-key="${key}"><span><strong>${escapeHtml([candidate.brand, candidate.name].filter(Boolean).join(" — ") || candidate.name)}</strong><small>${sourceBadge(candidate.provider)} ${escapeHtml(sub)}</small></span><span>${portion?.calories == null ? "" : `${number(portion.calories)} kcal`}</span></button>`;
                 })
                 .join("")}</div>`,
         );
@@ -8215,11 +8645,18 @@ function renderMealSearchResults(data) {
                         savedFoodId: saved.id,
                         defaultPortionId: saved.defaultPortionId,
                     });
-                    const portionsLine =
-                        portionsListLine(saved.food.portions) ||
-                        saved.food.name ||
-                        "Saved food";
-                    return `<button class="meal-search-result" type="button" data-action="select-meal-option" data-key="${key}"><span><strong>${escapeHtml(saved.label)}</strong><small>${sourceBadge(saved.food.provider)} ${escapeHtml(portionsLine)}</small></span><span>${number(foodPortion(saved.food, saved.defaultPortionId)?.nutrients?.calories)} kcal</span></button>`;
+                    const portion = foodPortion(
+                        saved.food,
+                        saved.defaultPortionId,
+                    );
+                    const macros = compactSearchMacros(portion?.nutrients);
+                    const sub = [
+                        portion?.label || saved.food.name || "Saved food",
+                        macros,
+                    ]
+                        .filter(Boolean)
+                        .join(" · ");
+                    return `<button class="meal-search-result" type="button" data-action="select-meal-option" data-key="${key}"><span><strong>${escapeHtml(saved.label)}</strong><small>${sourceBadge(saved.food.provider)} ${escapeHtml(sub)}</small></span><span>${portion?.nutrients?.calories == null ? "" : `${number(portion.nutrients.calories)} kcal`}</span></button>`;
                 })
                 .join("")}</div>`,
         );
@@ -8230,7 +8667,14 @@ function renderMealSearchResults(data) {
                 .map((recent, index) => {
                     const key = `recent:${index}`;
                     mealComposer.options.set(key, { kind: "recent", recent });
-                    return `<button class="meal-search-result" type="button" data-action="select-meal-option" data-key="${key}"><span><strong>${escapeHtml(recent.name)}</strong><small>${sourceBadge("past_meal")} ${escapeHtml(recent.portionLabel || "Portion not recorded")}</small></span><span>${number(recent.nutrients?.calories)} kcal</span></button>`;
+                    const macros = compactSearchMacros(recent.nutrients);
+                    const sub = [
+                        recent.portionLabel || "Portion not recorded",
+                        macros,
+                    ]
+                        .filter(Boolean)
+                        .join(" · ");
+                    return `<button class="meal-search-result" type="button" data-action="select-meal-option" data-key="${key}"><span><strong>${escapeHtml(recent.name)}</strong><small>${sourceBadge("past_meal")} ${escapeHtml(sub)}</small></span><span>${recent.nutrients?.calories == null ? "" : `${number(recent.nutrients.calories)} kcal`}</span></button>`;
                 })
                 .join("")}</div>`,
         );
@@ -8452,11 +8896,16 @@ async function lookupMealBarcodeValue(barcode) {
     });
 }
 
-function openMealComposer() {
+function openMealComposer(initialMealType = null) {
     mealComposer.items = [];
     mealComposer.options.clear();
     mealComposer.usuals.clear();
     mealComposer.yesterday = null;
+    const selectedSlot = ["breakfast", "lunch", "dinner", "snack"].includes(
+        initialMealType,
+    )
+        ? initialMealType
+        : defaultMealType(new Date(), state.bootstrap?.profile?.timezone);
     // Cross-work §4: single foods — the logged amount is the used
     // amount, so "From my pantry" is a checkbox only, no extra
     // field. Present only while the Pantry module is on.
@@ -8472,9 +8921,7 @@ function openMealComposer() {
     // foods it categorizes.
     openDialog(
         "Add meal",
-        `<button class="meal-composer-strip" type="button" data-action="open-composer-breakdown" aria-label="Meal totals — view breakdown" aria-expanded="false" aria-controls="meal-composer-breakdown"><span class="meal-composer-strip-totals" id="meal-composer-totals">0 kcal · P 0 g · C 0 g · F 0 g</span><span class="meal-composer-strip-delta" id="meal-composer-delta"></span></button><div id="meal-composer-breakdown" class="meal-composer-breakdown" hidden></div><form id="meal-form" class="auth-form"><input type="hidden" name="logged_at" value="${escapeHtml(`${state.date}T12:00:00.000Z`)}" /><section class="meal-composer-search"><div class="panel-title"><h3>Find foods</h3><span>Verified, saved, and recent</span></div><div id="meal-usuals" class="meal-usuals" hidden></div><div class="meal-composer-search-row meal-composer-search-row-slim"><input class="input" id="meal-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><button class="button button-secondary meal-scan-button" type="button" data-action="scan-food-barcode" aria-label="Scan barcode" title="Scan barcode"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M7.5 8v8M11 8v8M14 8v8M17 8v8"/></svg></button></div><div id="meal-food-results" class="meal-food-results"></div></section><section><div class="panel-title"><h3>Selected foods</h3><button class="button button-secondary button-small" type="button" data-action="add-manual-food">Add manual food</button></div><div id="meal-selected-items" class="meal-selected-items"></div></section><label class="field"><span>Meal type</span><select name="meal_type">${mealTypeOptionsHtml(
-            defaultMealType(new Date(), state.bootstrap?.profile?.timezone),
-        )}</select></label>${pantryField}<label class="field"><span>Notes</span><textarea name="notes" rows="2" maxlength="4000" placeholder="Optional"></textarea></label><button class="button button-primary" type="submit">Log meal</button></form>`,
+        `<button class="meal-composer-strip" type="button" data-action="open-composer-breakdown" aria-label="Meal totals — view breakdown" aria-expanded="false" aria-controls="meal-composer-breakdown"><span class="meal-composer-strip-totals" id="meal-composer-totals">0 kcal · P 0 g · C 0 g · F 0 g</span><span class="meal-composer-strip-delta" id="meal-composer-delta"></span></button><div id="meal-composer-breakdown" class="meal-composer-breakdown" hidden></div><form id="meal-form" class="auth-form"><input type="hidden" name="logged_at" value="${escapeHtml(`${state.date}T12:00:00.000Z`)}" /><section class="meal-composer-search"><div class="panel-title"><h3>Find foods</h3><span>Verified, saved, and recent</span></div><div id="meal-usuals" class="meal-usuals" hidden></div><div class="meal-composer-search-row meal-composer-search-row-slim"><input class="input" id="meal-food-search" type="search" aria-label="Search foods" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><button class="button button-secondary meal-scan-button" type="button" data-action="scan-food-barcode" aria-label="Scan barcode" title="Scan barcode"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M7.5 8v8M11 8v8M14 8v8M17 8v8"/></svg></button></div><div id="meal-food-results" class="meal-food-results"></div></section><section><div class="panel-title"><h3>Selected foods</h3><button class="button button-secondary button-small" type="button" data-action="add-manual-food">Add manual food</button></div><div id="meal-selected-items" class="meal-selected-items"></div></section><label class="field"><span>Meal type</span><select name="meal_type">${mealTypeOptionsHtml(selectedSlot)}</select></label>${pantryField}<label class="field"><span>Notes</span><textarea name="notes" rows="2" maxlength="4000" placeholder="Optional"></textarea></label><div class="dialog-footer-sticky"><button class="button button-primary" type="submit">Log meal</button></div></form>`,
     );
     renderMealComposerItems();
     searchMealFoods("");
@@ -8550,7 +8997,7 @@ async function openMealDuplicate(id) {
     const itemCount = (meal.items || []).length;
     openDialog(
         "Duplicate meal",
-        `<form id="duplicate-meal-form" class="auth-form" data-id="${escapeHtml(id)}"><p class="tiny">${escapeHtml(meal.description || "Meal")} · ${escapeHtml(type)}${itemCount ? ` · ${itemCount} food${itemCount === 1 ? "" : "s"}, copied exactly as logged` : ""}.</p><label class="field"><span>Duplicate to</span><input name="target_date" type="date" value="${escapeHtml(tomorrow)}" required /></label><div class="auth-actions duplicate-day-choices"><button class="button button-secondary button-small" type="button" data-action="duplicate-day-choice" data-date="${escapeHtml(today)}">Today</button><button class="button button-secondary button-small is-selected" type="button" data-action="duplicate-day-choice" data-date="${escapeHtml(tomorrow)}">Tomorrow</button></div><label class="field"><span>Meal type</span><select name="meal_type">${typeOptions}</select></label><button class="button button-primary" type="submit">Duplicate meal</button></form>`,
+        `<form id="duplicate-meal-form" class="auth-form" data-id="${escapeHtml(id)}"><p class="tiny">${escapeHtml(meal.description || "Meal")} · ${escapeHtml(type)}${itemCount ? ` · ${itemCount} food${itemCount === 1 ? "" : "s"}, copied exactly as logged` : ""}.</p><div class="auth-actions duplicate-day-choices"><button class="button button-secondary button-small" type="button" data-action="duplicate-day-choice" data-date="${escapeHtml(today)}">Today</button><button class="button button-secondary button-small is-selected" type="button" data-action="duplicate-day-choice" data-date="${escapeHtml(tomorrow)}">Tomorrow</button></div><div class="field-row-2up"><label class="field"><span>Duplicate to</span><input name="target_date" type="date" value="${escapeHtml(tomorrow)}" required /></label><label class="field"><span>Meal type</span><select name="meal_type">${typeOptions}</select></label></div><button class="button button-primary" type="submit">Duplicate meal</button></form>`,
     );
 }
 
@@ -8569,7 +9016,7 @@ function openWaterEditor(id) {
     const loggedAt = entry.logged_at ?? entry.loggedAt;
     openDialog(
         "Edit water",
-        `<form id="edit-water-form" class="auth-form" data-id="${escapeHtml(id)}"><label class="field"><span>Amount (milliliters)</span><input name="amount_ml" type="number" min="1" max="20000" value="${escapeHtml(amount)}" required /></label><label class="field"><span>Notes</span><textarea name="notes" rows="2" maxlength="4000" placeholder="Optional">${escapeHtml(entry.notes || "")}</textarea></label><p class="tiny">Logged ${escapeHtml(formatTime(loggedAt))}${entry.loggedOn ? ` · ${escapeHtml(formatDate(entry.loggedOn, { year: true }))}` : ""}.</p><button class="button button-primary" type="submit">Save water</button></form>`,
+        `<form id="edit-water-form" class="auth-form" data-id="${escapeHtml(id)}"><div class="field"><label for="edit-water-amount"><span>Amount</span></label><div class="amount-row"><input class="amount-input" id="edit-water-amount" name="amount" type="number" min="0.1" step="any" inputmode="decimal" value="${escapeHtml(amount)}" required /><select class="unit-select" name="unit" aria-label="Amount unit"><option value="ml" selected>ml</option><option value="oz">fl oz</option></select></div><p class="convert-hint" hidden></p></div><label class="field"><span>Notes</span><input name="notes" maxlength="4000" value="${escapeHtml(entry.notes || "")}" placeholder="Optional" /></label><p class="tiny">Logged ${escapeHtml(formatTime(loggedAt))}${entry.loggedOn ? ` · ${escapeHtml(formatDate(entry.loggedOn, { year: true }))}` : ""}.</p><button class="button button-primary" type="submit">Save water</button></form>`,
     );
 }
 
@@ -8586,7 +9033,7 @@ function openWeightEditor(id) {
     const loggedAt = entry.logged_at ?? entry.loggedAt;
     openDialog(
         "Edit weight",
-        `<form id="edit-weight-form" class="auth-form" data-id="${escapeHtml(id)}"><label class="field"><span>Weight</span><input name="weight" type="number" min="1" step="0.1" value="${escapeHtml(value)}" required /></label><label class="field"><span>Unit</span><select name="unit" required><option value="lb" ${unit === "lb" ? "selected" : ""}>lb</option><option value="kg" ${unit === "kg" ? "selected" : ""}>kg</option></select></label><label class="field"><span>Notes</span><textarea name="notes" rows="2" maxlength="4000" placeholder="Optional">${escapeHtml(entry.notes || "")}</textarea></label><p class="tiny">Logged ${escapeHtml(formatTime(loggedAt))}${entry.loggedOn ? ` · ${escapeHtml(formatDate(entry.loggedOn, { year: true }))}` : ""}.</p><button class="button button-primary" type="submit">Save weight</button></form>`,
+        `<form id="edit-weight-form" class="auth-form" data-id="${escapeHtml(id)}"><div class="field-row-qty-unit"><label class="field"><span>Weight</span><input name="weight" type="number" min="1" step="0.1" inputmode="decimal" value="${escapeHtml(value)}" required /></label><label class="field"><span>Unit</span><select name="unit" required><option value="lb" ${unit === "lb" ? "selected" : ""}>lb</option><option value="kg" ${unit === "kg" ? "selected" : ""}>kg</option></select></label></div><label class="field"><span>Notes</span><input name="notes" maxlength="4000" value="${escapeHtml(entry.notes || "")}" placeholder="Optional" /></label><p class="tiny">Logged ${escapeHtml(formatTime(loggedAt))}${entry.loggedOn ? ` · ${escapeHtml(formatDate(entry.loggedOn, { year: true }))}` : ""}.</p><button class="button button-primary" type="submit">Save weight</button></form>`,
     );
 }
 
@@ -8657,6 +9104,7 @@ document.addEventListener(
             ? {
                   item: toggle.closest("[data-draft-item-index]"),
                   startX: event.touches[0].clientX,
+                  startY: event.touches[0].clientY,
               }
             : null;
     },
@@ -8666,9 +9114,16 @@ document.addEventListener(
     "touchend",
     (event) => {
         if (!draftSwipeArm?.item) return;
-        const { item, startX } = draftSwipeArm;
+        const { item, startX, startY } = draftSwipeArm;
         draftSwipeArm = null;
-        if (draftSwipeRemoves(startX, event.changedTouches[0].clientX)) {
+        if (
+            draftSwipeRemoves(
+                startX,
+                event.changedTouches[0].clientX,
+                startY,
+                event.changedTouches[0].clientY,
+            )
+        ) {
             requestRemoveDraftItem(Number(item.dataset.draftItemIndex), item);
         }
     },
@@ -8796,7 +9251,9 @@ async function handleAction(button) {
         }
         return;
     }
-    if (action === "guided-planner") return openGuidedPlanner();
+    if (action === "guided-planner" || action === "plan-day-add") {
+        return openGuidedPlanner();
+    }
     if (action === "guidance-preferences") return openGuidancePreferences();
     if (action === "guidance-preferences-confirm") {
         const form = document.querySelector("#guidance-preferences-form");
@@ -9252,6 +9709,27 @@ async function handleAction(button) {
         }
         return renderRoute();
     }
+    if (action === "calendar-jump-today") {
+        calendarView.picking = false;
+        state.todayRange = null;
+        state.rangeSelection = emptyRangeSelection();
+        state.date = dateInTimezone(
+            state.bootstrap?.profile?.timezone || "UTC",
+        );
+        if (dialog.open) closeAppDialog();
+        return renderRoute();
+    }
+    if (action === "calendar-quick-range") {
+        const days = Math.max(1, Number(button.dataset.days || 7));
+        const end = dateInTimezone(state.bootstrap?.profile?.timezone || "UTC");
+        const start = shiftDate(end, -(days - 1));
+        calendarView.picking = false;
+        state.todayRange = { start, end };
+        state.rangeSelection = { anchor: null, range: { start, end } };
+        state.date = start;
+        if (dialog.open) closeAppDialog();
+        return renderRoute();
+    }
     if (action === "calendar-clear-range") {
         state.todayRange = null;
         state.rangeSelection = emptyRangeSelection();
@@ -9282,7 +9760,9 @@ async function handleAction(button) {
         if (chevron) chevron.textContent = open ? "▴" : "▾";
         return;
     }
-    if (action === "add-meal") return openMealComposer();
+    if (action === "add-meal") {
+        return openMealComposer(button.dataset.mealType || null);
+    }
     if (action === "start-meal-draft") return openMealDraftComposer();
     if (action === "log-by-photo") return startMealPhotoCapture();
     if (action === "meal-photo-manual") return openMealComposer();
@@ -10408,7 +10888,7 @@ async function handleAction(button) {
         );
         openDialog(
             "Add weight",
-            `<form id="weight-form" class="auth-form"><label class="field"><span>Weight</span><input name="weight" type="number" min="1" step="0.1" required /></label><label class="field"><span>Unit</span><select name="unit" required><option value="" disabled ${preferredWeightUnit ? "" : "selected"}>Select unit</option><option value="lb" ${preferredWeightUnit === "lb" ? "selected" : ""}>lb</option><option value="kg" ${preferredWeightUnit === "kg" ? "selected" : ""}>kg</option></select></label><label class="field"><span>Notes</span><input name="notes" placeholder="Optional" /></label><button class="button button-primary" type="submit">Add weight</button></form>`,
+            `<form id="weight-form" class="auth-form"><div class="field-row-qty-unit"><label class="field"><span>Weight</span><input name="weight" type="number" min="1" step="0.1" inputmode="decimal" required /></label><label class="field"><span>Unit</span><select name="unit" required><option value="" disabled ${preferredWeightUnit ? "" : "selected"}>Select unit</option><option value="lb" ${preferredWeightUnit === "lb" ? "selected" : ""}>lb</option><option value="kg" ${preferredWeightUnit === "kg" ? "selected" : ""}>kg</option></select></label></div><label class="field"><span>Notes</span><input name="notes" placeholder="Optional" /></label><button class="button button-primary" type="submit">Add weight</button></form>`,
         );
         return;
     }
@@ -10612,6 +11092,22 @@ async function handleAction(button) {
         );
         return renderRoute();
     }
+    if (action === "toggle-hide-checked") {
+        state.hideCheckedGroceries = !state.hideCheckedGroceries;
+        button.setAttribute(
+            "aria-pressed",
+            state.hideCheckedGroceries ? "true" : "false",
+        );
+        button.textContent = state.hideCheckedGroceries
+            ? "Show checked"
+            : "Hide checked";
+        document
+            .querySelectorAll(".groceries-view .grocery-item-row.is-purchased")
+            .forEach((row) => {
+                row.hidden = state.hideCheckedGroceries;
+            });
+        return;
+    }
     if (action === "shopping-mode") {
         // Grocery fix G2: the mode is a session-level preference —
         // flipping it records the choice, and the re-render swaps the
@@ -10633,13 +11129,6 @@ document.addEventListener("click", async (event) => {
         link.target !== "_blank"
     ) {
         event.preventDefault();
-        // Cross-work slice 5: the shortfall dot on the Groceries tab
-        // opens the rundown instead of navigating (authority §9 — the
-        // indicator itself is the tap target).
-        if (event.target.closest(".nav-shortfall-dot")) {
-            openShortfallDialog();
-            return;
-        }
         navigate(link.getAttribute("href"));
         return;
     }
@@ -10698,7 +11187,7 @@ document.addEventListener("change", async (event) => {
     markDraftFieldDirty(event.target);
     const target = event.target;
     if (
-        target?.closest?.("#water-form") &&
+        target?.closest?.("#water-form, #edit-water-form") &&
         (target.name === "amount" || target.name === "unit")
     ) {
         // Bottle presets: switching the unit shows/hides the hint.
@@ -10799,7 +11288,13 @@ document.addEventListener("change", async (event) => {
 document.addEventListener("input", (event) => {
     markDraftFieldDirty(event.target);
     if (
-        event.target.closest?.("#water-form") &&
+        event.target.closest?.("#meal-draft-review") &&
+        event.target.matches?.("[data-draft-field]")
+    ) {
+        updateDraftTotalsLive();
+    }
+    if (
+        event.target.closest?.("#water-form, #edit-water-form") &&
         (event.target.name === "amount" || event.target.name === "unit")
     ) {
         // Bottle presets: the stored-ml hint tracks the typed amount.
@@ -10821,6 +11316,18 @@ document.addEventListener("input", (event) => {
         // Sync + strip update only; the rows are not re-rendered, so
         // focus and caret stay put.
         syncMealComposerFromDom();
+        const row = event.target.closest("[data-composer-index]");
+        if (row) {
+            const item = mealComposer.items[Number(row.dataset.composerIndex)];
+            const macroEl = row.querySelector(".meal-composer-macros");
+            if (item?.kind === "food" && macroEl) {
+                macroEl.innerHTML = foodMacroLine(
+                    item.food,
+                    item.portionId,
+                    item.quantity || 1,
+                );
+            }
+        }
         updateMealComposerStrip();
     }
     if (event.target.id === "meal-draft-food-search") {
@@ -11260,6 +11767,7 @@ document.addEventListener("submit", async (event) => {
             "recipe-plan-form",
             "recipe-groceries-form",
             "grocery-add-form",
+            "grocery-quick-add-form",
             "grocery-edit-form",
             "saved-food-form",
             "cook-create-form",
@@ -11631,10 +12139,14 @@ document.addEventListener("submit", async (event) => {
             queueOutlierPrompt("weight", result);
         }
         if (form.id === "edit-water-form") {
+            const amountMl =
+                values.amount !== undefined
+                    ? waterFormAmountMl(values.amount, values.unit)
+                    : Number(values.amount_ml);
             await api(`/api/app/water/${encodeURIComponent(form.dataset.id)}`, {
                 method: "PATCH",
                 body: JSON.stringify({
-                    amount_ml: Number(values.amount_ml),
+                    amount_ml: amountMl,
                     notes: values.notes || null,
                 }),
                 keepPrevious: true,
@@ -11665,6 +12177,8 @@ document.addEventListener("submit", async (event) => {
                 keepPrevious: true,
             });
             state.bootstrap = null;
+            document.documentElement.dataset.preferredWeightUnit =
+                savedWeightUnit(values.preferred_weight_unit) || "";
             toast("Preferences saved.");
         }
         if (form.id === "goals-form") {
@@ -11877,6 +12391,34 @@ document.addEventListener("submit", async (event) => {
                 "View list",
                 () => navigate("/app/groceries"),
             );
+        }
+        if (form.id === "grocery-quick-add-form") {
+            const parsed = parseGroceryQuickAdd(values.entry);
+            if (!parsed.name) throw new Error("Enter an item to add");
+            const data = await api("/api/app/groceries/items", {
+                method: "POST",
+                body: JSON.stringify({
+                    scope: form.dataset.scope,
+                    item: {
+                        name: parsed.name,
+                        quantity: parsed.quantity,
+                        unit: parsed.unit,
+                        idempotency_key: crypto.randomUUID(),
+                    },
+                }),
+                keepPrevious: true,
+            });
+            toast("Grocery item added.");
+            pendingPantryRunOutPrompts = (data.grocery?.items ?? [])
+                .filter((entry) => entry.pantry_match)
+                .map((entry) => ({
+                    scope: form.dataset.scope,
+                    item: {
+                        id: entry.id,
+                        name: entry.name,
+                        pantry_match: entry.pantry_match,
+                    },
+                }));
         }
         if (form.id === "grocery-add-form") {
             const data = await api("/api/app/groceries/items", {

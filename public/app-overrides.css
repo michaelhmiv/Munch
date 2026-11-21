@@ -458,14 +458,22 @@ dialog .auth-card {
 
 .meal-composer-search-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 132px auto;
-    gap: 7px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: end;
 }
 
 .meal-food-results,
 .meal-selected-items {
     display: grid;
     gap: 6px;
+}
+
+.meal-food-results {
+    max-height: 240px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 2px;
 }
 
 .meal-search-section {
@@ -999,9 +1007,16 @@ dialog .auth-card {
 }
 
 @media (max-width: 620px) {
-    .meal-composer-search-row,
+    .meal-composer-search-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
     .meal-composer-grid,
-    .meal-composer-nutrients,
+    .meal-composer-nutrients {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+    }
+
     .import-native-grid {
         grid-template-columns: 1fr;
     }
@@ -1018,6 +1033,7 @@ dialog .auth-card {
 
     dialog {
         width: 100vw;
+        max-width: 100vw;
         max-height: 100dvh;
         margin: auto 0 0;
         border-radius: 24px 24px 0 0;
@@ -1026,8 +1042,34 @@ dialog .auth-card {
     dialog .auth-card {
         min-height: auto;
         max-height: 92dvh;
+        overflow-y: auto;
         border-radius: 24px 24px 0 0;
-        padding-bottom: max(24px, env(safe-area-inset-bottom));
+        padding: 10px 14px max(20px, env(safe-area-inset-bottom));
+    }
+
+    dialog .auth-card::before {
+        content: "";
+        display: block;
+        width: 36px;
+        height: 4px;
+        margin: 0 auto 10px;
+        border-radius: 999px;
+        background: #d8cdb6;
+    }
+
+    dialog .auth-card > .panel-title {
+        position: sticky;
+        top: -10px;
+        z-index: 4;
+        margin: -2px -14px 10px;
+        padding: 6px 14px 10px;
+        background: #fffdf8;
+        border-bottom: 1px solid #d8cdb6;
+    }
+
+    dialog .auth-form {
+        gap: 12px;
+        margin-top: 12px;
     }
 
     .app-content .panel {
@@ -1052,13 +1094,15 @@ dialog .auth-card {
     }
 
     .app-content .meal-card > .auth-actions {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
     }
 
     .app-content .meal-card > .auth-actions .button {
-        width: 100%;
-        padding-inline: 7px;
+        flex: 1 1 auto;
+        width: auto;
+        padding-inline: 10px;
     }
 
     .grocery-item-row {
@@ -5431,11 +5475,12 @@ dialog .guided-grocery-row input[type="checkbox"] {
     padding: 5px 10px;
 }
 
-/* Photo-flow wave — P3: the draft review is single-column at phone
-   width; item editors collapse to compact rows by default. */
+/* Photo-flow wave — P3 (amended for small-screen density): item editors
+   collapse to compact rows by default and keep paired fields 2-column
+   (never stacking short Qty/Unit or primary macros into 16 single rows). */
 .meal-draft-review .meal-composer-grid,
 .meal-draft-review .meal-composer-nutrients {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .meal-draft-item-head {
@@ -5539,12 +5584,13 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 /* The range switch and Edit share one control row under the heading:
-   pills lead, Edit rides the same line at the right edge. */
+   pills lead, Edit rides the right edge and wraps cleanly on phones. */
 .trends-controls {
     display: flex;
-    align-items: flex-start;
+    flex-wrap: wrap;
+    align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: 8px 10px;
     margin: 2px 0 12px;
 }
 
@@ -5553,8 +5599,8 @@ dialog .guided-grocery-row input[type="checkbox"] {
    foot of the whole dashboard. */
 .trends-actions {
     display: flex;
-    align-items: flex-start;
-    gap: 6px;
+    align-items: center;
+    gap: 8px;
 }
 
 .trends-pill {
@@ -5565,8 +5611,8 @@ dialog .guided-grocery-row input[type="checkbox"] {
     background: transparent;
     border: 1.5px solid #d8cdb6;
     border-radius: 999px;
-    padding: 7px 16px;
-    min-height: 36px;
+    padding: 8px 14px;
+    min-height: 44px;
     cursor: pointer;
 }
 
@@ -8415,7 +8461,7 @@ dialog #water-form {
    control, and the registry in src/design-authority.test.ts records
    them as 44px icon sizing (context, not a tier exception). */
 .trends-icon-btn,
-.photo-capture-button,
+.photo-capture-camera,
 .meal-scan-button {
     height: 44px;
     min-height: 44px;
@@ -8424,8 +8470,21 @@ dialog #water-form {
 }
 
 .trends-icon-btn::after,
-.photo-capture-button::after,
+.photo-capture-camera::after,
 .meal-scan-button::after {
+    content: none;
+}
+
+/* Labeled photo capture controls ("Take photo", "Choose from library")
+   keep auto width with the 44px touch target floor. */
+.photo-capture-button {
+    height: auto;
+    min-height: 44px;
+    width: auto;
+    padding: 8px 14px;
+}
+
+.photo-capture-button::after {
     content: none;
 }
 
@@ -8444,7 +8503,7 @@ dialog #water-form {
     inset: -7px -4px;
 }
 
-/* ---------- Fields and selects: the anchor geometry ---------- */
+/* ---------- Fields and selects: Amendment P7 (44px touch floor) ---------- */
 
 .app-content
     input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not(
@@ -8457,9 +8516,9 @@ dialog
     ),
 dialog select,
 .input {
-    height: 31px;
-    min-height: 31px;
-    padding: 5px 12px;
+    height: 44px;
+    min-height: 44px;
+    padding: 8px 12px;
     border: 1px solid #8a7c63;
     border-radius: 10px;
     font-family: Georgia, "Times New Roman", Times, serif;
@@ -8475,6 +8534,17 @@ dialog select {
     background: #f6f1e7;
 }
 
+/* Composite unit fields own the outer border — suppress the inner
+   input border/radius so Nutrition Targets never double-border. */
+.app-content .input-with-unit input,
+dialog .input-with-unit input {
+    height: 42px;
+    min-height: 42px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+}
+
 /* ---------- Dialog cards: the board's 14px radius ---------- */
 
 dialog {
@@ -8482,6 +8552,9 @@ dialog {
 }
 
 dialog .auth-card {
+    min-width: min(92vw, 520px);
+    max-height: 88dvh;
+    overflow: auto;
     border-radius: 14px;
 }
 
@@ -8492,6 +8565,9 @@ dialog .auth-card {
     }
 
     dialog .auth-card {
+        min-width: 0;
+        width: 100%;
+        max-height: 92dvh;
         border-radius: 24px 24px 0 0;
     }
 }
@@ -8524,4 +8600,368 @@ dialog .auth-card {
     background: transparent;
     border-color: #8c2f22;
     color: #8c2f22;
+}
+
+/* =====================================================================
+   Small-Screen Density, Inline Forms & M3 Ergonomics Layer
+   ===================================================================== */
+
+/* Inline field rows that stay paired even on 360px phones */
+.field-row-qty-unit {
+    display: grid;
+    grid-template-columns: minmax(78px, 0.38fr) minmax(0, 1fr);
+    gap: 8px;
+    align-items: end;
+}
+
+.field-row-2up,
+.form-grid,
+.macro-grid-2x2 {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 10px;
+    align-items: end;
+}
+
+.field-row-3up {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    align-items: end;
+}
+
+.field-row-inline-submit {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: end;
+}
+
+.meal-draft-add-text .field-row-inline-submit .meal-draft-add-text-button {
+    width: auto;
+    min-height: 44px;
+    padding: 8px 14px;
+    white-space: nowrap;
+}
+
+/* Progressive disclosure blocks for secondary nutrients, items, & danger */
+.more-nutrients,
+.editor-item-disclosure,
+.member-manage-disclosure,
+.danger-disclosure {
+    border: 1px solid #d8cdb6;
+    border-radius: 10px;
+    background: #fffdf8;
+    padding: 4px 12px;
+}
+
+dialog .more-nutrients,
+dialog .editor-item-disclosure {
+    background: #f6f1e7;
+}
+
+.more-nutrients > summary,
+.editor-item-disclosure > summary,
+.member-manage-disclosure > summary,
+.danger-disclosure > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 44px;
+    cursor: pointer;
+    font-weight: 600;
+    color: #2b2620;
+    list-style: none;
+}
+
+.more-nutrients > summary::-webkit-details-marker,
+.editor-item-disclosure > summary::-webkit-details-marker,
+.member-manage-disclosure > summary::-webkit-details-marker,
+.danger-disclosure > summary::-webkit-details-marker {
+    display: none;
+}
+
+.more-nutrients > summary::after,
+.editor-item-disclosure > summary::after,
+.member-manage-disclosure > summary::after,
+.danger-disclosure > summary::after {
+    content: "▾";
+    color: #5d5344;
+    flex: none;
+}
+
+.more-nutrients[open] > summary::after,
+.editor-item-disclosure[open] > summary::after,
+.member-manage-disclosure[open] > summary::after,
+.danger-disclosure[open] > summary::after {
+    content: "▴";
+}
+
+.more-nutrients[open],
+.editor-item-disclosure[open],
+.member-manage-disclosure[open],
+.danger-disclosure[open] {
+    padding-bottom: 12px;
+}
+
+.danger-disclosure > summary {
+    color: #8c2f22;
+}
+
+/* Compact empty state for inline sections & dialogs */
+.empty-state-compact {
+    min-height: 48px;
+    padding: 12px 14px;
+    border: 1px dashed #d8cdb6;
+    border-radius: 10px;
+    color: #5d5344;
+    font-size: 0.9rem;
+    text-align: left;
+}
+
+/* Compact single-line empty meal slot trigger on Today */
+.slot-empty-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 44px;
+    padding: 6px 12px;
+    border: 1px solid #d8cdb6;
+    border-radius: 10px;
+    background: #fffdf8;
+}
+
+.slot-empty-row > span {
+    color: #5d5344;
+    font-size: 0.92rem;
+}
+
+/* Planned row 2-line layout (replaces broken 3-child .food-row) */
+.planned-row {
+    display: grid;
+    gap: 6px;
+    padding: 10px 0;
+    border-bottom: 1px solid #d8cdb6;
+}
+
+.planned-row:last-child {
+    border-bottom: 0;
+}
+
+.planned-row-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.planned-row-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+/* Sticky bottom CTA bar inside scrollable bottom sheets */
+.dialog-footer-sticky {
+    position: sticky;
+    bottom: -10px;
+    z-index: 4;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 12px -14px -10px;
+    padding: 10px 14px max(12px, env(safe-area-inset-bottom));
+    background: #fffdf8;
+    border-top: 1px solid #d8cdb6;
+}
+
+.dialog-footer-sticky > .button {
+    flex: 1 1 auto;
+}
+
+/* Mobile in-app back link for More sub-routes and Chat */
+.mobile-subroute-back {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    margin-bottom: 4px;
+    color: #176b3a;
+    font-weight: 600;
+    font-size: 0.92rem;
+}
+
+@media (max-width: 840px) {
+    .mobile-subroute-back {
+        display: inline-flex;
+    }
+}
+
+/* Groceries inline quick-add bar & distraction-free shopping mode */
+.grocery-quick-add {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    border: 1px solid #d8cdb6;
+    border-radius: 12px;
+    background: #fffdf8;
+}
+
+.groceries-view .grocery-item-actions {
+    gap: 8px;
+}
+
+.shopping-mode .groceries-view .grocery-item-actions {
+    display: none;
+}
+
+.nav-shortfall-dot {
+    pointer-events: none;
+}
+
+/* Dedicated non-clipped week switcher on Meal Plan */
+.plan-week-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 8px 0 12px;
+}
+
+.plan-week-bar .button {
+    flex: 1 1 0;
+}
+
+/* Touch target & spacing polish across dialogs, Trends, and checkboxes */
+.checkbox-row {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.checkbox-row input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    flex: none;
+}
+
+dialog .food-audit > summary {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+}
+
+.planned-actions {
+    gap: 8px;
+}
+
+.meal-composer-strip {
+    flex-wrap: wrap;
+    margin-top: 10px;
+}
+
+/* Trends & Range Today small-screen overflow & touch fixes */
+.trends-x {
+    min-width: 44px;
+    min-height: 44px;
+}
+
+.trends-toggle button,
+.trends-move,
+.trends-sizechip,
+.trends-more summary,
+.trends-window-row {
+    min-height: 44px;
+}
+
+.trends-heat-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.chat-view .chat-thread {
+    max-height: none;
+    min-height: 44dvh;
+}
+
+/* Unified Editorial Serif polish for /app/more and /app/goals */
+.more-page .more-card {
+    background: #fffdf8;
+    border: 1px solid #d8cdb6;
+    border-radius: 12px;
+    box-shadow: none;
+    min-height: 60px;
+    padding: 10px 14px;
+}
+
+.goals-view .settings-group {
+    background: #fffdf8;
+    border: 1px solid #d8cdb6;
+    border-radius: 14px;
+    box-shadow: none;
+}
+
+@media (max-width: 620px) {
+    .today-view .macro-tile {
+        min-height: 76px;
+        padding: 10px 12px;
+    }
+
+    .trends-pair {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .macro-micros-cols {
+        grid-template-columns: minmax(0, 1fr);
+        column-gap: 0;
+    }
+
+    .micro-val {
+        white-space: normal;
+        text-align: right;
+    }
+
+    .recipe-detail .edit-row {
+        display: grid;
+        grid-template-columns: minmax(76px, 0.38fr) minmax(0, 1fr) auto;
+        gap: 6px;
+    }
+
+    .recipe-detail .edit-row .f-name {
+        grid-column: 1 / 3;
+    }
+
+    .recipe-detail .edit-row .f-remove {
+        grid-column: 3;
+        grid-row: 1;
+    }
+
+    .recipe-detail .edit-row .f-qty {
+        grid-column: 1;
+        grid-row: 2;
+        width: 100%;
+    }
+
+    .recipe-detail .edit-row .f-unit {
+        grid-column: 2 / 4;
+        grid-row: 2;
+        width: 100%;
+    }
+
+    .cook-update-strip {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+    }
+
+    .cook-update-strip .cook-update-input {
+        grid-column: 1 / -1;
+        width: 100%;
+    }
 }

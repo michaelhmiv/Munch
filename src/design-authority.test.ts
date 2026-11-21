@@ -617,12 +617,13 @@ describe("design authority (b): Direction C spec resolution", () => {
         expect(declsFor(sheet, ".dialog-close::after").get("inset")).toBe(
             "-7px -4px",
         );
-        // Fields/selects draw at the anchor (dialog + app-content scope
-        // resolves through the same closing-section rule).
+        // Fields/selects draw at 44px (Amendment P7: replaced elements
+        // cannot render ::after hit overlays, so they draw directly at
+        // the >=44px touch floor with the 10px anchor radius).
         const field = declsFor(sheet, ".input");
-        expect(field.get("height")).toBe("31px");
-        expect(field.get("min-height")).toBe("31px");
-        expect(field.get("padding")).toBe("5px 12px");
+        expect(field.get("height")).toBe("44px");
+        expect(field.get("min-height")).toBe("44px");
+        expect(field.get("padding")).toBe("8px 12px");
         expect(field.get("border-radius")).toBe("10px");
         // Dialog cards take the board's 14px radius; the mobile sheet
         // keeps its 24px top radius. The parser flattens @media, so

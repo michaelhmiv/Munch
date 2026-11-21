@@ -43,11 +43,13 @@
                     <a href="/#how">How it works</a>
                     <a href="/#pricing">Pricing</a>
                     <a href="/help">Help</a>
+                </nav>
+                <div class="top-actions">
                     <a href="/account/login?return_to=/app">Sign in</a>
                     <a class="nav-cta" href="/connect" aria-current="page"
                         >Connect</a
                     >
-                </nav>
+                </div>
             </div>
         </header>
 
@@ -56,9 +58,9 @@
                 <p class="eyebrow">Connect · about two minutes</p>
                 <h1>Connect Munch to your AI</h1>
                 <p class="lead">
-                    The fastest way is one paste: copy the block below into
-                    Claude, ChatGPT, Muse, or any MCP app, and your assistant
-                    walks you through the rest, one step at a time.
+                    Copy the block below into Claude, ChatGPT, Muse, or any MCP
+                    app, and your assistant walks you through the rest one step
+                    at a time.
                 </p>
 
                 <section
@@ -67,9 +69,26 @@
                     aria-label="Copy and paste to connect Munch to your AI"
                 >
                     <div class="pastehead">
-                        <span>1 · Copy this</span>
-                        <span>2 · Paste it into your AI</span>
-                        <span>3 · It walks you through connecting</span>
+                        <div class="pastehead-steps">
+                            <span>1 · Copy this</span>
+                            <span>2 · Paste into your AI</span>
+                            <span>3 · Follow the prompts</span>
+                        </div>
+                        <div class="pastehead-actions">
+                            <button
+                                class="copy-btn"
+                                type="button"
+                                data-copy-target="paste-text"
+                            >
+                                Copy the block
+                            </button>
+                            <p
+                                class="copy-status"
+                                data-copy-status
+                                role="status"
+                                aria-live="polite"
+                            ></p>
+                        </div>
                     </div>
                     <pre class="paste" id="paste-text">
 Connect me to Munch, my nutrition tracker.
@@ -93,28 +112,11 @@ munch.business, where Premium is managed on the website.
 
 When the connection is live, confirm it worked — then ask me if I want to
 log my first meal or set a nutrition goal.</pre>
-                    <div class="pastefoot">
-                        <button
-                            class="copy-btn"
-                            type="button"
-                            data-copy-target="paste-text"
-                        >
-                            Copy the block
-                        </button>
-                        <p
-                            class="copy-status"
-                            data-copy-status
-                            role="status"
-                            aria-live="polite"
-                        ></p>
-                    </div>
                 </section>
                 <p class="pastenote">
-                    No password, ever. Sign-in is a single-use email link — and
-                    if you are new, that same link creates your account.
-                    Connecting uses MCP access, which is part of Munch Premium
-                    ($3.99/month); the website and app themselves are free and
-                    fully featured.
+                    No password — sign-in uses a single-use email link that also
+                    creates your account if you are new. MCP access requires
+                    Munch Premium ($3.99/month); the website and app stay free.
                 </p>
             </section>
 
@@ -141,8 +143,7 @@ log my first meal or set a nutrition goal.</pre>
                         <ol class="steps">
                             <li>
                                 Open Claude and go to
-                                <strong>Customize → Connectors</strong> (in some
-                                versions this lives under
+                                <strong>Customize → Connectors</strong> (or
                                 <strong>Settings → Connectors</strong>).
                             </li>
                             <li>
@@ -150,22 +151,20 @@ log my first meal or set a nutrition goal.</pre>
                                 <strong>Add custom connector</strong>.
                             </li>
                             <li>
-                                Enter Name: <strong>Munch</strong> and the
-                                server URL:
+                                Enter Name: <strong>Munch</strong> and Server
+                                URL:
                                 <strong>https://munch.business/mcp</strong>,
-                                then choose Continue. Leave the Advanced OAuth
-                                fields empty — Munch registers itself
-                                automatically.
+                                then choose Continue. Leave Advanced OAuth
+                                fields empty — Munch registers automatically.
                             </li>
                             <li>
-                                Review the sign-in settings Claude detected,
-                                then choose <strong>Add</strong>.
+                                Review the detected sign-in settings, then
+                                choose <strong>Add</strong>.
                             </li>
                             <li>
-                                Choose <strong>Connect</strong> — your browser
-                                opens a Munch page. Enter your email, open the
-                                sign-in link Munch sends, and approve the
-                                connection.
+                                Choose <strong>Connect</strong> — enter your
+                                email on the Munch page, open the link sent to
+                                you, and approve.
                             </li>
                             <li>
                                 Return to Claude, turn Munch on in your chat,
@@ -179,7 +178,17 @@ log my first meal or set a nutrition goal.</pre>
                             </div>
                             <div>
                                 <dt>Server URL</dt>
-                                <dd>https://munch.business/mcp</dd>
+                                <dd class="field-copy-row">
+                                    <span>https://munch.business/mcp</span>
+                                    <button
+                                        class="copy-chip"
+                                        type="button"
+                                        data-copy-text="https://munch.business/mcp"
+                                        aria-label="Copy Munch server URL"
+                                    >
+                                        Copy URL
+                                    </button>
+                                </dd>
                             </div>
                             <div>
                                 <dt>Authentication</dt>
@@ -187,10 +196,10 @@ log my first meal or set a nutrition goal.</pre>
                             </div>
                         </dl>
                         <p class="note">
-                            Custom connectors are available on Free, Pro, Max,
-                            Team, and Enterprise plans; free accounts can keep
-                            one custom connector. On Team and Enterprise, an
-                            owner adds connectors for the organization.
+                            Custom connectors work on Free, Pro, Max, Team, and
+                            Enterprise plans (free accounts keep one custom
+                            connector; Team/Enterprise owners add org
+                            connectors).
                         </p>
                     </section>
 
@@ -203,31 +212,27 @@ log my first meal or set a nutrition goal.</pre>
                                 >.
                             </li>
                             <li>
-                                Scroll to
-                                <strong>Advanced settings</strong> and turn on
-                                <strong>Developer mode</strong>. (Your AI cannot
-                                flip this switch for you — this one is yours.)
+                                Under <strong>Advanced settings</strong>, turn
+                                on <strong>Developer mode</strong>. (Your AI
+                                cannot flip this switch for you.)
                             </li>
                             <li>
                                 Back in Apps &amp; Connectors, choose
                                 <strong>Create</strong>.
                             </li>
                             <li>
-                                Enter Name: <strong>Munch</strong>, the MCP
-                                server URL:
+                                Enter Name: <strong>Munch</strong>, Server URL:
                                 <strong>https://munch.business/mcp</strong>, and
-                                set Authentication to <strong>OAuth</strong>.
-                                Confirm the acknowledgement and choose
-                                <strong>Create</strong>.
+                                Authentication: <strong>OAuth</strong>. Confirm
+                                and choose <strong>Create</strong>.
                             </li>
                             <li>
-                                Your browser opens a Munch page: enter your
-                                email, open the link sent to you, and approve
-                                the connection.
+                                In the Munch page that opens, enter your email,
+                                open the link sent to you, and approve.
                             </li>
                             <li>
-                                Return to ChatGPT, enable Munch in your chat
-                                from the + menu, and start logging.
+                                Return to ChatGPT, enable Munch from the + menu,
+                                and start logging.
                             </li>
                         </ol>
                         <dl class="fields">
@@ -237,7 +242,17 @@ log my first meal or set a nutrition goal.</pre>
                             </div>
                             <div>
                                 <dt>Server URL</dt>
-                                <dd>https://munch.business/mcp</dd>
+                                <dd class="field-copy-row">
+                                    <span>https://munch.business/mcp</span>
+                                    <button
+                                        class="copy-chip"
+                                        type="button"
+                                        data-copy-text="https://munch.business/mcp"
+                                        aria-label="Copy Munch server URL"
+                                    >
+                                        Copy URL
+                                    </button>
+                                </dd>
                             </div>
                             <div>
                                 <dt>Authentication</dt>
@@ -245,12 +260,9 @@ log my first meal or set a nutrition goal.</pre>
                             </div>
                         </dl>
                         <p class="note">
-                            Honest note: custom connectors in ChatGPT need
-                            Developer mode, which is a paid-plan feature (Plus,
-                            Pro, Business, Enterprise, and Edu) on the web —
-                            free accounts do not have it, and a workspace admin
-                            may need to allow it first. If you do not see the
-                            option, your plan may not have it yet.
+                            Custom connectors in ChatGPT require Developer mode
+                            on a paid web plan (Plus, Pro, Business, Enterprise,
+                            or Edu; workspace admins may need to allow it).
                         </p>
                     </section>
 
@@ -266,20 +278,17 @@ log my first meal or set a nutrition goal.</pre>
                                 >
                             </li>
                             <li>
-                                Start Muse and run
-                                <code>/mcp</code>, then choose
+                                Start Muse, run <code>/mcp</code>, then choose
                                 <strong>Munch</strong> and
                                 <strong>Authenticate</strong>.
                             </li>
                             <li>
-                                Your browser opens a Munch page: enter your
-                                email, open the sign-in link, and approve the
-                                requested permissions.
+                                In the Munch page that opens, enter your email,
+                                open the sign-in link, and approve.
                             </li>
                             <li>
                                 Return to Muse: <code>/mcp</code> shows Munch
-                                connected, and its 95 tools are available in
-                                your session.
+                                connected with all 95 tools available.
                             </li>
                         </ol>
                         <dl class="fields">
@@ -289,7 +298,17 @@ log my first meal or set a nutrition goal.</pre>
                             </div>
                             <div>
                                 <dt>Server URL</dt>
-                                <dd>https://munch.business/mcp</dd>
+                                <dd class="field-copy-row">
+                                    <span>https://munch.business/mcp</span>
+                                    <button
+                                        class="copy-chip"
+                                        type="button"
+                                        data-copy-text="https://munch.business/mcp"
+                                        aria-label="Copy Munch server URL"
+                                    >
+                                        Copy URL
+                                    </button>
+                                </dd>
                             </div>
                             <div>
                                 <dt>Authentication</dt>
@@ -297,12 +316,8 @@ log my first meal or set a nutrition goal.</pre>
                             </div>
                         </dl>
                         <p class="note">
-                            Using the Muse app instead? Add Munch under
-                            Customize → Connectors with the same name and URL,
-                            exactly as in the Claude tab. Muse connects to the
-                            same endpoint and the same account as every other
-                            client — connect once per app, use one shared
-                            record.
+                            Using the Muse app? Add Munch under Customize →
+                            Connectors with the same name and URL.
                         </p>
                     </section>
 
@@ -317,10 +332,7 @@ log my first meal or set a nutrition goal.</pre>
                             </li>
                             <li>
                                 Add a server with Name:
-                                <strong>Munch</strong>.
-                            </li>
-                            <li>
-                                Paste the Server URL:
+                                <strong>Munch</strong> and Server URL:
                                 <strong>https://munch.business/mcp</strong>.
                             </li>
                             <li>
@@ -343,7 +355,17 @@ log my first meal or set a nutrition goal.</pre>
                             </div>
                             <div>
                                 <dt>Server URL</dt>
-                                <dd>https://munch.business/mcp</dd>
+                                <dd class="field-copy-row">
+                                    <span>https://munch.business/mcp</span>
+                                    <button
+                                        class="copy-chip"
+                                        type="button"
+                                        data-copy-text="https://munch.business/mcp"
+                                        aria-label="Copy Munch server URL"
+                                    >
+                                        Copy URL
+                                    </button>
+                                </dd>
                             </div>
                             <div>
                                 <dt>Authentication</dt>
@@ -351,9 +373,8 @@ log my first meal or set a nutrition goal.</pre>
                             </div>
                         </dl>
                         <p class="note">
-                            Munch is a remote MCP service using OAuth 2.1 + PKCE
-                            + DCR, so any standards-based MCP client can connect
-                            the same way.
+                            Munch uses standard OAuth 2.1 + PKCE + DCR for any
+                            compatible remote MCP client.
                         </p>
                     </section>
                 </div>
@@ -366,16 +387,15 @@ log my first meal or set a nutrition goal.</pre>
                         <span class="num">1</span>
                         <h3>Paste</h3>
                         <p>
-                            Paste the block above into your AI app. It tells
-                            your assistant exactly what to add and how to guide
-                            you.
+                            Paste the block above into your AI app so it knows
+                            what to add and how to guide you.
                         </p>
                     </article>
                     <article class="entry">
                         <span class="num">2</span>
                         <h3>Connect</h3>
                         <p>
-                            Your assistant starts the connection, or walks you
+                            Your assistant starts the connection or walks you
                             tap-by-tap through adding the custom connector.
                         </p>
                     </article>
@@ -383,22 +403,21 @@ log my first meal or set a nutrition goal.</pre>
                         <span class="num">3</span>
                         <h3>Email link</h3>
                         <p>
-                            Enter your email on the Munch page and open the
-                            single-use link sent to you.
+                            Enter your email and open the single-use link sent
+                            to you.
                             <strong
                                 >New to Munch? That same link creates your
                                 account</strong
                             >
-                            — no separate sign-up, no password.
+                            — no password.
                         </p>
                     </article>
                     <article class="entry">
                         <span class="num">4</span>
                         <h3>Approve → connected</h3>
                         <p>
-                            Review the permissions on the approval page and
-                            approve. You return to your AI, connected — it will
-                            confirm and offer to log your first meal or set a
+                            Review the permissions and approve. You return to
+                            your AI connected and ready to log meals or set a
                             goal.
                         </p>
                     </article>
@@ -412,41 +431,35 @@ log my first meal or set a nutrition goal.</pre>
                         <h3>What am I granting?</h3>
                         <p>
                             The approval page lists the exact permissions
-                            requested. Approving lets that app call the matching
-                            Munch tools for your account only. Munch does not
-                            receive your unrelated conversations in that app.
+                            requested. Approving lets that app call Munch tools
+                            for your account only — Munch never receives
+                            unrelated conversations.
                         </p>
                     </article>
                     <article class="entry">
                         <h3>The email link did not arrive</h3>
                         <p>
-                            Check spam and filtered folders, confirm the address
-                            is typed correctly, then request a fresh link. Links
-                            are single-use and expire; a delayed older link may
-                            stop working once a newer one is requested. A
-                            confirmation tap on the Munch page stops automated
+                            Check spam and filtered folders, verify the address,
+                            then request a fresh link. Links are single-use and
+                            expire; a confirmation tap on the Munch page stops
                             email scanners from consuming your link first.
                         </p>
                     </article>
                     <article class="entry">
                         <h3>“This request expired”</h3>
                         <p>
-                            Authorization requests are intentionally
-                            short-lived. Do not reuse the old browser tab —
-                            return to your AI app and choose Connect again to
-                            start a fresh request. Closing the browser,
-                            switching devices mid-flow, reusing a consumed link,
-                            or blocking required cookies can also interrupt a
-                            connection.
+                            Authorization requests are short-lived. Return to
+                            your AI app and choose Connect again to start a
+                            fresh request rather than reusing an old browser
+                            tab.
                         </p>
                     </article>
                     <article class="entry">
                         <h3>How to revoke access</h3>
                         <p>
                             Open Munch Settings → Connections and revoke the
-                            connection you no longer want. Revoking stops that
-                            token family immediately; it does not delete your
-                            Munch account or your nutrition records.
+                            client. Access stops immediately without deleting
+                            your account or nutrition records.
                         </p>
                     </article>
                 </div>
@@ -462,11 +475,8 @@ log my first meal or set a nutrition goal.</pre>
             <section class="cta">
                 <h2>One account, every conversation</h2>
                 <p class="lead">
-                    Munch is persistent nutrition for your AI: 95 MCP tools and
-                    sign-in by email link. The website and app are free and
-                    fully featured; MCP access is part of Premium ($3.99/month),
-                    which also makes the app ad-free and will include the in-app
-                    AI chat agent when it launches.
+                    95 MCP tools, passwordless email sign-in, and one persistent
+                    record across every connected assistant.
                 </p>
                 <a class="btn big" href="#connect-block"
                     >Copy the paste block</a
@@ -520,51 +530,70 @@ log my first meal or set a nutrition goal.</pre>
             (function () {
                 var tabs = document.querySelector("[data-tabs]");
                 if (tabs) tabs.classList.add("js-tabs");
-                var buttons = document.querySelectorAll("[data-copy-target]");
-                buttons.forEach(function (button) {
-                    button.addEventListener("click", function () {
-                        var target = document.getElementById(
-                            button.getAttribute("data-copy-target"),
-                        );
-                        var status =
-                            document.querySelector("[data-copy-status]");
-                        if (!target) return;
-                        var text = target.textContent.trim();
-                        function done() {
-                            if (status)
-                                status.textContent =
-                                    "Copied — now paste it into your AI chat.";
-                            button.textContent = "Copied";
+                function copyText(text, onDone, onFail) {
+                    function fallback() {
+                        var area = document.createElement("textarea");
+                        area.value = text;
+                        area.setAttribute("readonly", "");
+                        area.style.position = "absolute";
+                        area.style.left = "-9999px";
+                        document.body.appendChild(area);
+                        area.select();
+                        try {
+                            document.execCommand("copy");
+                            onDone();
+                        } catch (error) {
+                            onFail();
                         }
-                        function fallback() {
-                            var area = document.createElement("textarea");
-                            area.value = text;
-                            area.setAttribute("readonly", "");
-                            area.style.position = "absolute";
-                            area.style.left = "-9999px";
-                            document.body.appendChild(area);
-                            area.select();
-                            try {
-                                document.execCommand("copy");
-                                done();
-                            } catch (error) {
+                        document.body.removeChild(area);
+                    }
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard
+                            .writeText(text)
+                            .then(onDone)
+                            .catch(fallback);
+                    } else {
+                        fallback();
+                    }
+                }
+                var buttons = document.querySelectorAll(
+                    "[data-copy-target], [data-copy-text]",
+                );
+                buttons.forEach(function (button) {
+                    var originalLabel = button.textContent.trim();
+                    var resetTimer = null;
+                    button.addEventListener("click", function () {
+                        var targetId = button.getAttribute("data-copy-target");
+                        var text = targetId
+                            ? (
+                                  document.getElementById(targetId)
+                                      ?.textContent || ""
+                              ).trim()
+                            : (
+                                  button.getAttribute("data-copy-text") || ""
+                              ).trim();
+                        var status = targetId
+                            ? document.querySelector("[data-copy-status]")
+                            : null;
+                        if (!text) return;
+                        copyText(
+                            text,
+                            function () {
                                 if (status)
                                     status.textContent =
-                                        "Select the block above and copy it.";
-                            }
-                            document.body.removeChild(area);
-                        }
-                        if (
-                            navigator.clipboard &&
-                            navigator.clipboard.writeText
-                        ) {
-                            navigator.clipboard
-                                .writeText(text)
-                                .then(done)
-                                .catch(fallback);
-                        } else {
-                            fallback();
-                        }
+                                        "Copied — now paste it into your AI chat.";
+                                button.textContent = "Copied";
+                                if (resetTimer) clearTimeout(resetTimer);
+                                resetTimer = setTimeout(function () {
+                                    button.textContent = originalLabel;
+                                }, 2500);
+                            },
+                            function () {
+                                if (status)
+                                    status.textContent =
+                                        "Select the block below and copy it.";
+                            },
+                        );
                     });
                 });
             })();

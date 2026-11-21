@@ -219,14 +219,14 @@
                             "fullscreen",
                         ).catch(() => null);
                         if (!result || result.unsupported)
-                            document.getElementById("details").textContent =
-                                "Details unavailable";
+                            document.documentElement.dataset.expanded = "true";
                     });
                 document
                     .getElementById("close")
-                    ?.addEventListener("click", () =>
-                        API?.requestDisplayMode("inline"),
-                    );
+                    ?.addEventListener("click", () => {
+                        delete document.documentElement.dataset.expanded;
+                        API?.requestDisplayMode("inline");
+                    });
             }
             function renderList(data) {
                 const recipes = data.recipes || [];
@@ -235,6 +235,9 @@
                         `<article class="card">${factsBand("Recipes", "")}${factsState("empty", "No recipes found", "No saved recipes match. Try a different search, or import a recipe from a link.")}<div class="f-foot"><span>Every number traces to its source</span><span>Your saved recipes</span></div></article>`;
                     return;
                 }
+                const mixedOwnership = recipes.some(
+                    (entry) => entry.ownership === "household",
+                );
                 const richRow = (entry) => {
                     const per = entry.nutrition_per_serving || {};
                     const meta = [
@@ -247,7 +250,10 @@
                     ]
                         .filter(Boolean)
                         .join(" · ");
-                    return `<div class="rc-row"><div class="rc-main"><div class="rc-name">${esc(entry.name || "Recipe")}</div><div class="rc-meta">${esc(meta)}</div><div class="f-src">Source · <b>${entry.ownership === "household" ? "Household recipes" : "Your saved recipes"}</b></div></div><div class="rc-val num">${per.calories == null ? "—" : `${fmt(per.calories)} kcal`}</div></div>`;
+                    const srcHtml = mixedOwnership
+                        ? `<div class="f-src">Source · <b>${entry.ownership === "household" ? "Household recipes" : "Your saved recipes"}</b></div>`
+                        : "";
+                    return `<div class="rc-row"><div class="rc-main"><div class="rc-name">${esc(entry.name || "Recipe")}</div><div class="rc-meta">${esc(meta)}</div>${srcHtml}</div><div class="rc-val num">${per.calories == null ? "—" : `${fmt(per.calories)} kcal`}</div></div>`;
                 };
                 const compactRow = (entry) => {
                     const per = entry.nutrition_per_serving || {};
@@ -267,13 +273,12 @@
                     `<article class="card">
         ${factsBand("Recipes", `${recipes.length} recipe${recipes.length === 1 ? "" : "s"}`)}
         <div class="f-body">
-        <div>${inlineItems.map((entry) => (compact ? compactRow(entry) : richRow(entry))).join("")}</div>
-        ${folded ? `<button class="f-more-row inline-only" id="details">…and ${recipes.length - 5} more</button>` : `<button class="f-more-row inline-only" id="details">Recipe details</button>`}
+        <div class="inline-only">${inlineItems.map((entry) => (compact ? compactRow(entry) : richRow(entry))).join("")}</div>
+        ${folded ? `<button type="button" class="f-more-row inline-only" id="details">…and ${recipes.length - 5} more</button>` : `<button type="button" class="f-more-row inline-only" id="details">Recipe details</button>`}
         <div class="fullscreen-only">
-        <div class="f-rule-med"></div>
-        <h2 class="f-section-title">All ${recipes.length} recipes</h2>
+        <h2 class="f-section-title" style="margin-top:0">All ${recipes.length} recipes</h2>
         <div>${recipes.map((entry) => richRow(entry)).join("")}</div>
-        <div class="actions"><button class="btn" id="close">Return to chat</button></div>
+        <div class="actions"><button type="button" class="btn" id="close">Return to chat</button></div>
         </div>
         </div>
         <div class="f-foot"><span>Every number traces to its source</span><span>Your saved recipes · per-serving nutrition from recipe ingredients</span></div>
@@ -307,14 +312,13 @@
                 if (/published_restaurant/i.test(type)) return "Published menu";
                 return type ? type.replaceAll("_", " ") : "Recipe as written";
             }
-            function nutritionRows(values, source) {
+            function nutritionRows(values) {
                 return NUTRIENTS.filter(([, key]) => values?.[key] != null).map(
                     ([name, key, unit, digits]) =>
                         factsLabelRow({
                             name,
                             valueText: `${fmt(values[key], digits)} ${unit}`,
                             showBar: false,
-                            source,
                         }),
                 );
             }
@@ -371,24 +375,27 @@
         <div class="f-body">
         <div class="rc-name-line">${esc(recipe.name || "Recipe")}</div>
         ${factsHero(per.calories == null ? "—" : `${fmt(per.calories)} <span class="f-hero-unit">kcal</span>`, macroLine ? `per serving · ${macroLine}` : "per serving", "", "")}
+        <div class="f-src">Source · <b>${esc(sourceLabel)}</b></div>
         ${statusBanner(recipe.nutrition_status, "ingredients")}
         <div class="f-rule-heavy"></div>
+        <div class="${ingredients.length > 5 ? "inline-only" : ""}">
         <h2 class="f-section-title">Ingredients</h2>
         <div class="${compact ? "rc-compact" : ""}">${inlineIngredients.map((ingredient) => ingredientRow(ingredient)).join("")}</div>
-        ${ingredients.length > 5 ? `<button class="f-more-row inline-only" id="details">…and ${ingredients.length - 5} more</button>` : `<button class="f-more-row inline-only" id="details">Steps and full nutrition</button>`}
+        </div>
+        ${ingredients.length > 5 ? `<button type="button" class="f-more-row inline-only" id="details">…and ${ingredients.length - 5} more</button>` : `<button type="button" class="f-more-row inline-only" id="details">Steps and full nutrition</button>`}
         <div class="fullscreen-only">
-        ${ingredients.length > 5 ? `<h2 class="f-section-title">All ingredients</h2><div>${ingredients.map((ingredient) => `<div class="rc-row"><div class="rc-main"><div class="rc-name">${esc(ingredientLine(ingredient))}</div><div class="f-src">Source · <b>${esc(ingredientSource(ingredient))}</b></div></div><div class="rc-val num">${ingredient.nutrients?.calories == null ? "—" : `${fmt(ingredient.nutrients.calories)} kcal`}</div></div>`).join("")}</div>` : ""}
+        ${ingredients.length > 5 ? `<h2 class="f-section-title">All ingredients (${ingredients.length})</h2><div>${ingredients.map((ingredient) => `<div class="rc-row"><div class="rc-main"><div class="rc-name">${esc(ingredientLine(ingredient))}</div><div class="f-src">Source · <b>${esc(ingredientSource(ingredient))}</b></div></div><div class="rc-val num">${ingredient.nutrients?.calories == null ? "—" : `${fmt(ingredient.nutrients.calories)} kcal`}</div></div>`).join("")}</div>` : ""}
         <div class="f-rule-med"></div>
         <h2 class="f-section-title">Steps</h2>
         <div>${steps.map((step, index) => `<div class="rc-step"><span class="rc-step-num">${index + 1}</span><span class="rc-step-text">${esc(step)}</span></div>`).join("") || '<div class="f-note">No steps recorded.</div>'}</div>
         <div class="f-rule-med"></div>
         <h2 class="f-section-title">Nutrition per serving</h2>
-        <div class="nutrient-rows">${nutritionRows(per, sourceLabel).join("") || '<div class="f-note">No per-serving nutrition recorded.</div>'}</div>
+        <div class="nutrient-rows">${nutritionRows(per).join("") || '<div class="f-note">No per-serving nutrition recorded.</div>'}</div>
         <div class="f-rule-med"></div>
         <h2 class="f-section-title">Nutrition, whole recipe</h2>
-        <div class="nutrient-rows">${nutritionRows(total, sourceLabel).join("") || '<div class="f-note">No whole-recipe nutrition recorded.</div>'}</div>
+        <div class="nutrient-rows">${nutritionRows(total).join("") || '<div class="f-note">No whole-recipe nutrition recorded.</div>'}</div>
         ${recipe.description ? `<div class="f-note">${esc(recipe.description)}</div>` : ""}
-        <div class="actions"><button class="btn" id="close">Return to chat</button></div>
+        <div class="actions"><button type="button" class="btn" id="close">Return to chat</button></div>
         </div>
         </div>
         <div class="f-foot"><span>Every number traces to its source</span><span>${esc(sourceLabel)}</span></div>
@@ -546,20 +553,23 @@
         ${factsHero(per.calories == null ? "—" : `${fmt(per.calories)} <span class="f-hero-unit">kcal</span>`, `per serving · ${fmt(recipe.servings)} servings${timeMeta(recipe) ? ` · ${timeMeta(recipe)}` : ""}`, "", "")}
         ${checkBanner}
         <div class="f-rule-heavy"></div>
+        <div class="inline-only">
         <h2 class="f-section-title">Ingredients to save</h2>
         <div class="rc-compact">${inlineIngredients.map((ingredient, index) => reviewRow(ingredient, index, false)).join("")}</div>
-        ${ingredients.length > 5 ? `<button class="f-more-row inline-only" id="details">…and ${ingredients.length - 5} more</button>` : `<button class="f-more-row inline-only" id="details">Steps and details</button>`}
+        ${ingredients.length > 5 ? `<button type="button" class="f-more-row" id="details">…and ${ingredients.length - 5} more</button>` : `<button type="button" class="f-more-row" id="details">Steps and details</button>`}
+        </div>
         <div class="fullscreen-only">
-        ${ingredients.length > 5 ? `<h2 class="f-section-title">All ingredients</h2><div>${ingredients.map((ingredient, index) => reviewRow(ingredient, index, true)).join("")}</div>` : ""}
+        <h2 class="f-section-title">All ingredients (${ingredients.length})</h2>
+        <div>${ingredients.map((ingredient, index) => reviewRow(ingredient, index, true)).join("")}</div>
         ${warnings.length ? `<div class="f-rule-med"></div><h2 class="f-section-title">Checks before saving</h2>${warnings.map((warning) => `<div class="f-note" style="margin-top:6px">${esc(warning.message)}</div>`).join("")}` : ""}
         <div class="f-rule-med"></div>
         <h2 class="f-section-title">Steps</h2>
         <div>${steps.map((step, index) => `<div class="rc-step"><span class="rc-step-num">${index + 1}</span><span class="rc-step-text">${esc(step)}</span></div>`).join("") || '<div class="f-note">No steps were found on the page.</div>'}</div>
         <div class="f-rule-med"></div>
         <h2 class="f-section-title">Nutrition per serving</h2>
-        <div class="nutrient-rows">${nutritionRows(per, host).join("") || '<div class="f-note">No per-serving nutrition could be totaled.</div>'}</div>
+        <div class="nutrient-rows">${nutritionRows(per).join("") || '<div class="f-note">No per-serving nutrition could be totaled.</div>'}</div>
         ${assumptions.length ? `<div class="f-rule-med"></div><h2 class="f-section-title">Assumptions</h2>${assumptions.map((entry) => `<div class="f-note" style="margin-top:6px"><b>${esc(entry.raw_text)}</b> — ${esc(entry.message)}</div>`).join("")}` : ""}
-        <div class="actions"><button class="btn" id="close">Return to chat</button></div>
+        <div class="actions"><button type="button" class="btn" id="close">Return to chat</button></div>
         </div>
         </div>
         <div class="f-sticky-status" id="status" role="status" aria-live="polite"></div>

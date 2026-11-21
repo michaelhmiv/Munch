@@ -173,11 +173,11 @@
             <section class="card">
               <h3>Buttons</h3>
               <div class="actions" style="margin-top:0">
-                <button class="btn btn-primary">Import 42 meals</button>
-                <button class="btn">Back</button>
-                <button class="btn btn-danger">Discard</button>
-                <button class="btn btn-sm">Small</button>
-                <button class="btn" disabled>Disabled</button>
+                <button type="button" class="btn btn-primary">Import 42 meals</button>
+                <button type="button" class="btn">Back</button>
+                <button type="button" class="btn btn-danger">Discard</button>
+                <button type="button" class="btn btn-sm">Small</button>
+                <button type="button" class="btn" disabled>Disabled</button>
               </div>
             </section>
 
@@ -228,16 +228,16 @@
                 <span class="step"><span class="dot">3</span>Preview</span><span class="step-sep">→</span>
                 <span class="step"><span class="dot">4</span>Import</span>
               </div>
-              <div class="bar"><span style="width:62%"></span></div>
+              <div class="bar" role="progressbar" aria-label="Import progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="62"><span style="width:62%"></span></div>
               <div class="hint" style="margin-top:6px">Chunk 5 of 8 — 250 of 400 rows</div>
             </section>
 
             <section class="card">
               <h3>Segmented control (existing)</h3>
               <div class="seg" style="margin-bottom:0">
-                <button class="seg-btn active">7d</button>
-                <button class="seg-btn">14d</button>
-                <button class="seg-btn">30d</button>
+                <button type="button" class="seg-btn active">7d</button>
+                <button type="button" class="seg-btn">14d</button>
+                <button type="button" class="seg-btn">30d</button>
               </div>
             </section>
 
@@ -294,7 +294,7 @@
               <div class="f-body" style="padding-top:0">
                 ${factsCompactRow({ name: "Aug 5", meta: "4 meals", valueText: "1,905 kcal" })}
                 ${factsCompactRow({ name: "Grilled chicken and rice bowl", meta: "lunch", valueText: "650 kcal" })}
-                <button class="f-more-row">…and 9 more</button>
+                <button type="button" class="f-more-row">…and 9 more</button>
               </div>
             </section>
 
