@@ -37,6 +37,13 @@ export interface MealItemPatch {
 export interface CopyMealInput {
     loggedAt?: string;
     mealType?: "breakfast" | "lunch" | "dinner" | "snack";
+    idempotencyKey?: string;
+}
+
+export interface CopyMealDeps {
+    getMeal?: typeof getStructuredMeal;
+    insertStructured?: typeof insertStructuredMeal;
+    insertLegacy?: typeof insertMeal;
 }
 
 function numberFromRow(value: unknown): number | null {
@@ -316,8 +323,12 @@ export async function copyMeal(
     userId: string,
     mealId: string,
     input: CopyMealInput = {},
-): Promise<{ mealId: string; structured: boolean }> {
-    const source = await getStructuredMeal(userId, mealId);
+    deps: CopyMealDeps = {},
+): Promise<{ mealId: string; structured: boolean; deduplicated: boolean }> {
+    const getMeal = deps.getMeal ?? getStructuredMeal;
+    const insertStructured = deps.insertStructured ?? insertStructuredMeal;
+    const insertLegacy = deps.insertLegacy ?? insertMeal;
+    const source = await getMeal(userId, mealId);
     if (!source) throw new Error("Meal not found");
     const loggedAt = input.loggedAt ?? new Date().toISOString();
     const sourceType =
@@ -328,10 +339,22 @@ export async function copyMeal(
             ? source.mealType
             : "snack";
     const mealType = input.mealType ?? sourceType;
-    const idempotencyKey = crypto.randomUUID();
+    // A caller-supplied key (the duplicate dialog's per-opening key)
+    // makes a retried copy deduplicate against the first attempt;
+    // keyless callers keep the historical one-UUID-per-call behavior.
+    let idempotencyKey: string;
+    if (input.idempotencyKey !== undefined) {
+        const trimmed = input.idempotencyKey.trim();
+        if (!trimmed || trimmed.length > 255) {
+            throw new Error("Meal copy idempotency key is invalid");
+        }
+        idempotencyKey = trimmed;
+    } else {
+        idempotencyKey = crypto.randomUUID();
+    }
 
     if (source.items.length > 0) {
-        const result = await insertStructuredMeal(userId, {
+        const result = await insertStructured(userId, {
             description: source.description,
             mealType,
             loggedAt,
@@ -354,10 +377,14 @@ export async function copyMeal(
                 sourceSnapshot: { ...item.sourceSnapshot },
             })),
         });
-        return { mealId: result.meal.id, structured: true };
+        return {
+            mealId: result.meal.id,
+            structured: true,
+            deduplicated: result.deduplicated,
+        };
     }
 
-    const result = await insertMeal(userId, {
+    const result = await insertLegacy(userId, {
         description: source.description,
         meal_type: mealType,
         calories: source.calories ?? undefined,
@@ -371,7 +398,11 @@ export async function copyMeal(
         notes: source.notes ?? undefined,
         idempotency_key: idempotencyKey,
     });
-    return { mealId: result.meal.id, structured: false };
+    return {
+        mealId: result.meal.id,
+        structured: false,
+        deduplicated: result.deduplicated,
+    };
 }
 
 export { NUTRIENT_COLUMNS };

@@ -34,13 +34,14 @@ function mapWeight(row: WeightRow): WeightEntry {
 export async function insertWeight(
     userId: string,
     input: WeightInput,
+    runInTx: typeof withUserDatabase = withUserDatabase,
 ): Promise<WeightInsertResult> {
     const loggedAt = input.logged_at ?? new Date().toISOString();
     const idempotencyKey =
         input.idempotency_key ??
         deriveIdempotencyKey([userId, input.weight_g, input.notes, loggedAt]);
 
-    return withUserDatabase(userId, async (tx) => {
+    return runInTx(userId, async (tx) => {
         const inserted = await tx<Array<WeightRow>>`
             insert into munch.weight_logs (
                 user_id,

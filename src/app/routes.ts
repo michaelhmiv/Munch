@@ -44,6 +44,8 @@ import {
     updateWeight,
     upsertNutritionGoals,
     upsertProfile,
+    type WaterInput,
+    type WeightInput,
 } from "../storage.js";
 import { getFoodSearchService } from "../food-providers/service.js";
 import {
@@ -171,6 +173,7 @@ import {
     copyMeal,
     deleteStructuredMealItem,
     updateStructuredMealItem,
+    type CopyMealInput,
 } from "./meal-mutations.js";
 import {
     createAppMeal,
@@ -589,6 +592,85 @@ function mealType(value: unknown) {
         return value;
     }
     throw new Error("Invalid meal type");
+}
+
+export function optionalIdempotencyKey(
+    value: unknown,
+    label: string,
+): string | undefined {
+    if (value === undefined || value === null || value === "") return undefined;
+    if (typeof value !== "string") {
+        throw new Error(`${label} is invalid`);
+    }
+    const trimmed = value.trim();
+    if (!trimmed || trimmed.length > 255) {
+        throw new Error(`${label} is invalid`);
+    }
+    return trimmed;
+}
+
+export function waterCreateInputFromBody(
+    body: Record<string, unknown>,
+): WaterInput {
+    const amountMl = Number(body.amount_ml);
+    if (!Number.isInteger(amountMl) || amountMl <= 0 || amountMl > 20_000) {
+        throw new Error("Invalid water amount");
+    }
+    const idempotencyKey = optionalIdempotencyKey(
+        body.idempotency_key,
+        "Water idempotency key",
+    );
+    return {
+        amount_ml: amountMl,
+        ...(typeof body.logged_at === "string"
+            ? { logged_at: body.logged_at }
+            : {}),
+        ...(typeof body.notes === "string" ? { notes: body.notes } : {}),
+        ...(idempotencyKey ? { idempotency_key: idempotencyKey } : {}),
+    };
+}
+
+export function weightCreateInputFromBody(
+    body: Record<string, unknown>,
+): WeightInput {
+    const value = Number(body.weight);
+    if (!Number.isFinite(value) || value <= 0 || !isWeightUnit(body.unit)) {
+        throw new Error("Invalid weight");
+    }
+    const weightG = toGrams(value, body.unit);
+    if (!isPlausibleWeightGrams(weightG)) {
+        throw new Error("Weight is outside the supported range");
+    }
+    const idempotencyKey = optionalIdempotencyKey(
+        body.idempotency_key,
+        "Weight idempotency key",
+    );
+    return {
+        weight_g: weightG,
+        ...(typeof body.logged_at === "string"
+            ? { logged_at: body.logged_at }
+            : {}),
+        ...(typeof body.notes === "string" ? { notes: body.notes } : {}),
+        ...(idempotencyKey ? { idempotency_key: idempotencyKey } : {}),
+    };
+}
+
+export function copyMealInputFromBody(
+    body: Record<string, unknown>,
+): CopyMealInput {
+    const idempotencyKey = optionalIdempotencyKey(
+        body.idempotency_key,
+        "Meal copy idempotency key",
+    );
+    return {
+        ...(typeof body.logged_at === "string"
+            ? { loggedAt: body.logged_at }
+            : {}),
+        ...(body.meal_type !== undefined
+            ? { mealType: mealType(body.meal_type) }
+            : {}),
+        ...(idempotencyKey ? { idempotencyKey } : {}),
+    };
 }
 
 function structuredSourceType(value: unknown) {
@@ -3783,14 +3865,7 @@ export function createAppRouter(): Hono {
         const copied = await copyMeal(
             c.get("munchUserId"),
             c.req.param("id")!,
-            {
-                ...(typeof body.logged_at === "string"
-                    ? { loggedAt: body.logged_at }
-                    : {}),
-                ...(body.meal_type !== undefined
-                    ? { mealType: mealType(body.meal_type) }
-                    : {}),
-            },
+            copyMealInputFromBody(body),
         );
         return privateJson(c, copied);
     });
@@ -3802,10 +3877,7 @@ export function createAppRouter(): Hono {
 
     app.post("/api/app/water", requireSameOrigin, async (c) => {
         const body = (await c.req.json()) as Record<string, unknown>;
-        const amountMl = Number(body.amount_ml);
-        if (!Number.isInteger(amountMl) || amountMl <= 0 || amountMl > 20_000) {
-            throw new Error("Invalid water amount");
-        }
+        const waterInput = waterCreateInputFromBody(body);
         // C1: recent series is read BEFORE the insert so the median
         // baseline never includes the entry being judged. A failure
         // here must not fail the log — the seat is fail-open.
@@ -3815,13 +3887,7 @@ export function createAppRouter(): Hono {
         } catch {
             recentWater = [];
         }
-        const result = await insertWater(c.get("munchUserId"), {
-            amount_ml: amountMl,
-            ...(typeof body.logged_at === "string"
-                ? { logged_at: body.logged_at }
-                : {}),
-            ...(typeof body.notes === "string" ? { notes: body.notes } : {}),
-        });
+        const result = await insertWater(c.get("munchUserId"), waterInput);
         // The entry has saved exactly as it always has. C1 only ADDS
         // an advisory soft prompt when the entry is a deterministic
         // outlier AND the decision model reads it as a likely slip;
@@ -3888,27 +3954,14 @@ export function createAppRouter(): Hono {
 
     app.post("/api/app/weight", requireSameOrigin, async (c) => {
         const body = (await c.req.json()) as Record<string, unknown>;
-        const value = Number(body.weight);
-        if (!Number.isFinite(value) || value <= 0 || !isWeightUnit(body.unit)) {
-            throw new Error("Invalid weight");
-        }
-        const weightG = toGrams(value, body.unit);
-        if (!isPlausibleWeightGrams(weightG)) {
-            throw new Error("Weight is outside the supported range");
-        }
+        const weightInput = weightCreateInputFromBody(body);
         let recentWeight: Awaited<ReturnType<typeof getRecentWeight>> = [];
         try {
             recentWeight = await getRecentWeight(c.get("munchUserId"));
         } catch {
             recentWeight = [];
         }
-        const result = await insertWeight(c.get("munchUserId"), {
-            weight_g: weightG,
-            ...(typeof body.logged_at === "string"
-                ? { logged_at: body.logged_at }
-                : {}),
-            ...(typeof body.notes === "string" ? { notes: body.notes } : {}),
-        });
+        const result = await insertWeight(c.get("munchUserId"), weightInput);
         // Saved first, exactly as before — see the water route: C1
         // only adds an advisory soft prompt, never a block or rewrite.
         let outlierPrompt = null;

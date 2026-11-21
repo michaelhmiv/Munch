@@ -342,12 +342,14 @@ function createComposerInstance(
         maybeConst("MEAL_DRAFT_REVIEW_EDITS_KEY"),
         maybeConst("VALID_MEAL_TYPES"),
         maybeFn("escapeHtml"),
+        maybeFn("createIdempotencyKey"),
         maybeFn("mealTypeOptionsHtml"),
         maybeFn("number"),
         maybeFn("sourceBadge"),
         maybeFn("confidenceBadge"),
         maybeFn("foodTitle"),
         maybeFn("foodPortion"),
+        maybeFn("composerCustomPortionNutrients"),
         maybeFn("portionOptionLabelJs"),
         maybeFn("foodMacroLine"),
         maybeFn("draftItemKey"),
@@ -369,6 +371,10 @@ function createComposerInstance(
         maybeFn("handleBeforeAuthenticationRequired"),
         maybeFn("maybeRestoreAfterAuth"),
         maybeFn("syncMealComposerFromDom"),
+        maybeFn("normalizedComposerText"),
+        maybeFn("composerNutrientsEqual"),
+        maybeFn("findComposerDuplicate"),
+        maybeFn("mergeMealComposerItem"),
         maybeFn("renderMealComposerItems"),
         maybeFn("mealComposerItemMacros"),
         maybeFn("mealComposerTotals"),
@@ -401,6 +407,7 @@ function createComposerInstance(
     const openedDraftIds: string[] = [];
 
     const sandbox = {
+        crypto: globalThis.crypto,
         localStorage: storage,
         document: fakeDocument,
         dialog,

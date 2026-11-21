@@ -103,6 +103,15 @@ function nonnegative(value: unknown, label: string): number | undefined {
     return parsed;
 }
 
+function optionalPositive(value: unknown, label: string): number | undefined {
+    if (value === undefined || value === null || value === "") return undefined;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        throw new Error(`${label} must be positive`);
+    }
+    return parsed;
+}
+
 function sourceType(value: unknown): MealSourceType {
     if (
         typeof value === "string" &&
@@ -295,8 +304,39 @@ function candidateMealItem(
     candidateId: string,
     portionId: string | undefined,
     quantity: number,
+    custom?: { portionLabel?: string; gramWeight?: number },
 ): StructuredMealItemInput {
     const portion = selectCandidatePortion(candidate, portionId);
+    const customGramWeight = custom?.gramWeight;
+    const hasCustomPortion =
+        custom?.portionLabel !== undefined || customGramWeight !== undefined;
+    // Custom portion (W2 logging math Finding 2): a caller-supplied
+    // gram weight rescales the selected portion's nutrients by
+    // customGramWeight / portion.gramWeight — or, when the portion
+    // carries no gram weight of its own, the food's per-100g panel by
+    // customGramWeight / 100. Without a gram reference the portion's
+    // nutrients stand (ratio 1). The client preview computes the
+    // identical single-step scale so preview === saved.
+    let baseNutrients = portion.nutrients;
+    let gramRatio = 1;
+    if (customGramWeight !== undefined) {
+        if (portion.gramWeight !== undefined && portion.gramWeight > 0) {
+            gramRatio = customGramWeight / portion.gramWeight;
+        } else if (
+            candidate.nutrientsPer100g &&
+            hasReportedCalories(candidate.nutrientsPer100g)
+        ) {
+            baseNutrients = candidate.nutrientsPer100g;
+            gramRatio = customGramWeight / 100;
+        }
+    }
+    const unitGramWeight = customGramWeight ?? portion.gramWeight;
+    const portionLabel =
+        custom?.portionLabel ??
+        (customGramWeight !== undefined &&
+        customGramWeight !== portion.gramWeight
+            ? `${customGramWeight} g`
+            : portion.label);
     const name = [candidate.brand, candidate.name]
         .filter(Boolean)
         .join(" — ")
@@ -304,12 +344,12 @@ function candidateMealItem(
     return {
         name,
         quantity,
-        portionLabel: portion.label,
+        portionLabel,
         gramWeight:
-            portion.gramWeight === undefined
+            unitGramWeight === undefined
                 ? undefined
-                : Math.round(portion.gramWeight * quantity * 100) / 100,
-        nutrients: scaleNutrients(portion.nutrients, quantity),
+                : Math.round(unitGramWeight * quantity * 100) / 100,
+        nutrients: scaleNutrients(baseNutrients, gramRatio * quantity),
         sourceType: candidate.provider,
         provider: candidate.provider,
         providerFoodId: candidate.providerFoodId,
@@ -319,12 +359,20 @@ function candidateMealItem(
         confidence: candidate.confidence,
         assumptions: [],
         sourceSnapshot: {
-            resolution_layer: "food_search",
+            resolution_layer: hasCustomPortion
+                ? "food_search_custom_portion"
+                : "food_search",
             candidate_id: candidateId,
             provider: candidate.provider,
             provider_food_id: candidate.providerFoodId,
             selected_portion_id: portion.id,
             selected_portion_label: portion.label,
+            ...(hasCustomPortion && portion.gramWeight !== undefined
+                ? { selected_portion_gram_weight: portion.gramWeight }
+                : {}),
+            ...(customGramWeight !== undefined
+                ? { custom_gram_weight: customGramWeight }
+                : {}),
             selected_quantity: quantity,
             nutrition_snapshot: portion.nutrients,
         },
@@ -335,12 +383,14 @@ function savedFoodMealItem(
     saved: SavedFoodRecord,
     portionId: string | undefined,
     quantity: number,
+    custom?: { portionLabel?: string; gramWeight?: number },
 ): StructuredMealItemInput {
     const item = candidateMealItem(
         saved.food,
         `saved_food:${saved.id}`,
         portionId,
         quantity,
+        custom,
     );
     return {
         ...item,
@@ -408,6 +458,26 @@ export async function resolveWebMealItem(
     userId: string,
     input: WebMealItemSelection,
 ): Promise<StructuredMealItemInput> {
+    // Custom portion fields (W2 logging math Finding 2): a supplied
+    // portion_label / gram_weight only takes effect on the candidate
+    // and saved-food paths, where the server stays authoritative for
+    // the underlying food. Supplied items keep their own semantics.
+    const customPortionLabel = text(
+        input.portion_label,
+        "Meal item portion",
+        500,
+    );
+    const customGramWeight = optionalPositive(
+        input.gram_weight,
+        "Meal item gram weight",
+    );
+    const custom =
+        customPortionLabel !== undefined || customGramWeight !== undefined
+            ? {
+                  portionLabel: customPortionLabel,
+                  gramWeight: customGramWeight,
+              }
+            : undefined;
     const savedFoodId = text(input.saved_food_id, "Saved food ID", 100);
     if (savedFoodId) {
         const saved = await getSavedFood(userId, savedFoodId);
@@ -418,6 +488,7 @@ export async function resolveWebMealItem(
                 saved.defaultPortionId ??
                 undefined,
             positive(input.quantity, "Food quantity"),
+            custom,
         );
     }
     const candidateId = text(input.candidate_id, "Food candidate ID", 300);
@@ -433,6 +504,7 @@ export async function resolveWebMealItem(
             candidateId,
             text(input.portion_id, "Food portion ID", 200),
             positive(input.quantity, "Food quantity"),
+            custom,
         );
     }
     return suppliedMealItem(input);
@@ -448,7 +520,15 @@ export async function createAppMeal(
         idempotencyKey?: unknown;
         items: WebMealItemSelection[];
     },
+    deps: {
+        resolveItem?: typeof resolveWebMealItem;
+        insertMeal?: typeof insertStructuredMeal;
+        markUsed?: typeof markSavedFoodUsed;
+    } = {},
 ) {
+    const resolveItem = deps.resolveItem ?? resolveWebMealItem;
+    const insertMeal = deps.insertMeal ?? insertStructuredMeal;
+    const markUsed = deps.markUsed ?? markSavedFoodUsed;
     const description = text(input.description, "Meal description", 500);
     if (!description) throw new Error("Meal description is required");
     if (
@@ -471,7 +551,7 @@ export async function createAppMeal(
         text(input.idempotencyKey, "Meal idempotency key", 255) ??
         crypto.randomUUID();
     const items = await Promise.all(
-        input.items.map((item) => resolveWebMealItem(userId, item)),
+        input.items.map((item) => resolveItem(userId, item)),
     );
     const savedFoodIds = [
         ...new Set(
@@ -483,7 +563,7 @@ export async function createAppMeal(
                 ),
         ),
     ];
-    const result = await insertStructuredMeal(userId, {
+    const result = await insertMeal(userId, {
         description,
         mealType: input.mealType,
         loggedAt,
@@ -493,9 +573,7 @@ export async function createAppMeal(
     });
     if (!result.deduplicated && savedFoodIds.length > 0) {
         await Promise.allSettled(
-            savedFoodIds.map((savedFoodId) =>
-                markSavedFoodUsed(userId, savedFoodId),
-            ),
+            savedFoodIds.map((savedFoodId) => markUsed(userId, savedFoodId)),
         );
     }
     return result;
