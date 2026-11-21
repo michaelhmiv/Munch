@@ -29,6 +29,7 @@ import {
     type SavedFoodRecord,
 } from "../saved-foods/repository.js";
 import { insertStructuredMeal } from "../structured-meals/repository.js";
+import { nutrientsPerQuantity } from "./usuals.js";
 import type {
     MealSourceType,
     StructuredMealItemInput,
@@ -178,13 +179,20 @@ export function serializeSavedFood(record: SavedFoodRecord) {
     };
 }
 
-function serializeRecentMealItem(record: RecentMealItemMemory) {
+export function serializeRecentMealItem(record: RecentMealItemMemory) {
+    const quantity =
+        typeof record.quantity === "number" &&
+        Number.isFinite(record.quantity) &&
+        record.quantity > 0
+            ? record.quantity
+            : 1;
     return {
         mealId: record.mealId,
         itemId: record.itemId,
         name: record.name,
+        quantity,
         portionLabel: record.portionLabel,
-        nutrients: record.nutrients,
+        nutrients: nutrientsPerQuantity(record.nutrients, record.quantity),
         sourceType: record.sourceType,
         provider: record.provider,
         providerFoodId: record.providerFoodId,

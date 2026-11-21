@@ -121,6 +121,8 @@ const mealComposer = {
     items: [],
     options: new Map(),
     searchTimer: null,
+    searchSeq: 0,
+    searchController: null,
     usuals: new Map(),
     yesterday: null,
     mealTypeTouched: false,
@@ -131,6 +133,8 @@ const mealDraftReview = {
     options: new Map(),
     pendingManual: [],
     searchTimer: null,
+    searchSeq: 0,
+    searchController: null,
     addTextMessage: null,
     // Photo-flow audit (2026-11-12): honest in-place feedback inside
     // the modal dialog — toasts render outside the dialog and are
@@ -158,6 +162,8 @@ const recipeComposer = {
     ingredients: [],
     options: new Map(),
     searchTimer: null,
+    searchSeq: 0,
+    searchController: null,
 };
 
 const recipeCompose = {
@@ -196,6 +202,8 @@ const recipeImportSteps = [
 const savedFoodManager = {
     options: new Map(),
     foods: [],
+    searchSeq: 0,
+    searchController: null,
 };
 
 const webMealImport = {
@@ -417,6 +425,34 @@ async function api(path, options = {}) {
         ...options,
         signal: options.signal || controller.signal,
     });
+}
+
+// Food-search race guard (W2 Finding 2): each search surface owns a
+// monotonic sequence token and an AbortController. Starting a search
+// aborts the surface's previous request and bumps the token; a
+// response may render only while its token is still current AND the
+// surface's input still holds the query it was fired with (the input
+// check closes the debounce gap before the next search fires).
+function beginSurfaceSearch(surface) {
+    surface.searchController?.abort();
+    const controller = new AbortController();
+    surface.searchController = controller;
+    surface.searchSeq = (surface.searchSeq || 0) + 1;
+    return { seq: surface.searchSeq, controller };
+}
+
+function isCurrentSurfaceSearch(surface, seq, inputId, expectedQuery) {
+    if (seq !== surface.searchSeq) return false;
+    if (inputId !== null) {
+        const input = document.getElementById(inputId);
+        if (
+            input &&
+            input.value.trim() !== String(expectedQuery ?? "").trim()
+        ) {
+            return false;
+        }
+    }
+    return true;
 }
 
 // The native banner renders INSIDE the in-flow Today slot (Amendment D
@@ -1865,6 +1901,8 @@ function savedFoodManagerMarkup(data) {
 }
 
 async function openSavedFoodsManager() {
+    savedFoodManager.searchController?.abort();
+    savedFoodManager.searchSeq = (savedFoodManager.searchSeq || 0) + 1;
     const data = await api("/api/app/foods", { keepPrevious: true });
     savedFoodManager.foods = data.foods || [];
     savedFoodManager.options.clear();
@@ -1895,16 +1933,40 @@ async function searchSavedFoodCandidates() {
     const root = document.getElementById("saved-food-search-results");
     if (!input || !root) return;
     const query = input.value.trim();
+    const { seq, controller } = beginSurfaceSearch(savedFoodManager);
     if (!query) {
         root.innerHTML = `<p class="tiny">Enter a food name to search verified providers.</p>`;
         return;
     }
     root.innerHTML = `<p class="tiny">Searching verified foods…</p>`;
-    const data = await api(
-        `/api/app/food-search?query=${encodeURIComponent(query)}&limit=8`,
-        { keepPrevious: true },
-    );
-    renderSavedFoodSearchResults(data);
+    try {
+        const data = await api(
+            `/api/app/food-search?query=${encodeURIComponent(query)}&limit=8`,
+            { keepPrevious: true, signal: controller.signal },
+        );
+        if (
+            !isCurrentSurfaceSearch(
+                savedFoodManager,
+                seq,
+                "saved-food-search",
+                query,
+            )
+        ) {
+            return;
+        }
+        renderSavedFoodSearchResults(data);
+    } catch (error) {
+        // The submit handler above this function toasts thrown errors;
+        // an abort (or any late failure from a superseded search) must
+        // resolve silently instead of surfacing as a spurious toast.
+        if (
+            error?.name === "AbortError" ||
+            seq !== savedFoodManager.searchSeq
+        ) {
+            return;
+        }
+        throw error;
+    }
 }
 
 async function openSavedFoodCandidate(key) {
@@ -2886,14 +2948,16 @@ function recipeIngredientFromRecord(ingredient) {
 }
 
 function recipeIngredientFromRecent(recent) {
+    const quantity = recentQuantity(recent);
+    const nutrients = scaleRecentNutrients(recent.nutrients, quantity);
     return {
         name: recent.name,
-        quantity: 1,
+        quantity,
         unit: recent.portionLabel || "serving",
         preparation: "",
         optional: false,
         gramWeight: undefined,
-        nutrients: recent.nutrients || {},
+        nutrients,
         provider: recent.provider || undefined,
         providerFoodId: recent.providerFoodId || undefined,
         sourceType: "past_meal",
@@ -2903,6 +2967,8 @@ function recipeIngredientFromRecent(recent) {
             resolution_layer: "personal_history",
             meal_id: recent.mealId,
             item_id: recent.itemId,
+            selected_quantity: quantity,
+            nutrition_snapshot: { ...nutrients },
         },
     };
 }
@@ -3103,7 +3169,7 @@ function renderRecipeSearchResults(data) {
                 .map((recent, index) => {
                     const key = `recent:${index}`;
                     recipeComposer.options.set(key, { kind: "recent", recent });
-                    return `<button class="meal-search-result" type="button" data-action="select-recipe-food-option" data-key="${key}"><span><strong>${escapeHtml(recent.name)}</strong><small>${sourceBadge("past_meal")} ${escapeHtml(recent.portionLabel || "Portion not recorded")}</small></span><span>${number(recent.nutrients?.calories)} kcal</span></button>`;
+                    return `<button class="meal-search-result" type="button" data-action="select-recipe-food-option" data-key="${key}"><span><strong>${escapeHtml(recent.name)}</strong><small>${sourceBadge("past_meal")} ${escapeHtml(recentPortionSummary(recent))}</small></span><span>${recent.nutrients?.calories == null ? "" : `${number(recent.nutrients.calories * recentQuantity(recent))} kcal`}</span></button>`;
                 })
                 .join("")}</div>`,
         );
@@ -3116,16 +3182,28 @@ function renderRecipeSearchResults(data) {
 async function searchRecipeFoods(query) {
     const root = document.getElementById("recipe-food-results");
     if (!root) return;
+    const { seq, controller } = beginSurfaceSearch(recipeComposer);
     root.innerHTML = `<p class="tiny">Searching verified foods and personal history…</p>`;
     try {
         const data = await api(
             `/api/app/food-search?query=${encodeURIComponent(query)}&limit=8`,
-            { keepPrevious: true },
+            { keepPrevious: true, signal: controller.signal },
         );
+        if (
+            !isCurrentSurfaceSearch(
+                recipeComposer,
+                seq,
+                "recipe-food-search",
+                query,
+            )
+        ) {
+            return;
+        }
         renderRecipeSearchResults(data);
     } catch (error) {
-        if (error?.name !== "AbortError")
-            root.innerHTML = `<p class="tiny">${escapeHtml(error.message || "Food search failed")}</p>`;
+        if (error?.name === "AbortError" || seq !== recipeComposer.searchSeq)
+            return;
+        root.innerHTML = `<p class="tiny">${escapeHtml(error.message || "Food search failed")}</p>`;
     }
 }
 
@@ -3445,6 +3523,7 @@ function openRecipeImportReview(draft) {
     renderRecipeIngredients();
     renderRecipeComposeGroceries();
     syncRecipePlanSection(document.getElementById("recipe-create-form"));
+    window.clearTimeout(recipeComposer.searchTimer);
     searchRecipeFoods("");
 }
 
@@ -3537,6 +3616,7 @@ function openRecipeCreate(planEnabled = false) {
     renderRecipeIngredients();
     renderRecipeComposeGroceries();
     syncRecipePlanSection(document.getElementById("recipe-create-form"));
+    window.clearTimeout(recipeComposer.searchTimer);
     searchRecipeFoods("");
 }
 
@@ -7489,7 +7569,7 @@ function renderDraftFoodResults(data) {
                         kind: "recent",
                         recent,
                     });
-                    return `<button class="meal-search-result" type="button" data-action="select-draft-food-option" data-key="${key}"><span><strong>${escapeHtml(recent.name)}</strong><small>${sourceBadge("past_meal")} ${escapeHtml(recent.portionLabel || "Portion not recorded")}</small></span><span>${number(recent.nutrients?.calories)} kcal</span></button>`;
+                    return `<button class="meal-search-result" type="button" data-action="select-draft-food-option" data-key="${key}"><span><strong>${escapeHtml(recent.name)}</strong><small>${sourceBadge("past_meal")} ${escapeHtml(recentPortionSummary(recent))}</small></span><span>${recent.nutrients?.calories == null ? "" : `${number(recent.nutrients.calories * recentQuantity(recent))} kcal`}</span></button>`;
                 })
                 .join("")}</div>`,
         );
@@ -7502,17 +7582,28 @@ function renderDraftFoodResults(data) {
 async function searchDraftFoods(query) {
     const root = document.getElementById("meal-draft-food-results");
     if (!root) return;
+    const { seq, controller } = beginSurfaceSearch(mealDraftReview);
     root.innerHTML = `<p class="tiny">Searching verified foods and personal history…</p>`;
     try {
         const data = await api(
             `/api/app/food-search?query=${encodeURIComponent(query)}&limit=8`,
-            { keepPrevious: true },
+            { keepPrevious: true, signal: controller.signal },
         );
+        if (
+            !isCurrentSurfaceSearch(
+                mealDraftReview,
+                seq,
+                "meal-draft-food-search",
+                query,
+            )
+        ) {
+            return;
+        }
         renderDraftFoodResults(data);
     } catch (error) {
-        if (error?.name !== "AbortError") {
-            root.innerHTML = `<p class="tiny">${escapeHtml(error.message || "Food search failed")}</p>`;
-        }
+        if (error?.name === "AbortError" || seq !== mealDraftReview.searchSeq)
+            return;
+        root.innerHTML = `<p class="tiny">${escapeHtml(error.message || "Food search failed")}</p>`;
     }
 }
 
@@ -7542,11 +7633,12 @@ async function selectDraftFoodOption(key) {
             quantity: 1,
         };
     } else {
+        const quantity = recentQuantity(option.recent);
         item = {
             name: option.recent.name,
-            quantity: 1,
+            quantity,
             portion_label: option.recent.portionLabel || undefined,
-            nutrients: option.recent.nutrients,
+            nutrients: scaleRecentNutrients(option.recent.nutrients, quantity),
             source_type: "past_meal",
             provider: option.recent.provider,
             provider_food_id: option.recent.providerFoodId,
@@ -7575,15 +7667,20 @@ async function lookupDraftFoodBarcode() {
     const input = document.getElementById("meal-draft-food-barcode");
     const root = document.getElementById("meal-draft-food-results");
     if (!input || !root || !input.value.trim()) return;
+    const { seq, controller } = beginSurfaceSearch(mealDraftReview);
     root.innerHTML = `<p class="tiny">Looking up the package barcode…</p>`;
     const data = await api(
         `/api/app/food-barcode?barcode=${encodeURIComponent(input.value.trim())}`,
-        { keepPrevious: true },
+        { keepPrevious: true, signal: controller.signal },
     );
+    if (seq !== mealDraftReview.searchSeq) return;
     renderDraftFoodResults({ ...data, savedFoods: [], recentMealItems: [] });
 }
 
 async function openMealDraft(id) {
+    window.clearTimeout(mealDraftReview.searchTimer);
+    mealDraftReview.searchController?.abort();
+    mealDraftReview.searchSeq = (mealDraftReview.searchSeq || 0) + 1;
     mealDraftReview.draft = null;
     mealDraftReview.options.clear();
     mealDraftReview.pendingManual = [];
@@ -8636,6 +8733,33 @@ function portionsListLine(portions) {
         .join(" · ");
 }
 
+// Recents arrive with the logged quantity and PER-QUANTITY nutrients
+// (the Usuals contract). Consumers that display or store line totals
+// scale by recentQuantity; consumers on a per-quantity endpoint (the
+// meal composer) prefill the quantity and keep nutrients as-is.
+function recentQuantity(recent) {
+    const value = Number(recent?.quantity);
+    return Number.isFinite(value) && value > 0 ? value : 1;
+}
+
+function scaleRecentNutrients(nutrients, factor) {
+    const scaled = {};
+    for (const [key, value] of Object.entries(nutrients || {})) {
+        if (typeof value === "number" && Number.isFinite(value)) {
+            scaled[key] = Math.round(value * factor * 100) / 100;
+        }
+    }
+    return scaled;
+}
+
+function recentPortionSummary(recent) {
+    const qty = recentQuantity(recent);
+    if (qty === 1) return recent.portionLabel || "Portion not recorded";
+    return recent.portionLabel
+        ? `${number(qty, 2)} × ${recent.portionLabel}`
+        : `Quantity ${number(qty, 2)}`;
+}
+
 function renderMealSearchResults(data) {
     const root = document.getElementById("meal-food-results");
     if (!root) return;
@@ -8686,7 +8810,14 @@ function renderMealSearchResults(data) {
                 .map((recent, index) => {
                     const key = `recent:${index}`;
                     mealComposer.options.set(key, { kind: "recent", recent });
-                    return `<button class="meal-search-result" type="button" data-action="select-meal-option" data-key="${key}"><span><strong>${escapeHtml(recent.name)}</strong><small>${sourceBadge("past_meal")} ${escapeHtml(recent.portionLabel || "Portion not recorded")}</small></span><span>${number(recent.nutrients?.calories)} kcal</span></button>`;
+                    const qty = recentQuantity(recent);
+                    const totalCalories =
+                        recent.nutrients?.calories == null
+                            ? null
+                            : Math.round(
+                                  recent.nutrients.calories * qty * 100,
+                              ) / 100;
+                    return `<button class="meal-search-result" type="button" data-action="select-meal-option" data-key="${key}"><span><strong>${escapeHtml(recent.name)}</strong><small>${sourceBadge("past_meal")} ${escapeHtml(recentPortionSummary(recent))}</small></span><span>${totalCalories == null ? "" : `${number(totalCalories)} kcal`}</span></button>`;
                 })
                 .join("")}</div>`,
         );
@@ -8699,16 +8830,28 @@ function renderMealSearchResults(data) {
 async function searchMealFoods(query) {
     const root = document.getElementById("meal-food-results");
     if (!root) return;
+    const { seq, controller } = beginSurfaceSearch(mealComposer);
     root.innerHTML = `<p class="tiny">Searching verified foods and personal history…</p>`;
     try {
         const data = await api(
             `/api/app/food-search?query=${encodeURIComponent(query)}&limit=10`,
-            { keepPrevious: true },
+            { keepPrevious: true, signal: controller.signal },
         );
+        if (
+            !isCurrentSurfaceSearch(
+                mealComposer,
+                seq,
+                "meal-food-search",
+                query,
+            )
+        ) {
+            return;
+        }
         renderMealSearchResults(data);
     } catch (error) {
-        if (error?.name !== "AbortError")
-            root.innerHTML = `<p class="tiny">${escapeHtml(error.message || "Food search failed")}</p>`;
+        if (error?.name === "AbortError" || seq !== mealComposer.searchSeq)
+            return;
+        root.innerHTML = `<p class="tiny">${escapeHtml(error.message || "Food search failed")}</p>`;
     }
 }
 
@@ -8885,7 +9028,7 @@ async function selectMealOption(key) {
         nextItem = {
             kind: "recent",
             name: option.recent.name,
-            quantity: 1,
+            quantity: recentQuantity(option.recent),
             portionLabel: option.recent.portionLabel || "",
             nutrients: { ...(option.recent.nutrients || {}) },
             sourceType: "past_meal",
@@ -9041,11 +9184,13 @@ async function scanMealBarcode() {
 async function lookupMealBarcodeValue(barcode) {
     const root = document.getElementById("meal-food-results");
     if (!root || !barcode) return;
+    const { seq, controller } = beginSurfaceSearch(mealComposer);
     root.innerHTML = `<p class="tiny">Looking up the package barcode…</p>`;
     const data = await api(
         `/api/app/food-barcode?barcode=${encodeURIComponent(barcode)}`,
-        { keepPrevious: true },
+        { keepPrevious: true, signal: controller.signal },
     );
+    if (seq !== mealComposer.searchSeq) return;
     renderMealSearchResults({
         ...data,
         savedFoods: [],
@@ -9084,6 +9229,11 @@ function openMealComposer() {
         )}</select></label>${pantryField}<label class="field"><span>Notes</span><textarea name="notes" rows="2" maxlength="4000" placeholder="Optional">${escapeHtml(initialNotes)}</textarea></label><button class="button button-primary" type="submit">Log meal</button></form>`,
     );
     renderMealComposerItems();
+    // globalThis form (not window.clearTimeout): this function is
+    // lifted into a window-less VM sandbox by
+    // public/composer-survival.test.ts; in the browser the two are
+    // the same call.
+    globalThis.clearTimeout?.(mealComposer.searchTimer);
     searchMealFoods("");
     void loadMealUsuals();
 }

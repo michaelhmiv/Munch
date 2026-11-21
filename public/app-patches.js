@@ -7,6 +7,8 @@ const patchMealEditor = {
     mealId: null,
     options: new Map(),
     searchTimer: null,
+    searchSeq: 0,
+    searchController: null,
 };
 
 const patchNutrientFields = [
@@ -154,6 +156,33 @@ function structuredItemEditor(meal) {
     return `<div class="panel-title spacer-top"><div><h3>Foods</h3><p>Edit a correction or replace a food with a verified, saved, or recent snapshot.</p></div><span>${meal.items.length}</span></div><section class="meal-card spacer-top" data-patch-food-picker data-meal-id="${patchEscape(meal.id)}"><div class="panel-title"><div><h4>Replace or add food</h4><p class="tiny">Choose where the search result should go, then select a food.</p></div></div><label class="field"><span>Apply selection to</span><select id="patch-replace-target"><option value="">Add as a new food</option>${targetOptions}</select></label><form class="meal-composer-search-row" data-patch-food-search-form data-meal-id="${patchEscape(meal.id)}"><input class="input" name="query" id="patch-food-search" type="search" placeholder="Search oats, yogurt, chicken…" autocomplete="off" /><button class="button button-secondary button-small" type="submit">Search</button></form><div id="patch-food-results" class="meal-food-results"><p class="tiny">Loading personal and verified foods…</p></div></section><div class="meal-groups">${itemForms}</div><details class="meal-card"><summary><strong>Add manual food</strong></summary><form class="auth-form spacer-top" data-patch-new-item-form data-meal-id="${patchEscape(meal.id)}"><div class="summary-grid" style="grid-template-columns:repeat(2,minmax(0,1fr))"><label class="field" style="grid-column:1/-1"><span>Food name</span><input name="name" required /></label><label class="field"><span>Quantity</span><input name="quantity" type="number" min="0.01" step="0.01" /></label><label class="field"><span>Portion</span><input name="portion_label" placeholder="e.g. 1 cup" /></label>${manualFields}<label class="field"><span>Source</span><select name="source_type"><option value="user_supplied">Label / manual value</option><option value="model_estimate">Estimate</option></select></label></div><label class="field"><span>Assumption or note</span><input name="assumption" placeholder="Optional" /></label><button class="button button-secondary button-small" type="submit">Add food</button></form></details>`;
 }
 
+// Recents arrive with the logged quantity and PER-QUANTITY nutrients
+// (the Usuals contract, mirrored from app.js). The patch editor's two
+// endpoints scale asymmetrically: replace (PATCH) scales server-side
+// like the meal composer, add (POST /items) stores line totals.
+function patchRecentQuantity(recent) {
+    const value = Number(recent?.quantity);
+    return Number.isFinite(value) && value > 0 ? value : 1;
+}
+
+function patchScaleNutrients(nutrients, factor) {
+    const scaled = {};
+    for (const [key, value] of Object.entries(nutrients || {})) {
+        if (typeof value === "number" && Number.isFinite(value)) {
+            scaled[key] = Math.round(value * factor * 100) / 100;
+        }
+    }
+    return scaled;
+}
+
+function patchRecentPortionSummary(recent) {
+    const qty = patchRecentQuantity(recent);
+    if (qty === 1) return recent.portionLabel || "Portion not recorded";
+    return recent.portionLabel
+        ? `${patchNumber(qty, 2)} × ${recent.portionLabel}`
+        : `Quantity ${patchNumber(qty, 2)}`;
+}
+
 function renderPatchFoodResults(data) {
     const root = document.getElementById("patch-food-results");
     if (!root) return;
@@ -211,7 +240,7 @@ function renderPatchFoodResults(data) {
                         kind: "recent",
                         recent,
                     });
-                    return `<button class="meal-search-result" type="button" data-patch-food-option data-key="${patchEscape(key)}"><span><strong>${patchEscape(recent.name)}</strong><small>Recent meal · ${patchEscape(recent.portionLabel || "Portion not recorded")}</small></span><span>${recent.nutrients?.calories == null ? "" : `${patchNumber(recent.nutrients.calories, 0)} kcal`}</span></button>`;
+                    return `<button class="meal-search-result" type="button" data-patch-food-option data-key="${patchEscape(key)}"><span><strong>${patchEscape(recent.name)}</strong><small>Recent meal · ${patchEscape(patchRecentPortionSummary(recent))}</small></span><span>${recent.nutrients?.calories == null ? "" : `${patchNumber(recent.nutrients.calories * patchRecentQuantity(recent), 0)} kcal`}</span></button>`;
                 })
                 .join("")}</div>`,
         );
@@ -224,14 +253,26 @@ function renderPatchFoodResults(data) {
 async function searchPatchFoods(query) {
     const root = document.getElementById("patch-food-results");
     if (!root) return;
+    patchMealEditor.searchController?.abort();
+    const controller = new AbortController();
+    patchMealEditor.searchController = controller;
+    const seq = ++patchMealEditor.searchSeq;
     root.innerHTML = `<p class="tiny">Searching personal and verified foods…</p>`;
     try {
         const data = await patchApi(
             `/api/app/food-search?query=${encodeURIComponent(query)}&limit=8`,
-            { cache: "no-store" },
+            { cache: "no-store", signal: controller.signal },
         );
+        if (seq !== patchMealEditor.searchSeq) return;
+        const input = document.getElementById("patch-food-search");
+        if (input && input.value.trim() !== String(query ?? "").trim()) {
+            return;
+        }
         renderPatchFoodResults(data);
     } catch (error) {
+        if (error?.name === "AbortError" || seq !== patchMealEditor.searchSeq) {
+            return;
+        }
         root.innerHTML = `<p class="tiny">${patchEscape(error.message || "Food search failed")}</p>`;
     }
 }
@@ -254,11 +295,14 @@ function patchFoodBody(option, replacing) {
         };
     }
     const recent = option.recent;
+    const quantity = patchRecentQuantity(recent);
     return {
         name: recent.name,
-        quantity: 1,
+        quantity,
         portion_label: recent.portionLabel || undefined,
-        nutrients: recent.nutrients,
+        nutrients: replacing
+            ? recent.nutrients
+            : patchScaleNutrients(recent.nutrients, quantity),
         source_type: "past_meal",
         provider: recent.provider || undefined,
         provider_food_id: recent.providerFoodId || undefined,
@@ -323,6 +367,8 @@ document.addEventListener(
         if (close) {
             event.preventDefault();
             event.stopImmediatePropagation();
+            patchMealEditor.searchController?.abort();
+            patchMealEditor.searchSeq += 1;
             patchDialog.close();
             return;
         }
@@ -558,5 +604,9 @@ document.addEventListener(
 );
 
 patchDialog.addEventListener("click", (event) => {
-    if (event.target === patchDialog) patchDialog.close();
+    if (event.target === patchDialog) {
+        patchMealEditor.searchController?.abort();
+        patchMealEditor.searchSeq += 1;
+        patchDialog.close();
+    }
 });
