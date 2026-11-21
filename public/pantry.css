@@ -219,7 +219,7 @@ main {
 
 /* ---------- Toolbar + location filter chips ---------- */
 .toolbar {
-    margin-top: 12px;
+    margin-top: 8px;
 }
 .toolbar-row {
     display: grid;
@@ -274,7 +274,7 @@ main {
 .tools-rail {
     display: flex;
     gap: 8px;
-    margin-top: 12px;
+    margin-top: 8px;
 }
 .rail-tool,
 .native-rail-tool {
@@ -322,7 +322,7 @@ main {
     gap: 12px;
     width: 100%;
     min-height: 56px;
-    margin-top: 10px;
+    margin-top: 6px;
     padding: 8px 0;
     border: 0;
     border-top: 1px solid var(--hairline);
@@ -720,6 +720,7 @@ button:disabled {
 /* ---------- Inventory ---------- */
 .inventory-section {
     margin-top: 4px;
+    padding-top: 10px;
 }
 .pill {
     display: inline-flex;
@@ -850,7 +851,7 @@ button:disabled {
 /* ---------- Phone ---------- */
 @media (max-width: 760px) {
     .shell {
-        padding: 12px 14px 40px;
+        padding: 8px 14px 40px;
     }
     .hero h1 {
         font-size: 27px;

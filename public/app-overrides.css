@@ -3856,7 +3856,7 @@ dialog .guided-grocery-row input[type="checkbox"] {
 }
 
 .settings-view .settings-page-head {
-    margin-bottom: 10px;
+    margin-bottom: 8px;
 }
 
 .settings-view .settings-page-head h2 {
@@ -8524,4 +8524,133 @@ dialog .auth-card {
     background: transparent;
     border-color: #8c2f22;
     color: #8c2f22;
+}
+
+/* =====================================================================
+   Tightening pass (approved 2026-11-21): hierarchy-first spacing and
+   order deltas from the tightening audit. Values mirror the approved
+   AFTER frames exactly — spacing and sticky containers only; no
+   type, color, or control-geometry changes. Placed last so these
+   scoped rules win their cascades.
+   ===================================================================== */
+
+/* Today: panels sit 8px apart; meal groups tighten up. */
+.today-view .panel {
+    margin-top: 8px;
+}
+
+.today-view .meal-groups {
+    gap: 2px;
+}
+
+.today-view .meal-group-header {
+    padding-top: 8px;
+    padding-bottom: 2px;
+}
+
+/* Composer: tighter form rhythm; Log food rides a sticky bottom bar
+   in the paper/hairline tokens the dialogs already use. */
+#meal-form {
+    gap: 12px;
+}
+
+#meal-form .composer-sticky-bar {
+    position: sticky;
+    bottom: 0;
+    background: #fffdf8;
+    border-top: 1px solid #d8cdb6;
+    padding: 10px 0 2px;
+    margin-top: 10px;
+}
+
+#meal-form .composer-sticky-bar .button {
+    width: 100%;
+}
+
+#meal-form .meal-composer-item {
+    padding: 10px 12px;
+}
+
+#meal-selected-items {
+    gap: 4px;
+}
+
+/* Draft review: the action row rides the same sticky bar. */
+.meal-draft-actions.draft-sticky-bar {
+    position: sticky;
+    bottom: 0;
+    background: #fffdf8;
+    border-top: 1px solid #d8cdb6;
+    padding: 10px 0 2px;
+}
+
+.meal-draft-review {
+    gap: 9px;
+}
+
+.meal-draft-totals {
+    padding: 8px 0;
+}
+
+/* Groceries */
+.grocery-items {
+    gap: 4px;
+}
+
+.groceries-view .panel {
+    padding-top: 4px;
+}
+
+/* Recipes */
+.recipes-view .recipe-panel {
+    padding: 6px 0 2px;
+}
+
+.recipes-view .recipe-actions {
+    margin-top: 4px;
+}
+
+.recipes-view .recipe-filter-row {
+    margin-top: 5px;
+}
+
+/* Meal Plan + Trends headings */
+.plan-view .page-heading {
+    margin-bottom: 2px;
+}
+
+.trends-view .page-heading {
+    margin-bottom: 2px;
+}
+
+/* Cooks */
+.cooks-view .panel {
+    margin-top: 8px;
+}
+
+.cook-list {
+    gap: 8px;
+}
+
+.cooks-view .cook-search-note {
+    margin-top: 6px;
+}
+
+/* Trends */
+.trends-view .trends-card {
+    padding: 12px 14px 10px;
+}
+
+.trends-pair {
+    gap: 10px;
+}
+
+/* Settings: panels start 8px down; the goal-change preview stays
+   hidden while it is empty and appears once a preview populates it. */
+.settings-main .panel {
+    padding-top: 8px;
+}
+
+#goal-change-preview:empty {
+    display: none;
 }

@@ -358,12 +358,19 @@
     box-shadow: var(--focus);
 }
 
+/* Tightening pass (2026-11-21, ruling 2): the save bar sticks to
+   the page bottom in the same paper/hairline treatment as the
+   dialog sticky bars, so Save is reachable without scrolling. */
 .settings-savebar {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    padding: 2px 0;
+    padding: 10px 0 2px;
+    position: sticky;
+    bottom: 0;
+    background: var(--paper-card);
+    border-top: 1px solid var(--ink-100);
 }
 
 .settings-save-status {

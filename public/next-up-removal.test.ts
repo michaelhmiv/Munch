@@ -32,7 +32,10 @@ test("Today has no chat entry row (the brain lives on Plan, not Today)", () => {
 test("renderToday: macros panel, then the ad slot, then the dashboard grid", () => {
     const start = source.indexOf("async function renderToday() {");
     expect(start).toBeGreaterThan(-1);
-    const render = source.slice(start, start + 6_000);
+    // Window widened 6,000 → 10,000 for the tightening pass
+    // (2026-11-21): renderToday now builds its grid panels as
+    // named consts ahead of the innerHTML assignment.
+    const render = source.slice(start, start + 10_000);
     const macrosAt = render.indexOf("todayMacrosPanel(data, goals)");
     const adAt = render.indexOf("todayAdSlotMarkup()");
     const gridAt = render.indexOf("dashboard-grid");
@@ -40,9 +43,10 @@ test("renderToday: macros panel, then the ad slot, then the dashboard grid", () 
     expect(adAt).toBeGreaterThan(macrosAt);
     expect(gridAt).toBeGreaterThan(adAt);
     // The day itself is untouched: meals, water, weight, drafts,
-    // and planned-today all still render.
+    // and planned-today all still render. (The groupedMeals call
+    // gained its empty-slot-collapse flag in the same pass.)
     for (const marker of [
-        "groupedMeals(data.meals)",
+        "groupedMeals(data.meals, true)",
         "waterMetricDetail",
         "weightMetricDetail",
         "pendingDraftCard",
