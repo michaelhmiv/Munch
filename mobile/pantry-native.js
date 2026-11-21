@@ -171,15 +171,21 @@ async function scanBarcode() {
 // pantry page actually renders). The previous injector targeted the
 // retired two-column card grid, which no longer exists in
 // pantry.html, so it silently returned and barcode scanning never
-// appeared in the packaged app. Adapted from closed PR #342 to the
-// rail's shipped .rail-tool class instead of its parallel class.
+// appeared in the packaged app. The control carries its own
+// .native-rail-tool class — pantry.css groups its styles with
+// .rail-tool so it renders identically — rather than .rail-tool
+// itself: that class is the page's own shipped tool set (the four
+// tools the placement checks enumerate), while this control is a
+// packaged-shell-only injection. (Closed PR #342's original
+// arrangement, restored after the extraction's first pass took the
+// shipped class and broke the rail enumeration.)
 function injectBarcodeTool() {
     const rail = $(".tools-rail");
     if (!rail || $("#native-barcode-scan")) return;
     const tool = document.createElement("button");
     tool.type = "button";
     tool.id = "native-barcode-scan";
-    tool.className = "rail-tool";
+    tool.className = "native-rail-tool";
     tool.setAttribute("aria-label", "Scan barcode");
     tool.title = "Scan barcode";
     tool.innerHTML =

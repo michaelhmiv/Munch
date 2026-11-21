@@ -40,6 +40,10 @@ const pantryHtml = readFileSync(
     new URL("./pantry.html", import.meta.url),
     "utf8",
 );
+const pantryCss = readFileSync(
+    new URL("./pantry.css", import.meta.url),
+    "utf8",
+);
 const runtimeSource = readFileSync(
     new URL("../mobile/runtime.js", import.meta.url),
     "utf8",
@@ -251,7 +255,24 @@ describe("pantry barcode scanner injection (mobile/pantry-native.js)", () => {
         expect(pantryNativeSource).toContain("injectBarcodeTool");
         expect(pantryNativeSource).toContain('$(".tools-rail")');
         expect(pantryNativeSource).toContain('id = "native-barcode-scan"');
-        expect(pantryNativeSource).toContain('"rail-tool"');
+        expect(pantryNativeSource).toContain('className = "native-rail-tool"');
+    });
+
+    test("the injected control is not one of the page's rail tools", () => {
+        // .rail-tool is the pantry page's own shipped tool set — the
+        // four tools the packaged placement checks enumerate by
+        // data-open-sheet / data-testid. The barcode control is a
+        // packaged-shell-only injection with neither attribute; under
+        // the shipped class it entered that enumeration as a null
+        // entry (the deterministic mobile-parity failure this pins
+        // against). It mirrors the rail styles under its own class
+        // instead — closed PR #342's original arrangement.
+        expect(pantryNativeSource).not.toContain('className = "rail-tool"');
+        expect(pantryCss).toContain(".rail-tool,\n.native-rail-tool {");
+        expect(pantryCss).toContain(
+            ".rail-tool:hover,\n.native-rail-tool:hover {",
+        );
+        expect(pantryCss).toContain(".rail-tool svg,\n.native-rail-tool svg {");
     });
 });
 

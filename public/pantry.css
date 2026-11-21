@@ -276,7 +276,8 @@ main {
     gap: 8px;
     margin-top: 12px;
 }
-.rail-tool {
+.rail-tool,
+.native-rail-tool {
     flex: 0 0 auto;
     width: 44px;
     height: 44px;
@@ -292,11 +293,13 @@ main {
     cursor: pointer;
     text-decoration: none;
 }
-.rail-tool:hover {
+.rail-tool:hover,
+.native-rail-tool:hover {
     background: var(--green-tint);
     color: var(--green-deep);
 }
-.rail-tool svg {
+.rail-tool svg,
+.native-rail-tool svg {
     width: 22px;
     height: 22px;
     display: block;
