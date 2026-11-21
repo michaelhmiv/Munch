@@ -1,6 +1,7 @@
 import { decodeEscapeSequences } from "../normalize.js";
 import { escapeLikePattern, tokenizeQuery } from "../search.js";
 import { withUserDatabase } from "../platform/database.js";
+import { reverseMealDrawdownInTransaction } from "../inventory/reversal.js";
 import { dateInTz, zonedDayStartUtc, zonedNextDayStartUtc } from "../tz.js";
 import { toStoredInteger } from "../units.js";
 import {
@@ -315,11 +316,14 @@ export async function searchMeals(
 
 export async function deleteMeal(userId: string, id: string): Promise<void> {
     await withUserDatabase(userId, async (tx) => {
-        await tx`
+        const deleted = await tx<Array<{ id: string }>>`
             delete from munch.meals
             where id = ${id}
               and user_id = ${userId}
+            returning id
         `;
+        if (!deleted[0]) return;
+        await reverseMealDrawdownInTransaction(tx, userId, id);
     });
 }
 

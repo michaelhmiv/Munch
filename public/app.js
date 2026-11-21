@@ -291,7 +291,8 @@ function escapeHtml(value) {
         .replaceAll("'", "&#39;");
 }
 
-function dateInTimezone(timeZone) {
+function dateInTimezone(timeZone, instant = new Date()) {
+    const value = instant instanceof Date ? instant : new Date(instant);
     const formatter = new Intl.DateTimeFormat("en-CA", {
         timeZone: timeZone || "UTC",
         year: "numeric",
@@ -300,7 +301,7 @@ function dateInTimezone(timeZone) {
     });
     const parts = Object.fromEntries(
         formatter
-            .formatToParts(new Date())
+            .formatToParts(value)
             .filter((part) => part.type !== "literal")
             .map((part) => [part.type, part.value]),
     );
@@ -641,7 +642,29 @@ function mealDisplayName(meal) {
 // contribution, so the aggregate visibly adds up. Multi-day ranges
 // group by day — a per-meal list for a 90-day total would bury the
 // math it exists to show.
-function mealMetricDetail(meals, field, unit, { groupByDay = false } = {}) {
+// The local calendar day a meal belongs to, for grouping History
+// breakdowns: the server-supplied loggedOn (profile timezone) when
+// present, else the logged_at instant converted into the workspace /
+// profile timezone — never the raw UTC date slice.
+function mealLocalDay(meal, timezone) {
+    if (meal?.loggedOn && /^\d{4}-\d{2}-\d{2}$/.test(meal.loggedOn)) {
+        return meal.loggedOn;
+    }
+    if (!meal?.logged_at) return "";
+    const tz = timezone || state.bootstrap?.profile?.timezone || "UTC";
+    try {
+        return dateInTimezone(tz, meal.logged_at);
+    } catch {
+        return String(meal.logged_at).slice(0, 10);
+    }
+}
+
+function mealMetricDetail(
+    meals,
+    field,
+    unit,
+    { groupByDay = false, timezone } = {},
+) {
     const list = meals || [];
     if (!list.length)
         return `<p class="metric-detail-empty">No meals logged for this period.</p>`;
@@ -652,7 +675,7 @@ function mealMetricDetail(meals, field, unit, { groupByDay = false } = {}) {
     if (groupByDay) {
         const byDay = new Map();
         for (const meal of list) {
-            const day = String(meal.logged_at || "").slice(0, 10);
+            const day = mealLocalDay(meal, timezone);
             byDay.set(day, (byDay.get(day) || 0) + (meal[field] || 0));
             total += meal[field] || 0;
         }
@@ -1840,7 +1863,7 @@ async function renderLog() {
     const resultText = query
         ? `${number(data.meals.length)} matching meal${data.meals.length === 1 ? "" : "s"} from ${escapeHtml(formatDate(start))} through ${escapeHtml(formatDate(state.date))}.`
         : `Review meals, item-level provenance, notes, and totals from ${escapeHtml(formatDate(start))} through ${escapeHtml(formatDate(state.date))}.`;
-    content.innerHTML = `<div class="operate-view log-view"><div class="page-heading"><div><h2>${escapeHtml(heading)}</h2><p>${resultText}</p></div><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="manage-saved-foods">Saved foods</button><button class="button button-secondary button-small" data-action="date-prev">Previous</button><button class="button button-secondary button-small" data-action="date-today">Today</button><button class="button button-secondary button-small" data-action="date-next">Next</button></div></div><section class="panel"><form id="meal-history-search-form" class="meal-composer-search-row"><label class="field" style="flex:1"><span>Search meal history</span><input class="input" id="meal-history-search" name="query" type="search" value="${escapeHtml(query)}" placeholder="Search chicken, peanut butter, restaurant…" autocomplete="off" /></label><div class="auth-actions"><button class="button button-primary button-small" type="submit">Search</button>${query ? '<button class="button button-quiet button-small" type="button" data-action="clear-meal-search">Clear</button>' : ""}</div></form><div class="auth-actions spacer-top log-range-row" role="group" aria-label="History range">${rangeButtons}</div></section><section class="panel spacer-top"><div class="summary-grid">${metricCard("Calories", data.totals.calories, " kcal", null, true, { key: "log-calories", body: mealMetricDetail(data.meals, "calories", " kcal", { groupByDay: historyDays > 1 }) })}${metricCard("Protein", data.totals.proteinG, "g", null, false, { key: "log-protein", body: mealMetricDetail(data.meals, "protein_g", "g", { groupByDay: historyDays > 1 }) })}${metricCard("Carbohydrates", data.totals.carbsG, "g", null, false, { key: "log-carbs", body: mealMetricDetail(data.meals, "carbs_g", "g", { groupByDay: historyDays > 1 }) })}${metricCard("Fat", data.totals.fatG, "g", null, false, { key: "log-fat", body: mealMetricDetail(data.meals, "fat_g", "g", { groupByDay: historyDays > 1 }) })}</div></section>${mealSearchSummary(data.search)}<div class="spacer-top">${data.meals.length ? groupedMeals(data.meals) : `<div class="empty-state"><div><h3>${query ? "No matching meals" : "No meals logged"}</h3><p>${query ? "Try another keyword or expand the date range." : "Log a meal to build your history."}</p></div></div>`}</div></div>`;
+    content.innerHTML = `<div class="operate-view log-view"><div class="page-heading"><div><h2>${escapeHtml(heading)}</h2><p>${resultText}</p></div><div class="auth-actions"><button class="button button-secondary button-small" type="button" data-action="manage-saved-foods">Saved foods</button><button class="button button-secondary button-small" data-action="date-prev">Previous</button><button class="button button-secondary button-small" data-action="date-today">Today</button><button class="button button-secondary button-small" data-action="date-next">Next</button></div></div><section class="panel"><form id="meal-history-search-form" class="meal-composer-search-row"><label class="field" style="flex:1"><span>Search meal history</span><input class="input" id="meal-history-search" name="query" type="search" value="${escapeHtml(query)}" placeholder="Search chicken, peanut butter, restaurant…" autocomplete="off" /></label><div class="auth-actions"><button class="button button-primary button-small" type="submit">Search</button>${query ? '<button class="button button-quiet button-small" type="button" data-action="clear-meal-search">Clear</button>' : ""}</div></form><div class="auth-actions spacer-top log-range-row" role="group" aria-label="History range">${rangeButtons}</div></section><section class="panel spacer-top"><div class="summary-grid">${metricCard("Calories", data.totals.calories, " kcal", null, true, { key: "log-calories", body: mealMetricDetail(data.meals, "calories", " kcal", { groupByDay: historyDays > 1, timezone: data.timezone }) })}${metricCard("Protein", data.totals.proteinG, "g", null, false, { key: "log-protein", body: mealMetricDetail(data.meals, "protein_g", "g", { groupByDay: historyDays > 1, timezone: data.timezone }) })}${metricCard("Carbohydrates", data.totals.carbsG, "g", null, false, { key: "log-carbs", body: mealMetricDetail(data.meals, "carbs_g", "g", { groupByDay: historyDays > 1, timezone: data.timezone }) })}${metricCard("Fat", data.totals.fatG, "g", null, false, { key: "log-fat", body: mealMetricDetail(data.meals, "fat_g", "g", { groupByDay: historyDays > 1, timezone: data.timezone }) })}</div></section>${mealSearchSummary(data.search)}<div class="spacer-top">${data.meals.length ? groupedMeals(data.meals) : `<div class="empty-state"><div><h3>${query ? "No matching meals" : "No meals logged"}</h3><p>${query ? "Try another keyword or expand the date range." : "Log a meal to build your history."}</p></div></div>`}</div></div>`;
 }
 
 function savedFoodListMarkup(foods) {

@@ -23,6 +23,7 @@
 import { z } from "zod";
 import type { MealInput, MealInsertResult } from "./storage.js";
 import { dateInTz, zonedHourUtc, zonedWallClockToUtc } from "./tz.js";
+import { defaultMealType } from "./meal-slot.js";
 import { decodeEscapeSequences } from "./normalize.js";
 import { toStoredInteger } from "./units.js";
 
@@ -527,27 +528,10 @@ export function normalizeMealType(raw: string | undefined): MealType | null {
     return "snack";
 }
 
-/** Local hour as a fraction (13.5 = 13:30) for the inference cutoffs. */
-function localHourFraction(iso: string, tz: string): number {
-    const parts = new Intl.DateTimeFormat("en-US", {
-        timeZone: tz,
-        hour12: false,
-        hour: "2-digit",
-        minute: "2-digit",
-    }).formatToParts(new Date(iso));
-    const get = (t: string) => Number(parts.find((p) => p.type === t)!.value);
-    const h = get("hour") === 24 ? 0 : get("hour");
-    return h + get("minute") / 60;
-}
-
-/** Infer a meal slot from local time. Always reported as inferred, never
- *  presented as if the source file said it. */
+/** Infer a meal slot from local time using the shared meal-slot bands.
+ *  Always reported as inferred, never presented as if the source file said it. */
 export function inferMealType(iso: string, tz: string): MealType {
-    const h = localHourFraction(iso, tz);
-    if (h < 10.5) return "breakfast";
-    if (h < 15) return "lunch";
-    if (h < 21.5) return "dinner";
-    return "snack";
+    return defaultMealType(new Date(iso), tz);
 }
 
 // ---------- Description ----------

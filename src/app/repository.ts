@@ -813,12 +813,16 @@ export async function getMealHistoryWorkspace(
               typicalFatG: variation.typicalFatG,
           }))
         : [];
+    const attached = await attachItems(userId, meals);
     return {
         startDate,
         endDate,
         timezone,
         totals: sumNutrition(meals),
-        meals: await attachItems(userId, meals),
+        meals: attached.map((meal) => ({
+            ...meal,
+            loggedOn: dateInTz(meal.logged_at, timezone),
+        })),
         search: query
             ? {
                   query,

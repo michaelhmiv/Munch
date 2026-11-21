@@ -45,7 +45,7 @@ function numberFromRow(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null;
 }
 
-async function recomputeParentTotals(
+export async function recomputeParentTotals(
     tx: DatabaseTransaction,
     userId: string,
     mealId: string,
@@ -56,9 +56,9 @@ async function recomputeParentTotals(
             coalesce(sum(protein_g), 0)::numeric as protein_g,
             coalesce(sum(carbs_g), 0)::numeric as carbs_g,
             coalesce(sum(fat_g), 0)::numeric as fat_g,
-            coalesce(sum(fiber_g), 0)::numeric as fiber_g,
-            coalesce(sum(sugar_g), 0)::numeric as sugar_g,
-            coalesce(sum(alcohol_g), 0)::numeric as alcohol_g
+            sum(fiber_g)::numeric as fiber_g,
+            sum(sugar_g)::numeric as sugar_g,
+            sum(alcohol_g)::numeric as alcohol_g
         from munch.meal_items
         where user_id = ${userId}
           and meal_id = ${mealId}
@@ -70,9 +70,9 @@ async function recomputeParentTotals(
             protein_g = ${Number(totals.protein_g ?? 0)},
             carbs_g = ${Number(totals.carbs_g ?? 0)},
             fat_g = ${Number(totals.fat_g ?? 0)},
-            fiber_g = ${Number(totals.fiber_g ?? 0)},
-            sugar_g = ${Number(totals.sugar_g ?? 0)},
-            alcohol_g = ${Number(totals.alcohol_g ?? 0)}
+            fiber_g = ${numberFromRow(totals.fiber_g)},
+            sugar_g = ${numberFromRow(totals.sugar_g)},
+            alcohol_g = ${numberFromRow(totals.alcohol_g)}
         where id = ${mealId}
           and user_id = ${userId}
     `;
