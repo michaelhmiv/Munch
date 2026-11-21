@@ -5,6 +5,7 @@ import {
     describe,
     expect,
     mock,
+    setSystemTime,
     test,
 } from "bun:test";
 import { Hono } from "hono";
@@ -14,6 +15,10 @@ import * as actualOverride from "./override.js";
 import * as actualBillingRepo from "./repository.js";
 import * as actualStoreRepo from "./store-repository.js";
 
+// Fixed fixture dates, with the wall clock frozen at `now` (between pastDate
+// and futureDate) in beforeEach — several production paths under test read
+// `new Date()` directly instead of taking an injected `now`, so without the
+// freeze these tests would only pass inside the pastDate–futureDate window.
 const now = new Date("2026-11-20T12:00:00.000Z");
 const pastDate = new Date("2026-11-19T12:00:00.000Z");
 const futureDate = new Date("2026-12-20T12:00:00.000Z");
@@ -118,6 +123,7 @@ afterAll(() => {
 });
 
 beforeEach(() => {
+    setSystemTime(new Date(now));
     state.sessionUser = null;
     state.stripeByUser.clear();
     state.storeByUser.clear();
@@ -128,6 +134,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    setSystemTime();
     for (const key of Object.keys(process.env)) {
         if (!(key in originalEnv)) delete process.env[key];
     }
