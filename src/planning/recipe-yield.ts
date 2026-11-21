@@ -4,13 +4,12 @@
  *
  * A recipe revision may carry a SET total yield per measure family —
  * one volume slot ("12 cups") and one weight slot ("1,800 g"). When a
- * slot is unset, Amount-mode logging falls back to the deterministic
- * ingredient-sum ESTIMATE computed here. The estimate is a pure
- * function of the revision's ingredients, always labeled "estimated"
- * wherever it surfaces, and stored on every log's yield snapshot with
- * its provenance — it is never presented as measured. The estimator
- * lives behind this module boundary so the Jev yield seat (A2b) can
- * replace the anchor computation later without touching callers.
+ * slot is unset, Amount-mode logging falls back to the revision's
+ * stored A2b yield estimate (seat Jev) when one exists, and only then
+ * to the deterministic ingredient-sum ESTIMATE computed here. An
+ * estimate is always labeled "estimated" wherever it surfaces, and
+ * stored on every log's yield snapshot with its provenance — it is
+ * never presented as measured.
  *
  * Every recipe-log surface (recipe detail form, log-as-planned,
  * active-cook completion, MCP log_recipe) resolves its portion
@@ -19,6 +18,7 @@
  */
 import { formatRecipeQuantity } from "../quantity-format.js";
 import { normalizePortionUnit } from "../food-providers/portions.js";
+import type { RecipeYieldEstimate } from "../recipe-nutrition-resolution.js";
 
 export type YieldFamily = "volume" | "weight";
 
@@ -220,15 +220,46 @@ export function estimateRecipeYield(
 }
 
 /**
- * The yield a log is figured from, per family: the stored (set) yield
- * when the recipe carries one, otherwise the ingredient estimate.
- * The `source` rides along so every surface can label honestly.
+ * The yield a log is figured from, per family, in precedence order:
+ * the stored (set) yield when the recipe carries one; otherwise the
+ * stored A2b yield estimate (seat Jev's anchor + adjustment, or a
+ * user correction of it); otherwise the deterministic ingredient-sum
+ * estimate. The `source` rides along so every surface can label
+ * honestly: a model estimate surfaces as "estimated", while a user
+ * correction of the estimate is a user-set yield and surfaces as
+ * "set" — it must never wear the "(estimated)" label.
  */
 export function effectiveRecipeYields(
     stored: RecipeYieldSlots,
     ingredients: readonly YieldEstimateIngredient[],
+    storedEstimate?: RecipeYieldEstimate | null,
 ): EffectiveRecipeYields {
     const estimates = estimateRecipeYield(ingredients);
+    const fromStoredEstimate = (family: YieldFamily): EffectiveYield | null => {
+        if (!storedEstimate) return null;
+        const source = storedEstimate.source === "user" ? "set" : "estimated";
+        if (family === "weight") {
+            const grams = storedEstimate.weight_g;
+            if (grams == null || !Number.isFinite(grams) || grams <= 0) {
+                return null;
+            }
+            return { quantity: Math.round(grams), unit: "g", family, source };
+        }
+        const ml = storedEstimate.volume_ml;
+        if (ml == null || !Number.isFinite(ml) || ml <= 0) {
+            return null;
+        }
+        return {
+            // Expressed in cups like the ingredient-sum estimate, but
+            // NOT quarter-cup snapped: the stored figure is a
+            // deliberate adjusted value and snapping would distort
+            // it. Two decimals keeps the recorded snapshot exact.
+            quantity: Number((ml / ML_PER_UNIT.cup!).toFixed(2)),
+            unit: "cup",
+            family,
+            source,
+        };
+    };
     const pick = (
         family: YieldFamily,
         set: RecipeYield | null,
@@ -242,6 +273,8 @@ export function effectiveRecipeYields(
                 source: "set",
             };
         }
+        const storedYield = fromStoredEstimate(family);
+        if (storedYield) return storedYield;
         if (estimated) {
             return {
                 quantity: estimated.quantity,
@@ -307,6 +340,8 @@ export interface RecipePortionContext {
     servings: number;
     yields: RecipeYieldSlots;
     ingredients: readonly YieldEstimateIngredient[];
+    /** The revision's stored A2b yield estimate, when one exists. */
+    yieldEstimate?: RecipeYieldEstimate | null;
 }
 
 function trimDecimal(value: number): string {
@@ -534,6 +569,7 @@ export function resolveRecipePortion(
     const effective = effectiveRecipeYields(
         context.yields,
         context.ingredients,
+        context.yieldEstimate,
     );
     const familyYield = effective[family];
     if (!familyYield) {

@@ -749,6 +749,59 @@ function lowImpactEstimate(
     };
 }
 
+/**
+ * Whether an ingredient's submitted nutrients may NOT be preserved
+ * as verified, because the snapshot proves they were never priced
+ * for the submitted quantity by a gated path:
+ *
+ * - URL-import nutrients (snapshot layer `recipe_url`) were computed
+ *   by the importer's own portion scaling, which historically
+ *   bypassed the portion sanity gate below. Until the save resolver
+ *   has re-examined the ingredient — its trace is the
+ *   `automatic_nutrition` block — preservation would bake the
+ *   importer's numbers in unchecked. Self-limiting: the first
+ *   re-resolution stamps the trace, later saves preserve.
+ * - A picked ingredient whose quantity moved off the snapshot's
+ *   `selected_quantity` while its nutrients are still exactly the
+ *   snapshot's `nutrition_snapshot` was never rescaled (the pre-fix
+ *   in-place detail editor saved exactly this shape): the nutrients
+ *   price the OLD quantity. Hand-edited nutrients differ from the
+ *   snapshot and still preserve — a deliberate edit is user data.
+ */
+function preservationIsUnsafe(
+    ingredient: RecipeNutritionIngredientPayload,
+): boolean {
+    const snapshot = ingredient.source_snapshot;
+    if (!snapshot || typeof snapshot !== "object") return false;
+    if (
+        snapshot.resolution_layer === "recipe_url" &&
+        !snapshot.automatic_nutrition
+    ) {
+        return true;
+    }
+    const base = snapshot.nutrition_snapshot;
+    if (!base || typeof base !== "object") return false;
+    if (!hasCoreNutrition(base as RecipeNutrientFacts)) return false;
+    const selectedQuantity = Number(snapshot.selected_quantity);
+    if (!Number.isFinite(selectedQuantity) || selectedQuantity <= 0) {
+        return false;
+    }
+    const quantity = ingredient.quantity;
+    if (
+        typeof quantity !== "number" ||
+        !Number.isFinite(quantity) ||
+        quantity <= 0 ||
+        quantity === selectedQuantity
+    ) {
+        return false;
+    }
+    const nutrients = ingredient.nutrients;
+    if (!nutrients) return false;
+    return CORE_NUTRIENTS.every(
+        (key) => nutrients[key] === (base as RecipeNutrientFacts)[key],
+    );
+}
+
 async function resolveIngredient(
     ingredient: RecipeNutritionIngredientPayload,
     foodSearch: Pick<FoodSearchService, "search">,
@@ -762,7 +815,21 @@ async function resolveIngredient(
         | "provider_error";
 }> {
     if (hasCoreNutrition(ingredient.nutrients)) {
-        return { ingredient, kind: "preserved" };
+        if (!preservationIsUnsafe(ingredient)) {
+            return { ingredient, kind: "preserved" };
+        }
+        // Preservation is unsafe: strip the nutrients — and the gram
+        // weight, which prices the same stale quantity through the
+        // per-100 g branch of resolvePortion — and let the gated
+        // provider path below re-price the ingredient from its
+        // quantity/unit. If it cannot, the ingredient saves
+        // unresolved and the heal path is the retry, the same
+        // contract provider-error saves already have.
+        ingredient = {
+            ...ingredient,
+            nutrients: undefined,
+            gram_weight: undefined,
+        };
     }
     if (
         ingredient.quantity === undefined &&

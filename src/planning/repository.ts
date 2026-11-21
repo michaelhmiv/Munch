@@ -725,6 +725,7 @@ export async function getRecipe(
             effective_yields: effectiveRecipeYields(
                 storedYields,
                 mappedIngredients,
+                (recipe.yield_estimate as RecipeYieldEstimate | null) ?? null,
             ),
             description:
                 recipe.description == null ? null : String(recipe.description),
@@ -1409,6 +1410,7 @@ export async function logRecipe(input: {
             servings: recipe.servings,
             yields: recipe.yields,
             ingredients: recipe.ingredients,
+            yieldEstimate: recipe.yield_estimate,
         },
         portionSpec,
     );
