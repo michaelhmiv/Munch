@@ -2494,6 +2494,9 @@ export {
     isOffline,
     requestJson,
     resolveMunchApiUrl,
+    SESSION_EXPIRED_PRESERVED_MESSAGE,
+    setBeforeAuthenticationRequired,
+    triggerAuthenticationRequired,
 } from "./app-api.js";
 window.MunchAds = Object.freeze({
     setBannerVisible: async (options) => {

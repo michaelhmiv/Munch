@@ -13,9 +13,13 @@ import {
     isConnectivityError,
     isOffline,
     LINK_PROMPT_NATIVE_HEADER,
+    notifyAuthenticationRequired,
     requestJson,
     resolveMunchApiUrl,
+    SESSION_EXPIRED_PRESERVED_MESSAGE,
+    setBeforeAuthenticationRequired,
     setMunchPlatformAdapter,
+    triggerAuthenticationRequired,
 } from "../public/app-api.js";
 import {
     installedAppRoute,
@@ -202,8 +206,12 @@ export {
     isConnectivityError,
     isOffline,
     LINK_PROMPT_NATIVE_HEADER,
+    notifyAuthenticationRequired,
     requestJson,
     resolveMunchApiUrl,
+    SESSION_EXPIRED_PRESERVED_MESSAGE,
+    setBeforeAuthenticationRequired,
+    triggerAuthenticationRequired,
 };
 
 export async function hasStoredSession() {
@@ -618,7 +626,11 @@ async function validateForegroundSession() {
     if (location.pathname === LOGIN_PATH) return;
     const token = await storedToken();
     if (!token) {
-        moveToLogin(currentInstalledAppRoute());
+        await notifyAuthenticationRequired({
+            reason: "missing_token",
+            path: "/api/auth/get-session",
+            method: "GET",
+        });
         return;
     }
 
@@ -645,9 +657,11 @@ async function validateForegroundSession() {
             ? await response.json().catch(() => null)
             : null;
         if (!response.ok || !session?.session || !session?.user) {
-            const returnTo = currentInstalledAppRoute();
-            await clearStoredToken();
-            moveToLogin(returnTo);
+            await notifyAuthenticationRequired({
+                reason: "unauthorized",
+                path: "/api/auth/get-session",
+                method: "GET",
+            });
             return;
         }
         const refreshedToken = response.headers.get("set-auth-token");
