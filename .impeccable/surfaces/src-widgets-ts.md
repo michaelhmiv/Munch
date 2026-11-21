@@ -33,7 +33,7 @@ Measured at the 640px design width; heights are the rendered card's CSS px. Thes
 
 **Row limit + compact rows:** at most 5 label rows or list rows inline. Lists longer than 6 items render compact rows in both modes — one line per item (name left, primary value right-aligned, source reduced to a marker; full source lives in fullscreen). Lists longer than 12 items show the first 5 inline plus a "…and N more" row that opens fullscreen.
 
-**Sticky action bar:** on every write surface the primary action (Log meal / Save recipe / Import) and its secondary (Adjust / Cancel) are pinned to the card's bottom edge in both modes; the confirm copy ("Nothing is saved until you tap…") lives inside the bar zone and can never scroll away from the button it describes.
+**Sticky action bar:** on every write surface the primary action (Log food / Save recipe / Import) and its secondary (Adjust / Cancel) are pinned to the card's bottom edge in both modes; the confirm copy ("Nothing is saved until you tap…") lives inside the bar zone and can never scroll away from the button it describes.
 
 **Per-widget conformance:**
 

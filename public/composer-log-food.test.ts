@@ -7,6 +7,8 @@ import * as cheerio from "cheerio";
 // 1. The "Log meal" family reads "Log food" — composer submit,
 //    openRecipeLog, openPlannedLog, and photo review's two
 //    "Confirm and log meal" buttons. editMeal's "Save meal" stays.
+//    The MCP meal-review widget button joined the family by
+//    Michael's follow-up ruling later on 2026-11-21.
 // 2. The Selected foods list renders newest first (the items array
 //    itself stays in add order — only the display flips, so sync,
 //    payload order, and draft persistence are untouched).
@@ -334,6 +336,19 @@ describe('"Log meal" family renamed to "Log food"', () => {
     test("no Log meal / Confirm and log meal labels remain in app.js", () => {
         expect(source).not.toContain("Log meal");
         expect(source).not.toContain("Confirm and log meal");
+    });
+
+    test("the MCP meal-review widget button reads Log food", () => {
+        const widget = readFileSync(
+            new URL(
+                "./widgets/src/templates/meal-review.html",
+                import.meta.url,
+            ),
+            "utf8",
+        );
+        expect(widget).not.toContain("Log meal");
+        expect(widget).toContain(">Log food</button>");
+        expect(widget).toContain("Nothing is saved until you tap Log food.");
     });
 
     test("the three Log food submits and two Confirm and log food buttons exist", () => {
