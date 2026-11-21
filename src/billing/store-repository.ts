@@ -273,3 +273,59 @@ export async function markStoreBillingEventProcessed(input: {
         `;
     });
 }
+
+export interface OverdueGooglePlaySubscriptionRow {
+    userId: string;
+    appId: string;
+    purchaseToken: string;
+}
+
+export async function listOverdueActiveGooglePlaySubscriptions(input: {
+    periodEndedBefore: Date;
+    updatedBefore: Date;
+    limit?: number;
+}): Promise<OverdueGooglePlaySubscriptionRow[]> {
+    const limit = input.limit ?? 50;
+    return withBillingDatabase(async (tx) => {
+        const rows = await tx<
+            Array<{ user_id: string; app_id: string; purchase_token: string }>
+        >`
+            select user_id, app_id, purchase_token
+            from munch.store_subscriptions
+            where provider = 'google_play'
+              and status in ('active', 'trialing')
+              and current_period_end is not null
+              and current_period_end <= ${input.periodEndedBefore}
+              and updated_at <= ${input.updatedBefore}
+            order by current_period_end asc
+            limit ${limit}
+        `;
+        return rows.map((row) => ({
+            userId: row.user_id,
+            appId: row.app_id,
+            purchaseToken: row.purchase_token,
+        }));
+    });
+}
+
+export async function markStoreSubscriptionCanceled(input: {
+    provider: StoreBillingProvider;
+    appId: string;
+    purchaseToken: string;
+    canceledAt: Date;
+    verifiedAt: Date;
+}): Promise<void> {
+    await withBillingDatabase(async (tx) => {
+        await tx`
+            update munch.store_subscriptions
+            set status = 'canceled'::munch.subscription_status,
+                canceled_at = coalesce(canceled_at, ${input.canceledAt}),
+                grace_expires_at = null,
+                verified_at = ${input.verifiedAt},
+                updated_at = now()
+            where provider = ${input.provider}::munch.store_billing_provider
+              and app_id = ${input.appId}
+              and purchase_token = ${input.purchaseToken}
+        `;
+    });
+}

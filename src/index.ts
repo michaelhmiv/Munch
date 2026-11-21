@@ -6,6 +6,7 @@ import { createProvenanceRouter } from "./app/provenance-routes.js";
 import { createAppRouter } from "./app/routes.js";
 import { createGuidanceRouter } from "./app/guidance-routes.js";
 import { registerBetterAuthRoutes } from "./auth/routes.js";
+import { startSubscriptionReconciliation } from "./billing/reconcile.js";
 import { createBillingRouter } from "./billing/routes.js";
 import { registerDiscoveryRoutes } from "./discovery.js";
 import { startExportCleanup } from "./export.js";
@@ -372,6 +373,7 @@ console.log(
 );
 await warmWidgets();
 startExportCleanup();
+startSubscriptionReconciliation();
 
 let shuttingDown = false;
 function shutdown(signal: string): void {

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { createAccountExportRouter } from "../account-export-routes.js";
 import { decideEntitlement } from "../billing/entitlements.js";
-import { getSubscriptionSnapshot } from "../billing/repository.js";
+import { getDirectSubscriptionSnapshot } from "../billing/subscription-sources.js";
 import { createHouseholdLifecycleRouter } from "../households/lifecycle-routes.js";
 import { createHouseholdRouter } from "../households/routes.js";
 import { createAccountLifecycleRouter } from "./lifecycle-routes.js";
@@ -32,7 +32,7 @@ export function createAccountRouter(): Hono {
 
     account.get("/account", requireWebSession, async (c) => {
         const userId = c.get("munchUserId");
-        const subscription = await getSubscriptionSnapshot(userId);
+        const subscription = await getDirectSubscriptionSnapshot(userId);
         const entitlement = decideEntitlement(subscription);
 
         return c.json({

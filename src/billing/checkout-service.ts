@@ -1,11 +1,9 @@
 import { safeLocalRedirectPath } from "../accounts/redirect.js";
 import { getPlatformConfig } from "../platform/config.js";
 import { getBillableAccount } from "./account-query.js";
-import type { SubscriptionStatus } from "./entitlements.js";
 import {
     deleteStripeCustomerIfMatches,
     upsertStripeCustomer,
-    upsertSubscription,
 } from "./repository.js";
 import {
     createStripeCheckoutSession,
@@ -18,29 +16,7 @@ import {
     type StripePrice,
     type StripeSubscription,
 } from "./stripe-client.js";
-
-function stripeSubscriptionStatus(value: string): SubscriptionStatus {
-    const allowed: SubscriptionStatus[] = [
-        "incomplete",
-        "incomplete_expired",
-        "trialing",
-        "active",
-        "past_due",
-        "canceled",
-        "unpaid",
-        "paused",
-    ];
-    if (!allowed.includes(value as SubscriptionStatus)) {
-        throw new Error("Unsupported Stripe subscription status");
-    }
-    return value as SubscriptionStatus;
-}
-
-function optionalDate(timestamp: number | null | undefined): Date | null {
-    return typeof timestamp === "number" && Number.isFinite(timestamp)
-        ? new Date(timestamp * 1000)
-        : null;
-}
+import { persistStripeSubscription } from "./stripe-persistence.js";
 
 export function assertUsableSubscriptionPrice(price: StripePrice): void {
     if (!price.active) {
@@ -68,31 +44,14 @@ export function shouldRetryCheckoutWithoutStoredCustomer(
     );
 }
 
-async function persistStripeSubscription(
+async function persistVerifiedStripeSubscription(
     userId: string,
     subscription: StripeSubscription,
 ): Promise<void> {
     if (subscription.metadata?.munch_user_id !== userId) {
         throw new Error("Stripe subscription does not belong to this account");
     }
-
-    const status = stripeSubscriptionStatus(subscription.status);
-    await upsertStripeCustomer(userId, subscription.customer);
-    await upsertSubscription({
-        userId,
-        stripeSubscriptionId: subscription.id,
-        stripePriceId: subscription.items?.data?.[0]?.price?.id ?? null,
-        status,
-        currentPeriodStart: optionalDate(subscription.current_period_start),
-        currentPeriodEnd: optionalDate(subscription.current_period_end),
-        trialEnd: optionalDate(subscription.trial_end),
-        cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
-        canceledAt: optionalDate(subscription.canceled_at),
-        graceExpiresAt:
-            status === "past_due"
-                ? new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
-                : null,
-    });
+    await persistStripeSubscription({ userId, subscription });
 }
 
 export async function createCheckoutForUser(input: {
@@ -187,7 +146,7 @@ export async function verifyCheckoutForUser(
         await upsertStripeCustomer(userId, checkout.customer);
     }
     if (checkout.subscription) {
-        await persistStripeSubscription(
+        await persistVerifiedStripeSubscription(
             userId,
             await retrieveStripeSubscription(checkout.subscription),
         );

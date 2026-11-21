@@ -274,3 +274,52 @@ export async function getSubscriptionSnapshot(
           }
         : { status: null };
 }
+
+export interface OverdueStripeSubscriptionRow {
+    userId: string;
+    stripeSubscriptionId: string;
+}
+
+export async function listOverdueActiveStripeSubscriptions(input: {
+    periodEndedBefore: Date;
+    updatedBefore: Date;
+    limit?: number;
+}): Promise<OverdueStripeSubscriptionRow[]> {
+    const limit = input.limit ?? 50;
+    return withBillingDatabase(async (tx) => {
+        const rows = await tx<
+            Array<{ user_id: string; stripe_subscription_id: string }>
+        >`
+            select user_id, stripe_subscription_id
+            from munch.subscriptions
+            where status in ('active', 'trialing')
+              and current_period_end is not null
+              and current_period_end <= ${input.periodEndedBefore}
+              and updated_at <= ${input.updatedBefore}
+            order by current_period_end asc
+            limit ${limit}
+        `;
+        return rows.map((row) => ({
+            userId: row.user_id,
+            stripeSubscriptionId: row.stripe_subscription_id,
+        }));
+    });
+}
+
+export async function markStripeSubscriptionCanceled(input: {
+    userId: string;
+    stripeSubscriptionId: string;
+    canceledAt: Date;
+}): Promise<void> {
+    await withBillingDatabase(async (tx) => {
+        await tx`
+            update munch.subscriptions
+            set status = 'canceled'::munch.subscription_status,
+                canceled_at = coalesce(canceled_at, ${input.canceledAt}),
+                grace_expires_at = null,
+                updated_at = now()
+            where user_id = ${input.userId}
+              and stripe_subscription_id = ${input.stripeSubscriptionId}
+        `;
+    });
+}

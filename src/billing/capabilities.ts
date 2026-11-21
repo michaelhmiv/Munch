@@ -1,6 +1,9 @@
 import { getActiveHouseholdContext } from "../households/repository.js";
 import { PRODUCT_CONFIG } from "../product-config.js";
-import type { SubscriptionSnapshot } from "./entitlements.js";
+import {
+    subscriptionPeriodIsCurrent,
+    type SubscriptionSnapshot,
+} from "./entitlements.js";
 import { getHouseholdSeatCoverage } from "./household-seats.js";
 import { hasActivePremiumOverride } from "./override.js";
 import { getDirectSubscriptionSnapshot } from "./subscription-sources.js";
@@ -56,7 +59,7 @@ export function subscriptionProvidesPremium(
         subscription.status === "active" ||
         subscription.status === "trialing"
     ) {
-        return true;
+        return subscriptionPeriodIsCurrent(subscription.currentPeriodEnd, now);
     }
     return Boolean(
         subscription.status === "past_due" &&

@@ -3,6 +3,7 @@ import {
     androidFreeBaselineCapabilities,
     capabilitiesFromSubscription,
     failClosedMunchCapabilities,
+    subscriptionProvidesPremium,
 } from "./capabilities.js";
 
 const now = new Date("2026-08-04T17:00:00.000Z");
@@ -120,6 +121,51 @@ describe("Munch capability resolution", () => {
             expect(result.coreNutrition).toBe(true);
             expect(result.tier).toBe("free");
         }
+    });
+
+    test("subscriptionProvidesPremium stops at currentPeriodEnd", () => {
+        const pastEnd = new Date("2026-08-03T17:00:00.000Z");
+        expect(
+            subscriptionProvidesPremium(
+                { status: "active", currentPeriodEnd: pastEnd },
+                now,
+            ),
+        ).toBe(false);
+        expect(
+            subscriptionProvidesPremium(
+                { status: "trialing", currentPeriodEnd: pastEnd },
+                now,
+            ),
+        ).toBe(false);
+        // Exact boundary: a period ending right now is no longer current.
+        expect(
+            subscriptionProvidesPremium(
+                { status: "active", currentPeriodEnd: now },
+                now,
+            ),
+        ).toBe(false);
+        // Unexpired and null period ends still provide Premium.
+        expect(
+            subscriptionProvidesPremium(
+                {
+                    status: "active",
+                    currentPeriodEnd: new Date("2026-08-05T17:00:00.000Z"),
+                },
+                now,
+            ),
+        ).toBe(true);
+        expect(
+            subscriptionProvidesPremium(
+                { status: "trialing", currentPeriodEnd: null },
+                now,
+            ),
+        ).toBe(true);
+        expect(
+            capabilitiesFromSubscription(
+                { status: "active", currentPeriodEnd: pastEnd },
+                now,
+            ).tier,
+        ).toBe("free");
     });
 
     test("fails closed to the fully featured free floor when capability lookup is unavailable", () => {

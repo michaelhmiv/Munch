@@ -9,13 +9,16 @@ import {
     reserveHouseholdSeatRelease,
 } from "../households/repository.js";
 import { dissolveHousehold, leaveHousehold } from "../households/lifecycle.js";
-import { getPlatformConfig } from "../platform/config.js";
+import {
+    getPlatformConfig,
+    isKnownPremiumStripePriceId,
+} from "../platform/config.js";
 import { PRODUCT_CONFIG } from "../product-config.js";
+import { subscriptionProvidesPremium } from "./capabilities.js";
 import {
     getLatestStripeSubscriptionRecord,
     getSubscriptionItemQuantity,
     replaceSubscriptionItems,
-    type LatestStripeSubscriptionRecord,
 } from "./repository.js";
 import {
     setStripeSubscriptionItemQuantity,
@@ -54,18 +57,6 @@ function subscriptionItems(subscription: StripeSubscription) {
         }));
 }
 
-function recordProvidesPremium(
-    record: LatestStripeSubscriptionRecord,
-    now = new Date(),
-): boolean {
-    if (record.status === "active" || record.status === "trialing") return true;
-    return Boolean(
-        record.status === "past_due" &&
-        record.graceExpiresAt &&
-        record.graceExpiresAt.getTime() > now.getTime(),
-    );
-}
-
 export function paidHouseholdSeatCoverage(
     billedSeatQuantity: number,
     activeNonOwnerCount: number,
@@ -100,8 +91,8 @@ async function billableOwnerSubscription(ownerUserId: string) {
     const record = await getLatestStripeSubscriptionRecord(ownerUserId);
     if (
         !record ||
-        record.stripePriceId !== config.stripePriceId ||
-        !recordProvidesPremium(record)
+        !isKnownPremiumStripePriceId(record.stripePriceId, config) ||
+        !subscriptionProvidesPremium(record, new Date())
     ) {
         throw new Error("household_owner_paid_premium_required");
     }

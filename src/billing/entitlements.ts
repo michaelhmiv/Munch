@@ -52,12 +52,29 @@ function fullAccess(
     };
 }
 
+export function subscriptionPeriodIsCurrent(
+    currentPeriodEnd: Date | null | undefined,
+    now: Date,
+): boolean {
+    return !currentPeriodEnd || currentPeriodEnd.getTime() > now.getTime();
+}
+
 export function decideEntitlement(
     subscription: SubscriptionSnapshot,
     now = new Date(),
 ): EntitlementDecision {
-    if (subscription.status === "active") return fullAccess("active");
-    if (subscription.status === "trialing") return fullAccess("trialing");
+    if (
+        subscription.status === "active" &&
+        subscriptionPeriodIsCurrent(subscription.currentPeriodEnd, now)
+    ) {
+        return fullAccess("active");
+    }
+    if (
+        subscription.status === "trialing" &&
+        subscriptionPeriodIsCurrent(subscription.currentPeriodEnd, now)
+    ) {
+        return fullAccess("trialing");
+    }
 
     if (
         subscription.status === "past_due" &&
