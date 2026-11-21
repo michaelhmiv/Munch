@@ -7,7 +7,13 @@ import {
     computeWeightTrend,
     type DailyBucket,
 } from "./insights.js";
-import type { Meal, NutritionGoals, WeightEntry } from "./storage.js";
+import type {
+    Meal,
+    NutritionGoals,
+    WaterEntry,
+    WeightEntry,
+} from "./storage.js";
+import { buildNutritionRangeContract } from "./nutrition-contract.js";
 
 function entry(logged_at: string, weight_g: number): WeightEntry {
     return {
@@ -552,4 +558,95 @@ describe("computeWeekInWords", () => {
         expect(words).not.toContain("averaged");
         expect(words).not.toContain("Daily average");
     });
+});
+
+// ---------- W2 F1: headline nutrients average over logged days ----------
+
+function waterEntry(logged_at: string, amount_ml: number): WaterEntry {
+    return {
+        id: `w-${logged_at}`,
+        user_id: "u1",
+        amount_ml,
+        logged_at,
+        notes: null,
+        created_at: logged_at,
+        idempotency_key: null,
+    };
+}
+
+/** 2026-06-01..2026-06-07 with meals+water on Mon/Wed/Fri only, each logged
+ *  day totaling 2100 kcal, 140P / 210C / 70F and 2400 ml water. */
+function sparseWeekBuckets(): DailyBucket[] {
+    const days = ["2026-06-01", "2026-06-03", "2026-06-05"];
+    const meals = days.map((d) =>
+        meal(`${d}T12:00:00Z`, {
+            calories: 2100,
+            protein_g: 140,
+            carbs_g: 210,
+            fat_g: 70,
+        }),
+    );
+    const water = days.map((d) => waterEntry(`${d}T09:00:00Z`, 2400));
+    return buildDailyBuckets(meals, water, "2026-06-01", "2026-06-07", "UTC");
+}
+
+test("computeTrends and computeWeeklyDigest average headline nutrients over logged days, matching Trends dashboard", () => {
+    const buckets = sparseWeekBuckets();
+    const g = goals({
+        daily_calories: 2100,
+        daily_protein_g: 140,
+        daily_water_ml: 2400,
+    });
+
+    // Cross-surface parity anchor: the canonical range contract (dashboard
+    // semantics) divides by logged days — 2100 kcal and 140 g protein.
+    const contract = buildNutritionRangeContract({
+        meals: buckets.flatMap((b) => b.meals),
+        startDate: "2026-06-01",
+        endDate: "2026-06-07",
+        timezone: "UTC",
+        goals: g,
+    });
+    expect(contract.averages.calories).toBe(2100);
+    expect(contract.averages.proteinG).toBe(140);
+
+    const trends = computeTrends(buckets, g);
+    expect(trends).toContain("  7d avg: 2100 kcal (3 of 7 logged days)");
+    expect(trends).toContain("  Days within ±10% of target: 3/3");
+    expect(trends).toContain("  Std dev: 0 kcal (CV 0%)");
+    expect(trends).toContain("  7d avg: 140g (3 of 7 logged days)");
+    expect(trends).toContain("  7d avg: 2400 ml (3 of 7 logged days)");
+    expect(trends).not.toContain("900 kcal");
+
+    const digest = computeWeeklyDigest(buckets, g);
+    expect(digest).toContain("Logged 3/7 days");
+    expect(digest).toContain("  Calories: 2100 kcal / 2100 kcal target (100%)");
+    expect(digest).toContain("  Protein: 140g / 140g target (100%)");
+    expect(digest).toContain("  Carbs: 210g");
+    expect(digest).toContain("  Fat: 70g");
+    expect(digest).toContain("  Water: 2400 ml / 2400 ml target (100%)");
+    expect(digest).not.toContain("900 kcal");
+    expect(digest).not.toContain("(43%)");
+});
+
+test("computeTrends and computeWeeklyDigest handle an empty 7-day window without NaN", () => {
+    const buckets = buildDailyBuckets(
+        [],
+        [],
+        "2026-06-01",
+        "2026-06-07",
+        "UTC",
+    );
+    const g = goals({ daily_calories: 2100 });
+
+    const trends = computeTrends(buckets, g);
+    expect(trends).toContain("  7d avg: no data");
+    expect(trends).not.toContain("NaN");
+    expect(trends).not.toContain("Infinity");
+
+    const digest = computeWeeklyDigest(buckets, g);
+    expect(digest).toContain("Logged 0/7 days");
+    expect(digest).toContain("  Calories: 0 kcal");
+    expect(digest).not.toContain("NaN");
+    expect(digest).not.toContain("Infinity");
 });

@@ -12,6 +12,7 @@
         "src/foods.ts",
         "src/import.ts",
         "src/insights.ts",
+        "src/meal-slot.ts",
         "src/middleware.ts",
         "src/net.ts",
         "src/normalize.ts",

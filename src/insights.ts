@@ -162,21 +162,23 @@ interface StatSeries {
     partial: boolean;
 }
 
-/** A nutrient that has always been summed with `?? 0`: every day in the window
- * counts, exactly as before. */
+/** Headline nutrients (calories, primary macros, water): average over logged
+ * days only (`nonEmpty`), matching `nutrition-contract.ts` and `trends.ts`. */
 function fullSeries(
     buckets: DailyBucket[],
     field: keyof DailyBucket,
 ): StatSeries {
-    const daily = buckets.map((b) => b[field] as number);
+    const valuesOf = (bs: DailyBucket[]) =>
+        bs.filter(nonEmpty).map((b) => b[field] as number);
     return {
-        values: daily,
+        values: valuesOf(buckets),
         trailing: WINDOWS.map((n) => {
-            const slice = daily.slice(-n);
+            const slice = buckets.slice(-n);
+            const values = valuesOf(slice);
             return {
                 n,
-                avg: slice.length > 0 ? mean(slice) : null,
-                days: slice.length,
+                avg: values.length > 0 ? mean(values) : null,
+                days: values.length,
                 window: slice.length,
             };
         }),
@@ -288,7 +290,7 @@ function formatStatLine(
         }
         const note =
             t.days < t.window
-                ? ` (${t.days} of ${t.window} days with data)`
+                ? ` (${t.days} of ${t.window} ${partial ? "days with data" : "logged days"})`
                 : "";
         parts.push(`  ${t.n}d avg: ${round(t.avg)}${unit}${note}`);
     }
@@ -600,7 +602,8 @@ export function computeTrends(
     if (buckets.length === 0) return "No data in range.";
 
     const logged = buckets.filter(nonEmpty);
-    // Calories/protein/carbs/fat/water: every day counts, as they always have.
+    // Calories/protein/carbs/fat/water: averaged over logged days only
+    // (nonEmpty), matching trends.ts and nutrition-contract.ts.
     // Fiber/sugar/alcohol: only the days that carry them (see coveredSeries).
     const alcoholSeries = coveredSeries(buckets, "alcohol_g");
 
@@ -978,10 +981,10 @@ export function computeWeeklyDigest(
     if (buckets.length === 0) return "No data in the past week.";
 
     const logged = buckets.filter(nonEmpty);
-    const avgCals = round(mean(buckets.map((b) => b.calories)));
-    const avgProtein = round(mean(buckets.map((b) => b.protein_g)));
-    const avgCarbs = round(mean(buckets.map((b) => b.carbs_g)));
-    const avgFat = round(mean(buckets.map((b) => b.fat_g)));
+    const avgCals = round(mean(logged.map((b) => b.calories)));
+    const avgProtein = round(mean(logged.map((b) => b.protein_g)));
+    const avgCarbs = round(mean(logged.map((b) => b.carbs_g)));
+    const avgFat = round(mean(logged.map((b) => b.fat_g)));
     // Same rule as computeTrends, so the two narratives cannot disagree: these
     // three average over the days that carry them, not over the whole week.
     const covered = (nutrient: PartialNutrient) => {
@@ -997,7 +1000,7 @@ export function computeWeeklyDigest(
     const fiber = covered("fiber_g");
     const sugar = covered("sugar_g");
     const alcohol = covered("alcohol_g");
-    const avgWater = round(mean(buckets.map((b) => b.waterMl)));
+    const avgWater = round(mean(logged.map((b) => b.waterMl)));
     const totalMeals = buckets.reduce((s, b) => s + b.meals.length, 0);
 
     const lines: string[] = [];

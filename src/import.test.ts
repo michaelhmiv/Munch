@@ -190,21 +190,32 @@ test("normalizeMealType treats blank-ish source cells as absent, not snack", () 
     expect(normalizeMealType("Second breakfast")).toBe("snack"); // Cronometer
 });
 
-test("inferMealType uses local-time cutoffs", () => {
+test("inferMealType follows the shared meal-slot bands and never defaults to snack", () => {
     const at = (local: string) =>
         inferMealType(
             (resolveLoggedAt(local, TZ, NOW) as { value: { iso: string } })
                 .value.iso,
             TZ,
         );
+    // Canonical bands (owner ruling 2026-11-12): 00:00–09:59 breakfast,
+    // 10:00–14:59 lunch, 15:00–23:59 dinner. Snack is never inferred.
+    expect(at("2026-01-15T00:00")).toBe("breakfast");
     expect(at("2026-01-15T07:00")).toBe("breakfast");
-    expect(at("2026-01-15T10:29")).toBe("breakfast");
-    expect(at("2026-01-15T10:30")).toBe("lunch");
+    expect(at("2026-01-15T09:59")).toBe("breakfast");
+    expect(at("2026-01-15T10:00")).toBe("lunch");
+    expect(at("2026-01-15T10:15")).toBe("lunch");
     expect(at("2026-01-15T14:59")).toBe("lunch");
     expect(at("2026-01-15T15:00")).toBe("dinner");
-    expect(at("2026-01-15T21:29")).toBe("dinner");
-    expect(at("2026-01-15T21:30")).toBe("snack");
-    expect(at("2026-01-15T23:30")).toBe("snack");
+    expect(at("2026-01-15T21:45")).toBe("dinner");
+    expect(at("2026-01-15T23:30")).toBe("dinner");
+    expect(at("2026-01-15T23:59")).toBe("dinner");
+    // Sweep every quarter hour of the day: never "snack".
+    for (let h = 0; h < 24; h++) {
+        for (const m of [0, 15, 30, 45]) {
+            const local = `2026-01-15T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+            expect(["breakfast", "lunch", "dinner"]).toContain(at(local));
+        }
+    }
 });
 
 // ---------- description synthesis ----------
@@ -803,7 +814,7 @@ test("runImport surfaces provenance for inferred and synthesized values", async 
     );
 
     expect(result.results[0]!.meal_type_inferred).toBe(true);
-    expect(result.results[0]!.meal_type).toBe("snack");
+    expect(result.results[0]!.meal_type).toBe("dinner");
     expect(result.results[1]!.description_synthesized).toBe(true);
     expect(result.results[1]!.description).toBe(
         "Breakfast (imported from MyFitnessPal)",
