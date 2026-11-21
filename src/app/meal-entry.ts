@@ -2,12 +2,20 @@ import {
     applyAmbiguousMatchDecider,
     type MatchDeciderDependencies,
 } from "../decisions/match.js";
-import { naturalPortion } from "../food-providers/portions.js";
+import {
+    naturalPortion,
+    per100gPortion,
+    sortPortionsNaturalFirst,
+} from "../food-providers/portions.js";
 import {
     getFoodSearchService,
     summarizeFoodCandidate,
 } from "../food-providers/service.js";
-import type { FoodCandidate, NutrientValues } from "../food-providers/types.js";
+import type {
+    FoodCandidate,
+    FoodPortion,
+    NutrientValues,
+} from "../food-providers/types.js";
 import type { FoodProviderFailure } from "../food-providers/registry.js";
 import { serializeFoodCandidate } from "../food-tools.js";
 import {
@@ -238,17 +246,49 @@ export async function lookupAppFoodBarcode(barcode: string) {
     };
 }
 
+function hasReportedCalories(nutrients: NutrientValues | undefined): boolean {
+    return (
+        nutrients?.calories !== undefined && Number.isFinite(nutrients.calories)
+    );
+}
+
+function selectCandidatePortion(
+    candidate: FoodCandidate,
+    portionId: string | undefined,
+): FoodPortion {
+    const requested = portionId
+        ? candidate.portions.find((item) => item.id === portionId)
+        : undefined;
+    const preferred =
+        requested ??
+        naturalPortion(candidate.portions) ??
+        candidate.portions[0];
+    if (preferred && hasReportedCalories(preferred.nutrients)) {
+        return preferred;
+    }
+    const caloriePortions = candidate.portions.filter((item) =>
+        hasReportedCalories(item.nutrients),
+    );
+    const fallback =
+        naturalPortion(caloriePortions) ??
+        sortPortionsNaturalFirst(caloriePortions)[0] ??
+        (candidate.nutrientsPer100g &&
+        hasReportedCalories(candidate.nutrientsPer100g)
+            ? per100gPortion(candidate.nutrientsPer100g)
+            : undefined);
+    if (!fallback) {
+        throw new Error("Food candidate has no usable portion with calories");
+    }
+    return fallback;
+}
+
 function candidateMealItem(
     candidate: FoodCandidate,
     candidateId: string,
     portionId: string | undefined,
     quantity: number,
 ): StructuredMealItemInput {
-    const portion =
-        candidate.portions.find((item) => item.id === portionId) ??
-        naturalPortion(candidate.portions) ??
-        candidate.portions[0];
-    if (!portion) throw new Error("Food candidate has no usable portion");
+    const portion = selectCandidatePortion(candidate, portionId);
     const name = [candidate.brand, candidate.name]
         .filter(Boolean)
         .join(" — ")
@@ -315,6 +355,9 @@ function suppliedMealItem(
     const nutrients = scaleNutrients(parseNutrients(input.nutrients), quantity);
     if (Object.keys(nutrients).length === 0) {
         throw new Error(`Nutrition is required for ${name}`);
+    }
+    if (!hasReportedCalories(nutrients)) {
+        throw new Error(`Nutrition calories are required for ${name}`);
     }
     const assumptions = Array.isArray(input.assumptions)
         ? input.assumptions

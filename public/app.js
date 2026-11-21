@@ -7881,10 +7881,24 @@ function foodTitle(food) {
 }
 
 function foodPortion(food, portionId) {
+    const portions = food?.portions || [];
+    if (!portions.length) return null;
+    const hasCalories = (portion) =>
+        portion?.nutrients?.calories != null &&
+        Number.isFinite(Number(portion.nutrients.calories));
+    const requested = portionId
+        ? portions.find((portion) => portion.id === portionId)
+        : null;
+    if (requested && hasCalories(requested)) return requested;
+    const nonHeadline = portions.find(
+        (portion) =>
+            hasCalories(portion) &&
+            !/guideline amount|quantity not specified/i.test(
+                portion.label || "",
+            ),
+    );
     return (
-        food.portions?.find((portion) => portion.id === portionId) ||
-        food.portions?.[0] ||
-        null
+        nonHeadline || portions.find(hasCalories) || requested || portions[0]
     );
 }
 
@@ -8257,39 +8271,182 @@ async function searchMealFoods(query) {
     }
 }
 
+function normalizedComposerText(value) {
+    return String(value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+}
+
+function composerNutrientsEqual(a, b) {
+    const keys = [
+        "calories",
+        "protein_g",
+        "carbs_g",
+        "fat_g",
+        "fiber_g",
+        "sugar_g",
+        "alcohol_g",
+        "sodium_mg",
+    ];
+    for (const key of keys) {
+        const av = a?.[key];
+        const bv = b?.[key];
+        const aEmpty = av === undefined || av === null || av === "";
+        const bEmpty = bv === undefined || bv === null || bv === "";
+        if (aEmpty && bEmpty) continue;
+        if (aEmpty !== bEmpty) return false;
+        if (Number(av) !== Number(bv)) return false;
+    }
+    return true;
+}
+
+function findComposerDuplicate(nextItem, items = mealComposer.items) {
+    if (!nextItem) return -1;
+    if (nextItem.kind === "food") {
+        if (nextItem.customPortion) return -1;
+        if (!nextItem.candidateId && !nextItem.savedFoodId) return -1;
+        const nextPortionId =
+            nextItem.portionId ||
+            foodPortion(nextItem.food, nextItem.portionId)?.id ||
+            null;
+        return items.findIndex((existing) => {
+            if (existing.kind !== "food" || existing.customPortion) {
+                return false;
+            }
+            const existingPortionId =
+                existing.portionId ||
+                foodPortion(existing.food, existing.portionId)?.id ||
+                null;
+            return (
+                (existing.candidateId || null) ===
+                    (nextItem.candidateId || null) &&
+                (existing.savedFoodId || null) ===
+                    (nextItem.savedFoodId || null) &&
+                existingPortionId === nextPortionId
+            );
+        });
+    }
+    if (nextItem.kind === "recent") {
+        const nextName = normalizedComposerText(nextItem.name);
+        if (!nextName) return -1;
+        const nextPortion = normalizedComposerText(nextItem.portionLabel);
+        return items.findIndex((existing) => {
+            if (existing.kind !== "recent") return false;
+            if (normalizedComposerText(existing.name) !== nextName) {
+                return false;
+            }
+            if (normalizedComposerText(existing.portionLabel) !== nextPortion) {
+                return false;
+            }
+            if (
+                (existing.provider || null) !== (nextItem.provider || null) ||
+                (existing.providerFoodId || null) !==
+                    (nextItem.providerFoodId || null)
+            ) {
+                return false;
+            }
+            if (
+                existing.sourceSnapshot?.item_id &&
+                nextItem.sourceSnapshot?.item_id &&
+                existing.sourceSnapshot.item_id !==
+                    nextItem.sourceSnapshot.item_id
+            ) {
+                return false;
+            }
+            if (
+                existing.sourceSnapshot?.usual_key &&
+                nextItem.sourceSnapshot?.usual_key &&
+                existing.sourceSnapshot.usual_key !==
+                    nextItem.sourceSnapshot.usual_key
+            ) {
+                return false;
+            }
+            return composerNutrientsEqual(
+                existing.nutrients,
+                nextItem.nutrients,
+            );
+        });
+    }
+    if (nextItem.kind === "manual") {
+        const nextName = normalizedComposerText(nextItem.name);
+        if (!nextName) return -1;
+        const hasNutrition = Object.values(nextItem.nutrients || {}).some(
+            (value) => value !== undefined && value !== null && value !== "",
+        );
+        if (!hasNutrition) return -1;
+        const nextPortion = normalizedComposerText(nextItem.portionLabel);
+        return items.findIndex(
+            (existing) =>
+                existing.kind === "manual" &&
+                normalizedComposerText(existing.name) === nextName &&
+                normalizedComposerText(existing.portionLabel) === nextPortion &&
+                composerNutrientsEqual(existing.nutrients, nextItem.nutrients),
+        );
+    }
+    return -1;
+}
+
+function mergeMealComposerItem(items, nextItem) {
+    const existingIndex = findComposerDuplicate(nextItem, items);
+    if (existingIndex >= 0) {
+        const existing = items[existingIndex];
+        const currentQty =
+            Number.isFinite(Number(existing.quantity)) &&
+            Number(existing.quantity) > 0
+                ? Number(existing.quantity)
+                : 1;
+        const addedQty =
+            Number.isFinite(Number(nextItem.quantity)) &&
+            Number(nextItem.quantity) > 0
+                ? Number(nextItem.quantity)
+                : 1;
+        existing.quantity = Math.round((currentQty + addedQty) * 100) / 100;
+        return existingIndex;
+    }
+    items.push(nextItem);
+    return items.length - 1;
+}
+
+function addMealComposerItem(nextItem) {
+    return mergeMealComposerItem(mealComposer.items, nextItem);
+}
+
 async function selectMealOption(key) {
     syncMealComposerFromDom();
     const option = mealComposer.options.get(key);
     if (!option) return;
+    let nextItem;
     if (option.kind === "candidate") {
         const data = await api(
             `/api/app/food-details?candidate_id=${encodeURIComponent(option.candidateId)}`,
             { keepPrevious: true },
         );
         if (!data.food) throw new Error("Food details are no longer available");
-        mealComposer.items.push({
+        syncMealComposerFromDom();
+        nextItem = {
             kind: "food",
             food: data.food,
             candidateId: data.food.candidate_id,
-            portionId: data.food.portions?.[0]?.id,
+            portionId: foodPortion(data.food)?.id,
             quantity: 1,
-        });
+        };
     } else if (option.kind === "food") {
-        mealComposer.items.push({
+        nextItem = {
             kind: "food",
             food: option.food,
             candidateId: option.food.candidate_id,
             savedFoodId: option.savedFoodId,
-            portionId: option.defaultPortionId || option.food.portions?.[0]?.id,
+            portionId: foodPortion(option.food, option.defaultPortionId)?.id,
             quantity: 1,
-        });
+        };
     } else {
-        mealComposer.items.push({
+        nextItem = {
             kind: "recent",
             name: option.recent.name,
             quantity: 1,
             portionLabel: option.recent.portionLabel || "",
-            nutrients: option.recent.nutrients,
+            nutrients: { ...(option.recent.nutrients || {}) },
             sourceType: "past_meal",
             provider: option.recent.provider,
             providerFoodId: option.recent.providerFoodId,
@@ -8298,10 +8455,11 @@ async function selectMealOption(key) {
                 meal_id: option.recent.mealId,
                 item_id: option.recent.itemId,
             },
-        });
+        };
     }
+    const index = addMealComposerItem(nextItem);
     renderMealComposerItems();
-    focusMealComposerItem(mealComposer.items.length - 1);
+    focusMealComposerItem(index);
 }
 
 // "Your usuals": the server ranks the user's own habitual foods for
@@ -8372,7 +8530,7 @@ function usualComposerItem(entry, resolutionLayer, extraSnapshot = {}) {
         name: entry.name,
         quantity: entry.quantity || 1,
         portionLabel: entry.portionLabel || "",
-        nutrients: entry.nutrients,
+        nutrients: { ...(entry.nutrients || {}) },
         sourceType: "past_meal",
         provider: entry.provider,
         providerFoodId: entry.providerFoodId,
@@ -8388,27 +8546,28 @@ function selectMealUsual(key) {
     syncMealComposerFromDom();
     const usual = mealComposer.usuals.get(key);
     if (!usual) return;
-    mealComposer.items.push(
+    const index = addMealComposerItem(
         usualComposerItem(usual, "usuals", { usual_key: usual.key }),
     );
     renderMealComposerItems();
-    focusMealComposerItem(mealComposer.items.length - 1);
+    focusMealComposerItem(index);
 }
 
 function addYesterdayMeal() {
     syncMealComposerFromDom();
     const yesterday = mealComposer.yesterday;
     if (!yesterday?.items?.length) return;
-    const firstAdded = mealComposer.items.length;
+    let firstTarget = -1;
     for (const entry of yesterday.items) {
-        mealComposer.items.push(
+        const index = addMealComposerItem(
             usualComposerItem(entry, "usuals_same_as_yesterday", {
                 meal_id: yesterday.mealId,
             }),
         );
+        if (firstTarget < 0) firstTarget = index;
     }
     renderMealComposerItems();
-    focusMealComposerItem(firstAdded);
+    if (firstTarget >= 0) focusMealComposerItem(firstTarget);
 }
 
 // Composer wave C2 (approved 2026-11-11): the typed barcode field
@@ -9874,7 +10033,7 @@ async function handleAction(button) {
     }
     if (action === "add-manual-food") {
         syncMealComposerFromDom();
-        mealComposer.items.push({
+        const index = addMealComposerItem({
             kind: "manual",
             name: "",
             quantity: 1,
@@ -9883,7 +10042,7 @@ async function handleAction(button) {
             sourceType: "user_supplied",
         });
         renderMealComposerItems();
-        focusMealComposerItem(mealComposer.items.length - 1);
+        focusMealComposerItem(index);
         return;
     }
     if (action === "scan-food-barcode") {
@@ -10888,7 +11047,11 @@ function composerMealDescription(form) {
 
 function mealComposerPayload() {
     syncMealComposerFromDom();
-    return mealComposer.items.map((item) =>
+    const merged = [];
+    for (const item of mealComposer.items) {
+        mergeMealComposerItem(merged, { ...item });
+    }
+    return merged.map((item) =>
         item.kind === "food" && item.customPortion
             ? {
                   // Custom portion… escape: the free-text label and
