@@ -1744,7 +1744,7 @@ export function createAppRouter(): Hono {
                 },
             });
             return privateJson(c, {
-                draft: serializeMealDraftForApp(outcome.draft),
+                draft: await enrichMealDraftForApp(outcome.draft),
                 add: {
                     status: outcome.status,
                     message: outcome.message,
@@ -1764,6 +1764,7 @@ export function createAppRouter(): Hono {
                           ? {
                                 parse_source: outcome.parseSource,
                                 preparation: outcome.preparation,
+                                removed_item: outcome.removedItemName ?? null,
                             }
                           : outcome.status === "question"
                             ? { parse_source: outcome.parseSource }

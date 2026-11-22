@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { FoodCandidate } from "../food-providers/types.js";
-import { parsedItemsFromModelParse } from "./draft-add-parse.js";
+import {
+    parsedItemsFromModelParse,
+    type DraftAddModelParse,
+} from "./draft-add-parse.js";
 import {
     planPreparationUpdate,
     resolveDraftAdd,
@@ -9,11 +12,9 @@ import {
 import { mealPhotoItemIsComplete } from "./grounding.js";
 
 /**
- * Recorded-fixture tests for the parse → ground → add chain
- * (Amendment E item 3). Every dependency is a stub replaying fixed
- * data — no live model calls, no database. The draft-side totals are
- * asserted the way the review computes them: the existing draft items'
- * calories plus the added item's.
+ * Recorded-fixture tests for the model-first interpret → validate →
+ * ground → gate chain. Every dependency is a stub replaying fixed
+ * data — no live model calls, no database.
  */
 
 function candidate(overrides: Partial<FoodCandidate> = {}): FoodCandidate {
@@ -65,6 +66,10 @@ function candidate(overrides: Partial<FoodCandidate> = {}): FoodCandidate {
     };
 }
 
+function stubModel(reply: DraftAddModelParse): DraftAddDeps["parseWithModel"] {
+    return async () => parsedItemsFromModelParse(reply);
+}
+
 // The photo draft Michael's flow starts from: chicken + broccoli,
 // provider-grounded at 264 + 35 kcal.
 const EXISTING_DRAFT_CALORIES = 264 + 35;
@@ -77,7 +82,7 @@ const butterSearch: DraftAddDeps["search"] = async (query) => {
 };
 
 describe("resolveDraftAdd — (a) 'I added a good bit of butter' on a chicken/broccoli photo draft", () => {
-    test("butter is provider-grounded, its assumption is shown, totals recompute, and NO model parse is spent", async () => {
+    test("butter is interpreted by Ember, provider-grounded, assumption shown, totals recompute", async () => {
         let modelParseCalls = 0;
         const resolution = await resolveDraftAdd(
             "I added a good bit of butter",
@@ -85,23 +90,35 @@ describe("resolveDraftAdd — (a) 'I added a good bit of butter' on a chicken/br
                 search: butterSearch,
                 parseWithModel: async () => {
                     modelParseCalls += 1;
-                    throw new Error("fallback must not fire");
+                    return parsedItemsFromModelParse({
+                        action: "add",
+                        target_item_id: null,
+                        items: [
+                            {
+                                name: "butter",
+                                quantity: 1,
+                                unit: "tbsp",
+                                assumptions: [
+                                    'Quantity assumed: "a good bit" interpreted as 1 tbsp.',
+                                ],
+                            },
+                        ],
+                        preparation: null,
+                        question_prompt: null,
+                    });
                 },
             },
         );
-        // (d) parser-first proof: the deterministic path handled this
-        // WITHOUT a model call.
-        expect(modelParseCalls).toBe(0);
+        expect(modelParseCalls).toBe(1);
         expect(resolution.kind).toBe("ready");
         if (resolution.kind !== "ready") return;
-        expect(resolution.parseSource).toBe("deterministic");
+        expect(resolution.parseSource).toBe("model");
         const [added] = resolution.grounded;
         expect(added?.grounded).toBe(true);
         expect(added?.groundingSource).toBe("USDA");
         expect(added?.draftItem.sourceType).toBe("usda");
         expect(added?.draftItem.providerFoodId).toBe("173430");
         expect(added?.draftItem.nutrients.calories).toBe(102);
-        // The quantity assumption from the vague phrase is ON the item…
         expect(
             added?.draftItem.assumptions.some(
                 (assumption) =>
@@ -109,18 +126,15 @@ describe("resolveDraftAdd — (a) 'I added a good bit of butter' on a chicken/br
                     assumption.includes("1 tbsp"),
             ),
         ).toBe(true);
-        // …and provenance marks it as user-added, in assumptions AND
-        // the source snapshot.
         expect(added?.draftItem.assumptions[0]).toBe(
             'Added by you: "I added a good bit of butter"',
         );
         expect(added?.draftItem.sourceSnapshot?.draft_add_parse_source).toBe(
-            "deterministic",
+            "model",
         );
         expect(
             added?.draftItem.sourceSnapshot?.draft_add_quantity_assumed,
         ).toBe(true);
-        // Totals recompute across the whole draft.
         const total =
             EXISTING_DRAFT_CALORIES +
             resolution.grounded.reduce(
@@ -138,6 +152,22 @@ describe("resolveDraftAdd — (b) an ungrounded add gets labelled Model estimate
             "I added a good bit of durian",
             {
                 search: async () => ({ candidates: [], failures: [] }),
+                parseWithModel: stubModel({
+                    action: "add",
+                    target_item_id: null,
+                    items: [
+                        {
+                            name: "durian",
+                            quantity: 1,
+                            unit: "serving",
+                            assumptions: [
+                                '"a good bit" interpreted as 1 serving',
+                            ],
+                        },
+                    ],
+                    preparation: null,
+                    question_prompt: null,
+                }),
                 estimateNutrients: async (requests) => {
                     expect(requests).toHaveLength(1);
                     expect(requests[0]?.name).toBe("durian");
@@ -175,6 +205,20 @@ describe("resolveDraftAdd — (b) an ungrounded add gets labelled Model estimate
     test("strong parse + no candidate + estimate failure → item with NO values and a BLOCKING question (invariant holds)", async () => {
         const resolution = await resolveDraftAdd("2 tbsp qwixle spread", {
             search: async () => ({ candidates: [], failures: [] }),
+            parseWithModel: stubModel({
+                action: "add",
+                target_item_id: null,
+                items: [
+                    {
+                        name: "qwixle spread",
+                        quantity: 2,
+                        unit: "tbsp",
+                        assumptions: [],
+                    },
+                ],
+                preparation: null,
+                question_prompt: null,
+            }),
             estimateNutrients: async () => {
                 throw new Error("estimate unavailable");
             },
@@ -189,13 +233,6 @@ describe("resolveDraftAdd — (b) an ungrounded add gets labelled Model estimate
 });
 
 describe("resolveDraftAdd — production replay 2026-11-13: 'I added butter' on an apple photo draft", () => {
-    // The production shape: butter IS in the catalog, but the picked
-    // candidate carries only a per-100 g portion — a VOLUME quantity
-    // (1 tbsp, the stated default portion for a quantity-less add)
-    // cannot resolve against it, so grounding falls to the labelled
-    // estimate step, which prices the tbsp fine. Before the gate fix,
-    // the weak (quantity-less) parse converted that successful
-    // estimate into a draft question and added nothing.
     const per100gOnlyButterSearch: DraftAddDeps["search"] = async (query) => {
         if (query.includes("butter")) {
             return {
@@ -245,27 +282,34 @@ describe("resolveDraftAdd — production replay 2026-11-13: 'I added butter' on 
         ]);
     };
 
-    test("deterministic path: 'I added butter' → butter lands as a labelled estimate, totals move, no question", async () => {
-        let modelParseCalls = 0;
+    test("'I added butter' (no amount stated) → default-portion assumption + labelled estimate, totals move, no question", async () => {
         const resolution = await resolveDraftAdd("I added butter", {
             search: per100gOnlyButterSearch,
             estimateNutrients: butterEstimate,
-            parseWithModel: async () => {
-                modelParseCalls += 1;
-                throw new Error("fallback must not fire");
-            },
+            parseWithModel: stubModel({
+                action: "add",
+                target_item_id: null,
+                items: [
+                    {
+                        name: "butter",
+                        quantity: null,
+                        unit: null,
+                        assumptions: [],
+                    },
+                ],
+                preparation: null,
+                question_prompt: null,
+            }),
         });
-        expect(modelParseCalls).toBe(0);
         expect(resolution.kind).toBe("ready");
         if (resolution.kind !== "ready") return;
-        expect(resolution.parseSource).toBe("deterministic");
+        expect(resolution.parseSource).toBe("model");
         const [added] = resolution.grounded;
         expect(added?.grounded).toBe(false);
         expect(added?.estimated).toBe(true);
         expect(added?.draftItem.sourceType).toBe("model_estimate");
         expect(added?.draftItem.nutrients.calories).toBe(102);
         expect(added?.question).toBeNull();
-        // The default-portion assumption is stated on the item.
         expect(
             added?.draftItem.assumptions.some(
                 (assumption) =>
@@ -285,64 +329,26 @@ describe("resolveDraftAdd — production replay 2026-11-13: 'I added butter' on 
         expect(total).toBe(264 + 35 + 102);
         expect(mealPhotoItemIsComplete(added!)).toBe(true);
     });
-
-    test("model path: 'I added butter to the apple' (deterministic refuses; Ember parses, no amount) → same landing", async () => {
-        const resolution = await resolveDraftAdd(
-            "I added butter to the apple",
-            {
-                search: per100gOnlyButterSearch,
-                estimateNutrients: butterEstimate,
-                parseWithModel: async () =>
-                    parsedItemsFromModelParse({
-                        items: [
-                            {
-                                name: "butter",
-                                quantity: null,
-                                unit: null,
-                                assumptions: [],
-                            },
-                        ],
-                        replaces: null,
-                        preparation: null,
-                    }),
-            },
-        );
-        expect(resolution.kind).toBe("ready");
-        if (resolution.kind !== "ready") return;
-        expect(resolution.parseSource).toBe("model");
-        const [added] = resolution.grounded;
-        expect(added?.estimated).toBe(true);
-        expect(added?.draftItem.nutrients.calories).toBe(102);
-        expect(added?.question).toBeNull();
-        const total =
-            EXISTING_DRAFT_CALORIES +
-            resolution.grounded.reduce(
-                (sum, entry) => sum + (entry.draftItem.nutrients.calories ?? 0),
-                0,
-            );
-        expect(total).toBe(264 + 35 + 102);
-    });
-
-    test("control: 'I added a good bit of butter' against the same unresolvable pick → also lands (strong parse, unchanged)", async () => {
-        const resolution = await resolveDraftAdd(
-            "I added a good bit of butter",
-            {
-                search: per100gOnlyButterSearch,
-                estimateNutrients: butterEstimate,
-            },
-        );
-        expect(resolution.kind).toBe("ready");
-        if (resolution.kind !== "ready") return;
-        const [added] = resolution.grounded;
-        expect(added?.estimated).toBe(true);
-        expect(added?.draftItem.nutrients.calories).toBe(102);
-    });
 });
 
 describe("resolveDraftAdd — (c) ambiguous/unparseable adds never silently add", () => {
     test("weak parse (bare name) that cannot ground, but the estimate step prices it → added as a labelled Model estimate", async () => {
         const resolution = await resolveDraftAdd("added qwixle", {
             search: async () => ({ candidates: [], failures: [] }),
+            parseWithModel: stubModel({
+                action: "add",
+                target_item_id: null,
+                items: [
+                    {
+                        name: "qwixle",
+                        quantity: null,
+                        unit: null,
+                        assumptions: [],
+                    },
+                ],
+                preparation: null,
+                question_prompt: null,
+            }),
             estimateNutrients: async () =>
                 new Map([
                     [
@@ -368,9 +374,23 @@ describe("resolveDraftAdd — (c) ambiguous/unparseable adds never silently add"
         expect(mealPhotoItemIsComplete(added!)).toBe(true);
     });
 
-    test("weak parse (bare name) with NO usable nutrition — estimate fails → question outcome (the genuinely blocking case)", async () => {
+    test("weak parse (bare name) with NO usable nutrition — estimate fails → question outcome", async () => {
         const resolution = await resolveDraftAdd("added qwixle", {
             search: async () => ({ candidates: [], failures: [] }),
+            parseWithModel: stubModel({
+                action: "add",
+                target_item_id: null,
+                items: [
+                    {
+                        name: "qwixle",
+                        quantity: null,
+                        unit: null,
+                        assumptions: [],
+                    },
+                ],
+                preparation: null,
+                question_prompt: null,
+            }),
             estimateNutrients: async () => {
                 throw new Error("estimate unavailable");
             },
@@ -380,7 +400,7 @@ describe("resolveDraftAdd — (c) ambiguous/unparseable adds never silently add"
         expect(resolution.unresolvedNames).toEqual(["qwixle"]);
     });
 
-    test("a grounded pick sharing no name token with the typed food → question outcome", async () => {
+    test("a grounded pick sharing no name token with the interpreted food → question outcome", async () => {
         const resolution = await resolveDraftAdd("1 tbsp butter", {
             search: async () => ({
                 candidates: [
@@ -391,124 +411,69 @@ describe("resolveDraftAdd — (c) ambiguous/unparseable adds never silently add"
                 ],
                 failures: [],
             }),
+            parseWithModel: stubModel({
+                action: "add",
+                target_item_id: null,
+                items: [
+                    {
+                        name: "butter",
+                        quantity: 1,
+                        unit: "tbsp",
+                        assumptions: [],
+                    },
+                ],
+                preparation: null,
+                question_prompt: null,
+            }),
         });
         expect(resolution.kind).toBe("question");
         if (resolution.kind !== "question") return;
         expect(resolution.unresolvedNames).toEqual(["butter"]);
     });
 
-    test("unparseable text: deterministic fails, the model fallback says no food → no_parse", async () => {
-        let modelParseCalls = 0;
+    test("action=none → none (no search spent)", async () => {
+        let searchCalls = 0;
         const resolution = await resolveDraftAdd("the weather is nice today", {
-            search: butterSearch,
-            parseWithModel: async () => {
-                modelParseCalls += 1;
-                return { items: [], replaces: null, preparation: null };
+            search: async () => {
+                searchCalls += 1;
+                return { candidates: [], failures: [] };
             },
+            parseWithModel: stubModel({
+                action: "none",
+                target_item_id: null,
+                items: [],
+                preparation: null,
+                question_prompt: null,
+            }),
         });
-        expect(modelParseCalls).toBe(1);
-        expect(resolution.kind).toBe("no_parse");
+        expect(searchCalls).toBe(0);
+        expect(resolution.kind).toBe("none");
     });
 
-    test("unparseable text with the fallback failing → no_parse, not a throw and not an add", async () => {
-        const resolution = await resolveDraftAdd("the weather is nice today", {
+    test("fail-open: model error or missing interpreter → no_parse, never throws and never adds", async () => {
+        const failing = await resolveDraftAdd("the weather is nice today", {
             search: butterSearch,
             parseWithModel: async () => {
                 throw new Error("provider down");
             },
         });
-        expect(resolution.kind).toBe("no_parse");
-    });
+        expect(failing.kind).toBe("no_parse");
 
-    test("'nothing' short-circuits: no search, no model call", async () => {
-        let calls = 0;
-        const resolution = await resolveDraftAdd("nothing", {
-            search: async () => {
-                calls += 1;
-                return { candidates: [], failures: [] };
-            },
-            parseWithModel: async () => {
-                calls += 1;
-                return { items: [], replaces: null, preparation: null };
-            },
+        const unconfigured = await resolveDraftAdd("1 tbsp butter", {
+            search: butterSearch,
         });
-        expect(resolution.kind).toBe("none");
-        expect(calls).toBe(0);
-    });
-});
-
-describe("resolveDraftAdd — (d) the Ember fallback fires ONLY on deterministic failure", () => {
-    test("fallback items ground through the same path and are marked model-parsed", async () => {
-        let modelParseCalls = 0;
-        const resolution = await resolveDraftAdd(
-            "oh I totally forgot the butter, like a decent knob of it",
-            {
-                search: butterSearch,
-                parseWithModel: async (text) => {
-                    modelParseCalls += 1;
-                    expect(text).toContain("butter");
-                    return {
-                        items: [
-                            {
-                                name: "butter",
-                                quantity: 1,
-                                unit: "tbsp",
-                                portionConfidence: 0.85,
-                                assumptions: [
-                                    'Quantity assumed: "a decent knob" interpreted as 1 tbsp.',
-                                ],
-                                quantityAssumed: true,
-                                strongSignal: true,
-                            },
-                        ],
-                        replaces: null,
-                        preparation: null,
-                    };
-                },
-            },
-        );
-        expect(modelParseCalls).toBe(1);
-        expect(resolution.kind).toBe("ready");
-        if (resolution.kind !== "ready") return;
-        expect(resolution.parseSource).toBe("model");
-        const [added] = resolution.grounded;
-        expect(added?.grounded).toBe(true);
-        expect(added?.draftItem.nutrients.calories).toBe(102);
-        expect(added?.draftItem.sourceSnapshot?.draft_add_parse_source).toBe(
-            "model",
-        );
-    });
-
-    test("replacement phrasing carries the remove target through resolution", async () => {
-        const resolution = await resolveDraftAdd(
-            "actually brown rice, not white rice",
-            {
-                search: async () => ({
-                    candidates: [
-                        candidate({
-                            providerFoodId: "200",
-                            name: "Rice, brown, cooked",
-                            nutrientsPer100g: {
-                                calories: 112,
-                                protein_g: 2.3,
-                                carbs_g: 23.5,
-                                fat_g: 0.8,
-                            },
-                        }),
-                    ],
-                    failures: [],
-                }),
-            },
-        );
-        expect(resolution.kind).toBe("ready");
-        if (resolution.kind !== "ready") return;
-        expect(resolution.removeName).toBe("white rice");
-        expect(resolution.grounded[0]?.grounded).toBe(true);
+        expect(unconfigured.kind).toBe("no_parse");
     });
 });
 
 describe("resolveDraftAdd — preparation statements (photo-flow P2)", () => {
-    const cornContext = [{ name: "Corn On The Cob", cookingMethod: "steamed" }];
+    const cornContext = [
+        {
+            id: "item-corn",
+            name: "Corn On The Cob",
+            cookingMethod: "steamed",
+        },
+    ];
     const oilSearch: DraftAddDeps["search"] = async (query) => {
         if (query.includes("oil")) {
             return {
@@ -536,19 +501,6 @@ describe("resolveDraftAdd — preparation statements (photo-flow P2)", () => {
                                     fat_g: 13.6,
                                 },
                             },
-                            {
-                                id: "100g",
-                                amount: 100,
-                                unit: "g",
-                                label: "100 g",
-                                gramWeight: 100,
-                                nutrients: {
-                                    calories: 884,
-                                    protein_g: 0,
-                                    carbs_g: 0,
-                                    fat_g: 100,
-                                },
-                            },
                         ],
                     }),
                 ],
@@ -558,35 +510,33 @@ describe("resolveDraftAdd — preparation statements (photo-flow P2)", () => {
         return { candidates: [], failures: [] };
     };
 
-    test("'i deep fried it' on a steamed item → method correction targeted + implied oil grounded as an added item", async () => {
+    test("'i deep fried it' on a steamed item → method correction targeted by exact id + implied oil grounded", async () => {
         const resolution = await resolveDraftAdd(
             "i deep fried it",
             {
                 search: oilSearch,
                 parseWithModel: async (text, context) => {
                     expect(text).toBe("i deep fried it");
-                    // The draft context reached the parse.
                     expect(context.items).toEqual(cornContext);
-                    return {
+                    return parsedItemsFromModelParse({
+                        action: "add",
+                        target_item_id: null,
                         items: [
                             {
                                 name: "vegetable oil",
                                 quantity: 1,
                                 unit: "tbsp",
-                                portionConfidence: 0.85,
                                 assumptions: [
                                     "Oil absorbed in deep frying, assumed 1 tbsp",
                                 ],
-                                quantityAssumed: true,
-                                strongSignal: true,
                             },
                         ],
-                        replaces: null,
                         preparation: {
-                            targetItem: "Corn On The Cob",
-                            cookingMethod: "deep fried",
+                            target_item_id: "item-corn",
+                            cooking_method: "deep fried",
                         },
-                    };
+                        question_prompt: null,
+                    });
                 },
             },
             cornContext,
@@ -594,9 +544,10 @@ describe("resolveDraftAdd — preparation statements (photo-flow P2)", () => {
         expect(resolution.kind).toBe("ready");
         if (resolution.kind !== "ready") return;
         expect(resolution.preparation).toEqual({
-            targetItem: "Corn On The Cob",
+            targetItemId: "item-corn",
             cookingMethod: "deep fried",
         });
+        expect(resolution.preparationTargetId).toBe("item-corn");
         expect(resolution.preparationTargetName).toBe("Corn On The Cob");
         const [oil] = resolution.grounded;
         expect(oil?.grounded).toBe(true);
@@ -613,58 +564,79 @@ describe("resolveDraftAdd — preparation statements (photo-flow P2)", () => {
             "grilled instead",
             {
                 search: oilSearch,
-                parseWithModel: async () => ({
+                parseWithModel: stubModel({
+                    action: "none",
+                    target_item_id: null,
                     items: [],
-                    replaces: null,
                     preparation: {
-                        targetItem: null,
-                        cookingMethod: "grilled",
+                        target_item_id: null,
+                        cooking_method: "grilled",
                     },
+                    question_prompt: null,
                 }),
             },
-            [{ name: "Chicken breast", cookingMethod: "baked" }],
+            [
+                {
+                    id: "item-chicken",
+                    name: "Chicken breast",
+                    cookingMethod: "baked",
+                },
+            ],
         );
         expect(resolution.kind).toBe("ready");
         if (resolution.kind !== "ready") return;
         expect(resolution.grounded).toEqual([]);
         expect(resolution.preparation?.cookingMethod).toBe("grilled");
+        expect(resolution.preparationTargetId).toBe("item-chicken");
         expect(resolution.preparationTargetName).toBe("Chicken breast");
     });
 
-    test("an unnamed target on a multi-item draft → preparation_question, nothing guessed", async () => {
+    test("an unnamed preparation target on a multi-item draft → preparation_question, nothing guessed", async () => {
         const resolution = await resolveDraftAdd(
             "i deep fried it",
             {
                 search: oilSearch,
-                parseWithModel: async () => ({
+                parseWithModel: stubModel({
+                    action: "none",
+                    target_item_id: null,
                     items: [],
-                    replaces: null,
                     preparation: {
-                        targetItem: null,
-                        cookingMethod: "deep fried",
+                        target_item_id: null,
+                        cooking_method: "deep fried",
                     },
+                    question_prompt: null,
                 }),
             },
             [
-                { name: "Corn On The Cob", cookingMethod: "steamed" },
-                { name: "Chicken breast", cookingMethod: "baked" },
+                {
+                    id: "item-corn",
+                    name: "Corn On The Cob",
+                    cookingMethod: "steamed",
+                },
+                {
+                    id: "item-chicken",
+                    name: "Chicken breast",
+                    cookingMethod: "baked",
+                },
             ],
         );
         expect(resolution.kind).toBe("preparation_question");
     });
 
-    test("a named target that matches no draft item → preparation_question", async () => {
+    test("an unknown preparation target_item_id → preparation_question", async () => {
         const resolution = await resolveDraftAdd(
             "the tofu was deep fried",
             {
                 search: oilSearch,
-                parseWithModel: async () => ({
+                parseWithModel: stubModel({
+                    action: "none",
+                    target_item_id: null,
                     items: [],
-                    replaces: null,
                     preparation: {
-                        targetItem: "Tofu",
-                        cookingMethod: "deep fried",
+                        target_item_id: "item-does-not-exist",
+                        cooking_method: "deep fried",
                     },
+                    question_prompt: null,
                 }),
             },
             cornContext,
@@ -689,7 +661,7 @@ describe("planPreparationUpdate (photo-flow P2)", () => {
                     cooking_method: "steamed",
                 },
             } as never,
-            { targetItem: "Corn On The Cob", cookingMethod: "deep fried" },
+            { targetItemId: "item-corn", cookingMethod: "deep fried" },
         );
         expect(planned.previousMethod).toBe("steamed");
         expect(planned.item.assumptions[0]).toContain(
@@ -700,7 +672,6 @@ describe("planPreparationUpdate (photo-flow P2)", () => {
         expect(planned.item.sourceSnapshot?.cooking_method_corrected_from).toBe(
             "steamed",
         );
-        // The grounded nutrition is NOT silently rewritten.
         expect(planned.item.nutrients.calories).toBe(232);
         expect(planned.item.gramWeight).toBe(270);
     });
