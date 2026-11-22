@@ -1744,7 +1744,7 @@ export function createAppRouter(): Hono {
                 },
             });
             return privateJson(c, {
-                draft: serializeMealDraftForApp(outcome.draft),
+                draft: await enrichMealDraftForApp(outcome.draft),
                 add: {
                     status: outcome.status,
                     message: outcome.message,

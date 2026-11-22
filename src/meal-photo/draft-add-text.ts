@@ -1,3 +1,4 @@
+import { normalizeFoodText } from "../food-providers/ranking.js";
 import { parseIngredientText } from "../recipe-import/parser.js";
 
 /**
@@ -12,8 +13,9 @@ import { parseIngredientText } from "../recipe-import/parser.js";
  * conversational wrapper around it: stripping add phrasing ("I added
  * …", "plus …"), vague-quantity phrases ("a good bit of …") mapped to
  * STATED quantity assumptions, word numbers, replacement phrasing
- * ("actually brown rice, not white"), and a default-portion table for
- * quantity-less adds (a stated assumption, never a silent one).
+ * ("actually brown rice, not white", "those are bratwurst", "it was
+ * bratwurst"), and a default-portion table for quantity-less adds (a
+ * stated assumption, never a silent one).
  *
  * The other candidate parsers were investigated and do NOT fit:
  * `parseNaturalCookUpdate` (src/cooks/repository.ts) parses cook
@@ -46,11 +48,27 @@ export interface ParsedDraftAddItem {
      * defaulted portion. Weak parses are held to a stricter grounding
      * bar by the caller (draft-add.ts). */
     strongSignal: boolean;
+    /** True when no explicit unit was stated (e.g. "just one bratwurst"
+     * or bare food name) so a replacement can inherit the replaced
+     * item's natural unit instead of downgrading to "serving". */
+    unitAssumed?: boolean;
+    /** True when quantity=1 came only from an indefinite article ("a"/"an"),
+     * which means 1 on an add ("an egg") but is a grammatical article on
+     * a predicate replacement ("the hot dog is a bratwurst") and should
+     * not override the replaced item's established count. */
+    articleQuantity?: boolean;
 }
 
 export type DeterministicDraftAddParse =
     | { kind: "add"; items: ParsedDraftAddItem[] }
-    | { kind: "replace"; removeName: string; items: ParsedDraftAddItem[] }
+    | {
+          kind: "replace";
+          /** Explicit target named in the note ("hot dog"), or null for
+           * implicit corrections ("it was bratwurst", "those are bratwurst",
+           * "actually bratwurst") whose target resolves from draft context. */
+          removeName: string | null;
+          items: ParsedDraftAddItem[];
+      }
     | { kind: "none" }
     | null;
 
@@ -220,11 +238,23 @@ function stripAddPhrasing(segment: string): string {
 }
 
 /** Convert a leading word quantity ("two eggs", "half a cup of rice",
- * "an egg") into the numeric form parseIngredientText understands. */
-function normalizeLeadingQuantity(segment: string): string {
+ * "an egg", "just one bratwurst") into the numeric form
+ * parseIngredientText understands. */
+function normalizeLeadingQuantityWithMeta(segment: string): {
+    text: string;
+    fromArticle: boolean;
+} {
     let text = segment;
+    const explicitOnly =
+        /^(?:just|only)\s+(?=\d|a\b|an\b|one\b|two\b|three\b|four\b|five\b|six\b|seven\b|eight\b|nine\b|ten\b|eleven\b|twelve\b|half\b|quarter\b)/i.test(
+            text,
+        );
+    if (explicitOnly) {
+        text = text.replace(/^(?:just|only)\s+/i, "");
+    }
     text = text.replace(/^half\s+(?:an?\s+)?/i, "0.5 ");
     text = text.replace(/^quarter\s+(?:an?\s+)?/i, "0.25 ");
+    let fromArticle = false;
     const word = /^([a-z]+)\s+/.exec(text);
     if (word) {
         const value = WORD_NUMBERS[word[1]!.toLowerCase()];
@@ -235,9 +265,14 @@ function normalizeLeadingQuantity(segment: string): string {
             word[1]!.toLowerCase() === "an"
         ) {
             text = `1 ${text.slice(word[0].length)}`;
+            fromArticle = !explicitOnly;
         }
     }
-    return text;
+    return { text, fromArticle };
+}
+
+function normalizeLeadingQuantity(segment: string): string {
+    return normalizeLeadingQuantityWithMeta(segment).text;
 }
 
 function cleanName(raw: string): string {
@@ -279,6 +314,7 @@ const METHOD_ONLY_TOKENS = new Set([
 function isPlausibleFoodName(name: string): boolean {
     if (name.length < 2 || name.length > 120) return false;
     if (!/[a-z]{2,}/i.test(name)) return false;
+    if (/^not\s+/i.test(name)) return false;
     const tokens = name
         .toLowerCase()
         .split(/[^a-z]+/)
@@ -298,7 +334,7 @@ export function parseDraftAddSegment(
     rawSegment: string,
 ): ParsedDraftAddItem | null {
     let segment = stripAddPhrasing(rawSegment);
-    if (!segment) return null;
+    if (!segment || /^not\s+/i.test(segment)) return null;
 
     let vague: VagueQuantity | undefined;
     for (const candidate of VAGUE_QUANTITIES) {
@@ -310,11 +346,12 @@ export function parseDraftAddSegment(
         }
     }
 
-    const prepared = normalizeLeadingQuantity(segment)
+    const normalized = normalizeLeadingQuantityWithMeta(segment);
+    const prepared = normalized.text
         // "1 tbsp of butter" → "1 tbsp butter" so the ingredient
         // parser's name does not keep a leading "of".
         .replace(
-            /^(.+?\b(?:tbsp|tsp|cups?|g|kg|oz|lbs?|ml|slices?|pieces?|cloves?|cans?|servings?))\s+of\s+/i,
+            /^(.+?\b(?:tbsp|tsp|cups?|g|kg|oz|lbs?|ml|slices?|pieces?|links?|buns?|rolls?|cloves?|cans?|servings?))\s+of\s+/i,
             "$1 ",
         );
     const { ingredient } = parseIngredientText(prepared);
@@ -330,6 +367,8 @@ export function parseDraftAddSegment(
             assumptions: [],
             quantityAssumed: false,
             strongSignal: true,
+            unitAssumed: ingredient.unit === undefined,
+            ...(normalized.fromArticle ? { articleQuantity: true } : {}),
         };
     }
     if (ingredient.unit) {
@@ -344,6 +383,7 @@ export function parseDraftAddSegment(
             ],
             quantityAssumed: true,
             strongSignal: true,
+            unitAssumed: false,
         };
     }
     if (vague) {
@@ -362,6 +402,7 @@ export function parseDraftAddSegment(
             ],
             quantityAssumed: true,
             strongSignal: true,
+            unitAssumed: false,
         };
     }
     // Quantity-less add: a stated default-portion assumption, never a
@@ -381,6 +422,7 @@ export function parseDraftAddSegment(
         ],
         quantityAssumed: true,
         strongSignal: false,
+        unitAssumed: true,
     };
 }
 
@@ -392,8 +434,83 @@ function foodNameOnly(raw: string): string {
     return cleanName(ingredient.name).toLowerCase();
 }
 
+/** Strip leading demonstrative/copula correction wrappers like
+ * "actually ", "it was ", "those are ", "that's " from the replacement
+ * side of a correction note. */
+function stripCorrectionLead(raw: string): string {
+    return raw
+        .trim()
+        .replace(/^actually[:,]?\s+/i, "")
+        .replace(
+            /^(?:(?:it|that)(?:'s|\s+(?:is|was))|(?:they|those|these)(?:'re|\s+(?:are|were)))\s+(?:actually\s+)?/i,
+            "",
+        )
+        .trim();
+}
+
+/** On a replacement ("the hot dog is a bratwurst", "it's a bratwurst"),
+ * an indefinite article ("a"/"an") is predicate grammar rather than an
+ * explicit count override — demote it to an assumed default so the
+ * replaced item's quantity carries over cleanly. */
+function asReplacementItems(
+    items: ParsedDraftAddItem[] | null,
+): ParsedDraftAddItem[] | null {
+    if (!items) return null;
+    return items.map((item) => {
+        if (!item.articleQuantity || !item.unitAssumed) return item;
+        const portion = defaultPortionFor(item.name);
+        return {
+            name: item.name,
+            quantity: portion.quantity,
+            unit: portion.unit,
+            portionConfidence: 0.85,
+            assumptions: [
+                `Quantity assumed: no amount stated, so ${portion.quantity} ${portion.unit} (default portion) was used.`,
+            ],
+            quantityAssumed: true,
+            strongSignal: false,
+            unitAssumed: true,
+        };
+    });
+}
+
+/** Explicit add cue after a leading "actually" ("actually, I added butter",
+ * "actually plus an egg"): distinguishes an add afterthought from a
+ * bare correction ("actually bratwurst"). */
+const EXPLICIT_ADD_CUE =
+    /^(?:i\s+(?:also\s+)?(?:added|put|used|had|included|threw\s+in|tossed\s+in|sprinkled|drizzled|poured|mixed\s+in)|(?:please\s+)?(?:add|added|include|included|put|used)|also|and\s+also|plus|there\s+was)\b/i;
+
+function stemSimple(token: string): string {
+    if (token.length > 4 && token.endsWith("ies")) {
+        return `${token.slice(0, -3)}y`;
+    }
+    if (token.length > 3 && token.endsWith("s") && !token.endsWith("ss")) {
+        return token.slice(0, -1);
+    }
+    return token;
+}
+
+function subjectMatchesDraftItem(
+    subject: string,
+    draftItemNames: string[],
+): boolean {
+    const wanted = normalizeFoodText(subject);
+    if (!wanted) return false;
+    const wantedTokens = wanted.split(" ").filter(Boolean).map(stemSimple);
+    if (wantedTokens.length === 0) return false;
+    return draftItemNames.some((candidate) => {
+        const norm = normalizeFoodText(candidate);
+        if (!norm) return false;
+        const candTokens = new Set(
+            norm.split(" ").filter(Boolean).map(stemSimple),
+        );
+        return wantedTokens.every((token) => candTokens.has(token));
+    });
+}
+
 export function parseDraftAddTextDeterministic(
     rawText: string,
+    draftItemNames: string[] = [],
 ): DeterministicDraftAddParse {
     const text = rawText.replace(/\s+/g, " ").trim().slice(0, 500);
     if (text.length < 2) return null;
@@ -407,45 +524,124 @@ export function parseDraftAddTextDeterministic(
         return { kind: "none" };
     }
 
-    // Replacement phrasing — implemented via the draft's existing
-    // remove+add semantics by the caller (draft-add.ts).
+    // Replacement phrasing — explicit target named in the note.
+    // 1. "swap/replace/change <old> for/with/to <new>"
     const swap =
         /^(?:swap|replace|change)\s+(.+?)\s+(?:for|with|to)\s+(.+)$/i.exec(
             text,
         );
     if (swap) {
-        const items = splitAndParse(swap[2]!);
+        const items = asReplacementItems(
+            splitAndParse(stripCorrectionLead(swap[2]!)),
+        );
         const removeName = foodNameOnly(swap[1]!);
         return items && removeName
             ? { kind: "replace", removeName, items }
             : null;
     }
-    // "actually X, not Y" — add X, remove Y.
-    const actuallyNot = /^actually[:,]?\s+(.+?)(?:,)?\s+not\s+(.+)$/i.exec(
-        text,
-    );
-    if (actuallyNot) {
-        const items = splitAndParse(actuallyNot[1]!);
-        const removeName = foodNameOnly(actuallyNot[2]!);
+    // 2. "not <old>, <new>" / "not <old> — <new>"
+    const notOldNew = /^not\s+(.+?)\s*[,;—–-]\s*(.+)$/i.exec(text);
+    if (notOldNew) {
+        const items = asReplacementItems(
+            splitAndParse(stripCorrectionLead(notOldNew[2]!)),
+        );
+        const removeName = foodNameOnly(notOldNew[1]!);
         return items && removeName
             ? { kind: "replace", removeName, items }
             : null;
     }
-    // "X instead of Y" / "X rather than Y" — add X, remove Y.
+    // 3. "actually <new>,? not <old>" / "those are <new>,? not <old>"
+    const actuallyOrPronounNot =
+        /^(?:actually[:,]?\s+(?:(?:(?:it|that)(?:'s|\s+(?:is|was))|(?:they|those|these)(?:'re|\s+(?:are|were)))\s+)?|(?:(?:it|that)(?:'s|\s+(?:is|was))|(?:they|those|these)(?:'re|\s+(?:are|were)))\s+)(.+?)(?:,)?\s+not\s+(.+)$/i.exec(
+            text,
+        );
+    if (actuallyOrPronounNot) {
+        const items = asReplacementItems(
+            splitAndParse(stripCorrectionLead(actuallyOrPronounNot[1]!)),
+        );
+        const removeName = foodNameOnly(actuallyOrPronounNot[2]!);
+        return items && removeName
+            ? { kind: "replace", removeName, items }
+            : null;
+    }
+    // 4. "<new>, not <old>" (e.g. "bratwurst, not hot dog")
+    const commaNot = /^(.+?),\s*not\s+(.+)$/i.exec(text);
+    if (commaNot) {
+        const items = asReplacementItems(
+            splitAndParse(stripCorrectionLead(commaNot[1]!)),
+        );
+        const removeName = foodNameOnly(commaNot[2]!);
+        return items && removeName
+            ? { kind: "replace", removeName, items }
+            : null;
+    }
+    // 5. "<new> instead of <old>" / "<new> rather than <old>"
     const insteadOf = /^(.+?)\s+(?:instead\s+of|rather\s+than)\s+(.+)$/i.exec(
         text,
     );
     if (insteadOf) {
-        const items = splitAndParse(insteadOf[1]!);
+        const items = asReplacementItems(
+            splitAndParse(stripCorrectionLead(insteadOf[1]!)),
+        );
         const removeName = foodNameOnly(insteadOf[2]!);
         return items && removeName
             ? { kind: "replace", removeName, items }
             : null;
     }
-    if (/^(?:actually)\b/i.test(text)) {
-        // "actually, I added …" is an add, not a replacement.
-        const items = splitAndParse(text.replace(/^actually[:,]?\s+/i, ""));
-        return items ? { kind: "add", items } : null;
+    // 6. Subject-copula explicit replacement: "the hot dog is a bratwurst",
+    //    "the hot dogs are bratwurst", "hot dog was actually bratwurst".
+    //    Guarded by matching an existing draft item (or explicit "actually")
+    //    so arbitrary prose like "the weather is nice today" still returns
+    //    null for the model fallback.
+    const subjectCopula =
+        /^(?:the\s+)?(.+?)\s+(?:is|are|was|were)\s+(actually\s+)?(.+)$/i.exec(
+            text,
+        );
+    if (subjectCopula) {
+        const rawSubject = subjectCopula[1]!.trim();
+        const isPronounSubject = /^(?:it|that|this|they|those|these)$/i.test(
+            rawSubject,
+        );
+        if (!isPronounSubject) {
+            const hasActually = Boolean(subjectCopula[2]);
+            const removeName = foodNameOnly(rawSubject);
+            if (
+                removeName &&
+                (hasActually ||
+                    (draftItemNames.length > 0 &&
+                        subjectMatchesDraftItem(removeName, draftItemNames)))
+            ) {
+                const items = asReplacementItems(
+                    splitAndParse(stripCorrectionLead(subjectCopula[3]!)),
+                );
+                return items ? { kind: "replace", removeName, items } : null;
+            }
+        }
+    }
+    // 7. Implicit-target corrections: "it was bratwurst", "those are
+    //    bratwurst", "that's bratwurst", "actually it's bratwurst".
+    //    Never fall through to an append — the caller resolves the target
+    //    from draft context (single item, or model disambiguation / question).
+    const implicitPronoun =
+        /^(?:actually[:,]?\s+)?(?:(?:it|that)(?:'s|\s+(?:is|was))|(?:they|those|these)(?:'re|\s+(?:are|were)))\s+(?:actually\s+)?(.+)$/i.exec(
+            text,
+        );
+    if (implicitPronoun) {
+        const items = asReplacementItems(splitAndParse(implicitPronoun[1]!));
+        return items ? { kind: "replace", removeName: null, items } : null;
+    }
+    // 8. "actually …" without "not …": an add only when paired with an
+    //    explicit add cue ("actually, I added butter"); otherwise an
+    //    implicit correction ("actually bratwurst").
+    if (/^actually\b/i.test(text)) {
+        const rest = text.replace(/^actually[:,]?\s+/i, "").trim();
+        if (!rest) return null;
+        if (EXPLICIT_ADD_CUE.test(rest)) {
+            const items = splitAndParse(rest);
+            return items ? { kind: "add", items } : null;
+        }
+        const items = asReplacementItems(splitAndParse(rest));
+        return items ? { kind: "replace", removeName: null, items } : null;
     }
 
     const items = splitAndParse(text);

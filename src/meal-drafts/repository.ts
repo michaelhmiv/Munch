@@ -508,6 +508,78 @@ export async function deleteMealDraftItem(input: {
     });
 }
 
+/**
+ * Replace one draft item IN PLACE in a single transaction: deletes the
+ * target row (cascading any questions attached to it) and inserts the
+ * replacement item(s) starting at the target's original position.
+ * Keeps positions dense without ever leaving the draft with a lost item.
+ */
+export async function replaceMealDraftItem(input: {
+    userId: string;
+    draftId: string;
+    itemId: string;
+    expectedVersion: number;
+    items: StructuredMealItemInput[];
+}): Promise<MealDraft> {
+    if (input.items.length === 0) {
+        throw new Error("Replacement must provide at least one item");
+    }
+    const items = input.items.map(validateDraftItem);
+    return withUserDatabase(input.userId, async (tx) => {
+        const draft = await loadDraft(tx, input.draftId, true);
+        if (!draft) throw new Error("Meal draft not found");
+        assertEditable(draft);
+        assertVersion(draft, input.expectedVersion);
+        const target = draft.items.find((record) => record.id === input.itemId);
+        if (!target) throw new Error("Meal draft item not found");
+        if (draft.items.length - 1 + items.length > 100) {
+            throw new Error(
+                "Draft item position must be an integer from 0 to 99",
+            );
+        }
+
+        await tx`
+            delete from munch.meal_draft_items
+            where id = ${input.itemId}
+              and draft_id = ${input.draftId}
+        `;
+        const shift = items.length - 1;
+        if (shift > 0) {
+            await tx`
+                update munch.meal_draft_items
+                set position = position + 1000,
+                    updated_at = now()
+                where draft_id = ${input.draftId}
+                  and position > ${target.position}
+            `;
+            await tx`
+                update munch.meal_draft_items
+                set position = position - ${1000 - shift},
+                    updated_at = now()
+                where draft_id = ${input.draftId}
+                  and position > ${target.position + 1000}
+            `;
+        }
+        for (const [offset, replacement] of items.entries()) {
+            await tx`
+                insert into munch.meal_draft_items (
+                    draft_id, user_id, position, item_payload
+                ) values (
+                    ${input.draftId}, ${input.userId}, ${target.position + offset},
+                    ${replacement}::jsonb
+                )
+            `;
+        }
+        await tx`
+            update munch.meal_drafts
+            set version = version + 1, updated_at = now()
+            where id = ${input.draftId}
+        `;
+        await refreshStatus(tx, input.draftId);
+        return (await loadDraft(tx, input.draftId))!;
+    });
+}
+
 export async function addMealDraftQuestion(input: {
     userId: string;
     draftId: string;

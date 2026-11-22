@@ -1,10 +1,12 @@
 import {
     addMealDraftQuestion,
     deleteMealDraftItem,
+    replaceMealDraftItem,
     upsertMealDraftItem,
     type MealDraft,
 } from "../meal-drafts/index.js";
 import { blockingQuestionKey } from "../meal-drafts/blocking.js";
+import { portionUnitKind } from "../food-providers/portions.js";
 import { normalizeFoodText } from "../food-providers/ranking.js";
 import {
     groundMealPhotoItems,
@@ -18,6 +20,7 @@ import {
 import type {
     DraftAddModelParseResult,
     DraftAddParseContext,
+    DraftAddParseContextItem,
     DraftAddPreparation,
 } from "./draft-add-parse.js";
 import type { MealPhotoVisionItem } from "./vision.js";
@@ -27,21 +30,28 @@ import type { MealPhotoVisionItem } from "./vision.js";
  *
  * The user photographs chicken and broccoli, reviews the draft, and
  * answers "Anything else to add?" with free text — "I added a good bit
- * of butter". The text is parsed DETERMINISTICALLY first
+ * of butter" or a correction like "it was bratwurst" / "actually
+ * bratwurst, not hot dog". The text is parsed DETERMINISTICALLY first
  * (draft-add-text.ts, reusing the recipe-import ingredient parser);
  * the Ember fallback (draft-add-parse.ts, injected as `parseWithModel`)
- * is spent only on deterministic failure. The parsed item then goes
- * through the SAME grounding path as photo items
- * (`groundMealPhotoItems`: canonical search → deterministic ranking
- * with the Ember tie-break only in the ambiguity band → provider
- * values; ungrounded → the labelled model-estimate step or a BLOCKING
- * question). The S3-hardening pipeline invariant therefore holds for
- * added items identically, and everything lands in the existing draft
- * machinery — confirm-before-save is untouched.
+ * is spent only on deterministic failure or when an implicit
+ * correction on a multi-item draft needs semantic target resolution.
+ * The parsed item then goes through the SAME grounding path as photo
+ * items (`groundMealPhotoItems`: canonical search → deterministic
+ * ranking with the Ember tie-break only in the ambiguity band →
+ * provider values; ungrounded → the labelled model-estimate step or a
+ * BLOCKING question). The S3-hardening pipeline invariant therefore
+ * holds for added and replaced items identically, and everything lands
+ * in the existing draft machinery — confirm-before-save is untouched.
  *
  * LOW CONFIDENCE = QUESTION, NEVER A SILENT ADD:
  * - Unparseable text (both parsers resolve nothing) → honest no-add
  *   response in the review; the draft is unchanged.
+ * - An ambiguous or unmatched replacement target → a draft QUESTION,
+ *   never a guess and never a silent append.
+ * - A pure add whose food closely matches an item already in the draft
+ *   (probable correction / near-duplicate) → a draft QUESTION asking
+ *   whether to replace or add another, never appended blind.
  * - A weak parse (bare food name, defaulted portion) whose item ends
  *   with NO usable nutrition — grounding found no provider candidate
  *   AND the estimate step produced nothing → a draft QUESTION: there
@@ -60,21 +70,31 @@ import type { MealPhotoVisionItem } from "./vision.js";
  *   labelled "Model estimate" values, or a blocking question when the
  *   estimate step fails.
  *
- * Added items are marked as user-added: every item's assumptions lead
- * with `Added by you: "<their text>"` and the source snapshot records
- * the parse source — provenance stays honest.
+ * Added/replaced items are marked with user provenance in their
+ * assumptions and source snapshot — provenance stays honest.
  */
+
+export interface DraftAddStore {
+    addMealDraftQuestion: typeof addMealDraftQuestion;
+    deleteMealDraftItem: typeof deleteMealDraftItem;
+    upsertMealDraftItem: typeof upsertMealDraftItem;
+    replaceMealDraftItem: typeof replaceMealDraftItem;
+}
 
 export interface DraftAddDeps extends MealPhotoGroundingDeps {
     /** Ember fallback parse (draft-add-parse.ts). Injected so tests
      * can count calls and replay recorded responses. Omit to disable
      * the fallback (deterministic-only). The parse receives the
-     * draft's current items as context so a preparation statement can
-     * name the item it corrects (photo-flow P2). */
+     * draft's current items as context so corrections and preparation
+     * statements can name the item they target. */
     parseWithModel?: (
         text: string,
         context: DraftAddParseContext,
     ) => Promise<DraftAddModelParseResult>;
+    /** Optional persistence seam (defaults to the Postgres repository
+     * functions); injected by tests to exercise addTextToPhotoDraft
+     * end to end without a database. */
+    store?: DraftAddStore;
 }
 
 /** A preparation correction as APPLIED to a draft item (P2). */
@@ -134,6 +154,21 @@ export type DraftAddResolution =
           preparation: DraftAddPreparation;
       }
     | {
+          kind: "replacement_question";
+          parseSource: "deterministic" | "model";
+          parsed: ParsedDraftAddItem[];
+          targetName: string | null;
+          candidateNames: string[];
+      }
+    | {
+          kind: "duplicate_question";
+          parseSource: "deterministic" | "model";
+          parsed: ParsedDraftAddItem[];
+          grounded: GroundedMealPhotoItem[];
+          existingItemName: string;
+          addedItemName: string;
+      }
+    | {
           kind: "ready";
           parseSource: "deterministic" | "model";
           parsed: ParsedDraftAddItem[];
@@ -184,43 +219,401 @@ function pickSharesNameToken(
     return false;
 }
 
-/** Does a draft item's name match the name the user/model gave?
- * Exact, containment, or any shared token (the same tolerant matching
- * replacement phrasing has always used). */
-function nameMatches(candidateName: string, wantedName: string): boolean {
-    const name = normalizeFoodText(candidateName);
-    const wanted = normalizeFoodText(wantedName);
-    if (!name || !wanted) return false;
-    if (name === wanted || name.includes(wanted) || wanted.includes(name)) {
-        return true;
+const GENERIC_MODIFIER_TOKENS = new Set([
+    "hot",
+    "cold",
+    "warm",
+    "sweet",
+    "sour",
+    "spicy",
+    "mild",
+    "fresh",
+    "raw",
+    "cooked",
+    "grilled",
+    "fried",
+    "baked",
+    "steamed",
+    "roasted",
+    "boiled",
+    "smoked",
+    "salted",
+    "unsalted",
+    "plain",
+    "large",
+    "small",
+    "medium",
+    "mini",
+    "whole",
+    "sliced",
+    "chopped",
+    "diced",
+    "ground",
+    "lean",
+    "extra",
+    "light",
+    "dark",
+    "white",
+    "brown",
+    "red",
+    "green",
+    "yellow",
+    "black",
+    "blue",
+    "organic",
+    "homemade",
+    "style",
+    "with",
+    "and",
+    "in",
+    "on",
+    "of",
+    "the",
+    "a",
+    "an",
+]);
+
+function stemFoodToken(token: string): string {
+    if (token.length > 4 && token.endsWith("ies")) {
+        return `${token.slice(0, -3)}y`;
     }
-    const wantedTokens = new Set(wanted.split(" ").filter(Boolean));
-    return name
+    if (token.length > 3 && token.endsWith("s") && !token.endsWith("ss")) {
+        return token.slice(0, -1);
+    }
+    return token;
+}
+
+function stemmedTokens(text: string): string[] {
+    return normalizeFoodText(text)
         .split(" ")
         .filter(Boolean)
-        .some((token) => wantedTokens.has(token));
+        .map(stemFoodToken);
+}
+
+function phraseContains(
+    haystackTokens: string[],
+    needleTokens: string[],
+): boolean {
+    if (
+        needleTokens.length === 0 ||
+        needleTokens.length > haystackTokens.length
+    ) {
+        return false;
+    }
+    for (let i = 0; i <= haystackTokens.length - needleTokens.length; i++) {
+        let all = true;
+        for (let j = 0; j < needleTokens.length; j++) {
+            if (haystackTokens[i + j] !== needleTokens[j]) {
+                all = false;
+                break;
+            }
+        }
+        if (all) return true;
+    }
+    return false;
+}
+
+/** Score how specifically `candidateName` matches `wantedName`:
+ * 1 = exact (modulo case/punctuation/plural),
+ * 2 = contiguous phrase containment,
+ * 3 = all tokens of one appear in the other,
+ * 4 = shared non-generic food token,
+ * null = no match. */
+function nameMatchTier(
+    candidateName: string,
+    wantedName: string,
+): number | null {
+    const cand = stemmedTokens(candidateName);
+    const wanted = stemmedTokens(wantedName);
+    if (cand.length === 0 || wanted.length === 0) return null;
+    const candJoined = cand.join(" ");
+    const wantedJoined = wanted.join(" ");
+    if (candJoined === wantedJoined) return 1;
+    if (phraseContains(cand, wanted) || phraseContains(wanted, cand)) {
+        return 2;
+    }
+    const candSet = new Set(cand);
+    const wantedSet = new Set(wanted);
+    if (
+        wanted.every((token) => candSet.has(token)) ||
+        cand.every((token) => wantedSet.has(token))
+    ) {
+        return 3;
+    }
+    const hasSpecificOverlap = wanted.some(
+        (token) => !GENERIC_MODIFIER_TOKENS.has(token) && candSet.has(token),
+    );
+    return hasSpecificOverlap ? 4 : null;
+}
+
+type TargetMatchResult<T> =
+    | { kind: "matched"; item: T }
+    | { kind: "ambiguous"; candidates: T[] }
+    | { kind: "none" };
+
+function matchDraftItemTarget<
+    T extends { name: string; visionName?: string | null },
+>(items: T[], wantedName: string): TargetMatchResult<T> {
+    let bestTier = Infinity;
+    let matches: T[] = [];
+    for (const item of items) {
+        const names = [item.name];
+        if (item.visionName && item.visionName !== item.name) {
+            names.push(item.visionName);
+        }
+        let itemBest: number | null = null;
+        for (const candidateName of names) {
+            const tier = nameMatchTier(candidateName, wantedName);
+            if (tier !== null && (itemBest === null || tier < itemBest)) {
+                itemBest = tier;
+            }
+        }
+        if (itemBest === null) continue;
+        if (itemBest < bestTier) {
+            bestTier = itemBest;
+            matches = [item];
+        } else if (itemBest === bestTier) {
+            matches.push(item);
+        }
+    }
+    if (matches.length === 0) return { kind: "none" };
+    if (matches.length === 1) return { kind: "matched", item: matches[0]! };
+    return { kind: "ambiguous", candidates: matches };
+}
+
+/** Extract the established `{ quantity, unit }` from an existing draft
+ * item so a replacement inherits what the user/photo already set
+ * instead of reverting to a bare "1 serving". */
+export function extractTargetPortion(
+    target: DraftAddParseContextItem,
+): { quantity: number; unit: string } | null {
+    const rawLabel = target.portionLabel?.trim();
+    if (rawLabel) {
+        // Strip trailing picker suffix like " · 85 g" or parenthetical weight.
+        const cleaned = rawLabel
+            .replace(/\s*·\s*.*$/, "")
+            .replace(/\s*\([^)]*\)\s*$/, "")
+            .trim();
+        const match = /^(\d+(?:\.\d+)?)\s+(.+)$/.exec(cleaned);
+        if (match) {
+            const labelAmount = Number(match[1]);
+            const labelUnit = match[2]!.trim();
+            if (Number.isFinite(labelAmount) && labelAmount > 0 && labelUnit) {
+                if (
+                    portionUnitKind(labelUnit) === "weight" &&
+                    target.gramWeight !== undefined &&
+                    target.gramWeight !== null &&
+                    target.gramWeight > 0
+                ) {
+                    if (
+                        target.quantity !== undefined &&
+                        target.quantity > 0 &&
+                        Math.abs(target.quantity - labelAmount) < 1e-6
+                    ) {
+                        return { quantity: labelAmount, unit: labelUnit };
+                    }
+                    return { quantity: target.gramWeight, unit: "g" };
+                }
+                if (target.quantity !== undefined && target.quantity > 0) {
+                    if (labelAmount > 1 && target.quantity === 1) {
+                        return { quantity: labelAmount, unit: labelUnit };
+                    }
+                    return { quantity: target.quantity, unit: labelUnit };
+                }
+                return { quantity: labelAmount, unit: labelUnit };
+            }
+        }
+        if (target.quantity !== undefined && target.quantity > 0 && cleaned) {
+            return { quantity: target.quantity, unit: cleaned };
+        }
+    }
+    if (
+        target.gramWeight !== undefined &&
+        target.gramWeight !== null &&
+        target.gramWeight > 0
+    ) {
+        return { quantity: target.gramWeight, unit: "g" };
+    }
+    if (target.quantity !== undefined && target.quantity > 0) {
+        return { quantity: target.quantity, unit: "serving" };
+    }
+    return null;
+}
+
+function applyQuantityCarryover(
+    parsed: ParsedDraftAddItem,
+    target: DraftAddParseContextItem,
+): ParsedDraftAddItem {
+    const carried = extractTargetPortion(target);
+    if (!carried) return parsed;
+    // User stated NO quantity at all (bare replacement name): inherit
+    // the replaced item's established quantity and unit.
+    if (!parsed.strongSignal && parsed.quantityAssumed) {
+        const filteredAssumptions = parsed.assumptions.filter(
+            (assumption) =>
+                !/default portion/i.test(assumption) &&
+                !/no amount stated/i.test(assumption),
+        );
+        filteredAssumptions.push(
+            `Carried over portion (${carried.quantity} ${carried.unit}) from replaced item "${target.name}".`,
+        );
+        return {
+            ...parsed,
+            quantity: carried.quantity,
+            unit: carried.unit,
+            portionConfidence: 0.9,
+            assumptions: filteredAssumptions,
+            quantityAssumed: false,
+            strongSignal: true,
+            unitAssumed: false,
+        };
+    }
+    // User stated an explicit count without a unit ("just one bratwurst"):
+    // their stated count wins, and the replaced item's count unit carries
+    // over instead of downgrading to "serving".
+    if (
+        !parsed.quantityAssumed &&
+        parsed.unitAssumed &&
+        portionUnitKind(carried.unit) === "count"
+    ) {
+        return {
+            ...parsed,
+            unit: carried.unit,
+            unitAssumed: false,
+        };
+    }
+    return parsed;
+}
+
+const EXPLICIT_ADDITIONAL_PATTERN =
+    /\b(?:another|more|extra|second|third|additional|other)\b/i;
+
+function primaryHeadTokens(name: string): string[] {
+    const head = name.split(",")[0] ?? name;
+    return stemmedTokens(head);
+}
+
+function isNearDuplicateName(a: string, b: string): boolean {
+    const aTokens = stemmedTokens(a);
+    const bTokens = stemmedTokens(b);
+    if (aTokens.length === 0 || bTokens.length === 0) return false;
+    if (aTokens.join(" ") === bTokens.join(" ")) return true;
+    const aHead = primaryHeadTokens(a).join(" ");
+    const bHead = primaryHeadTokens(b).join(" ");
+    if (aHead && bHead && aHead === bHead) return true;
+    if (
+        (aTokens.length >= 2 && phraseContains(bTokens, aTokens)) ||
+        (bTokens.length >= 2 && phraseContains(aTokens, bTokens))
+    ) {
+        return true;
+    }
+    const aMeaningful = new Set(
+        aTokens.filter((token) => !GENERIC_MODIFIER_TOKENS.has(token)),
+    );
+    const bMeaningful = new Set(
+        bTokens.filter((token) => !GENERIC_MODIFIER_TOKENS.has(token)),
+    );
+    if (aMeaningful.size === 0 || bMeaningful.size === 0) return false;
+    let shared = 0;
+    for (const token of aMeaningful) {
+        if (bMeaningful.has(token)) shared += 1;
+    }
+    const union = aMeaningful.size + bMeaningful.size - shared;
+    return union > 0 && shared / union >= 0.6;
+}
+
+function findDuplicateDraftItem(
+    draftItems: DraftAddParseContextItem[],
+    parsedName: string,
+    groundedName: string,
+): DraftAddParseContextItem | undefined {
+    for (const existing of draftItems) {
+        const existingNames = [existing.name];
+        if (existing.visionName && existing.visionName !== existing.name) {
+            existingNames.push(existing.visionName);
+        }
+        for (const existingName of existingNames) {
+            if (
+                isNearDuplicateName(existingName, parsedName) ||
+                isNearDuplicateName(existingName, groundedName)
+            ) {
+                return existing;
+            }
+        }
+    }
+    return undefined;
 }
 
 export async function resolveDraftAdd(
     text: string,
     deps: DraftAddDeps,
-    draftItems: DraftAddParseContext["items"] = [],
+    draftItems: DraftAddParseContextItem[] = [],
 ): Promise<DraftAddResolution> {
-    const deterministic = parseDraftAddTextDeterministic(text);
+    const deterministic = parseDraftAddTextDeterministic(
+        text,
+        draftItems.map((item) => item.name),
+    );
     if (deterministic?.kind === "none") return { kind: "none" };
 
     let parseSource: "deterministic" | "model";
     let items: ParsedDraftAddItem[];
     let removeName: string | null;
+    let isReplacement = false;
     let preparation: DraftAddPreparation | null = null;
     let preparationTargetName: string | null = null;
-    if (deterministic?.kind === "add" || deterministic?.kind === "replace") {
+
+    const needsModelTargetDisambiguation =
+        deterministic?.kind === "replace" &&
+        deterministic.removeName === null &&
+        draftItems.length > 1;
+
+    if (
+        deterministic?.kind === "add" ||
+        (deterministic?.kind === "replace" && !needsModelTargetDisambiguation)
+    ) {
         parseSource = "deterministic";
         items = deterministic.items;
+        isReplacement = deterministic.kind === "replace";
         removeName =
-            deterministic.kind === "replace" ? deterministic.removeName : null;
+            deterministic.kind === "replace"
+                ? (deterministic.removeName ??
+                  (draftItems.length === 1 ? draftItems[0]!.name : null))
+                : null;
+    } else if (needsModelTargetDisambiguation) {
+        // Implicit correction ("it was bratwurst", "those are bratwurst",
+        // "actually bratwurst") on a multi-item draft: ask the model to
+        // resolve the semantic target from <draft-items>. If the model is
+        // absent or fails, fail open to a draft question — never guess and
+        // never silently append.
+        if (deps.parseWithModel) {
+            try {
+                const model = await deps.parseWithModel(text, {
+                    items: draftItems,
+                });
+                preparation = model.preparation;
+                if (model.items.length === 0 && !preparation) {
+                    return { kind: "no_parse" };
+                }
+                parseSource = "model";
+                items = model.items;
+                removeName = model.replaces;
+                isReplacement = Boolean(
+                    model.isReplacement || model.replaces || !preparation,
+                );
+            } catch {
+                parseSource = "deterministic";
+                items = deterministic.items;
+                removeName = null;
+                isReplacement = true;
+            }
+        } else {
+            parseSource = "deterministic";
+            items = deterministic.items;
+            removeName = null;
+            isReplacement = true;
+        }
     } else {
-        // Deterministic failure is the ONLY path that spends the
+        // Deterministic failure is the ONLY other path that spends the
         // Ember fallback.
         if (!deps.parseWithModel) return { kind: "no_parse" };
         let model: DraftAddModelParseResult;
@@ -231,38 +624,84 @@ export async function resolveDraftAdd(
             return { kind: "no_parse" };
         }
         preparation = model.preparation;
-        if (preparation) {
-            // The preparation must land on a KNOWN item: a named
-            // target that matches nothing, or an unnamed target on a
-            // multi-item draft, becomes a question — never a guess.
-            if (preparation.targetItem) {
-                const match = draftItems.find((item) =>
-                    nameMatches(item.name, preparation!.targetItem!),
-                );
-                if (!match) {
-                    return {
-                        kind: "preparation_question",
-                        parseSource: "model",
-                        preparation,
-                    };
-                }
-                preparationTargetName = match.name;
-            } else if (draftItems.length === 1) {
-                preparationTargetName = draftItems[0]!.name;
-            } else {
-                return {
-                    kind: "preparation_question",
-                    parseSource: "model",
-                    preparation,
-                };
-            }
-        }
         if (model.items.length === 0 && !preparation) {
             return { kind: "no_parse" };
         }
         parseSource = "model";
         items = model.items;
         removeName = model.replaces;
+        isReplacement = Boolean(model.isReplacement || model.replaces);
+    }
+
+    if (preparation) {
+        // The preparation must land on a KNOWN item: a named target that
+        // matches nothing (or is ambiguous), or an unnamed target on a
+        // multi-item draft, becomes a question — never a guess.
+        if (preparation.targetItem) {
+            const match = matchDraftItemTarget(
+                draftItems,
+                preparation.targetItem,
+            );
+            if (match.kind !== "matched") {
+                return {
+                    kind: "preparation_question",
+                    parseSource: "model",
+                    preparation,
+                };
+            }
+            preparationTargetName = match.item.name;
+        } else if (draftItems.length === 1) {
+            preparationTargetName = draftItems[0]!.name;
+        } else {
+            return {
+                kind: "preparation_question",
+                parseSource: "model",
+                preparation,
+            };
+        }
+    }
+
+    // Replacement target resolution + quantity carryover (Defects 1 & 3):
+    // resolve the target BEFORE grounding so ambiguous/missing targets
+    // produce a draft question instead of appending, and a matched
+    // target's quantity carries over cleanly into grounding.
+    let replacementTarget: DraftAddParseContextItem | null = null;
+    if (isReplacement) {
+        if (removeName === null) {
+            if (draftItems.length === 1) {
+                replacementTarget = draftItems[0]!;
+                removeName = replacementTarget.name;
+            } else {
+                return {
+                    kind: "replacement_question",
+                    parseSource,
+                    parsed: items,
+                    targetName: null,
+                    candidateNames: draftItems.map((item) => item.name),
+                };
+            }
+        } else if (draftItems.length > 0) {
+            const match = matchDraftItemTarget(draftItems, removeName);
+            if (match.kind === "matched") {
+                replacementTarget = match.item;
+                removeName = match.item.name;
+            } else {
+                return {
+                    kind: "replacement_question",
+                    parseSource,
+                    parsed: items,
+                    targetName: removeName,
+                    candidateNames:
+                        match.kind === "ambiguous"
+                            ? match.candidates.map((item) => item.name)
+                            : draftItems.map((item) => item.name),
+                };
+            }
+        }
+    }
+
+    if (replacementTarget && items.length === 1) {
+        items = [applyQuantityCarryover(items[0]!, replacementTarget)];
     }
 
     const grounded = await groundMealPhotoItems(items.map(toVisionItem), deps);
@@ -296,16 +735,47 @@ export async function resolveDraftAdd(
             unresolvedNames,
         };
     }
-    // Mark every added item as user-added in its assumptions and
-    // source snapshot, so provenance is honest wherever the item is
-    // later rendered. (Done here, not at persistence, so the recorded
-    // -fixture tests assert the exact persisted shape.)
+
+    // Duplicate guard (Defect 1): a pure add whose food closely matches
+    // an item already in the draft is treated as a probable correction
+    // and confirmed via a draft question, never appended blind — unless
+    // the user explicitly asked for "more"/"another"/"extra".
+    if (
+        !isReplacement &&
+        !preparation &&
+        draftItems.length > 0 &&
+        !EXPLICIT_ADDITIONAL_PATTERN.test(text)
+    ) {
+        for (const [index, entry] of grounded.entries()) {
+            const parsed = items[index]!;
+            const duplicate = findDuplicateDraftItem(
+                draftItems,
+                parsed.name,
+                entry.draftItem.name,
+            );
+            if (duplicate) {
+                return {
+                    kind: "duplicate_question",
+                    parseSource,
+                    parsed: items,
+                    grounded,
+                    existingItemName: duplicate.name,
+                    addedItemName: entry.draftItem.name,
+                };
+            }
+        }
+    }
+
+    // Mark every added/replaced item with honest user provenance in its
+    // assumptions and source snapshot.
     const marked = grounded.map((entry, index) => ({
         ...entry,
         draftItem: {
             ...entry.draftItem,
             assumptions: [
-                `Added by you: "${text}"`,
+                removeName
+                    ? `Replaced "${removeName}" by you: "${text}"`
+                    : `Added by you: "${text}"`,
                 ...(entry.draftItem.assumptions ?? []),
             ].slice(0, 20),
             sourceSnapshot: {
@@ -313,6 +783,7 @@ export async function resolveDraftAdd(
                 draft_add_text: text,
                 draft_add_parse_source: parseSource,
                 draft_add_quantity_assumed: items[index]!.quantityAssumed,
+                ...(removeName ? { draft_add_replaced_item: removeName } : {}),
             },
         },
     }));
@@ -327,13 +798,29 @@ export async function resolveDraftAdd(
     };
 }
 
-function findItemToRemove(
+function findDraftItemMatch(
     draft: MealDraft,
-    removeName: string,
-): MealDraft["items"][number] | undefined {
-    return draft.items.find((record) =>
-        nameMatches(record.item.name, removeName),
-    );
+    wantedName: string,
+): TargetMatchResult<MealDraft["items"][number]> {
+    const wrapped = draft.items.map((record) => ({
+        record,
+        name: record.item.name,
+        visionName:
+            typeof record.item.sourceSnapshot?.vision_name === "string"
+                ? record.item.sourceSnapshot.vision_name
+                : null,
+    }));
+    const match = matchDraftItemTarget(wrapped, wantedName);
+    if (match.kind === "matched") {
+        return { kind: "matched", item: match.item.record };
+    }
+    if (match.kind === "ambiguous") {
+        return {
+            kind: "ambiguous",
+            candidates: match.candidates.map((entry) => entry.record),
+        };
+    }
+    return { kind: "none" };
 }
 
 /**
@@ -379,12 +866,19 @@ export function planPreparationUpdate(
     };
 }
 
+const DEFAULT_STORE: DraftAddStore = {
+    addMealDraftQuestion,
+    deleteMealDraftItem,
+    upsertMealDraftItem,
+    replaceMealDraftItem,
+};
+
 /**
- * Parse `text`, ground the result, and add it to the photo draft.
+ * Parse `text`, ground the result, and add or replace in the photo draft.
  * `draft` must be the caller's freshly loaded draft (its version
  * threads every repository write). The returned draft is the latest
- * persisted state for "added"/"question" outcomes; for "no_add" the
- * input draft is returned unchanged.
+ * persisted state for "added"/"updated"/"question" outcomes; for
+ * "no_add" the input draft is returned unchanged.
  */
 export async function addTextToPhotoDraft(input: {
     userId: string;
@@ -392,6 +886,7 @@ export async function addTextToPhotoDraft(input: {
     text: string;
     deps: DraftAddDeps;
 }): Promise<DraftAddOutcome> {
+    const store = input.deps.store ?? DEFAULT_STORE;
     const text = input.text.replace(/\s+/g, " ").trim().slice(0, 500);
     let draft = input.draft;
     if (draft.sourceMode !== "photo") {
@@ -405,6 +900,13 @@ export async function addTextToPhotoDraft(input: {
             cookingMethod:
                 typeof record.item.sourceSnapshot?.cooking_method === "string"
                     ? record.item.sourceSnapshot.cooking_method
+                    : null,
+            quantity: record.item.quantity,
+            portionLabel: record.item.portionLabel ?? null,
+            gramWeight: record.item.gramWeight ?? null,
+            visionName:
+                typeof record.item.sourceSnapshot?.vision_name === "string"
+                    ? record.item.sourceSnapshot.vision_name
                     : null,
         })),
     );
@@ -423,7 +925,7 @@ export async function addTextToPhotoDraft(input: {
         };
     }
     if (resolution.kind === "preparation_question") {
-        draft = await addMealDraftQuestion({
+        draft = await store.addMealDraftQuestion({
             userId: input.userId,
             draftId: draft.id,
             expectedVersion: draft.version,
@@ -438,9 +940,50 @@ export async function addTextToPhotoDraft(input: {
             message: `We couldn't tell which item "${text.slice(0, 200)}" refers to, so we left a question on the draft instead — nothing was changed.`,
         };
     }
+    if (resolution.kind === "replacement_question") {
+        const replacementNames = resolution.parsed
+            .map((item) => item.name)
+            .join(", ")
+            .slice(0, 160);
+        const candidates = resolution.candidateNames
+            .slice(0, 5)
+            .join(", ")
+            .slice(0, 200);
+        const detail = candidates ? ` (current items: ${candidates})` : "";
+        draft = await store.addMealDraftQuestion({
+            userId: input.userId,
+            draftId: draft.id,
+            expectedVersion: draft.version,
+            questionKey: `photo_draft_add_replace_${textHash(text)}`,
+            prompt: `You noted a correction ("${text.slice(0, 200)}"), but we couldn't tell which item in this draft should be replaced${replacementNames ? ` with ${replacementNames}` : ""}${detail}. Which item did you mean to replace?`,
+            impactScore: 75,
+        });
+        return {
+            status: "question",
+            draft,
+            parseSource: resolution.parseSource,
+            message: `We couldn't tell which item to replace from "${text.slice(0, 200)}", so we left a question on the draft instead — nothing was changed.`,
+        };
+    }
+    if (resolution.kind === "duplicate_question") {
+        draft = await store.addMealDraftQuestion({
+            userId: input.userId,
+            draftId: draft.id,
+            expectedVersion: draft.version,
+            questionKey: `photo_draft_add_duplicate_${textHash(text)}`,
+            prompt: `Your draft already includes "${resolution.existingItemName}". Did you mean to replace it with ${resolution.addedItemName} ("${text.slice(0, 200)}"), or add another? Reply here, or edit the item directly.`,
+            impactScore: 75,
+        });
+        return {
+            status: "question",
+            draft,
+            parseSource: resolution.parseSource,
+            message: `Your draft already has ${resolution.existingItemName}, so we left a question instead of adding a duplicate — nothing was changed.`,
+        };
+    }
     if (resolution.kind === "question") {
         const names = resolution.unresolvedNames.join(", ").slice(0, 200);
-        draft = await addMealDraftQuestion({
+        draft = await store.addMealDraftQuestion({
             userId: input.userId,
             draftId: draft.id,
             expectedVersion: draft.version,
@@ -458,38 +1001,21 @@ export async function addTextToPhotoDraft(input: {
 
     const grounded = resolution.grounded;
 
-    // Replacement phrasing rides the existing remove+add semantics:
-    // the named item is deleted through the ordinary draft-item delete
-    // (its questions cascade with it, as for any removed item).
-    let replacedItemName: string | null = null;
-    if (resolution.removeName) {
-        const target = findItemToRemove(draft, resolution.removeName);
-        if (target) {
-            replacedItemName = target.item.name;
-            draft = await deleteMealDraftItem({
-                userId: input.userId,
-                draftId: draft.id,
-                itemId: target.id,
-                expectedVersion: draft.version,
-            });
-        }
-    }
-
     // Preparation correction (P2): the corrected cooking method lands
-    // on the existing item as a visible, user-attributed update —
-    // applied BEFORE the additions so positions thread cleanly.
+    // on the existing item as a visible, user-attributed update.
     let appliedPreparation: AppliedPreparation | null = null;
     if (resolution.preparation && resolution.preparationTargetName) {
-        const target = findItemToRemove(
+        const targetMatch = findDraftItemMatch(
             draft,
             resolution.preparationTargetName,
         );
-        if (target) {
+        if (targetMatch.kind === "matched") {
+            const target = targetMatch.item;
             const planned = planPreparationUpdate(
                 target.item,
                 resolution.preparation,
             );
-            draft = await upsertMealDraftItem({
+            draft = await store.upsertMealDraftItem({
                 userId: input.userId,
                 draftId: draft.id,
                 expectedVersion: draft.version,
@@ -504,18 +1030,64 @@ export async function addTextToPhotoDraft(input: {
         }
     }
 
-    const basePosition = draft.items.length;
+    // Replacement lands IN PLACE at the target item's position in a
+    // single atomic transaction (old item and its questions cascade;
+    // replacement item(s) take its slot). If the target cannot be
+    // uniquely matched, fail open to a draft question — never append.
+    let replacedItemName: string | null = null;
+    let basePosition = draft.items.length;
     const added: GroundedMealPhotoItem[] = [];
-    for (const [index, entry] of grounded.entries()) {
-        added.push(entry);
-        draft = await upsertMealDraftItem({
+
+    if (resolution.removeName && grounded.length > 0) {
+        const targetMatch = findDraftItemMatch(draft, resolution.removeName);
+        if (targetMatch.kind !== "matched") {
+            const candidates = (
+                targetMatch.kind === "ambiguous"
+                    ? targetMatch.candidates
+                    : draft.items
+            )
+                .map((record) => record.item.name)
+                .slice(0, 5)
+                .join(", ");
+            draft = await store.addMealDraftQuestion({
+                userId: input.userId,
+                draftId: draft.id,
+                expectedVersion: draft.version,
+                questionKey: `photo_draft_add_replace_${textHash(text)}`,
+                prompt: `You noted a correction ("${text.slice(0, 200)}"), but we couldn't uniquely match "${resolution.removeName}" in this draft${candidates ? ` (${candidates})` : ""}. Which item did you mean to replace?`,
+                impactScore: 75,
+            });
+            return {
+                status: "question",
+                draft,
+                parseSource: resolution.parseSource,
+                message: `We couldn't tell which item to replace from "${text.slice(0, 200)}", so we left a question on the draft instead — nothing was changed.`,
+            };
+        }
+        const target = targetMatch.item;
+        replacedItemName = target.item.name;
+        basePosition = target.position;
+        draft = await store.replaceMealDraftItem({
             userId: input.userId,
             draftId: draft.id,
+            itemId: target.id,
             expectedVersion: draft.version,
-            position: basePosition + index,
-            item: entry.draftItem,
+            items: grounded.map((entry) => entry.draftItem),
         });
+        added.push(...grounded);
+    } else {
+        for (const [index, entry] of grounded.entries()) {
+            added.push(entry);
+            draft = await store.upsertMealDraftItem({
+                userId: input.userId,
+                draftId: draft.id,
+                expectedVersion: draft.version,
+                position: basePosition + index,
+                item: entry.draftItem,
+            });
+        }
     }
+
     // Questions reference persisted item records; keys are remapped to
     // the item's position in the DRAFT so they cannot collide with the
     // photo items' question keys (grounding keyed them from 0).
@@ -523,7 +1095,7 @@ export async function addTextToPhotoDraft(input: {
         if (!entry.question) continue;
         const position = basePosition + index;
         const record = draft.items.find((item) => item.position === position);
-        draft = await addMealDraftQuestion({
+        draft = await store.addMealDraftQuestion({
             userId: input.userId,
             draftId: draft.id,
             expectedVersion: draft.version,
