@@ -1,13 +1,15 @@
+import type { MatchDeciderDependencies } from "../decisions/match.js";
 import {
-    applyAmbiguousMatchDecider,
-    type MatchDeciderDependencies,
-} from "../decisions/match.js";
+    applySearchSeats,
+    type SearchIntentDependencies,
+} from "../decisions/search-intent.js";
 import {
     naturalPortion,
     per100gPortion,
     sortPortionsNaturalFirst,
 } from "../food-providers/portions.js";
 import {
+    encodeFoodCandidateId,
     getFoodSearchService,
     summarizeFoodCandidate,
 } from "../food-providers/service.js";
@@ -215,6 +217,7 @@ export async function searchAppFoods(
     query: string,
     limit?: number,
     matchDependencies: MatchDeciderDependencies = {},
+    intentDependencies: SearchIntentDependencies = {},
 ) {
     const normalizedQuery = query.trim();
     const bounded = boundedLimit(limit);
@@ -229,21 +232,37 @@ export async function searchAppFoods(
             ? getFoodSearchService().search(normalizedQuery, bounded)
             : Promise.resolve({ candidates: [], failures: [] }),
     ]);
-    // Seat B2 (ambiguous-match decider): reorders ONLY the provider
-    // candidate list, and only inside the ambiguity band with its
-    // flag on — otherwise the list is the deterministic ranking
-    // untouched (see src/decisions/match.ts). Saved foods and recent
-    // items are the user's own foods; a model never reorders those.
-    const candidates = normalizedQuery
-        ? await applyAmbiguousMatchDecider(
-              normalizedQuery,
-              providerResult.candidates,
-              matchDependencies,
-          )
-        : providerResult.candidates;
+    // Search seats, provider candidates only (saved foods and recent
+    // items are the user's own foods; a model never reorders those).
+    // The Search Intent seat (src/decisions/search-intent.ts) pins
+    // its pick — candidate + natural portion — to the top; Seat B2
+    // (ambiguous-match decider, src/decisions/match.ts) runs only
+    // when the intent seat applied no pin, on the untouched list,
+    // with exactly its previous behaviour. MCP search_foods is
+    // deliberately not wired (host-AI boundary; the host model
+    // selects there).
+    const ordered = normalizedQuery
+        ? await applySearchSeats(normalizedQuery, providerResult.candidates, {
+              intent: intentDependencies,
+              match: matchDependencies,
+          })
+        : {
+              candidates: providerResult.candidates,
+              pinnedCandidateId: null,
+              pinnedPortionId: null,
+          };
     return {
         query: normalizedQuery,
-        candidates: candidates.map(summarizeFoodCandidate),
+        candidates: ordered.candidates.map((candidate) =>
+            summarizeFoodCandidate(
+                candidate,
+                ordered.pinnedCandidateId &&
+                    encodeFoodCandidateId(candidate) ===
+                        ordered.pinnedCandidateId
+                    ? { defaultPortionId: ordered.pinnedPortionId }
+                    : undefined,
+            ),
+        ),
         providerFailures: serializeFailures(providerResult.failures),
         savedFoods: saved.map(serializeSavedFood),
         recentMealItems: recent.map(serializeRecentMealItem),
@@ -258,7 +277,9 @@ export async function getAppFoodDetails(candidateId: string) {
 export async function lookupAppFoodBarcode(barcode: string) {
     const result = await getFoodSearchService().barcode(barcode);
     return {
-        candidates: result.candidates.map(summarizeFoodCandidate),
+        candidates: result.candidates.map((candidate) =>
+            summarizeFoodCandidate(candidate),
+        ),
         providerFailures: serializeFailures(result.failures),
     };
 }

@@ -261,8 +261,8 @@ export function registerFoodTools(
                 "search_foods",
                 async () => {
                     const result = await service.search(query, limit ?? 10);
-                    const candidates = result.candidates.map(
-                        summarizeFoodCandidate,
+                    const candidates = result.candidates.map((candidate) =>
+                        summarizeFoodCandidate(candidate),
                     );
                     const failures = serializeFailures(result.failures);
                     const failureNote = failures.length

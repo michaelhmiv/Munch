@@ -80,6 +80,18 @@ export interface DecisionsConfig {
      * seats; `decisionsConfig()` always populates both fields. */
     yieldEstimateEnabled?: boolean;
     yieldEstimateTimeoutMs?: number;
+    /** Search Intent seat (2026-11-22 eval; approved brief
+     * SEAT-BRIEF.md in the search-intent-eval-2026-11-22 package).
+     * Optional/additive like the other later seats;
+     * `decisionsConfig()` always populates all three fields. The
+     * timeout is the TOTAL budget for the seat's two calls
+     * (candidate pick + portion pick), not a per-attempt timeout. */
+    searchIntentEnabled?: boolean;
+    searchIntentTimeoutMs?: number;
+    /** Search Intent lane order (Perplexity-led; see
+     * `searchIntentModelOrder`). Optional like `plausibilityModels`;
+     * the seat derives it from `models` when a literal omits it. */
+    searchIntentModels?: string[];
 }
 
 type FlagState = "on" | "off" | "unset";
@@ -142,6 +154,32 @@ function modelChain(env: Record<string, string | undefined>): string[] {
  * it judges through the same lane).
  */
 export const PLAUSIBILITY_LEAD_MODEL = "perplexity/pplx-decider-v1.2";
+
+/**
+ * Search Intent lane order: Perplexity LEADS and Jev backs up — the
+ * inverse of the shared chain, set by the 2026-11-22 search-intent
+ * eval (fixture of 64 labelled queries through the production call
+ * shape): Perplexity picked the intended candidate on 96.6% of
+ * scorable queries vs Jev's 93.1%, and Jev's misses were
+ * abstentions ("none"), which fail open gracefully — the ideal
+ * backup posture. Same lead model string as A1 plausibility but a
+ * separate lane constant so either seat can be re-ruled on its own
+ * evidence without moving the other.
+ */
+export const SEARCH_INTENT_LEAD_MODEL = "perplexity/pplx-decider-v1.2";
+
+/**
+ * Reorder a chain so the Search Intent lead goes first. Returns the
+ * chain unchanged when the lead is absent (an operator-supplied
+ * chain without the lead keeps its order — never invent models).
+ */
+export function searchIntentModelOrder(models: string[]): string[] {
+    if (!models.includes(SEARCH_INTENT_LEAD_MODEL)) return [...models];
+    return [
+        SEARCH_INTENT_LEAD_MODEL,
+        ...models.filter((model) => model !== SEARCH_INTENT_LEAD_MODEL),
+    ];
+}
 
 /**
  * The plausibility seat's lane: the configured chain re-ordered so
@@ -290,6 +328,17 @@ export function decisionsConfig(
             env.MUNCH_JEV_YIELD_ESTIMATE_TIMEOUT_MS,
             3_000,
             100,
+            15_000,
+        ),
+        searchIntentModels: searchIntentModelOrder(models),
+        searchIntentEnabled: seatEnabled(
+            master,
+            flagState(env.MUNCH_JEV_SEARCH_INTENT_ENABLED),
+        ),
+        searchIntentTimeoutMs: boundedInteger(
+            env.MUNCH_JEV_SEARCH_INTENT_TIMEOUT_MS,
+            3_000,
+            250,
             15_000,
         ),
     };
@@ -643,4 +692,16 @@ export function yieldEstimateEnabled(config: DecisionsConfig): boolean {
 
 export function yieldEstimateTimeoutMs(config: DecisionsConfig): number {
     return config.yieldEstimateTimeoutMs ?? 3_000;
+}
+
+/** Whether the Search Intent seat is enabled on a resolved config.
+ * Absence means off. */
+export function searchIntentEnabled(config: DecisionsConfig): boolean {
+    return config.searchIntentEnabled === true;
+}
+
+/** The Search Intent seat's TOTAL budget for both of its calls
+ * (candidate pick + portion pick), per the approved brief. */
+export function searchIntentTimeoutMs(config: DecisionsConfig): number {
+    return config.searchIntentTimeoutMs ?? 3_000;
 }

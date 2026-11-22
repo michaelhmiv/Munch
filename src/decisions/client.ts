@@ -40,6 +40,7 @@ export interface DecisionsCallOptions {
         | "estimate_rung"
         | "yield_estimate"
         | "chat_claims"
+        | "search_intent"
         | "outlier";
     state: unknown;
     questions: Record<string, unknown>;
@@ -48,10 +49,10 @@ export interface DecisionsCallOptions {
     includeImageHeader: boolean;
     fetcher?: DecisionsFetcher;
     /** Per-seat lane override: when present, the chain walks THIS
-     * order instead of `config.models`. Only the plausibility seat
-     * passes one (its Perplexity-led lane, config.ts
-     * `plausibilityModelOrder`); every other seat omits it and
-     * keeps the shared chain order. */
+     * order instead of `config.models`. The plausibility and
+     * search-intent seats pass one (their Perplexity-led lanes,
+     * config.ts `plausibilityModelOrder` / `searchIntentModelOrder`);
+     * every other seat omits it and keeps the shared chain order. */
     models?: string[];
 }
 

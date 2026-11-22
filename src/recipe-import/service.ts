@@ -605,7 +605,7 @@ function modelEstimatedIngredient(
             resolution: "assumed",
             candidates: candidates
                 .slice(0, MATCH_CANDIDATE_LIMIT)
-                .map(summarizeFoodCandidate),
+                .map((candidate) => summarizeFoodCandidate(candidate)),
         },
         assumption,
     };
@@ -792,7 +792,7 @@ function enrichIngredient(
             resolution,
             candidates: candidates
                 .slice(0, MATCH_CANDIDATE_LIMIT)
-                .map(summarizeFoodCandidate),
+                .map((candidate) => summarizeFoodCandidate(candidate)),
         },
         ...(assumption ? { assumption } : {}),
     };
