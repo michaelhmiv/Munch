@@ -8,7 +8,12 @@ import {
     portionUnitKind,
     sortPortionsNaturalFirst,
 } from "../food-providers/portions.js";
-import { rankCandidates, scoreCandidate } from "../food-providers/ranking.js";
+import {
+    candidateTokenOverlap,
+    passesRelevanceGate,
+    rankCandidates,
+    scoreCandidate,
+} from "../food-providers/ranking.js";
 import {
     encodeFoodCandidateId,
     type FoodSearchService,
@@ -611,6 +616,111 @@ export function isAmbiguous(query: string, ranked: FoodCandidate[]): boolean {
     );
 }
 
+const COOKED_STATE_PATTERN =
+    /\b(cooked|grilled|fried|roasted|baked|steamed|boiled|simmered|broiled|braised|poached|sauteed|seared|toasted|stewed|barbecued|bbq|rotisserie|microwaved|scrambled)\b/;
+const RAW_STATE_PATTERN = /\b(raw|uncooked)\b/;
+const DRY_UNCOOKED_PATTERN =
+    /\bdry\b(?!\s+(?:roasted|cured|aged|wine|cider|sherry|vermouth|gin|martini))/;
+
+/**
+ * Score how well a candidate's preparation state matches the photographed
+ * item's cooking state. Cooked and raw entries differ ~1.3–2.5× in
+ * calories per gram, and vision gram estimates are as-served, so among
+ * candidates that pass the relevance gate for the item name, a cooked
+ * item prefers a matching cooking method (+2) or generic cooked entry
+ * (+1) and penalizes raw/dry entries (-2); an explicitly raw item does
+ * the reverse.
+ */
+export function cookingStatePreference(
+    vision: MealPhotoVisionItem,
+    candidate: FoodCandidate,
+): number {
+    const method = (vision.cooking_method ?? "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim();
+    const visionText = `${vision.name} ${method}`.toLowerCase();
+    const candidateName = candidate.name.toLowerCase();
+    const candidateIsRaw =
+        RAW_STATE_PATTERN.test(candidateName) ||
+        (!COOKED_STATE_PATTERN.test(candidateName) &&
+            DRY_UNCOOKED_PATTERN.test(candidateName));
+    const candidateIsCooked = COOKED_STATE_PATTERN.test(candidateName);
+
+    if (RAW_STATE_PATTERN.test(visionText)) {
+        if (candidateIsRaw) return 2;
+        if (candidateIsCooked) return -1;
+        return 0;
+    }
+
+    if (!COOKED_STATE_PATTERN.test(visionText)) return 0;
+
+    if (method && COOKED_STATE_PATTERN.test(method)) {
+        const stem = method.split(/\s+/)[0]!.replace(/(ed|ing)$/, "");
+        if (
+            candidateName.includes(method) ||
+            (stem.length >= 4 && candidateName.includes(stem))
+        ) {
+            return candidateIsRaw ? 0 : 2;
+        }
+    }
+    if (candidateIsCooked && !candidateIsRaw) return 1;
+    if (candidateIsRaw) return -2;
+    return 0;
+}
+
+export function rankMealPhotoCandidates(
+    vision: MealPhotoVisionItem,
+    candidates: FoodCandidate[],
+    query: string = vision.name.trim(),
+): FoodCandidate[] {
+    const baseRanked = rankCandidates({ query }, candidates);
+    if (baseRanked.length < 2) return baseRanked;
+    // Cooking-state preference applies ONLY within equal ranking tiers
+    // (same relevance-gate result, same full-token-overlap result):
+    // within a tier, the generic candidates are re-ordered among their
+    // own positions by cookingStatePreference, so a cooked generic
+    // passes a raw/dry generic in the decider shortlist and the
+    // deterministic fallback — but no candidate ever crosses a tier
+    // boundary on cooking state alone, so a branded or partial-overlap
+    // entry never leapfrogs a full-overlap generic.
+    const result = [...baseRanked];
+    let bandStart = 0;
+    while (bandStart < result.length) {
+        const head = result[bandStart]!;
+        const headGated = passesRelevanceGate({ query }, head);
+        const headFullOverlap = candidateTokenOverlap({ query }, head) >= 1;
+        let bandEnd = bandStart + 1;
+        while (bandEnd < result.length) {
+            const entry = result[bandEnd]!;
+            if (
+                passesRelevanceGate({ query }, entry) !== headGated ||
+                candidateTokenOverlap({ query }, entry) >= 1 !== headFullOverlap
+            ) {
+                break;
+            }
+            bandEnd++;
+        }
+        const genericSlots: number[] = [];
+        for (let i = bandStart; i < bandEnd; i++) {
+            if (result[i]!.dataKind === "generic") genericSlots.push(i);
+        }
+        if (genericSlots.length > 1) {
+            const generics = genericSlots.map((i) => result[i]!);
+            generics.sort(
+                (a, b) =>
+                    cookingStatePreference(vision, b) -
+                    cookingStatePreference(vision, a),
+            );
+            genericSlots.forEach((slot, k) => {
+                result[slot] = generics[k]!;
+            });
+        }
+        bandStart = bandEnd;
+    }
+    return result;
+}
+
 export async function groundMealPhotoItems(
     items: MealPhotoVisionItem[],
     deps: MealPhotoGroundingDeps,
@@ -623,7 +733,7 @@ export async function groundMealPhotoItems(
             const result = await deps.search(query, GROUNDING_RETRIEVAL_LIMIT, {
                 preferGeneric: true,
             });
-            const ranked = rankCandidates({ query }, result.candidates);
+            const ranked = rankMealPhotoCandidates(vision, result.candidates);
             return { vision, query, ranked };
         }),
     );
@@ -690,9 +800,10 @@ export async function groundMealPhotoItems(
                             GROUNDING_RETRIEVAL_LIMIT,
                             { preferGeneric: true },
                         );
-                        const retryRanked = rankCandidates(
-                            { query: refinedQuery },
+                        const retryRanked = rankMealPhotoCandidates(
+                            searched[index]!.vision,
                             result.candidates,
+                            refinedQuery,
                         );
                         return { index, retryRanked };
                     } catch {

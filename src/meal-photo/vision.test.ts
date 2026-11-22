@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
     chooseMealPhotoCandidates,
+    IDENTIFY_PROMPT,
     identifyMealPhoto,
     identifyMealPhotoFromImages,
     mealPhotoVisionConfig,
@@ -412,5 +413,16 @@ describe("fallback drill: meal-photo identify chain (model-integration brief)", 
             "openai/gpt-5.6-luna",
             "deepseek/deepseek-v4.1-flash-1017",
         ]);
+    });
+
+    test("identify prompt asks for cooked/preparation state in name and visible added fat as its own item", () => {
+        expect(IDENTIFY_PROMPT).toContain("cooked or raw");
+        expect(IDENTIFY_PROMPT).toContain("cooked weight for cooked food");
+        expect(IDENTIFY_PROMPT).toContain(
+            "list that fat or dressing as its own item",
+        );
+        expect(IDENTIFY_PROMPT).toContain(
+            "never add a fat you cannot see evidence of",
+        );
     });
 });

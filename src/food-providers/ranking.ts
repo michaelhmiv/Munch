@@ -19,6 +19,16 @@ export function normalizeFoodText(value: string): string {
  */
 export function stemFoodToken(token: string): string {
     if (token.length > 4 && token.endsWith("ies")) {
+        // Words whose singular keeps the -ie (cookies → cookie,
+        // brownies → brownie, smoothies → smoothie, veggies → veggie,
+        // toasties → toastie) stem by dropping only the final "s"; the
+        // generic -ies → -y rule below would produce "cooky" / "browny"
+        // and miss singular catalog entries. Ported from the photo-eval
+        // scorer's singularToken (PR #356).
+        if (/(?:cook|brown|smooth|vegg|toast)ies$/.test(token)) {
+            return token.slice(0, -1);
+        }
+        if (token === "pastries") return "pastry";
         return `${token.slice(0, -3)}y`;
     }
     if (token.length > 4 && token.endsWith("oes")) {

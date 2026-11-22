@@ -111,6 +111,11 @@
                         "unit": "slice"
                     },
                     "expected_provider": "local catalog"
+                },
+                {
+                    "name": "butter",
+                    "portion": null,
+                    "expected_provider": "USDA"
                 }
             ]
         },
@@ -279,7 +284,7 @@
                     "expected_provider": "USDA"
                 },
                 {
-                    "name": "feta cheese",
+                    "name": "cheese",
                     "portion": null,
                     "expected_provider": "USDA"
                 },
@@ -358,6 +363,11 @@
                     "name": "spaghetti",
                     "portion": null,
                     "expected_provider": "local catalog"
+                },
+                {
+                    "name": "tomato sauce",
+                    "portion": null,
+                    "expected_provider": "USDA"
                 },
                 {
                     "name": "meatballs",
@@ -512,7 +522,7 @@
                     "expected_provider": "USDA"
                 },
                 {
-                    "name": "waffle fries",
+                    "name": "fries",
                     "portion": null,
                     "expected_provider": "USDA"
                 },
@@ -578,7 +588,7 @@
             "categories": ["packaged_label"],
             "items": [
                 {
-                    "name": "orange juice",
+                    "name": "orange",
                     "portion": null,
                     "expected_provider": "Open Food Facts"
                 }
@@ -626,9 +636,24 @@
             "categories": ["poorly_lit"],
             "items": [
                 {
-                    "name": "chicken caesar salad",
+                    "name": "grilled chicken",
                     "portion": null,
-                    "expected_provider": "model_estimate"
+                    "expected_provider": "local catalog"
+                },
+                {
+                    "name": "lettuce",
+                    "portion": null,
+                    "expected_provider": "local catalog"
+                },
+                {
+                    "name": "croutons",
+                    "portion": null,
+                    "expected_provider": "USDA"
+                },
+                {
+                    "name": "parmesan cheese",
+                    "portion": null,
+                    "expected_provider": "USDA"
                 },
                 {
                     "name": "red wine",
@@ -655,6 +680,11 @@
                 },
                 {
                     "name": "coleslaw",
+                    "portion": null,
+                    "expected_provider": "USDA"
+                },
+                {
+                    "name": "gravy",
                     "portion": null,
                     "expected_provider": "USDA"
                 }

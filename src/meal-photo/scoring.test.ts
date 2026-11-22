@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { GroundedMealPhotoItem } from "./grounding.js";
-import { scoreFixture } from "./scoring.js";
+import { namesMatch, scoreFixture } from "./scoring.js";
 import type { MealPhotoVisionItem } from "./vision.js";
 
 const vision: MealPhotoVisionItem = {
@@ -83,5 +83,15 @@ describe("photo-eval fabrication semantics (S3 hardening)", () => {
             }),
         ]);
         expect(result.fabricatedIds).toBe(1);
+    });
+
+    test("namesMatch normalizes singular/plural food nouns and cheeseburger", () => {
+        expect(namesMatch("fried eggs", "fried egg")).toBe(true);
+        expect(namesMatch("sausages", "sausage")).toBe(true);
+        expect(namesMatch("meatballs", "meatball")).toBe(true);
+        expect(namesMatch("cookies", "sesame cookie")).toBe(true);
+        expect(namesMatch("cherry tomatoes", "cherry tomato")).toBe(true);
+        expect(namesMatch("burger", "cheeseburger")).toBe(true);
+        expect(namesMatch("fries", "crinkle-cut fries")).toBe(true);
     });
 });
