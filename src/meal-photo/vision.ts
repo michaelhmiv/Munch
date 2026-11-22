@@ -523,11 +523,15 @@ export interface MealPhotoCandidateChoiceRequest {
     key: string;
     itemName: string;
     cookingMethod: string | null;
+    /** Photographed quantity and unit (e.g. "2 piece") when available. */
+    photographedAmount?: string;
     candidates: Array<{
         candidateId: string;
         name: string;
         brand: string | null;
         provider: string;
+        dataKind?: string;
+        defaultPortionLabel?: string | null;
     }>;
 }
 
@@ -535,6 +539,23 @@ export interface MealPhotoCandidateChoice {
     candidateId: string | null;
     confidence: number;
     rationale: string | null;
+}
+
+export interface MealPhotoPortionChoiceRequest {
+    key: string;
+    foodName: string;
+    photographedAmount: string;
+    portions: Array<{
+        id: string;
+        label: string;
+        gramWeight: number | null;
+        calories: number | null;
+    }>;
+}
+
+export interface MealPhotoPortionChoice {
+    portionId: string;
+    confidence: number;
 }
 
 export async function chooseMealPhotoCandidates(

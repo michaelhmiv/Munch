@@ -11,12 +11,36 @@ export function normalizeFoodText(value: string): string {
         .replace(/\s+/g, " ");
 }
 
-function tokenOverlap(query: string, value: string): number {
+/**
+ * Simple English plural stemming aligned with `lexicalFoodSearchTsquery`
+ * in `catalog-repository.ts`: lets singular queries ("pancake", "egg",
+ * "strawberry") match plural USDA catalog head nouns ("Pancakes, plain",
+ * "Eggs", "Strawberries") without dropping them at the relevance gate.
+ */
+export function stemFoodToken(token: string): string {
+    if (token.length > 4 && token.endsWith("ies")) {
+        return `${token.slice(0, -3)}y`;
+    }
+    if (token.length > 4 && token.endsWith("oes")) {
+        return token.slice(0, -2);
+    }
+    if (
+        token.length > 3 &&
+        token.endsWith("s") &&
+        !token.endsWith("ss") &&
+        !token.endsWith("us")
+    ) {
+        return token.slice(0, -1);
+    }
+    return token;
+}
+
+export function tokenOverlap(query: string, value: string): number {
     const queryTokens = new Set(
-        normalizeFoodText(query).split(" ").filter(Boolean),
+        normalizeFoodText(query).split(" ").filter(Boolean).map(stemFoodToken),
     );
     const valueTokens = new Set(
-        normalizeFoodText(value).split(" ").filter(Boolean),
+        normalizeFoodText(value).split(" ").filter(Boolean).map(stemFoodToken),
     );
     if (queryTokens.size === 0) return 0;
     let matches = 0;
@@ -24,6 +48,35 @@ function tokenOverlap(query: string, value: string): number {
         if (valueTokens.has(token)) matches += 1;
     }
     return matches / queryTokens.size;
+}
+
+/**
+ * Recognizes USDA canonical comma-delimited primary-food entries
+ * ("Rice, cooked, NFS", "Pancakes, plain", "Broccoli, cooked...",
+ * "Bacon, NS as to type of meat, cooked", and single-word taxonomic
+ * prefixes like "Fish, salmon, grilled" or "Potato, french fries, NFS")
+ * over compound derivatives ("Rice cake", "Wine, rice", "Pancake syrup",
+ * "Bacon bits", "Bread, egg").
+ */
+export function isPrimaryCommaSegment(name: string, query: string): boolean {
+    const queryNorm = normalizeFoodText(query);
+    if (!queryNorm) return false;
+    const segments = name
+        .split(",")
+        .map((segment) => normalizeFoodText(segment))
+        .filter(Boolean);
+    if (segments.length < 2) return false;
+    const queryStem = queryNorm.split(" ").map(stemFoodToken).join(" ");
+    const firstStem = segments[0]!.split(" ").map(stemFoodToken).join(" ");
+    if (firstStem === queryStem) return true;
+    if (
+        segments.length >= 3 &&
+        segments[0]!.split(" ").length === 1 &&
+        segments[1]!.split(" ").map(stemFoodToken).join(" ") === queryStem
+    ) {
+        return true;
+    }
+    return false;
 }
 
 export function candidateIdentity(candidate: FoodCandidate): string {
@@ -49,6 +102,18 @@ export function deduplicateCandidates(
     return [...best.values()];
 }
 
+export function candidateTokenOverlap(
+    input: Pick<FoodSearchInput, "query">,
+    candidate: FoodCandidate,
+): number {
+    const query = normalizeFoodText(input.query);
+    if (!query) return 0;
+    return Math.max(
+        tokenOverlap(query, candidate.name),
+        tokenOverlap(query, `${candidate.brand ?? ""} ${candidate.name}`),
+    );
+}
+
 export function scoreCandidate(
     input: Pick<FoodSearchInput, "query">,
     candidate: FoodCandidate,
@@ -62,15 +127,15 @@ export function scoreCandidate(
             normalizeFoodText(`${candidate.brand ?? ""} ${candidate.name}`)
             ? 1
             : 0;
-    const overlap = Math.max(
-        tokenOverlap(query, candidate.name),
-        tokenOverlap(query, `${candidate.brand ?? ""} ${candidate.name}`),
-    );
+    const overlap = candidateTokenOverlap(input, candidate);
     const portionQuality = candidate.portions.length > 0 ? 1 : 0;
     const nutrients =
         candidate.portions[0]?.nutrients ?? candidate.nutrientsPer100g ?? {};
     const completeness = nutrientCompleteness(nutrients);
     const providerPreference = candidate.provider === "usda" ? 0.02 : 0;
+    const primaryHeadPreference = isPrimaryCommaSegment(candidate.name, query)
+        ? 0.04
+        : 0;
 
     return (
         exactBrandAndName * 0.25 +
@@ -79,7 +144,8 @@ export function scoreCandidate(
         candidate.confidence * 0.2 +
         completeness * 0.07 +
         portionQuality * 0.01 +
-        providerPreference
+        providerPreference +
+        primaryHeadPreference
     );
 }
 
@@ -106,11 +172,10 @@ export function passesRelevanceGate(
     ) {
         return true;
     }
-    const overlap = Math.max(
-        tokenOverlap(query, candidate.name),
-        tokenOverlap(query, `${candidate.brand ?? ""} ${candidate.name}`),
+    return (
+        candidateTokenOverlap(input, candidate) >=
+        RELEVANCE_TOKEN_OVERLAP_THRESHOLD
     );
-    return overlap >= RELEVANCE_TOKEN_OVERLAP_THRESHOLD;
 }
 
 /**
@@ -133,10 +198,15 @@ export function candidateCompleteness(candidate: FoodCandidate): number {
  * picker, item 1). Ordering only — no candidate is ever removed:
  * 1. relevance gate (passesRelevanceGate): gated-in candidates sort
  *    strictly before gated-out ones;
- * 2. nutrient completeness, descending — the dominant signal;
- * 3. the pre-existing weighted relevance score as tiebreaker
- *    (exact name, token overlap, confidence, portion quality);
- * 4. original order, so equal candidates keep a stable order.
+ * 2. full query-token coverage (overlap === 1): a candidate matching
+ *    ALL query tokens (e.g. brand + food or both dish words) sorts
+ *    strictly ahead of partial-token matches so a complete panel for
+ *    "Trader Joe's steak sauce" cannot bury "Trader Joe's eggs";
+ * 3. nutrient completeness, descending — the dominant signal among
+ *    equal-coverage matches;
+ * 4. the weighted relevance score as tiebreaker (exact name, token
+ *    overlap, confidence, primary USDA head segment, portion quality);
+ * 5. original order, so equal candidates keep a stable order.
  */
 export function rankCandidates(
     input: Pick<FoodSearchInput, "query">,
@@ -147,12 +217,14 @@ export function rankCandidates(
             candidate,
             index,
             gated: passesRelevanceGate(input, candidate),
+            fullOverlap: candidateTokenOverlap(input, candidate) >= 1,
             completeness: candidateCompleteness(candidate),
             score: scoreCandidate(input, candidate),
         }))
         .sort(
             (a, b) =>
                 Number(b.gated) - Number(a.gated) ||
+                Number(b.fullOverlap) - Number(a.fullOverlap) ||
                 b.completeness - a.completeness ||
                 b.score - a.score ||
                 a.index - b.index,

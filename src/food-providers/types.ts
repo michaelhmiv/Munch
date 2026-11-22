@@ -51,6 +51,10 @@ export interface FoodSearchInput {
     query: string;
     limit?: number;
     signal?: AbortSignal;
+    /** When true (e.g. photo grounding), prioritize Foundation / SR Legacy /
+     * Survey (FNDDS) generic records ahead of branded noise without
+     * degrading normal branded typed search. */
+    preferGeneric?: boolean;
 }
 
 export interface FoodLookupInput {

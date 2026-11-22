@@ -137,7 +137,94 @@ describe("USDA provider HTTP behavior", () => {
         expect(seen[0]?.url).toContain("api_key=test-key");
         const body = JSON.parse(String(seen[0]?.init?.body));
         expect(body.query).toBe("banana");
-        expect(body.pageSize).toBe(25);
+        expect(body.pageSize).toBe(50);
+        expect(body.sortBy).toBeUndefined();
+    });
+
+    test("multi-word search sends requireAllWords and falls back once when strict returns empty", async () => {
+        const bodies: Array<Record<string, unknown>> = [];
+        const provider = new UsdaFoodDataCentralProvider({
+            apiKey: "test-key",
+            fetchImpl: mock(
+                async (_input: string | URL | Request, init?: RequestInit) => {
+                    const body = JSON.parse(String(init?.body ?? "{}"));
+                    bodies.push(body);
+                    if (body.requireAllWords) {
+                        return jsonResponse({ foods: [] });
+                    }
+                    return jsonResponse({
+                        foods: [
+                            {
+                                fdcId: 99,
+                                description: "EGGS",
+                                dataType: "Branded",
+                                foodNutrients: [
+                                    { nutrientId: 1008, value: 143 },
+                                ],
+                            },
+                        ],
+                    });
+                },
+            ) as unknown as typeof fetch,
+        });
+        const results = await provider.search({
+            query: "aldi eggs",
+            limit: 10,
+        });
+        expect(results).toHaveLength(1);
+        expect(bodies).toHaveLength(2);
+        expect(bodies[0]?.requireAllWords).toBe(true);
+        expect(bodies[1]?.requireAllWords).toBeUndefined();
+    });
+
+    test("preferGeneric queries Foundation / SR Legacy / Survey first ahead of branded noise", async () => {
+        const bodies: Array<Record<string, unknown>> = [];
+        const provider = new UsdaFoodDataCentralProvider({
+            apiKey: "test-key",
+            fetchImpl: mock(
+                async (_input: string | URL | Request, init?: RequestInit) => {
+                    const body = JSON.parse(String(init?.body ?? "{}"));
+                    bodies.push(body);
+                    if (Array.isArray(body.dataType)) {
+                        return jsonResponse({
+                            foods: [
+                                {
+                                    fdcId: 1,
+                                    description: "Rice, cooked, NFS",
+                                    dataType: "Survey (FNDDS)",
+                                    foodNutrients: [
+                                        { nutrientId: 1008, value: 130 },
+                                    ],
+                                },
+                            ],
+                        });
+                    }
+                    return jsonResponse({
+                        foods: [
+                            {
+                                fdcId: 2,
+                                description: "BRANDED RICE MIX",
+                                dataType: "Branded",
+                                foodNutrients: [
+                                    { nutrientId: 1008, value: 350 },
+                                ],
+                            },
+                        ],
+                    });
+                },
+            ) as unknown as typeof fetch,
+        });
+        const results = await provider.search({
+            query: "rice",
+            limit: 10,
+            preferGeneric: true,
+        });
+        expect(bodies[0]?.dataType).toEqual([
+            "Foundation",
+            "SR Legacy",
+            "Survey (FNDDS)",
+        ]);
+        expect(results.map((r) => r.providerFoodId)).toEqual(["1", "2"]);
     });
 
     test("barcode lookup selects only an exact GTIN match", async () => {

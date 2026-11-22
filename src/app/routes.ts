@@ -69,7 +69,10 @@ import {
 } from "../meal-photo/vision.js";
 import { decisionsConfig } from "../decisions/config.js";
 import { evaluateMealPhotoGate } from "../decisions/gate.js";
-import { chooseCandidatesForMealPhoto } from "../decisions/decider.js";
+import {
+    chooseCandidatesForMealPhoto,
+    choosePortionsForMealPhoto,
+} from "../decisions/decider.js";
 import { evaluateOutlierPrompt } from "../decisions/outlier.js";
 import { reviewRecipeResolution } from "../decisions/resolution-review.js";
 import { reviewRecipeYield } from "../decisions/yield-estimate.js";
@@ -1719,7 +1722,8 @@ export function createAppRouter(): Hono {
                 draft: current,
                 text: body.text,
                 deps: {
-                    search: (query, limit) => foodSearch.search(query, limit),
+                    search: (query, limit, options) =>
+                        foodSearch.search(query, limit, options),
                     ...(visionConfig
                         ? {
                               chooseCandidates: (requests) =>
@@ -1727,6 +1731,8 @@ export function createAppRouter(): Hono {
                                       requests,
                                       visionConfig,
                                   ),
+                              choosePortions: (requests) =>
+                                  choosePortionsForMealPhoto(requests),
                               estimateNutrients: (requests) =>
                                   estimateMealPhotoNutrients(
                                       requests,
@@ -2130,9 +2136,12 @@ export function createAppRouter(): Hono {
                         ? (formField(form.logged_at) as string)
                         : undefined,
                 groundingDeps: {
-                    search: (query, limit) => foodSearch.search(query, limit),
+                    search: (query, limit, options) =>
+                        foodSearch.search(query, limit, options),
                     chooseCandidates: (requests) =>
                         chooseCandidatesForMealPhoto(requests, visionConfig),
+                    choosePortions: (requests) =>
+                        choosePortionsForMealPhoto(requests),
                     estimateNutrients: (requests) =>
                         estimateMealPhotoNutrients(requests, visionConfig),
                 },

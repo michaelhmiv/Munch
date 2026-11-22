@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
     hashCatalogIdentity,
+    headSegmentVariants,
     lexicalFoodSearchTsquery,
     normalizeFoodText,
     validateCatalogCandidate,
@@ -105,5 +106,22 @@ describe("persistent food catalog helpers", () => {
             "sweet & potato:*",
         );
         expect(lexicalFoodSearchTsquery("2% milk")).toBe("2 & milk:*");
+    });
+
+    test("builds singular/plural head-segment variants for primary USDA food ordering", () => {
+        expect(headSegmentVariants("pancake")).toEqual(["pancake", "pancakes"]);
+        expect(headSegmentVariants("pancakes")).toEqual([
+            "pancakes",
+            "pancake",
+        ]);
+        expect(headSegmentVariants("strawberry")).toEqual([
+            "strawberry",
+            "strawberries",
+        ]);
+        expect(headSegmentVariants("potato")).toEqual([
+            "potato",
+            "potatoes",
+            "potatos",
+        ]);
     });
 });

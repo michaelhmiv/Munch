@@ -92,6 +92,15 @@ export interface DecisionsConfig {
      * `searchIntentModelOrder`). Optional like `plausibilityModels`;
      * the seat derives it from `models` when a literal omits it. */
     searchIntentModels?: string[];
+    /** Photo Grounding lane order (Jev-led, Perplexity fallback; see
+     * `photoGroundingModelOrder`). Governed by the 2026-11-22 photo
+     * grounding eval: Jev led Perplexity on pick accuracy in both
+     * scorings (15/17 vs 13/17 alternates-allowed; 11/17 → 13/17 vs
+     * 9/17 → 11/17 strict single-label after instruction tuning, with
+     * the egg and chicken-breast abstentions converted and zero
+     * regressions). Optional like `searchIntentModels`; the seat
+     * derives it from `models` when a literal omits it. */
+    photoGroundingModels?: string[];
 }
 
 type FlagState = "on" | "off" | "unset";
@@ -182,6 +191,34 @@ export function searchIntentModelOrder(models: string[]): string[] {
 }
 
 /**
+ * Photo Grounding lane order (2026-11-22 grounding eval): Jev LEADS
+ * (`typesafe/jev-1.14`) and Perplexity (`perplexity/pplx-decider-v1.2`)
+ * backs up. Separate lane constant so photo grounding stays Jev-led
+ * even if the global chain or Search Intent seat changes order.
+ */
+export const PHOTO_GROUNDING_LEAD_MODEL = "typesafe/jev-1.14";
+export const PHOTO_GROUNDING_FALLBACK_MODEL = "perplexity/pplx-decider-v1.2";
+
+/**
+ * Reorder a chain so the Photo Grounding lead goes first, followed by
+ * its designated fallback when present, then any remaining configured
+ * models. Never invents models absent from the configured chain.
+ */
+export function photoGroundingModelOrder(models: string[]): string[] {
+    const ordered: string[] = [];
+    for (const preferred of [
+        PHOTO_GROUNDING_LEAD_MODEL,
+        PHOTO_GROUNDING_FALLBACK_MODEL,
+    ]) {
+        if (models.includes(preferred)) ordered.push(preferred);
+    }
+    for (const model of models) {
+        if (!ordered.includes(model)) ordered.push(model);
+    }
+    return ordered;
+}
+
+/**
  * The plausibility seat's lane: the configured chain re-ordered so
  * the designated lead answers first and the remaining models
  * follow in their configured order. A chain that does not contain
@@ -213,6 +250,7 @@ export function decisionsConfig(
         apiUrl: env.MUNCH_DECIDER_API_URL?.trim() || DECISIONS_API_URL,
         models,
         plausibilityModels: plausibilityModelOrder(models),
+        photoGroundingModels: photoGroundingModelOrder(models),
         gateTimeoutMs: boundedInteger(
             env.MUNCH_JEV_GATE_TIMEOUT_MS,
             1_500,

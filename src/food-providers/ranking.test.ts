@@ -47,15 +47,15 @@ describe("food candidate ranking", () => {
         expect(ranked[0]?.name).toBe("Creamy Peanut Butter");
     });
 
-    test("keeps ambiguous semantic alternatives available for the model", () => {
+    test("keeps ambiguous semantic alternatives available for the model with primary head food first", () => {
         const ranked = rankCandidates({ query: "bacon" }, [
             food("Bacon bits"),
             food("Bacon, cooked"),
             food("Canadian bacon"),
         ]);
         expect(ranked.map((candidate) => candidate.name)).toEqual([
-            "Bacon bits",
             "Bacon, cooked",
+            "Bacon bits",
             "Canadian bacon",
         ]);
     });

@@ -124,7 +124,7 @@ export class FoodProviderRegistry {
     async search(input: FoodSearchInput): Promise<AggregatedFoodSearchResult> {
         const query = input.query.trim();
         if (!query) return { candidates: [], failures: [] };
-        const limit = Math.max(1, Math.min(25, input.limit ?? 10));
+        const limit = Math.max(1, Math.min(50, input.limit ?? 10));
         const failures: FoodProviderFailure[] = [];
         const providers = [...this.providers.values()].filter((provider) => {
             if (!this.circuitOpen(provider.name)) return true;
