@@ -75,14 +75,32 @@ function nameKey(value: string): string {
         .trim();
 }
 
+function singularToken(token: string): string {
+    if (token === "cheeseburger" || token === "cheeseburgers") return "burger";
+    if (/(?:cook|brown|smooth|vegg|toast|pastr)ies$/.test(token)) {
+        if (token === "pastries") return "pastry";
+        return token.slice(0, -1);
+    }
+    if (token.endsWith("ies") && token.length > 4) {
+        return `${token.slice(0, -3)}y`;
+    }
+    if (token.endsWith("oes") && token.length > 4) {
+        return token.slice(0, -2);
+    }
+    if (token.endsWith("s") && !token.endsWith("ss") && token.length > 3) {
+        return token.slice(0, -1);
+    }
+    return token;
+}
+
 /** Two item names match when one contains the other's tokens. */
 export function namesMatch(expected: string, found: string): boolean {
     const a = nameKey(expected);
     const b = nameKey(found);
     if (!a || !b) return false;
     if (a === b) return true;
-    const aTokens = new Set(a.split(" "));
-    const bTokens = new Set(b.split(" "));
+    const aTokens = new Set(a.split(" ").map(singularToken));
+    const bTokens = new Set(b.split(" ").map(singularToken));
     const smaller = aTokens.size <= bTokens.size ? aTokens : bTokens;
     const larger = aTokens.size <= bTokens.size ? bTokens : aTokens;
     return [...smaller].every((token) => larger.has(token));

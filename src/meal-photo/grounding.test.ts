@@ -4,6 +4,7 @@ import {
     groundMealPhotoItems,
     isAmbiguous,
     mealPhotoItemIsComplete,
+    rankMealPhotoCandidates,
     resolveGroundedPortion,
     LOW_PORTION_CONFIDENCE,
 } from "./grounding.js";
@@ -1008,5 +1009,175 @@ describe("production case: chicken / rice / broccoli plate (S3 hardening regress
         });
         expect(calls).toBe(1);
         expect(grounded.every((entry) => entry.estimated)).toBe(true);
+    });
+});
+
+describe("rankMealPhotoCandidates (cooked-vs-raw grounding)", () => {
+    const rawChicken = candidate({
+        providerFoodId: "raw-chicken",
+        name: "Chicken, broilers or fryers, breast, meat only, raw",
+        nutrientsPer100g: {
+            calories: 120,
+            protein_g: 22.5,
+            carbs_g: 0,
+            fat_g: 2.6,
+        },
+    });
+    const roastedChicken = candidate({
+        providerFoodId: "roasted-chicken",
+        name: "Chicken, broilers or fryers, breast, meat only, cooked, roasted",
+        nutrientsPer100g: {
+            calories: 165,
+            protein_g: 31,
+            carbs_g: 0,
+            fat_g: 3.6,
+        },
+    });
+    const grilledChicken = candidate({
+        providerFoodId: "grilled-chicken",
+        name: "Chicken breast, grilled",
+        nutrientsPer100g: {
+            calories: 165,
+            protein_g: 31,
+            carbs_g: 0,
+            fat_g: 3.6,
+        },
+    });
+
+    test("prefers matching cooking_method, then cooked, over raw even when raw sorts first", () => {
+        const ranked = rankMealPhotoCandidates(
+            {
+                ...chicken,
+                name: "chicken breast",
+                cooking_method: "grilled",
+            },
+            [rawChicken, roastedChicken, grilledChicken],
+        );
+        expect(ranked.map((entry) => entry.providerFoodId)).toEqual([
+            "grilled-chicken",
+            "roasted-chicken",
+            "raw-chicken",
+        ]);
+    });
+
+    test("prefers cooked rice/pasta over raw or dry entries when steamed/boiled", () => {
+        const rawRice = candidate({
+            providerFoodId: "raw-rice",
+            name: "Rice, white, long-grain, regular, raw, unenriched",
+            nutrientsPer100g: {
+                calories: 365,
+                protein_g: 7.1,
+                carbs_g: 80,
+                fat_g: 0.7,
+            },
+        });
+        const cookedRice = candidate({
+            providerFoodId: "cooked-rice",
+            name: "Rice, white, long-grain, regular, cooked",
+            nutrientsPer100g: {
+                calories: 130,
+                protein_g: 2.7,
+                carbs_g: 28,
+                fat_g: 0.3,
+            },
+        });
+        const ranked = rankMealPhotoCandidates(
+            {
+                ...chicken,
+                name: "white rice",
+                cooking_method: "steamed",
+            },
+            [rawRice, cookedRice],
+        );
+        expect(ranked[0]?.providerFoodId).toBe("cooked-rice");
+    });
+
+    test("prefers raw entry when the vision item is explicitly raw", () => {
+        const ranked = rankMealPhotoCandidates(
+            {
+                ...chicken,
+                name: "chicken breast",
+                cooking_method: "raw",
+            },
+            [roastedChicken, rawChicken],
+        );
+        expect(ranked[0]?.providerFoodId).toBe("raw-chicken");
+    });
+
+    test("groundMealPhotoItems grounds cooked grams against the cooked entry instead of raw", async () => {
+        const grounded = await groundMealPhotoItems(
+            [
+                {
+                    ...chicken,
+                    name: "chicken breast",
+                    cooking_method: "grilled",
+                },
+            ],
+            {
+                search: async () => ({
+                    candidates: [rawChicken, roastedChicken, grilledChicken],
+                    failures: [],
+                }),
+            },
+        );
+        expect(grounded[0]?.draftItem.providerFoodId).toBe("grilled-chicken");
+        expect(grounded[0]?.draftItem.nutrients.calories).toBe(264);
+    });
+
+    test("steamed broccoli: cooked generic tops the shortlist over raw generic (PR #355 caveat regression)", () => {
+        const rawBroccoli = candidate({
+            providerFoodId: "raw-broccoli",
+            name: "Broccoli, raw",
+            nutrientsPer100g: {
+                calories: 34,
+                protein_g: 2.8,
+                carbs_g: 6.6,
+                fat_g: 0.4,
+            },
+        });
+        const cookedBroccoli = candidate({
+            providerFoodId: "cooked-broccoli",
+            name: "Broccoli, cooked, boiled, drained, without salt",
+            nutrientsPer100g: {
+                calories: 35,
+                protein_g: 2.4,
+                carbs_g: 7.2,
+                fat_g: 0.4,
+            },
+        });
+        const ranked = rankMealPhotoCandidates(
+            {
+                ...chicken,
+                name: "broccoli",
+                cooking_method: "steamed",
+            },
+            [rawBroccoli, cookedBroccoli],
+        );
+        expect(ranked[0]?.providerFoodId).toBe("cooked-broccoli");
+    });
+
+    test("cooking preference never crosses a tier boundary: partial-overlap cooked entry stays behind a full-overlap raw generic", () => {
+        const breadedPatties = candidate({
+            providerFoodId: "breaded-patties",
+            name: "Chicken patties, breaded, cooked",
+            nutrientsPer100g: {
+                calories: 280,
+                protein_g: 14,
+                carbs_g: 16,
+                fat_g: 18,
+            },
+        });
+        const ranked = rankMealPhotoCandidates(
+            {
+                ...chicken,
+                name: "chicken breast",
+                cooking_method: "grilled",
+            },
+            [breadedPatties, rawChicken],
+        );
+        // "chicken patties" matches only one of the two query tokens, so
+        // it sits in a lower tier than the full-overlap raw breast and
+        // its cooked state must not lift it ahead.
+        expect(ranked[0]?.providerFoodId).toBe("raw-chicken");
     });
 });
