@@ -78,12 +78,23 @@ export function decodeFoodCandidateId(value: string): {
 
 export function summarizeFoodCandidate(
     candidate: FoodCandidate,
+    options?: { defaultPortionId?: string | null },
 ): FoodCandidateSummary {
     // Headline the natural portion (1 cup over 1 fl oz; never a
     // guideline-amount / quantity-not-specified row). When a candidate
     // carries only non-headline portions, fall back to a per-100 g
-    // portion synthesized from its nutrient panel.
+    // portion synthesized from its nutrient panel. A caller-supplied
+    // `defaultPortionId` (the Search Intent seat's picked portion)
+    // headlines instead when it names one of the candidate's own
+    // portions; omitted or unknown ids keep the natural default
+    // exactly as before.
+    const pinnedPortion = options?.defaultPortionId
+        ? candidate.portions.find(
+              (portion) => portion.id === options.defaultPortionId,
+          )
+        : undefined;
     const portion =
+        pinnedPortion ??
         naturalPortion(candidate.portions) ??
         (candidate.nutrientsPer100g
             ? per100gPortion(candidate.nutrientsPer100g)

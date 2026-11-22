@@ -38,6 +38,26 @@ interface CatalogIdentityRow {
     id: string;
 }
 
+/**
+ * A Search Intent seat pin (db/updates/0050): the Decisions seat's
+ * recorded decision for one normalized query. `candidateId` is the
+ * encoded candidate id ("usda:2709215"); a null `candidateId` is a
+ * recorded abstention ("none") — the ranked list stands. Defined
+ * here, with the storage, so the seat module consumes it without
+ * the repository importing Decisions code.
+ */
+export interface SearchIntentPinRecord {
+    candidateId: string | null;
+    portionId: string | null;
+    model: string | null;
+}
+
+interface SearchIntentPinRow {
+    candidate_id: string | null;
+    portion_id: string | null;
+    model: string | null;
+}
+
 export function normalizeFoodText(value: string): string {
     return value
         .normalize("NFKC")
@@ -445,6 +465,71 @@ export class FoodCatalogRepository {
         if (!normalized) return;
         await withServiceDatabase(async (tx) => {
             await this.recordSearchTx(tx, normalized, candidates);
+        });
+    }
+
+    /**
+     * The Search Intent seat's cached pin for a query, or null when
+     * no decision has been recorded (or catalog reads are off). A
+     * returned record with a null `candidateId` is a recorded
+     * abstention, NOT a miss — callers must not re-decide it.
+     */
+    async findSearchIntentPin(
+        query: string,
+    ): Promise<SearchIntentPinRecord | null> {
+        if (!this.config.readsEnabled) return null;
+        const normalized = normalizeFoodText(query);
+        if (!normalized) return null;
+        const queryHash = hashCatalogIdentity(normalized);
+        const rows = await withServiceDatabase(
+            async (tx) =>
+                tx<SearchIntentPinRow[]>`
+                select candidate_id, portion_id, model
+                from munch.food_search_intent_pins
+                where query_hash = ${queryHash}
+            `,
+        );
+        const row = rows[0];
+        if (!row) return null;
+        return {
+            candidateId: row.candidate_id,
+            portionId: row.portion_id,
+            model: row.model,
+        };
+    }
+
+    async recordSearchIntentPin(
+        query: string,
+        pin: SearchIntentPinRecord,
+    ): Promise<void> {
+        if (!this.config.writesEnabled) return;
+        const normalized = normalizeFoodText(query);
+        if (!normalized) return;
+        const queryHash = hashCatalogIdentity(normalized);
+        await withServiceDatabase(async (tx) => {
+            await tx`
+                insert into munch.food_search_intent_pins (
+                    query_hash,
+                    normalized_query,
+                    candidate_id,
+                    portion_id,
+                    model,
+                    decided_at
+                ) values (
+                    ${queryHash},
+                    ${normalized},
+                    ${pin.candidateId},
+                    ${pin.portionId},
+                    ${pin.model},
+                    now()
+                )
+                on conflict (query_hash) do update set
+                    normalized_query = excluded.normalized_query,
+                    candidate_id = excluded.candidate_id,
+                    portion_id = excluded.portion_id,
+                    model = excluded.model,
+                    decided_at = excluded.decided_at
+            `;
         });
     }
 

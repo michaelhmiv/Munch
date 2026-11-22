@@ -17,6 +17,8 @@ import {
     DEFAULT_SHORTFALL_CONTRADICTION_MIN,
     PLAUSIBILITY_LEAD_MODEL,
     plausibilityModelOrder,
+    SEARCH_INTENT_LEAD_MODEL,
+    searchIntentModelOrder,
 } from "./config.js";
 
 const KEY = { OPENROUTER_API_KEY: "test-key" };
@@ -456,5 +458,67 @@ describe("A1 plausibility lane order (Perplexity-led; Michael, 2026-11-13)", () 
             MUNCH_DECIDER_FALLBACK_MODELS: "",
         });
         expect(config!.plausibilityModels).toEqual(["typesafe/jev-1.14"]);
+    });
+});
+
+describe("decisionsConfig Search Intent seat flag (2026-11-22 eval)", () => {
+    test("defaults off; master on enables it; explicit seat off wins", () => {
+        expect(decisionsConfig({ ...KEY })!.searchIntentEnabled).toBe(false);
+        expect(
+            decisionsConfig({ ...KEY, MUNCH_JEV_ENABLED: "true" })!
+                .searchIntentEnabled,
+        ).toBe(true);
+        expect(
+            decisionsConfig({
+                ...KEY,
+                MUNCH_JEV_ENABLED: "true",
+                MUNCH_JEV_SEARCH_INTENT_ENABLED: "false",
+            })!.searchIntentEnabled,
+        ).toBe(false);
+        expect(
+            decisionsConfig({
+                ...KEY,
+                MUNCH_JEV_SEARCH_INTENT_ENABLED: "true",
+            })!.searchIntentEnabled,
+        ).toBe(true);
+    });
+
+    test("search intent timeout defaults to the 3000 total budget and is bounded", () => {
+        expect(decisionsConfig({ ...KEY })!.searchIntentTimeoutMs).toBe(3_000);
+        expect(
+            decisionsConfig({
+                ...KEY,
+                MUNCH_JEV_SEARCH_INTENT_TIMEOUT_MS: "5",
+            })!.searchIntentTimeoutMs,
+        ).toBe(250);
+    });
+});
+
+describe("Search Intent lane order (Perplexity-led; 2026-11-22 eval)", () => {
+    test("the lead model is the eval winner", () => {
+        expect(SEARCH_INTENT_LEAD_MODEL).toBe("perplexity/pplx-decider-v1.2");
+    });
+
+    test("decisionsConfig derives the lane: lead first, shared chain otherwise untouched", () => {
+        const config = decisionsConfig({ ...KEY });
+        expect(config!.models).toEqual([
+            "typesafe/jev-1.14",
+            "perplexity/pplx-decider-v1.2",
+        ]);
+        expect(config!.searchIntentModels).toEqual([
+            "perplexity/pplx-decider-v1.2",
+            "typesafe/jev-1.14",
+        ]);
+    });
+
+    test("a chain without the lead keeps its configured order", () => {
+        expect(
+            searchIntentModelOrder(["typesafe/jev-1.14", "example/other-1"]),
+        ).toEqual(["typesafe/jev-1.14", "example/other-1"]);
+        const config = decisionsConfig({
+            ...KEY,
+            MUNCH_DECIDER_FALLBACK_MODELS: "",
+        });
+        expect(config!.searchIntentModels).toEqual(["typesafe/jev-1.14"]);
     });
 });
