@@ -401,6 +401,27 @@ function confidenceBadge(value) {
     return `<span class="confidence-chip">${label}</span>`;
 }
 
+/**
+ * Owner ruling (2026-11-22): item assumptions are never printed by
+ * default — they take up the card. When an item carries assumptions,
+ * its source chip becomes the toggle that reveals them inline; items
+ * without assumptions keep the plain chip.
+ */
+function sourceBadgeToggle(item) {
+    if (!item.assumptions?.length) return sourceBadge(item.sourceType);
+    const label =
+        sourceLabels[item.sourceType] ||
+        item.sourceType ||
+        "Source unavailable";
+    const className = sourceClasses[item.sourceType] || "confidence-chip";
+    return `<button type="button" class="source-chip ${className} chip-toggle" data-action="toggle-item-assumptions" aria-expanded="false">${escapeHtml(label)} <span class="chip-caret" aria-hidden="true">▸</span></button>`;
+}
+
+function itemAssumptionsHtml(item) {
+    if (!item.assumptions?.length) return "";
+    return `<small class="item-assumptions" hidden>Assumptions: ${escapeHtml(item.assumptions.join("; "))}</small>`;
+}
+
 // Toast top layer (extracted from closed PR #342): the region is a
 // manual popover, so toasts paint in the browser's top layer above
 // modal dialogs instead of underneath them. Shown on first append,
@@ -921,7 +942,7 @@ function mealItems(items, meal) {
     if (!items?.length)
         return `<div class="food-items"><div class="food-row"><div><strong>Legacy aggregate entry</strong><small>Item-level details were not recorded for this meal.</small></div></div></div>`;
     const row = (item) =>
-        `<div class="food-row"><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.portionLabel || (item.quantity ? `${number(item.quantity, 2)} serving` : "Portion not recorded"))}</small><div class="demo-source-row">${sourceBadge(item.sourceType)}${confidenceBadge(item.confidence)}</div>${item.assumptions?.length ? `<small>Assumptions: ${escapeHtml(item.assumptions.join("; "))}</small>` : ""}</div><strong>${item.calories == null ? "—" : `${number(item.calories)} kcal`}</strong></div>`;
+        `<div class="food-row"><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.portionLabel || (item.quantity ? `${number(item.quantity, 2)} serving` : "Portion not recorded"))}</small><div class="demo-source-row">${sourceBadgeToggle(item)}${confidenceBadge(item.confidence)}</div>${itemAssumptionsHtml(item)}</div><strong>${item.calories == null ? "—" : `${number(item.calories)} kcal`}</strong></div>`;
     const portion = meal?.recipePortion;
     if (!portion) {
         return `<div class="food-items">${items.map(row).join("")}</div>`;
@@ -9680,7 +9701,7 @@ async function openMealDetails(id) {
         ? items
               .map(
                   (item) =>
-                      `<article class="food-row"><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.portionLabel || "Portion not recorded")}${item.quantity == null ? "" : ` · quantity ${number(item.quantity, 2)}`}</small><div class="demo-source-row">${sourceBadge(item.sourceType)}${confidenceBadge(item.confidence)}</div>${item.assumptions?.length ? `<small>Assumptions: ${escapeHtml(item.assumptions.join("; "))}</small>` : ""}${item.sourceSnapshot && Object.keys(item.sourceSnapshot).length ? `<details class="food-audit"><summary>Source snapshot</summary><pre class="food-audit-body" style="white-space:pre-wrap">${escapeHtml(JSON.stringify(item.sourceSnapshot, null, 2))}</pre></details>` : ""}</div><div style="text-align:right"><strong>${item.nutrients?.calories == null ? "—" : `${number(item.nutrients.calories)} kcal`}</strong><small>${item.nutrients?.protein_g == null ? "" : `P ${number(item.nutrients.protein_g, 1)}g`}${item.nutrients?.carbs_g == null ? "" : ` · C ${number(item.nutrients.carbs_g, 1)}g`}${item.nutrients?.fat_g == null ? "" : ` · F ${number(item.nutrients.fat_g, 1)}g`}</small></div>${items.length > 1 ? `<button class="button button-quiet button-small" type="button" data-action="remove-meal-item-detail" data-meal-id="${escapeHtml(id)}" data-item-id="${escapeHtml(item.id)}">Remove</button>` : ""}</article>`,
+                      `<article class="food-row"><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.portionLabel || "Portion not recorded")}${item.quantity == null ? "" : ` · quantity ${number(item.quantity, 2)}`}</small><div class="demo-source-row">${sourceBadgeToggle(item)}${confidenceBadge(item.confidence)}</div>${itemAssumptionsHtml(item)}${item.sourceSnapshot && Object.keys(item.sourceSnapshot).length ? `<details class="food-audit"><summary>Source snapshot</summary><pre class="food-audit-body" style="white-space:pre-wrap">${escapeHtml(JSON.stringify(item.sourceSnapshot, null, 2))}</pre></details>` : ""}</div><div style="text-align:right"><strong>${item.nutrients?.calories == null ? "—" : `${number(item.nutrients.calories)} kcal`}</strong><small>${item.nutrients?.protein_g == null ? "" : `P ${number(item.nutrients.protein_g, 1)}g`}${item.nutrients?.carbs_g == null ? "" : ` · C ${number(item.nutrients.carbs_g, 1)}g`}${item.nutrients?.fat_g == null ? "" : ` · F ${number(item.nutrients.fat_g, 1)}g`}</small></div>${items.length > 1 ? `<button class="button button-quiet button-small" type="button" data-action="remove-meal-item-detail" data-meal-id="${escapeHtml(id)}" data-item-id="${escapeHtml(item.id)}">Remove</button>` : ""}</article>`,
               )
               .join("")
         : `<div class="empty-state"><div><h3>Legacy aggregate meal</h3><p>This meal has totals but no item-level source record.</p></div></div>`;
@@ -11552,6 +11573,18 @@ async function handleAction(button) {
             dismissLabel: "Keep meal",
             destructive: true,
         });
+        return;
+    }
+    if (action === "toggle-item-assumptions") {
+        // Owner ruling (2026-11-22): the source chip toggles the item's
+        // assumptions inline; they are never printed by default.
+        const row = button.closest(".food-row");
+        const region = row?.querySelector(".item-assumptions");
+        const expanded = button.getAttribute("aria-expanded") === "true";
+        button.setAttribute("aria-expanded", String(!expanded));
+        const caret = button.querySelector(".chip-caret");
+        if (caret) caret.textContent = expanded ? "▸" : "▾";
+        if (region) region.hidden = expanded;
         return;
     }
     if (action === "remove-meal-item-detail") {

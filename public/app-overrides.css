@@ -435,6 +435,30 @@ dialog .auth-card {
     line-height: 1.4;
 }
 
+/* Item assumptions toggle (owner ruling, 2026-11-22): the source chip
+   is the toggle; visual size is the chip's own, hit area expands to
+   45px via ::after like the Direction C button pattern. */
+.chip-toggle {
+    position: relative;
+    cursor: pointer;
+    border: 0;
+}
+
+.chip-toggle::after {
+    content: "";
+    position: absolute;
+    inset: -10px -6px;
+}
+
+.chip-toggle .chip-caret {
+    font-size: 11px;
+    line-height: 1;
+}
+
+.item-assumptions {
+    margin-top: 6px;
+}
+
 .food-audit-body .demo-source-row {
     display: flex;
     flex-wrap: wrap;

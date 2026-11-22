@@ -168,7 +168,7 @@ function structuredItemEditor(meal) {
                     ${nutrientInputs}
                 </div>
                 ${item.sourceUrl ? `<a class="text-link tiny" href="${patchEscape(item.sourceUrl)}" target="_blank" rel="noreferrer">View nutrition source →</a>` : ""}
-                ${item.assumptions?.length ? `<p class="tiny">Assumptions: ${patchEscape(item.assumptions.join("; "))}</p>` : ""}
+                ${item.assumptions?.length ? `<details class="food-audit"><summary>Assumptions</summary><p class="tiny">${patchEscape(item.assumptions.join("; "))}</p></details>` : ""}
                 <div class="auth-actions"><button class="button button-secondary button-small" type="submit">Save food correction</button>${meal.items.length > 1 ? `<button class="button button-quiet button-small" type="button" data-patch-delete-item data-meal-id="${patchEscape(meal.id)}" data-item-id="${patchEscape(item.id)}" data-item-name="${patchEscape(item.name)}">Remove food</button>` : ""}</div>
             </form>`;
         })
