@@ -796,34 +796,36 @@ describe("groundMealPhotoItems", () => {
         expect(entry?.question?.prompt).toContain("160 g");
     });
 
-    test("spends the tie-break only inside the ambiguity band", async () => {
-        let tieBreakCalls = 0;
+    test("consults the decider for every photo item (replaces legacy ambiguity gate)", async () => {
+        let deciderCalls = 0;
         const strong = candidate();
         const weakTwin = candidate({
             providerFoodId: "999",
             name: "Chicken breast, grilled",
             confidence: 0.4,
         });
-        // Strong deterministic match: confidence high, margin wide.
+        // Even with a wide deterministic margin (isAmbiguous === false),
+        // model-first grounding consults the decider in one batched call.
+        expect(isAmbiguous("grilled chicken breast", [strong, weakTwin])).toBe(
+            false,
+        );
         await groundMealPhotoItems([chicken], {
             search: async () => ({
                 candidates: [strong, weakTwin],
                 failures: [],
             }),
             chooseCandidates: async () => {
-                tieBreakCalls += 1;
+                deciderCalls += 1;
                 return new Map();
             },
         });
-        // isAmbiguous is the gate: two near-identical high-overlap
-        // candidates with a thin margin are ambiguous.
         expect(
             isAmbiguous("grilled chicken breast", [
                 candidate({ confidence: 0.8 }),
                 candidate({ providerFoodId: "998", confidence: 0.79 }),
             ]),
         ).toBe(true);
-        expect(tieBreakCalls).toBe(0);
+        expect(deciderCalls).toBe(1);
     });
 
     test("a tie-break pick overrides the deterministic order; a null pick ungrounds", async () => {

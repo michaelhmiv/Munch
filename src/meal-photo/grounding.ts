@@ -1,6 +1,10 @@
 import { scaleNutrients } from "../food-providers/nutrients.js";
 import {
+    deduplicatePortions,
+    isPer100gPortion,
+    naturalPortion,
     normalizePortionUnit,
+    per100gPortion,
     portionUnitKind,
     sortPortionsNaturalFirst,
 } from "../food-providers/portions.js";
@@ -19,38 +23,42 @@ import type {
 import type {
     MealPhotoCandidateChoice,
     MealPhotoCandidateChoiceRequest,
+    MealPhotoPortionChoice,
+    MealPhotoPortionChoiceRequest,
     MealPhotoVisionItem,
 } from "./vision.js";
 
 /**
- * Stages 3–4 of the photo-logging pipeline (brief §3): deterministic
- * grounding + deterministic candidate ranking, with ONE batched Ember
- * tie-break call spent only when the top candidates fall inside the
- * ambiguity band (mirroring the recipe resolver's rule: a strong
- * deterministic match — confidence ≥ 0.84 and a score margin ≥ 0.08 —
- * never spends a model call).
+ * Stages 3–4 of the photo-logging pipeline (model-first grounding,
+ * 2026-11-22): code fetches deeper candidate pools (25–50) and ranks
+ * deterministically; the decider chooses the food candidate for EVERY
+ * photo item in one batched call (seeing the top 10), then chooses the
+ * matching portion from each picked candidate's REAL portions only.
  *
- * Nutrition comes from provider candidates, or — for an item with no
- * usable candidate — from the LABELLED model-estimate fallback (brief
- * §3): a dedicated Ember estimate step (estimate.ts) produces estimated
- * values for the item's stated portion, stored as `model_estimate`
- * with a sourceSnapshot that records the estimate's origin. The
- * "never invent" rule governs PROVIDER attribution: this pipeline
- * never fabricates provider IDs, provider names, or source URLs, and
- * never passes model numbers off as provider data.
+ * On decider abstention ("none") — or when initial retrieval returns no
+ * generic candidate — code triggers at most ONE refinement retry
+ * (name + cooking method / "cooked") before routing abstentions to the
+ * labelled model-estimate / blocking-question path. Never forces a wrong
+ * ground on abstention; decider errors or timeouts fail open to
+ * deterministic grounding for the whole photo.
  *
- * Pipeline invariant (S3 hardening): every item ends with provider
- * values, estimate values, or a BLOCKING draft question — never
- * silently empty. When the estimate step is unavailable, fails, or
- * returns no usable estimate for an item, that item carries NO values
- * and a blocking question (see meal-drafts/blocking.ts), and the
- * shared confirm path refuses to confirm the draft until the user
- * supplies/confirms the item's nutrition or removes the item.
+ * Nutrition comes from provider candidates (scaled in code with full
+ * unit-kind and sanity-ceiling invariants), or from the LABELLED
+ * model-estimate fallback (`model_estimate`). Every item ends with
+ * provider values, estimate values, or a BLOCKING draft question —
+ * never silently empty.
  */
 
 export const LOW_PORTION_CONFIDENCE = 0.7;
 export const AMBIGUITY_MIN_CONFIDENCE = 0.84;
 export const AMBIGUITY_MARGIN = 0.08;
+
+/** Deeper retrieval depth for the photo grounding lane (25–50). */
+export const GROUNDING_RETRIEVAL_LIMIT = 30;
+/** Shortlist shown to the candidate decider per item. */
+export const GROUNDING_DECIDER_SHORTLIST_LIMIT = 10;
+/** Real portion options shown to the portion decider per picked candidate. */
+export const GROUNDING_PORTION_SHORTLIST_LIMIT = 8;
 
 export type MealPhotoGroundingSource =
     "local catalog" | "USDA" | "Open Food Facts" | "model_estimate";
@@ -87,6 +95,11 @@ export interface MealPhotoGroundingDeps {
     chooseCandidates?: (
         requests: MealPhotoCandidateChoiceRequest[],
     ) => Promise<Map<string, MealPhotoCandidateChoice>>;
+    /** Batched portion chooser over each picked candidate's REAL portions.
+     * Optional so deterministic callers and tests stay untouched. */
+    choosePortions?: (
+        requests: MealPhotoPortionChoiceRequest[],
+    ) => Promise<Map<string, MealPhotoPortionChoice>>;
     /** Labelled model-estimate step for ungrounded items (estimate.ts).
      * Batched: one call receives every ungrounded item of the photo.
      * Optional in the deps shape so deterministic tests/lanes can omit
@@ -218,46 +231,115 @@ function scaledPortionResolution(
 }
 
 /**
+ * Extract a volume unit named in a USDA portion label when USDA stored
+ * the measureUnit as "undetermined" or "serving" (e.g. "1 tablespoon",
+ * "1 cup (8 fl oz)", "1 undetermined cup chopped").
+ */
+function extractVolumeUnitFromLabel(label: string): string | null {
+    const low = label.toLowerCase();
+    if (/\b(?:tablespoons?|tbsp)\b/.test(low)) return "tbsp";
+    if (/\b(?:teaspoons?|tsp)\b/.test(low)) return "tsp";
+    if (/\bcups?\b/.test(low)) return "cup";
+    if (/\bfl\s*oz\b/.test(low)) return "fl oz";
+    if (/\bpints?\b/.test(low)) return "pint";
+    if (/\bquarts?\b/.test(low)) return "quart";
+    if (/\bgallons?\b/.test(low)) return "gallon";
+    if (/\b(?:milliliters?|millilitres?|ml)\b/.test(low)) return "ml";
+    if (/\b(?:liters?|litres?)\b/.test(low)) return "l";
+    return null;
+}
+
+/**
+ * Validate and scale a decider-selected portion against the candidate's
+ * REAL portions only, enforcing every dimensional and sanity invariant:
+ * - Unknown/fabricated portionId -> null (caller falls back to
+ *   `resolveGroundedPortion`).
+ * - Count vision unit against a weight / per-100g portion -> null
+ *   (preserves Count-as-Grams P1 invariant).
+ * - Volume vision unit scales ONLY against a volume portion (either by
+ *   unit or explicitly volume-labelled USDA portion) via ml ratios —
+ *   never treats 300 ml as 300 servings.
+ * - Weight vision unit scales by exact unit ratio or recorded gramWeight.
+ * - Enforces `MAX_GENERIC_PORTION_FACTOR` and `MAX_ITEM_GRAM_WEIGHT_G`.
+ */
+export function resolveChosenPortion(
+    vision: MealPhotoVisionItem,
+    candidate: FoodCandidate,
+    portionId: string,
+): PortionResolution | null {
+    const portion = candidate.portions.find(
+        (entry) => entry.id === portionId && entry.amount > 0,
+    );
+    if (!portion) return null;
+
+    const visionUnit = normalizePortionUnit(vision.unit);
+    const visionKind = portionUnitKind(vision.unit);
+    const portionUnit = normalizePortionUnit(portion.unit);
+    const portionKind = portionUnitKind(portion.unit);
+
+    if (visionKind === "weight") {
+        const gramsPerUnit = WEIGHT_TO_GRAMS[visionUnit];
+        if (gramsPerUnit === undefined) return null;
+        if (visionUnit === portionUnit) {
+            return scaledPortionResolution(
+                vision,
+                portion,
+                vision.quantity / portion.amount,
+            );
+        }
+        if (portion.gramWeight !== undefined && portion.gramWeight > 0) {
+            const grams = vision.quantity * gramsPerUnit;
+            return scaledPortionResolution(
+                vision,
+                portion,
+                grams / portion.gramWeight,
+            );
+        }
+        return null;
+    }
+
+    if (visionKind === "volume") {
+        const mlPerUnit = VOLUME_TO_ML[visionUnit];
+        if (mlPerUnit === undefined) return null;
+        if (portionKind === "weight" || isPer100gPortion(portion)) return null;
+        const resolvedVolumeUnit =
+            portionKind === "volume" && VOLUME_TO_ML[portionUnit] !== undefined
+                ? portionUnit
+                : extractVolumeUnitFromLabel(portion.label);
+        if (
+            !resolvedVolumeUnit ||
+            VOLUME_TO_ML[resolvedVolumeUnit] === undefined
+        ) {
+            return null;
+        }
+        const portionMl = portion.amount * VOLUME_TO_ML[resolvedVolumeUnit]!;
+        return scaledPortionResolution(
+            vision,
+            portion,
+            (vision.quantity * mlPerUnit) / portionMl,
+        );
+    }
+
+    if (visionKind === "count") {
+        if (portionKind === "weight" || isPer100gPortion(portion)) return null;
+        const factor = vision.quantity / portion.amount;
+        if (factor > MAX_GENERIC_PORTION_FACTOR) return null;
+        return scaledPortionResolution(vision, portion, factor);
+    }
+
+    // Generic ("other") vision unit (e.g. serving, bun, link, bowl):
+    if (portionKind === "weight" || isPer100gPortion(portion)) return null;
+    const factor = vision.quantity / portion.amount;
+    if (factor > MAX_GENERIC_PORTION_FACTOR) return null;
+    return scaledPortionResolution(vision, portion, factor);
+}
+
+/**
  * Convert a vision quantity+unit into provider nutrition for that amount.
  * Mirrors `resolvePortion` in recipe-nutrition-resolution.ts: weight
  * units resolve against per-100g nutrition when available; otherwise the
  * candidate portion matching the vision unit is scaled by
  * quantity / portion.amount.
- *
- * COUNT-AS-GRAMS INVARIANT (photo-flow P1): when the vision quantity is
- * a COUNT ("3 piece") and the only portion available on this candidate
- * is weight-based ("100 g"), the legacy factor math would set
- * gram_weight to the raw count (3 g) and scale nutrients for 3 grams —
- * the production defect that logged 3 ears of corn at 2.4 kcal. A count
- * must never become a gram weight: this function now resolves a count
- * only against a count portion (exact unit, or any count portion the
- * candidate carries) and returns null otherwise, so the caller can try
- * a donor candidate's portion data or the labelled estimate path.
- *
- * UNIT-KIND INVARIANT (photo calorie blowup, 2026-11-10): the same
- * dimensional discipline applies to EVERY unit kind. The legacy
- * fallback scaled the candidate's FIRST portion by
- * quantity / portion.amount whatever the units were — so a VOLUME
- * quantity (the vision prompt itself asks for ml on liquids) against
- * a declared-serving portion (amount 1) read "300 ml" of tomato soup
- * as 300 servings: 48,450 kcal and a 127,500 g gram weight on a real
- * provider candidate (USDA fdcId 1966887), recurring across identifier
- * models in the full-pipeline eval because the bug sits downstream of
- * identification. The mirror error divided a generic "1 serving" by
- * a 100 g portion (factor 0.01 — a 1 g, 1 kcal curry). Resolution now
- * only ever scales a portion by a factor that is dimensionally sound:
- * the exact same unit, the same kind through an exact conversion
- * (volume↔volume via ml, weight through a portion's recorded gram
- * weight), a count against a count portion (P1), or a generic
- * portion word (bowl / plate / serving) read as a bounded count of
- * the candidate's generic portion. Two sanity ceilings bound every
- * path, exact matches included: a generic-portion factor above
- * MAX_GENERIC_PORTION_FACTOR, and a resolved gram weight above
- * MAX_ITEM_GRAM_WEIGHT_G, are data errors, not portions. Anything
- * else returns null — or, for a generic quantity against a
- * per-100 g-only candidate, the labelled per-100 g fallback — so the
- * item surfaces through the donor / estimate / blocking paths
- * instead of a silent absurdity.
  */
 export function resolveGroundedPortion(
     vision: MealPhotoVisionItem,
@@ -284,18 +366,12 @@ export function resolveGroundedPortion(
             visionKind === "count" &&
             portionUnitKind(exactPortion.unit) === "weight"
         ) {
-            // The count-as-grams guard (defensive: the unit sets make
-            // an exact count/weight unit collision impossible today).
             return null;
         }
         const factor = vision.quantity / exactPortion.amount;
         if (visionKind !== "other" || factor <= MAX_GENERIC_PORTION_FACTOR) {
             return scaledPortionResolution(vision, exactPortion, factor);
         }
-        // An absurd count of an exactly-named generic portion ("300
-        // serving") falls through to the generic branch below, which
-        // lands on the labelled per-100 g fallback instead of the
-        // multiple.
     }
     if (visionKind === "count") {
         const countPortion = findCountPortion(candidate, vision.unit);
@@ -317,9 +393,6 @@ export function resolveGroundedPortion(
                 },
             };
         }
-        // Legacy generic fallback for counts, kept but bounded: a
-        // count read as that many of the candidate's first portion —
-        // never a weight portion (P1), never an absurd multiple.
         const fallback = usable[0];
         if (!fallback || portionUnitKind(fallback.unit) === "weight") {
             return null;
@@ -329,10 +402,6 @@ export function resolveGroundedPortion(
         return scaledPortionResolution(vision, fallback, factor);
     }
     if (visionKind === "weight") {
-        // No per-100 g panel (the fast path above did not fire): weigh
-        // the quantity through a portion's recorded gram weight — the
-        // factor is grams / gram weight, dimensionally exact. Without
-        // any gram weight there is no honest conversion.
         const weighable = usable.find(
             (portion) =>
                 portion.gramWeight !== undefined && portion.gramWeight > 0,
@@ -346,11 +415,6 @@ export function resolveGroundedPortion(
         );
     }
     if (visionKind === "volume") {
-        // Volume converts to a volume portion through exact ml
-        // ratios only. A volume is never a count of servings, and a
-        // millilitre is not a gram (density is not provider data) —
-        // anything else refuses, so the estimate path prices the
-        // stated volume directly.
         const mlPerUnit = VOLUME_TO_ML[unit];
         const volumePortion = usable.find(
             (portion) =>
@@ -367,11 +431,6 @@ export function resolveGroundedPortion(
             (vision.quantity * mlPerUnit) / portionMl,
         );
     }
-    // Generic portion words (bowl, plate, serving, …): a bounded count
-    // of the candidate's generic portion, or the labelled per-100 g
-    // fallback when the candidate carries no generic portion — never
-    // quantity / 100 against the 100 g row, never a multiple of a
-    // weight or volume portion.
     const genericPortion = usable.find(
         (portion) => portionUnitKind(portion.unit) === "other",
     );
@@ -395,12 +454,7 @@ export function resolveGroundedPortion(
  * Cross-candidate count conversion (photo-flow P1): the picked
  * candidate cannot weigh the vision item's count unit, but another
  * ranked candidate for the same food carries a count portion with a
- * gram weight. The grams-per-piece come from that donor's PROVIDER
- * portion data; the nutrients stay with the pick (its per-100 g
- * panel) whenever it has one, so attribution stays honest and the
- * conversion is recorded as an explicit assumption. When the pick has
- * no per-100 g panel, the donor candidate itself becomes the pick —
- * its count portion resolves the item end to end.
+ * gram weight.
  */
 export function resolveCountViaDonor(
     vision: MealPhotoVisionItem,
@@ -443,6 +497,69 @@ function groundingSourceFor(
     candidate: FoodCandidate,
 ): MealPhotoGroundingSource {
     return candidate.provider === "usda" ? "USDA" : "Open Food Facts";
+}
+
+function defaultPortionLabelFor(candidate: FoodCandidate): string | null {
+    const portion =
+        naturalPortion(candidate.portions) ??
+        (candidate.nutrientsPer100g
+            ? per100gPortion(candidate.nutrientsPer100g)
+            : candidate.portions[0]);
+    return portion?.label ?? null;
+}
+
+function realPortionOptions(
+    candidate: FoodCandidate,
+): FoodCandidate["portions"] {
+    return deduplicatePortions(
+        sortPortionsNaturalFirst(
+            candidate.portions.filter((portion) => portion.amount > 0),
+        ),
+    ).slice(0, GROUNDING_PORTION_SHORTLIST_LIMIT);
+}
+
+/**
+ * Code-driven refinement query used on decider abstention (or when
+ * initial retrieval returns no generic candidate): appends the vision
+ * cooking method when available and not already present, otherwise
+ * "cooked". Returns null when the query is already refined.
+ */
+export function buildRefinementQuery(
+    vision: MealPhotoVisionItem,
+    originalQuery: string,
+): string | null {
+    const trimmed = originalQuery.trim();
+    if (!trimmed) return null;
+    const lower = trimmed.toLowerCase();
+    const method = vision.cooking_method?.trim();
+    if (method && !lower.includes(method.toLowerCase())) {
+        return `${trimmed} ${method}`;
+    }
+    if (!lower.includes("cooked")) {
+        return `${trimmed} cooked`;
+    }
+    return null;
+}
+
+function buildChoiceRequest(
+    key: string,
+    vision: MealPhotoVisionItem,
+    shortlist: FoodCandidate[],
+): MealPhotoCandidateChoiceRequest {
+    return {
+        key,
+        itemName: vision.name,
+        cookingMethod: vision.cooking_method,
+        photographedAmount: `${vision.quantity} ${vision.unit}`,
+        candidates: shortlist.map((candidate) => ({
+            candidateId: encodeFoodCandidateId(candidate),
+            name: candidate.name,
+            brand: candidate.brand ?? null,
+            provider: candidate.provider,
+            dataKind: candidate.dataKind,
+            defaultPortionLabel: defaultPortionLabelFor(candidate),
+        })),
+    };
 }
 
 function questionFor(
@@ -498,54 +615,154 @@ export async function groundMealPhotoItems(
     items: MealPhotoVisionItem[],
     deps: MealPhotoGroundingDeps,
 ): Promise<GroundedMealPhotoItem[]> {
-    // Stage 3: canonical search per item (local catalog first, then USDA
-    // + Open Food Facts concurrently — that resolution order lives inside
-    // FoodSearchService.search and is reused unchanged).
+    // Stage 3: deeper canonical search per item (25–50 fetched, generic
+    // Foundation / SR Legacy / Survey prioritized ahead of branded noise).
     const searched = await Promise.all(
         items.map(async (vision) => {
-            const query = vision.cooking_method
-                ? `${vision.name}`.trim()
-                : vision.name.trim();
-            const result = await deps.search(query, 10);
+            const query = vision.name.trim();
+            const result = await deps.search(query, GROUNDING_RETRIEVAL_LIMIT, {
+                preferGeneric: true,
+            });
             const ranked = rankCandidates({ query }, result.candidates);
             return { vision, query, ranked };
         }),
     );
 
-    // Stage 4a: collect every ambiguous item for ONE batched tie-break.
-    const tieBreakRequests: MealPhotoCandidateChoiceRequest[] = [];
-    searched.forEach(({ vision, query, ranked }, index) => {
-        if (deps.chooseCandidates && isAmbiguous(query, ranked)) {
-            tieBreakRequests.push({
-                key: `item:${index}`,
-                itemName: vision.name,
-                cookingMethod: vision.cooking_method,
-                candidates: ranked.slice(0, 5).map((candidate) => ({
-                    candidateId: encodeFoodCandidateId(candidate),
-                    name: candidate.name,
-                    brand: candidate.brand ?? null,
-                    provider: candidate.provider,
-                })),
-            });
-        }
-    });
+    // Stage 4a: ONE batched decider pick call for EVERY photo item that
+    // returned candidates (replaces the legacy `isAmbiguous` gate).
+    const pickRequests: MealPhotoCandidateChoiceRequest[] = [];
+    if (deps.chooseCandidates) {
+        searched.forEach(({ vision, ranked }, index) => {
+            if (ranked.length === 0) return;
+            pickRequests.push(
+                buildChoiceRequest(
+                    `item:${index}`,
+                    vision,
+                    ranked.slice(0, GROUNDING_DECIDER_SHORTLIST_LIMIT),
+                ),
+            );
+        });
+    }
     let choices = new Map<string, MealPhotoCandidateChoice>();
-    if (tieBreakRequests.length > 0 && deps.chooseCandidates) {
+    let deciderFailed = false;
+    if (pickRequests.length > 0 && deps.chooseCandidates) {
         try {
-            choices = await deps.chooseCandidates(tieBreakRequests);
+            choices = await deps.chooseCandidates(pickRequests);
         } catch {
-            // Tie-break failure never fails the pipeline (recipe-resolver
-            // posture): deterministic ranking still applies.
+            // Fail-open to deterministic behavior for the whole photo.
+            deciderFailed = true;
             choices = new Map();
         }
     }
 
-    // Stage 4b: resolve each item's pick deterministically first, so
-    // every ungrounded item can be collected for ONE batched estimate
-    // call (stage 4c) before any draft item is built.
-    const picks = searched.map(({ vision, ranked }, index) => {
+    // Stage 4a-retry: code-driven refinement retry (at most ONCE per item)
+    // triggered by decider abstention ("none") or absence of any generic
+    // candidate in the initial top 10. The model stays out of the fetch
+    // loop — code constructs the refined query (name + cooking method /
+    // "cooked") and, when fresh candidates arrive, consults the decider
+    // once more before falling back to the estimate path.
+    if (!deciderFailed) {
+        const retryTargets: Array<{ index: number; refinedQuery: string }> = [];
+        searched.forEach(({ vision, query, ranked }, index) => {
+            const key = `item:${index}`;
+            const choice = choices.get(key);
+            const deciderAbstained =
+                Boolean(deps.chooseCandidates) && choice?.candidateId === null;
+            const deciderPicked = Boolean(choice?.candidateId);
+            const hasGeneric = ranked
+                .slice(0, GROUNDING_DECIDER_SHORTLIST_LIMIT)
+                .some((candidate) => candidate.dataKind === "generic");
+            const shouldRetry =
+                deciderAbstained || (!deciderPicked && !hasGeneric);
+            if (!shouldRetry) return;
+            const refinedQuery = buildRefinementQuery(vision, query);
+            if (refinedQuery) {
+                retryTargets.push({ index, refinedQuery });
+            }
+        });
+
+        if (retryTargets.length > 0) {
+            const retryResults = await Promise.all(
+                retryTargets.map(async ({ index, refinedQuery }) => {
+                    try {
+                        const result = await deps.search(
+                            refinedQuery,
+                            GROUNDING_RETRIEVAL_LIMIT,
+                            { preferGeneric: true },
+                        );
+                        const retryRanked = rankCandidates(
+                            { query: refinedQuery },
+                            result.candidates,
+                        );
+                        return { index, retryRanked };
+                    } catch {
+                        return { index, retryRanked: [] as FoodCandidate[] };
+                    }
+                }),
+            );
+
+            const retryPickRequests: MealPhotoCandidateChoiceRequest[] = [];
+            const retryRankedByIndex = new Map<number, FoodCandidate[]>();
+            for (const { index, retryRanked } of retryResults) {
+                if (retryRanked.length === 0) continue;
+                const prevShortlistIds = new Set(
+                    searched[index]!.ranked.slice(
+                        0,
+                        GROUNDING_DECIDER_SHORTLIST_LIMIT,
+                    ).map(encodeFoodCandidateId),
+                );
+                const retryShortlist = retryRanked.slice(
+                    0,
+                    GROUNDING_DECIDER_SHORTLIST_LIMIT,
+                );
+                const hasNewCandidate = retryShortlist.some(
+                    (candidate) =>
+                        !prevShortlistIds.has(encodeFoodCandidateId(candidate)),
+                );
+                if (!hasNewCandidate) continue;
+                retryRankedByIndex.set(index, retryRanked);
+                if (deps.chooseCandidates) {
+                    retryPickRequests.push(
+                        buildChoiceRequest(
+                            `item:${index}`,
+                            searched[index]!.vision,
+                            retryShortlist,
+                        ),
+                    );
+                } else if (
+                    retryRanked.some(
+                        (candidate) => candidate.dataKind === "generic",
+                    )
+                ) {
+                    searched[index]!.ranked = retryRanked;
+                }
+            }
+
+            if (retryPickRequests.length > 0 && deps.chooseCandidates) {
+                try {
+                    const retryChoices =
+                        await deps.chooseCandidates(retryPickRequests);
+                    for (const [key, retryChoice] of retryChoices) {
+                        const index = Number(key.replace("item:", ""));
+                        const retryRanked = retryRankedByIndex.get(index);
+                        if (!retryRanked) continue;
+                        if (retryChoice.candidateId) {
+                            searched[index]!.ranked = retryRanked;
+                        }
+                        choices.set(key, retryChoice);
+                    }
+                } catch {
+                    // Keep the first pass outcome (abstention stays
+                    // abstained — never force a wrong ground).
+                }
+            }
+        }
+    }
+
+    // Stage 4b-i: resolve each item's chosen candidate.
+    const selectedCandidates = searched.map(({ vision, ranked }, index) => {
         const key = `item:${index}`;
-        const choice = choices.get(key);
+        const choice = !deciderFailed ? choices.get(key) : undefined;
         let candidate: FoodCandidate | undefined = ranked[0];
         let tieBreakUsed = false;
         if (choice) {
@@ -557,52 +774,95 @@ export async function groundMealPhotoItems(
                   )
                 : undefined;
             if (choice.candidateId && !candidate) {
-                // The chooser returned an ID outside the ranked set —
-                // discard it and keep the deterministic pick.
+                // Fabricated ID outside the ranked set: discard and
+                // fail open to the deterministic pick.
                 candidate = ranked[0];
             }
             if (choice.candidateId === null) candidate = undefined;
         }
-        let resolution = candidate
-            ? resolveGroundedPortion(vision, candidate)
-            : null;
-        // Count-as-grams (P1): a null resolution for a count quantity
-        // against a weight-only candidate is not "ungrounded" yet —
-        // another ranked candidate's portion data may weigh the count.
-        // Only when no donor exists does the item fall to the labelled
-        // estimate path, flagged so the estimate must report a gram
-        // weight for the stated portion.
-        let countMismatch = false;
-        if (candidate && !resolution) {
-            if (portionUnitKind(vision.unit) === "count") {
-                const viaDonor = resolveCountViaDonor(
-                    vision,
-                    candidate,
-                    ranked,
-                );
-                if (viaDonor) {
-                    candidate = viaDonor.candidate;
-                    resolution = viaDonor.resolution;
-                } else {
-                    countMismatch = true;
-                }
-            }
-        }
-        return {
-            vision,
-            index,
-            key,
-            candidate,
-            resolution,
-            tieBreakUsed,
-            countMismatch,
-        };
+        return { vision, ranked, index, key, candidate, tieBreakUsed };
     });
 
+    // Stage 4b-ii: ONE batched portion choice call for all picked
+    // candidates, offering ONLY each candidate's REAL portions.
+    let portionChoices = new Map<string, MealPhotoPortionChoice>();
+    if (deps.choosePortions && !deciderFailed) {
+        const portionRequests: MealPhotoPortionChoiceRequest[] = [];
+        for (const entry of selectedCandidates) {
+            if (!entry.candidate) continue;
+            const portions = realPortionOptions(entry.candidate);
+            if (portions.length === 0) continue;
+            portionRequests.push({
+                key: entry.key,
+                foodName: entry.candidate.name,
+                photographedAmount: `${entry.vision.quantity} ${entry.vision.unit}`,
+                portions: portions.map((portion) => ({
+                    id: portion.id,
+                    label: portion.label,
+                    gramWeight: portion.gramWeight ?? null,
+                    calories: portion.nutrients.calories ?? null,
+                })),
+            });
+        }
+        if (portionRequests.length > 0) {
+            try {
+                portionChoices = await deps.choosePortions(portionRequests);
+            } catch {
+                // Portion decider failure fails open to deterministic
+                // `resolveGroundedPortion`.
+                portionChoices = new Map();
+            }
+        }
+    }
+
+    // Stage 4b-iii: validate & scale each picked candidate's portion,
+    // falling back to deterministic `resolveGroundedPortion` whenever
+    // the portion choice is absent, unknown, or dimensionally invalid.
+    const picks = selectedCandidates.map(
+        ({ vision, ranked, index, key, candidate, tieBreakUsed }) => {
+            const chosenPortion = portionChoices.get(key);
+            let resolution: PortionResolution | null = null;
+            if (candidate) {
+                if (chosenPortion) {
+                    resolution = resolveChosenPortion(
+                        vision,
+                        candidate,
+                        chosenPortion.portionId,
+                    );
+                }
+                if (!resolution) {
+                    resolution = resolveGroundedPortion(vision, candidate);
+                }
+            }
+            let countMismatch = false;
+            if (candidate && !resolution) {
+                if (portionUnitKind(vision.unit) === "count") {
+                    const viaDonor = resolveCountViaDonor(
+                        vision,
+                        candidate,
+                        ranked,
+                    );
+                    if (viaDonor) {
+                        candidate = viaDonor.candidate;
+                        resolution = viaDonor.resolution;
+                    } else {
+                        countMismatch = true;
+                    }
+                }
+            }
+            return {
+                vision,
+                index,
+                key,
+                candidate,
+                resolution,
+                tieBreakUsed,
+                countMismatch,
+            };
+        },
+    );
+
     // Stage 4c: labelled model-estimate fallback for ungrounded items.
-    // A failed/absent estimate step never fails the pipeline and never
-    // fabricates values: those items fall through with NO nutrients
-    // and a blocking question instead (stage 4d).
     const estimateRequests: MealPhotoEstimateRequest[] = picks
         .filter((pick) => !(pick.candidate && pick.resolution))
         .map((pick) => ({
@@ -704,11 +964,6 @@ export async function groundMealPhotoItems(
                 let question = portionQuestion;
                 if (countMismatch) {
                     if (usableEstimate.gramWeight !== undefined) {
-                        // The estimate weighed the count: record the
-                        // conversion as an explicit, labelled estimate
-                        // assumption — the weight is the model's, the
-                        // nutrition is the model's, nothing poses as
-                        // provider data.
                         const perPiece =
                             vision.quantity > 0
                                 ? round2(
@@ -720,8 +975,6 @@ export async function groundMealPhotoItems(
                             `Estimated weight: ${vision.quantity} ${vision.unit} ≈ ${usableEstimate.gramWeight} g (about ${perPiece} g each) — model estimate; the food database entry for this item only reports per-100 g values.`,
                         );
                     } else if (!question) {
-                        // Nutrition estimated, but the count still has
-                        // no defensible gram weight — ask, don't imply.
                         question = {
                             questionKey: `photo_portion_${index}`,
                             prompt: `How much does one ${vision.unit} of ${vision.name} weigh in grams? The draft uses estimated nutrition for ${vision.quantity} ${vision.unit}, but the item's database entry only reports per-100 g values and no gram weight could be derived.`,
@@ -748,10 +1001,6 @@ export async function groundMealPhotoItems(
                             portion_confidence: vision.portion_confidence,
                             candidate_id: null,
                             tie_break_used: tieBreakUsed,
-                            // Estimate audit trail: these values came from
-                            // the labelled model-estimate step, explicitly
-                            // NOT from any provider — no provider fields
-                            // exist on this draft item at all.
                             estimate_origin: "model_estimate",
                             estimate_step: "meal_photo_estimate",
                             ...(countMismatch ? { count_mismatch: true } : {}),

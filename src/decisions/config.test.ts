@@ -17,6 +17,9 @@ import {
     DEFAULT_SHORTFALL_CONTRADICTION_MIN,
     PLAUSIBILITY_LEAD_MODEL,
     plausibilityModelOrder,
+    PHOTO_GROUNDING_FALLBACK_MODEL,
+    PHOTO_GROUNDING_LEAD_MODEL,
+    photoGroundingModelOrder,
     SEARCH_INTENT_LEAD_MODEL,
     searchIntentModelOrder,
 } from "./config.js";
@@ -520,5 +523,43 @@ describe("Search Intent lane order (Perplexity-led; 2026-11-22 eval)", () => {
             MUNCH_DECIDER_FALLBACK_MODELS: "",
         });
         expect(config!.searchIntentModels).toEqual(["typesafe/jev-1.14"]);
+    });
+});
+
+describe("Photo Grounding lane order (Jev-led, Perplexity fallback; 2026-11-22 eval)", () => {
+    test("lead is Jev and fallback is Perplexity, leaving Search Intent Perplexity-led", () => {
+        expect(PHOTO_GROUNDING_LEAD_MODEL).toBe("typesafe/jev-1.14");
+        expect(PHOTO_GROUNDING_FALLBACK_MODEL).toBe(
+            "perplexity/pplx-decider-v1.2",
+        );
+        const config = decisionsConfig({ ...KEY });
+        expect(config!.photoGroundingModels).toEqual([
+            "typesafe/jev-1.14",
+            "perplexity/pplx-decider-v1.2",
+        ]);
+        // Search Intent and Plausibility stay Perplexity-led.
+        expect(config!.searchIntentModels).toEqual([
+            "perplexity/pplx-decider-v1.2",
+            "typesafe/jev-1.14",
+        ]);
+        expect(config!.plausibilityModels).toEqual([
+            "perplexity/pplx-decider-v1.2",
+            "typesafe/jev-1.14",
+        ]);
+    });
+
+    test("reorders even when global MUNCH_DECIDER_MODEL is reversed, without inventing removed models", () => {
+        const config = decisionsConfig({
+            ...KEY,
+            MUNCH_DECIDER_MODEL: "perplexity/pplx-decider-v1.2",
+            MUNCH_DECIDER_FALLBACK_MODELS: "typesafe/jev-1.14",
+        });
+        expect(config!.photoGroundingModels).toEqual([
+            "typesafe/jev-1.14",
+            "perplexity/pplx-decider-v1.2",
+        ]);
+        expect(
+            photoGroundingModelOrder(["perplexity/pplx-decider-v1.2"]),
+        ).toEqual(["perplexity/pplx-decider-v1.2"]);
     });
 });

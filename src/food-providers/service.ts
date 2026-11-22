@@ -17,7 +17,7 @@ import {
     per100gPortion,
     sortPortionsNaturalFirst,
 } from "./portions.js";
-import { rankCandidates } from "./ranking.js";
+import { candidateTokenOverlap, rankCandidates } from "./ranking.js";
 import type { FoodCandidate, FoodProviderName } from "./types.js";
 import { UsdaFoodDataCentralProvider } from "./usda.js";
 
@@ -129,6 +129,17 @@ export function summarizeFoodCandidate(
     };
 }
 
+export function localCoversQuery(
+    query: string,
+    candidates: FoodCandidate[],
+): boolean {
+    const tokens = normalizeFoodText(query).split(" ").filter(Boolean);
+    if (tokens.length <= 1) return candidates.length > 0;
+    return candidates.some(
+        (candidate) => candidateTokenOverlap({ query }, candidate) >= 1,
+    );
+}
+
 export function isStrongLocalMatch(
     query: string,
     candidate: FoodCandidate | undefined,
@@ -196,12 +207,14 @@ export class FoodSearchService {
     async search(
         query: string,
         limit = 10,
+        options?: { preferGeneric?: boolean },
     ): Promise<AggregatedFoodSearchResult> {
         const canonicalQuery = canonicalizeFoodSearchQuery(query);
         const normalized = normalizeFoodText(canonicalQuery);
         if (!normalized) return { candidates: [], failures: [] };
-        const boundedLimit = Math.max(1, Math.min(25, limit));
-        const key = `${normalized}\u0000${boundedLimit}`;
+        const boundedLimit = Math.max(1, Math.min(50, limit));
+        const preferGeneric = options?.preferGeneric === true;
+        const key = `${normalized}\u0000${boundedLimit}\u0000${preferGeneric ? "g" : "a"}`;
         const existing = this.inFlightSearches.get(key);
         if (existing) {
             console.info(
@@ -209,11 +222,13 @@ export class FoodSearchService {
             );
             return existing;
         }
-        const pending = this.resolveSearch(normalized, boundedLimit).finally(
-            () => {
-                this.inFlightSearches.delete(key);
-            },
-        );
+        const pending = this.resolveSearch(
+            normalized,
+            boundedLimit,
+            preferGeneric,
+        ).finally(() => {
+            this.inFlightSearches.delete(key);
+        });
         this.inFlightSearches.set(key, pending);
         return pending;
     }
@@ -221,6 +236,7 @@ export class FoodSearchService {
     private async resolveSearch(
         normalized: string,
         boundedLimit: number,
+        preferGeneric: boolean,
     ): Promise<AggregatedFoodSearchResult> {
         const startedAt = performance.now();
 
@@ -266,7 +282,9 @@ export class FoodSearchService {
         // the background — the search itself never waits on it.
         this.scheduleStaleRefresh(stale);
         const strongLocal = isStrongLocalMatch(normalized, local[0]);
-        if (strongLocal || local.length >= boundedLimit) {
+        const localSatisfies =
+            local.length >= boundedLimit && localCoversQuery(normalized, local);
+        if (strongLocal || localSatisfies) {
             console.info(
                 `[food_resolution] operation=search resolution_layer=local_cache local_count=${local.length} stale_count=${stale.length} query_cache_ms=${queryCacheMs} local_ms=${localMs} total_ms=${Math.round(performance.now() - startedAt)} reason=${strongLocal ? "strong_exact_match" : "result_limit_satisfied"}`,
             );
@@ -294,6 +312,7 @@ export class FoodSearchService {
         const result = await this.registry.search({
             query: normalized,
             limit: boundedLimit,
+            ...(preferGeneric ? { preferGeneric: true } : {}),
         });
         const providerMs = Math.round(performance.now() - providerStartedAt);
 

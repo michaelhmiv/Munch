@@ -413,28 +413,92 @@ export class UsdaFoodDataCentralProvider implements FoodProvider {
         }
     }
 
-    async search(input: FoodSearchInput): Promise<FoodCandidate[]> {
-        const query = input.query.trim();
-        if (!query) return [];
-        const limit = Math.max(1, Math.min(25, input.limit ?? 10));
+    private async postSearch(
+        query: string,
+        pageSize: number,
+        options: {
+            requireAllWords?: boolean;
+            dataType?: readonly string[];
+            signal?: AbortSignal;
+        },
+    ): Promise<FoodCandidate[]> {
+        // Deliberately omit sortBy: "dataType.keyword" — alphabetical
+        // dataType sorting puts "Branded" ahead of "Foundation" /
+        // "SR Legacy" / "Survey (FNDDS)" and disables USDA BM25
+        // relevance ranking.
+        const body: Record<string, unknown> = {
+            query,
+            pageSize,
+            pageNumber: 1,
+        };
+        if (options.requireAllWords) body.requireAllWords = true;
+        if (options.dataType && options.dataType.length > 0) {
+            body.dataType = [...options.dataType];
+        }
         const response = await this.requestJson<UsdaSearchResponse>(
             "/foods/search",
             {
                 method: "POST",
-                body: JSON.stringify({
-                    query,
-                    pageSize: limit,
-                    pageNumber: 1,
-                    sortBy: "dataType.keyword",
-                    sortOrder: "asc",
-                }),
-                signal: input.signal,
+                body: JSON.stringify(body),
+                signal: options.signal,
             },
         );
         return (response.foods ?? [])
             .map(normalizeUsdaSearchFood)
-            .filter((food): food is FoodCandidate => food !== null)
-            .slice(0, limit);
+            .filter((food): food is FoodCandidate => food !== null);
+    }
+
+    async search(input: FoodSearchInput): Promise<FoodCandidate[]> {
+        const query = input.query.trim();
+        if (!query) return [];
+        const limit = Math.max(1, Math.min(50, input.limit ?? 10));
+        const multiWord = query.split(/\s+/).filter(Boolean).length >= 2;
+        const genericTypes = [
+            "Foundation",
+            "SR Legacy",
+            "Survey (FNDDS)",
+        ] as const;
+
+        if (input.preferGeneric) {
+            let generic = await this.postSearch(query, limit, {
+                requireAllWords: multiWord,
+                dataType: genericTypes,
+                signal: input.signal,
+            });
+            if (generic.length === 0 && multiWord) {
+                generic = await this.postSearch(query, limit, {
+                    requireAllWords: false,
+                    dataType: genericTypes,
+                    signal: input.signal,
+                });
+            }
+            if (generic.length >= limit) return generic.slice(0, limit);
+            const fallback = await this.postSearch(query, limit, {
+                requireAllWords: multiWord,
+                signal: input.signal,
+            });
+            const seen = new Set(generic.map((item) => item.providerFoodId));
+            const merged = [...generic];
+            for (const candidate of fallback) {
+                if (!seen.has(candidate.providerFoodId)) {
+                    seen.add(candidate.providerFoodId);
+                    merged.push(candidate);
+                }
+            }
+            return merged.slice(0, limit);
+        }
+
+        let results = await this.postSearch(query, limit, {
+            requireAllWords: multiWord,
+            signal: input.signal,
+        });
+        if (results.length === 0 && multiWord) {
+            results = await this.postSearch(query, limit, {
+                requireAllWords: false,
+                signal: input.signal,
+            });
+        }
+        return results.slice(0, limit);
     }
 
     async getDetails(input: FoodLookupInput): Promise<FoodCandidate | null> {

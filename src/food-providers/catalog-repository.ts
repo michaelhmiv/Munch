@@ -98,6 +98,38 @@ export function lexicalFoodSearchTsquery(value: string): string {
 
 export const TRIGRAM_FALLBACK_MAX_TOKENS = 4;
 
+/**
+ * Singular/plural head-segment variants for SQL primary-food ordering
+ * (e.g. "pancake" -> ["pancake", "pancakes"], "berry" -> ["berry", "berries"]).
+ */
+export function headSegmentVariants(normalized: string): string[] {
+    const tokens = normalized.split(" ").filter(Boolean);
+    if (tokens.length === 0) return [];
+    const last = tokens[tokens.length - 1]!;
+    const prefix = tokens.slice(0, -1).join(" ");
+    const forms = new Set<string>([last]);
+    if (last.length > 4 && last.endsWith("ies")) {
+        forms.add(`${last.slice(0, -3)}y`);
+    } else if (/[^aeiou]y$/u.test(last)) {
+        forms.add(`${last.slice(0, -1)}ies`);
+    } else if (last.length > 4 && last.endsWith("oes")) {
+        forms.add(last.slice(0, -2));
+    } else if (last.endsWith("o") && last.length > 2) {
+        forms.add(`${last}es`);
+        forms.add(`${last}s`);
+    } else if (
+        last.length > 3 &&
+        last.endsWith("s") &&
+        !last.endsWith("ss") &&
+        !last.endsWith("us")
+    ) {
+        forms.add(last.slice(0, -1));
+    } else if (!last.endsWith("s")) {
+        forms.add(`${last}s`);
+    }
+    return [...forms].map((form) => (prefix ? `${prefix} ${form}` : form));
+}
+
 export function hashCatalogIdentity(value: string): string {
     return createHash("sha256").update(value, "utf8").digest("hex");
 }
@@ -315,9 +347,10 @@ export class FoodCatalogRepository {
         if (!this.config.readsEnabled) return [];
         const normalized = normalizeFoodText(query);
         if (!normalized) return [];
-        const boundedLimit = Math.max(1, Math.min(25, limit));
+        const boundedLimit = Math.max(1, Math.min(50, limit));
         const lexicalTsquery = lexicalFoodSearchTsquery(normalized);
-        const retrievalLimit = Math.min(50, Math.max(25, boundedLimit * 5));
+        const headVariants = headSegmentVariants(normalized);
+        const retrievalLimit = Math.min(100, Math.max(50, boundedLimit * 4));
         const lexicalRows = await withServiceDatabase(
             async (tx) =>
                 tx<CatalogRow[]>`
@@ -329,7 +362,25 @@ export class FoodCatalogRepository {
                     normalized_name || ' ' || coalesce(normalized_brand, '')
                   ) @@ to_tsquery('simple', ${lexicalTsquery})
             order by
-                case when normalized_name = ${normalized} then 0 else 1 end,
+                case
+                    when normalized_name = ${normalized} then 0
+                    when strpos(name, ',') > 0 and (
+                        lower(trim(split_part(name, ',', 1))) in (
+                            select value
+                            from jsonb_array_elements_text(${headVariants}::jsonb)
+                        )
+                        or (
+                            split_part(name, ',', 3) <> ''
+                            and strpos(trim(split_part(name, ',', 1)), ' ') = 0
+                            and lower(trim(split_part(name, ',', 2))) in (
+                                select value
+                                from jsonb_array_elements_text(${headVariants}::jsonb)
+                            )
+                        )
+                    ) then 1
+                    when normalized_name like ${`${normalized} %`} then 2
+                    else 3
+                end,
                 length(normalized_name) asc,
                 confidence desc
             limit ${retrievalLimit}
@@ -425,7 +476,7 @@ export class FoodCatalogRepository {
         const normalized = normalizeFoodText(query);
         if (!normalized) return null;
         const queryHash = hashCatalogIdentity(normalized);
-        const boundedLimit = Math.max(1, Math.min(25, limit));
+        const boundedLimit = Math.max(1, Math.min(50, limit));
         const rows = await withServiceDatabase(
             async (tx) =>
                 tx<CatalogRow[]>`
