@@ -1764,6 +1764,7 @@ export function createAppRouter(): Hono {
                           ? {
                                 parse_source: outcome.parseSource,
                                 preparation: outcome.preparation,
+                                removed_item: outcome.removedItemName ?? null,
                             }
                           : outcome.status === "question"
                             ? { parse_source: outcome.parseSource }

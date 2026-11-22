@@ -469,11 +469,30 @@ photoAdd = await upsertMealDraftItem({
         sourceSnapshot: { resolution_layer: "meal_photo_grounding" },
     },
 });
+const { parsedItemsFromModelParse } =
+    await import("../src/meal-photo/draft-add-parse.js");
 const addedOutcome = await addTextToPhotoDraft({
     userId: userA,
     draft: photoAdd,
     text: "I added a good bit of butter",
-    deps: { search: addSearch as never },
+    deps: {
+        search: addSearch as never,
+        parseWithModel: async () =>
+            parsedItemsFromModelParse({
+                action: "add",
+                target_item_id: null,
+                items: [
+                    {
+                        name: "butter",
+                        quantity: 1,
+                        unit: "tbsp",
+                        assumptions: ['"a good bit" interpreted as 1 tbsp'],
+                    },
+                ],
+                preparation: null,
+                question_prompt: null,
+            }),
+    },
 });
 if (addedOutcome.status !== "added") {
     throw new Error(`Butter add did not land: ${addedOutcome.status}`);
@@ -508,7 +527,24 @@ const questionOutcome = await addTextToPhotoDraft({
     userId: userA,
     draft: photoAdd,
     text: "added qwixle",
-    deps: { search: addSearch as never },
+    deps: {
+        search: addSearch as never,
+        parseWithModel: async () =>
+            parsedItemsFromModelParse({
+                action: "add",
+                target_item_id: null,
+                items: [
+                    {
+                        name: "qwixle",
+                        quantity: null,
+                        unit: null,
+                        assumptions: [],
+                    },
+                ],
+                preparation: null,
+                question_prompt: null,
+            }),
+    },
 });
 if (questionOutcome.status !== "question") {
     throw new Error("Weak ungrounded add did not become a question");
@@ -533,7 +569,14 @@ const noAddOutcome = await addTextToPhotoDraft({
     text: "the weather is nice today",
     deps: {
         search: addSearch as never,
-        parseWithModel: async () => ({ items: [], replaces: null }),
+        parseWithModel: async () =>
+            parsedItemsFromModelParse({
+                action: "none",
+                target_item_id: null,
+                items: [],
+                preparation: null,
+                question_prompt: null,
+            }),
     },
 });
 if (
@@ -544,12 +587,36 @@ if (
     throw new Error("Unparseable add changed the draft");
 }
 
-// Replacement rides remove+add: chicken out, broccoli in.
+// Replacement swaps in place by exact item id: chicken out, broccoli in.
+const chickenItemId = photoAdd.items.find((record) =>
+    record.item.name.includes("chicken breast"),
+)!.id;
 const replaceOutcome = await addTextToPhotoDraft({
     userId: userA,
     draft: photoAdd,
-    text: "actually steamed broccoli, not grilled chicken breast",
-    deps: { search: addSearch as never },
+    text: "actually 1 serving steamed broccoli, not grilled chicken breast",
+    deps: {
+        search: addSearch as never,
+        parseWithModel: async (_text, context) => {
+            if (!context.items.some((item) => item.id === chickenItemId)) {
+                throw new Error("Draft item ids did not reach interpreter");
+            }
+            return parsedItemsFromModelParse({
+                action: "replace",
+                target_item_id: chickenItemId,
+                items: [
+                    {
+                        name: "steamed broccoli",
+                        quantity: 1,
+                        unit: "serving",
+                        assumptions: [],
+                    },
+                ],
+                preparation: null,
+                question_prompt: null,
+            });
+        },
+    },
 });
 if (
     replaceOutcome.status !== "added" ||

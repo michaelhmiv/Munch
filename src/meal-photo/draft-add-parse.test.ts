@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+    DRAFT_ADD_PARSE_PROMPT,
     draftAddParseJsonSchema,
     parseDraftAddTextWithModel,
     parsedItemsFromModelParse,
@@ -21,6 +22,8 @@ function envelope(content: string) {
 }
 
 const butterReply = JSON.stringify({
+    action: "add",
+    target_item_id: null,
     items: [
         {
             name: "butter",
@@ -29,12 +32,12 @@ const butterReply = JSON.stringify({
             assumptions: ['"a decent knob" interpreted as 1 tbsp'],
         },
     ],
-    replaces: null,
     preparation: null,
+    question_prompt: null,
 });
 
 describe("parseDraftAddTextWithModel", () => {
-    test("one call: temp 0, strict schema with NO nutrient fields, healing plugin", async () => {
+    test("one call: temp 0, strict 5-key schema with NO nutrient fields, healing plugin, full draft context", async () => {
         let calls = 0;
         let body: Record<string, any> = {};
         const result = await parseDraftAddTextWithModel(
@@ -47,8 +50,22 @@ describe("parseDraftAddTextWithModel", () => {
                     return envelope(butterReply);
                 },
             },
+            {
+                items: [
+                    {
+                        id: "item-1",
+                        name: "Chicken breast, grilled",
+                        visionName: "grilled chicken breast",
+                        cookingMethod: "grilled",
+                        quantity: 160,
+                        portionLabel: "160 g",
+                    },
+                ],
+            },
         );
         expect(calls).toBe(1);
+        expect(result.action).toBe("add");
+        expect(result.targetItemId).toBeNull();
         expect(result.items).toHaveLength(1);
         expect(result.items[0]).toMatchObject({
             name: "butter",
@@ -66,9 +83,20 @@ describe("parseDraftAddTextWithModel", () => {
         const schemaText = JSON.stringify(draftAddParseJsonSchema);
         expect(schemaText).not.toContain("calories");
         expect(schemaText).not.toContain("protein");
+        expect(draftAddParseJsonSchema.required).toEqual([
+            "action",
+            "target_item_id",
+            "items",
+            "preparation",
+            "question_prompt",
+        ]);
+        const userMessage = String(body.messages?.[1]?.content ?? "");
+        expect(userMessage).toContain('"id":"item-1"');
+        expect(userMessage).toContain('"vision_name":"grilled chicken breast"');
+        expect(userMessage).toContain('"portion_label":"160 g"');
     });
 
-    test("an empty items array is a valid honest answer (no food stated)", async () => {
+    test("action=none with empty items is a valid honest answer (no food stated)", async () => {
         const result = await parseDraftAddTextWithModel(
             "the weather is nice today",
             config,
@@ -76,15 +104,99 @@ describe("parseDraftAddTextWithModel", () => {
                 fetcher: async () =>
                     envelope(
                         JSON.stringify({
+                            action: "none",
+                            target_item_id: null,
                             items: [],
-                            replaces: null,
                             preparation: null,
+                            question_prompt: null,
                         }),
                     ),
             },
         );
+        expect(result.action).toBe("none");
         expect(result.items).toEqual([]);
-        expect(result.replaces).toBeNull();
+        expect(result.targetItemId).toBeNull();
+    });
+
+    test("action=replace, action=remove, and action=question pass through validated fields", async () => {
+        const replaceResult = await parseDraftAddTextWithModel(
+            "turns out they were brats",
+            config,
+            {
+                fetcher: async () =>
+                    envelope(
+                        JSON.stringify({
+                            action: "replace",
+                            target_item_id: "item-hotdog",
+                            items: [
+                                {
+                                    name: "bratwurst",
+                                    quantity: null,
+                                    unit: null,
+                                    assumptions: [],
+                                },
+                            ],
+                            preparation: null,
+                            question_prompt: null,
+                        }),
+                    ),
+            },
+        );
+        expect(replaceResult.action).toBe("replace");
+        expect(replaceResult.targetItemId).toBe("item-hotdog");
+        expect(replaceResult.items[0]?.name).toBe("bratwurst");
+        expect(replaceResult.items[0]?.strongSignal).toBe(false);
+
+        const removeResult = await parseDraftAddTextWithModel(
+            "skip the mustard",
+            config,
+            {
+                fetcher: async () =>
+                    envelope(
+                        JSON.stringify({
+                            action: "remove",
+                            target_item_id: "item-mustard",
+                            items: [],
+                            preparation: null,
+                            question_prompt: null,
+                        }),
+                    ),
+            },
+        );
+        expect(removeResult.action).toBe("remove");
+        expect(removeResult.targetItemId).toBe("item-mustard");
+        expect(removeResult.items).toEqual([]);
+
+        const questionResult = await parseDraftAddTextWithModel(
+            "it was pork",
+            config,
+            {
+                fetcher: async () =>
+                    envelope(
+                        JSON.stringify({
+                            action: "question",
+                            target_item_id: null,
+                            items: [],
+                            preparation: null,
+                            question_prompt:
+                                "Did you mean to replace the chicken breast or the turkey breast with pork?",
+                        }),
+                    ),
+            },
+        );
+        expect(questionResult.action).toBe("question");
+        expect(questionResult.questionPrompt).toContain("chicken breast");
+    });
+
+    test("prompt discipline: teaches the task without enumerating correction phrasings", () => {
+        const lower = DRAFT_ADD_PARSE_PROMPT.toLowerCase();
+        expect(lower).toContain('"replace"');
+        expect(lower).toContain('"remove"');
+        expect(lower).toContain('"question"');
+        expect(lower).toContain("target_item_id");
+        // No hardcoded phrasing catalog for bratwurst/hot dog corrections.
+        expect(lower).not.toContain("bratwurst");
+        expect(lower).not.toContain("hot dog");
     });
 
     test("a response carrying nutrition fields fails the strict schema and is retried once, then throws", async () => {
@@ -95,6 +207,8 @@ describe("parseDraftAddTextWithModel", () => {
                     calls += 1;
                     return envelope(
                         JSON.stringify({
+                            action: "add",
+                            target_item_id: null,
                             items: [
                                 {
                                     name: "egg",
@@ -104,8 +218,8 @@ describe("parseDraftAddTextWithModel", () => {
                                     calories: 140,
                                 },
                             ],
-                            replaces: null,
                             preparation: null,
+                            question_prompt: null,
                         }),
                     );
                 },
@@ -139,7 +253,7 @@ describe("parseDraftAddTextWithModel", () => {
 });
 
 describe("parseDraftAddTextWithModel — preparation statements (photo-flow P2)", () => {
-    test("'i deep fried it' returns a preparation correction plus the implied oil as an item; draft items ride along as context", async () => {
+    test("'i deep fried it' returns a preparation correction addressed by item id plus the implied oil", async () => {
         let body: Record<string, any> = {};
         const result = await parseDraftAddTextWithModel(
             "i deep fried it",
@@ -149,6 +263,8 @@ describe("parseDraftAddTextWithModel — preparation statements (photo-flow P2)"
                     body = JSON.parse(String(init?.body ?? "{}"));
                     return envelope(
                         JSON.stringify({
+                            action: "add",
+                            target_item_id: null,
                             items: [
                                 {
                                     name: "vegetable oil",
@@ -159,21 +275,27 @@ describe("parseDraftAddTextWithModel — preparation statements (photo-flow P2)"
                                     ],
                                 },
                             ],
-                            replaces: null,
                             preparation: {
-                                target_item: "Corn On The Cob",
+                                target_item_id: "item-corn",
                                 cooking_method: "deep fried",
                             },
+                            question_prompt: null,
                         }),
                     );
                 },
             },
             {
-                items: [{ name: "Corn On The Cob", cookingMethod: "steamed" }],
+                items: [
+                    {
+                        id: "item-corn",
+                        name: "Corn On The Cob",
+                        cookingMethod: "steamed",
+                    },
+                ],
             },
         );
         expect(result.preparation).toEqual({
-            targetItem: "Corn On The Cob",
+            targetItemId: "item-corn",
             cookingMethod: "deep fried",
         });
         expect(result.items[0]).toMatchObject({
@@ -182,15 +304,11 @@ describe("parseDraftAddTextWithModel — preparation statements (photo-flow P2)"
             unit: "tbsp",
             strongSignal: true,
         });
-        // The draft context is in the request so the model can name
-        // its target; the schema carries the preparation key.
+        expect(JSON.stringify(body.messages)).toContain("item-corn");
         expect(JSON.stringify(body.messages)).toContain("Corn On The Cob");
-        expect(JSON.stringify(draftAddParseJsonSchema)).toContain(
-            "preparation",
-        );
     });
 
-    test("a pure method correction returns preparation with empty items", async () => {
+    test("a pure method correction returns action=none, preparation, and empty items", async () => {
         const result = await parseDraftAddTextWithModel(
             "grilled instead",
             config,
@@ -198,22 +316,31 @@ describe("parseDraftAddTextWithModel — preparation statements (photo-flow P2)"
                 fetcher: async () =>
                     envelope(
                         JSON.stringify({
+                            action: "none",
+                            target_item_id: null,
                             items: [],
-                            replaces: null,
                             preparation: {
-                                target_item: null,
+                                target_item_id: "item-chicken",
                                 cooking_method: "grilled",
                             },
+                            question_prompt: null,
                         }),
                     ),
             },
             {
-                items: [{ name: "Chicken breast", cookingMethod: "baked" }],
+                items: [
+                    {
+                        id: "item-chicken",
+                        name: "Chicken breast",
+                        cookingMethod: "baked",
+                    },
+                ],
             },
         );
+        expect(result.action).toBe("none");
         expect(result.items).toEqual([]);
         expect(result.preparation).toEqual({
-            targetItem: null,
+            targetItemId: "item-chicken",
             cookingMethod: "grilled",
         });
     });
@@ -222,11 +349,13 @@ describe("parseDraftAddTextWithModel — preparation statements (photo-flow P2)"
 describe("parsedItemsFromModelParse", () => {
     test("quantity-less model items get the stated default-portion assumption", () => {
         const result = parsedItemsFromModelParse({
+            action: "add",
+            target_item_id: null,
             items: [
                 { name: "butter", quantity: null, unit: null, assumptions: [] },
             ],
-            replaces: null,
             preparation: null,
+            question_prompt: null,
         });
         expect(result.items[0]).toMatchObject({
             name: "butter",
@@ -234,23 +363,28 @@ describe("parsedItemsFromModelParse", () => {
             unit: "tbsp",
             quantityAssumed: true,
             strongSignal: false,
+            unitAssumed: true,
         });
         expect(result.items[0]?.assumptions[0]).toContain("default portion");
     });
 
-    test("the replaces name passes through trimmed", () => {
+    test("normalizes extracted unit aliases ('tablespoons' → 'tbsp') and passes target_item_id trimmed", () => {
         const result = parsedItemsFromModelParse({
+            action: "replace",
+            target_item_id: " item-rice ",
             items: [
                 {
                     name: "brown rice",
-                    quantity: 1,
-                    unit: "cup",
+                    quantity: 2,
+                    unit: "tablespoons",
                     assumptions: [],
                 },
             ],
-            replaces: " white rice ",
             preparation: null,
+            question_prompt: null,
         });
-        expect(result.replaces).toBe("white rice");
+        expect(result.targetItemId).toBe("item-rice");
+        expect(result.items[0]?.unit).toBe("tbsp");
+        expect(result.items[0]?.unitAssumed).toBe(false);
     });
 });
