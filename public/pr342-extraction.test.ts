@@ -92,10 +92,12 @@ describe("swipe-to-remove diagonal-scroll guard (app.js)", () => {
         // The draft-review arm and the composer arm (#349) share the
         // predicate; both must feed it real Y values or the guard is
         // inert. Synthetic events without clientY fall back to 0.
+        // The meal-details item arm (2026-11-22) follows the same
+        // discipline — three arms capture Y in total.
         const arms = appSource.match(
             /startY: event\.touches\[0\]\.clientY \?\? 0/g,
         );
-        expect(arms?.length).toBe(2);
+        expect(arms?.length).toBe(3);
         expect(appSource).toContain("event.changedTouches[0].clientY ?? 0");
     });
 });

@@ -475,6 +475,7 @@ function buildSwipeHarness(): SwipeHarness {
             extractConst("mealComposer", "\n};"),
             extract("foodTitle"),
             extract("draftSwipeRemoves"),
+            extract("buildInlineConfirmBox"),
             extract("showInlineConfirm"),
             extract("dismissInlineConfirm"),
             extractOptional("requestRemoveMealItem"),
