@@ -390,15 +390,38 @@ function sourceBadge(type) {
     return `<span class="source-chip ${className}">${escapeHtml(label)}</span>`;
 }
 
-function confidenceBadge(value) {
+function confidenceLabel(value) {
     if (value == null) return "";
-    const label =
-        value >= 0.85
-            ? "High confidence"
-            : value >= 0.6
-              ? "Medium confidence"
-              : "Low confidence";
-    return `<span class="confidence-chip">${label}</span>`;
+    return value >= 0.85
+        ? "High confidence"
+        : value >= 0.6
+          ? "Medium confidence"
+          : "Low confidence";
+}
+
+function confidenceBadge(value) {
+    const label = confidenceLabel(value);
+    return label ? `<span class="confidence-chip">${label}</span>` : "";
+}
+
+/**
+ * Owner ruling (2026-11-22): an estimate that came from a meal photo
+ * says "Photo estimate", not "Model estimate" — the item's source
+ * snapshot records the photo grounding layer, so the label follows
+ * the record. Estimates from any other route keep "Model estimate".
+ */
+function isPhotoDerivedItem(item) {
+    return item?.sourceSnapshot?.resolution_layer === "meal_photo_grounding";
+}
+
+function sourceLabelFor(item) {
+    if (item?.sourceType === "model_estimate" && isPhotoDerivedItem(item))
+        return "Photo estimate";
+    return (
+        sourceLabels[item?.sourceType] ||
+        item?.sourceType ||
+        "Source unavailable"
+    );
 }
 
 /**
@@ -408,12 +431,10 @@ function confidenceBadge(value) {
  * without assumptions keep the plain chip.
  */
 function sourceBadgeToggle(item) {
-    if (!item.assumptions?.length) return sourceBadge(item.sourceType);
-    const label =
-        sourceLabels[item.sourceType] ||
-        item.sourceType ||
-        "Source unavailable";
+    const label = sourceLabelFor(item);
     const className = sourceClasses[item.sourceType] || "confidence-chip";
+    if (!item.assumptions?.length)
+        return `<span class="source-chip ${className}">${escapeHtml(label)}</span>`;
     return `<button type="button" class="source-chip ${className} chip-toggle" data-action="toggle-item-assumptions" aria-expanded="false">${escapeHtml(label)} <span class="chip-caret" aria-hidden="true">▸</span></button>`;
 }
 
@@ -5119,6 +5140,27 @@ function showInlineConfirm(
     if (!anchor || anchor.dataset.confirmPending) return;
     anchor.dataset.confirmPending = "true";
     anchor.style.display = "none";
+    const { box, confirmButton } = buildInlineConfirmBox({
+        note,
+        confirmLabel,
+        confirmAction,
+        confirmAttrs,
+        dismissLabel,
+        destructive,
+    });
+    anchor.insertAdjacentElement("afterend", box);
+    confirmButton.focus();
+}
+
+function buildInlineConfirmBox(options) {
+    const {
+        note,
+        confirmLabel,
+        confirmAction,
+        confirmAttrs = {},
+        dismissLabel,
+        destructive = false,
+    } = options;
     const box = document.createElement("div");
     box.className = "plan-inline-confirm";
     const noteElement = document.createElement("p");
@@ -5142,12 +5184,47 @@ function showInlineConfirm(
     dismissButton.dataset.action = "dismiss-plan-inline-confirm";
     dismissButton.textContent = dismissLabel;
     box.append(noteElement, confirmButton, dismissButton);
-    anchor.insertAdjacentElement("afterend", box);
+    return { box, confirmButton };
+}
+
+/**
+ * In-card variant for the meal-details item cards (owner-approved
+ * 2026-11-22): the confirmation takes its place inside the card
+ * instead of replacing a hidden anchor button — the card's Remove
+ * lives in the swipe tray, so there is no in-card button to hide.
+ */
+function showCardInlineConfirm(
+    card,
+    {
+        note,
+        confirmLabel,
+        confirmAction,
+        confirmAttrs = {},
+        dismissLabel,
+        destructive = false,
+    },
+) {
+    if (!card || card.dataset.confirmPending) return;
+    card.dataset.confirmPending = "true";
+    const { box, confirmButton } = buildInlineConfirmBox({
+        note,
+        confirmLabel,
+        confirmAction,
+        confirmAttrs,
+        dismissLabel,
+        destructive,
+    });
+    card.append(box);
     confirmButton.focus();
 }
 
 function dismissInlineConfirm(button) {
     const box = button.closest(".plan-inline-confirm");
+    if (box?.parentElement?.classList.contains("food-row")) {
+        delete box.parentElement.dataset.confirmPending;
+        box.remove();
+        return;
+    }
     const anchor = box?.previousElementSibling;
     if (anchor instanceof HTMLElement) {
         anchor.style.display = "";
@@ -9701,7 +9778,12 @@ async function openMealDetails(id) {
         ? items
               .map(
                   (item) =>
-                      `<article class="food-row"><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.portionLabel || "Portion not recorded")}${item.quantity == null ? "" : ` · quantity ${number(item.quantity, 2)}`}</small><div class="demo-source-row">${sourceBadgeToggle(item)}${confidenceBadge(item.confidence)}</div>${itemAssumptionsHtml(item)}${item.sourceSnapshot && Object.keys(item.sourceSnapshot).length ? `<details class="food-audit"><summary>Source snapshot</summary><pre class="food-audit-body" style="white-space:pre-wrap">${escapeHtml(JSON.stringify(item.sourceSnapshot, null, 2))}</pre></details>` : ""}</div><div style="text-align:right"><strong>${item.nutrients?.calories == null ? "—" : `${number(item.nutrients.calories)} kcal`}</strong><small>${item.nutrients?.protein_g == null ? "" : `P ${number(item.nutrients.protein_g, 1)}g`}${item.nutrients?.carbs_g == null ? "" : ` · C ${number(item.nutrients.carbs_g, 1)}g`}${item.nutrients?.fat_g == null ? "" : ` · F ${number(item.nutrients.fat_g, 1)}g`}</small></div>${items.length > 1 ? `<button class="button button-quiet button-small" type="button" data-action="remove-meal-item-detail" data-meal-id="${escapeHtml(id)}" data-item-id="${escapeHtml(item.id)}">Remove</button>` : ""}</article>`,
+                      // Slim card (owner-approved 2026-11-22): the
+                      // portion rides on the name line, confidence is
+                      // plain text after the source chip, no Source
+                      // snapshot, and no Remove button — swiping the
+                      // card left opens the Edit / Remove tray.
+                      `<div class="swipe-wrap"><div class="swipe-tray"><button class="swipe-action swipe-edit" type="button" data-action="edit-meal" data-id="${escapeHtml(id)}">Edit</button>${items.length > 1 ? `<button class="swipe-action swipe-remove" type="button" data-action="remove-meal-item-detail" data-meal-id="${escapeHtml(id)}" data-item-id="${escapeHtml(item.id)}">Remove</button>` : ""}</div><article class="food-row meal-detail-item-card"><div><strong>${escapeHtml(item.name)}</strong><small class="portion-inline"> · ${escapeHtml(item.portionLabel || "Portion not recorded")}${item.quantity == null ? "" : ` · quantity ${number(item.quantity, 2)}`}</small><div class="demo-source-row">${sourceBadgeToggle(item)}${confidenceLabel(item.confidence) ? `<span class="confidence-inline">${escapeHtml(confidenceLabel(item.confidence))}</span>` : ""}</div>${itemAssumptionsHtml(item)}</div><div style="text-align:right"><strong>${item.nutrients?.calories == null ? "—" : `${number(item.nutrients.calories)} kcal`}</strong><small>${item.nutrients?.protein_g == null ? "" : `P ${number(item.nutrients.protein_g, 1)}g`}${item.nutrients?.carbs_g == null ? "" : ` · C ${number(item.nutrients.carbs_g, 1)}g`}${item.nutrients?.fat_g == null ? "" : ` · F ${number(item.nutrients.fat_g, 1)}g`}</small></div></article></div>`,
               )
               .join("")
         : `<div class="empty-state"><div><h3>Legacy aggregate meal</h3><p>This meal has totals but no item-level source record.</p></div></div>`;
@@ -9922,6 +10004,105 @@ document.addEventListener(
     },
     { passive: true },
 );
+
+// Per-item swipe in meal details (owner-approved 2026-11-22): a
+// horizontal drag on an item card reveals the Edit / Remove tray
+// behind its right edge; releasing past the draft swipe's intent
+// threshold snaps it open at 152px, anything shorter springs back.
+// Vertical scrolling is untouched — the tray arms only on a clearly
+// horizontal drag. Tapping the card, swiping it back, or opening
+// another card closes the tray.
+const MEAL_ITEM_TRAY_WIDTH = 152;
+let mealItemSwipe = null;
+let mealItemSwipeSettledAt = 0;
+
+function closeMealItemSwipe(card) {
+    if (!card?.dataset.swipeOpen) return;
+    delete card.dataset.swipeOpen;
+    card.classList.add("swipe-snapping");
+    card.style.transform = "";
+    setTimeout(() => card.classList.remove("swipe-snapping"), 200);
+}
+
+document.addEventListener(
+    "touchstart",
+    (event) => {
+        if (event.target.closest?.(".swipe-tray")) {
+            mealItemSwipe = null;
+            return;
+        }
+        const card = event.target.closest?.(".meal-detail-item-card");
+        if (card)
+            document
+                .querySelectorAll?.(".meal-detail-item-card[data-swipe-open]")
+                ?.forEach((other) => {
+                    if (other !== card) closeMealItemSwipe(other);
+                });
+        mealItemSwipe = card
+            ? {
+                  card,
+                  startX: event.touches[0].clientX,
+                  startY: event.touches[0].clientY ?? 0,
+                  base: card.dataset.swipeOpen ? -MEAL_ITEM_TRAY_WIDTH : 0,
+                  offset: null,
+                  moved: false,
+              }
+            : null;
+    },
+    { passive: true },
+);
+document.addEventListener(
+    "touchmove",
+    (event) => {
+        if (!mealItemSwipe) return;
+        const dx = event.touches[0].clientX - mealItemSwipe.startX;
+        const dy = (event.touches[0].clientY ?? 0) - mealItemSwipe.startY;
+        if (
+            !mealItemSwipe.moved &&
+            Math.abs(dx) > 10 &&
+            Math.abs(dx) > Math.abs(dy) * 1.5
+        )
+            mealItemSwipe.moved = true;
+        if (!mealItemSwipe.moved) return;
+        mealItemSwipe.card.classList.remove("swipe-snapping");
+        mealItemSwipe.offset = Math.max(
+            -MEAL_ITEM_TRAY_WIDTH,
+            Math.min(0, mealItemSwipe.base + dx),
+        );
+        mealItemSwipe.card.style.transform = `translateX(${mealItemSwipe.offset}px)`;
+    },
+    { passive: true },
+);
+document.addEventListener(
+    "touchend",
+    () => {
+        if (!mealItemSwipe) return;
+        const { card, base, offset, moved } = mealItemSwipe;
+        mealItemSwipe = null;
+        // The synthetic click that follows a real drag must not read
+        // as a tap-to-close on the tray it just opened.
+        if (moved) mealItemSwipeSettledAt = Date.now();
+        const finalOffset = offset ?? base;
+        card.classList.add("swipe-snapping");
+        if (finalOffset <= -64) {
+            card.style.transform = `translateX(${-MEAL_ITEM_TRAY_WIDTH}px)`;
+            card.dataset.swipeOpen = "true";
+        } else {
+            card.style.transform = "";
+            delete card.dataset.swipeOpen;
+        }
+        setTimeout(() => card.classList.remove("swipe-snapping"), 200);
+    },
+    { passive: true },
+);
+// A tap anywhere that is not a tray action closes an open tray.
+document.addEventListener("click", (event) => {
+    if (Date.now() - mealItemSwipeSettledAt < 350) return;
+    if (event.target.closest?.("button")) return;
+    document
+        .querySelectorAll?.(".meal-detail-item-card[data-swipe-open]")
+        ?.forEach((card) => closeMealItemSwipe(card));
+});
 
 async function handleAction(button) {
     const action = button.dataset.action;
@@ -11588,12 +11769,17 @@ async function handleAction(button) {
         return;
     }
     if (action === "remove-meal-item-detail") {
-        // UX fix wave F7: removing one food from the details dialog
-        // confirms inline (never a native dialog — the WebView
-        // silent-no-op class). Two taps total from the card: card →
-        // details → Remove → confirm, with the details view itself
-        // one tap from the card.
-        showInlineConfirm(button, {
+        // Removing one food from the details dialog confirms inline
+        // (never a native dialog — the WebView silent-no-op class).
+        // The button lives in the card's swipe tray (owner-approved
+        // 2026-11-22): close the tray and take the confirmation
+        // inside the card itself.
+        const card = button
+            .closest(".swipe-wrap")
+            ?.querySelector(".meal-detail-item-card");
+        if (!card) return;
+        closeMealItemSwipe(card);
+        showCardInlineConfirm(card, {
             note: "Remove this food from the meal?",
             confirmLabel: "Yes, remove food",
             confirmAction: "confirm-remove-meal-item-detail",

@@ -346,6 +346,7 @@ function createComposerInstance(
         maybeFn("mealTypeOptionsHtml"),
         maybeFn("number"),
         maybeFn("sourceBadge"),
+        maybeFn("confidenceLabel"),
         maybeFn("confidenceBadge"),
         maybeFn("foodTitle"),
         maybeFn("foodPortion"),
