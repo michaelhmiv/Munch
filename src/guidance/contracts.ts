@@ -140,6 +140,10 @@ export const goalTargetsSchema = z
         daily_fiber_g: z.number().min(0).max(999_999).nullable(),
         daily_sugar_g: z.number().min(0).max(999_999).nullable(),
         daily_alcohol_g: z.number().min(0).max(999_999).nullable(),
+        daily_sodium_mg: z.number().min(0).max(999_999).nullable(),
+        daily_saturated_fat_g: z.number().min(0).max(999_999).nullable(),
+        daily_cholesterol_mg: z.number().min(0).max(999_999).nullable(),
+        daily_potassium_mg: z.number().min(0).max(999_999).nullable(),
         daily_water_ml: z.number().min(0).max(999_999).nullable(),
         target_weight_g: z.number().positive().max(999_999).nullable(),
     })

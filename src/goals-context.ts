@@ -147,6 +147,10 @@ export interface GoalsContextTargets {
     daily_carbs_g: number | null;
     daily_fat_g: number | null;
     daily_fiber_g: number | null;
+    daily_sodium_mg: number | null;
+    daily_saturated_fat_g: number | null;
+    daily_cholesterol_mg: number | null;
+    daily_potassium_mg: number | null;
 }
 
 /**
@@ -186,6 +190,11 @@ export function buildGoalsContext(input: {
               daily_carbs_g: input.targets.daily_carbs_g ?? null,
               daily_fat_g: input.targets.daily_fat_g ?? null,
               daily_fiber_g: input.targets.daily_fiber_g ?? null,
+              daily_sodium_mg: input.targets.daily_sodium_mg ?? null,
+              daily_saturated_fat_g:
+                  input.targets.daily_saturated_fat_g ?? null,
+              daily_cholesterol_mg: input.targets.daily_cholesterol_mg ?? null,
+              daily_potassium_mg: input.targets.daily_potassium_mg ?? null,
           }
         : null;
     return {

@@ -422,6 +422,10 @@ export function goalsPayloadOf(
         carbs_g: goals.daily_carbs_g ?? null,
         fat_g: goals.daily_fat_g ?? null,
         fiber_g: goals.daily_fiber_g ?? null,
+        sodium_mg: goals.daily_sodium_mg ?? null,
+        saturated_fat_g: goals.daily_saturated_fat_g ?? null,
+        cholesterol_mg: goals.daily_cholesterol_mg ?? null,
+        potassium_mg: goals.daily_potassium_mg ?? null,
         sugar_g: goals.daily_sugar_g ?? null,
         alcohol_g: alcohol ? (goals.daily_alcohol_g ?? null) : null,
         water_ml: goals.daily_water_ml ?? null,
@@ -816,6 +820,18 @@ export function formatGoals(
     parts.push(`- Fiber: ${floor(goals.daily_fiber_g, (n) => `${n}g`)}`);
     parts.push(
         `- Sugar (total, max): ${ceiling(goals.daily_sugar_g, (n) => `${n}g`)}`,
+    );
+    parts.push(
+        `- Sodium (max): ${ceiling(goals.daily_sodium_mg, (n) => `${n} mg`)}`,
+    );
+    parts.push(
+        `- Saturated fat (max): ${ceiling(goals.daily_saturated_fat_g, (n) => `${n}g`)}`,
+    );
+    parts.push(
+        `- Cholesterol (max): ${ceiling(goals.daily_cholesterol_mg, (n) => `${n} mg`)}`,
+    );
+    parts.push(
+        `- Potassium: ${floor(goals.daily_potassium_mg, (n) => `${n} mg`)}`,
     );
     if (alcohol) {
         parts.push(
@@ -2149,6 +2165,42 @@ export function registerTools(
                     .describe(
                         "Daily alcohol limit in grams of pure ethanol, treated as a maximum to stay under. One US standard drink is 14 g, one UK unit is 7.9 g. Null to clear.",
                     ),
+                daily_sodium_mg: z.coerce
+                    .number()
+                    .min(0)
+                    .max(999_999)
+                    .nullable()
+                    .optional()
+                    .describe(
+                        "Daily sodium limit (milligrams), treated as a maximum to stay under. Null to clear.",
+                    ),
+                daily_saturated_fat_g: z.coerce
+                    .number()
+                    .min(0)
+                    .max(MAX_GOAL_G)
+                    .nullable()
+                    .optional()
+                    .describe(
+                        "Daily saturated fat limit (grams), treated as a maximum to stay under. Null to clear.",
+                    ),
+                daily_cholesterol_mg: z.coerce
+                    .number()
+                    .min(0)
+                    .max(999_999)
+                    .nullable()
+                    .optional()
+                    .describe(
+                        "Daily cholesterol limit (milligrams), treated as a maximum to stay under. Null to clear.",
+                    ),
+                daily_potassium_mg: z.coerce
+                    .number()
+                    .min(0)
+                    .max(999_999)
+                    .nullable()
+                    .optional()
+                    .describe(
+                        "Daily potassium target (milligrams), treated as a minimum to reach. Null to clear.",
+                    ),
                 daily_water_ml: z.coerce
                     .number()
                     .nullable()
@@ -2232,6 +2284,22 @@ export function registerTools(
                             args.daily_alcohol_g === undefined
                                 ? (existing?.daily_alcohol_g ?? null)
                                 : args.daily_alcohol_g,
+                        daily_sodium_mg:
+                            args.daily_sodium_mg === undefined
+                                ? (existing?.daily_sodium_mg ?? null)
+                                : args.daily_sodium_mg,
+                        daily_saturated_fat_g:
+                            args.daily_saturated_fat_g === undefined
+                                ? (existing?.daily_saturated_fat_g ?? null)
+                                : args.daily_saturated_fat_g,
+                        daily_cholesterol_mg:
+                            args.daily_cholesterol_mg === undefined
+                                ? (existing?.daily_cholesterol_mg ?? null)
+                                : args.daily_cholesterol_mg,
+                        daily_potassium_mg:
+                            args.daily_potassium_mg === undefined
+                                ? (existing?.daily_potassium_mg ?? null)
+                                : args.daily_potassium_mg,
                         daily_water_ml:
                             args.daily_water_ml === undefined
                                 ? (existing?.daily_water_ml ?? null)

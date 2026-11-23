@@ -120,6 +120,8 @@ jobs:
         run: bun test src/jev-sweep/findings.test.ts
       - name: Exercise meal draft bulk creation (returned draft equals fresh read)
         run: bun test src/meal-drafts/repository.test.ts
+      - name: Exercise nutrition goals round-trip (micro targets save/read/clear)
+        run: bun test src/nutrition-platform/goals.test.ts
       - name: Verify Better Auth schema is current
         env:
           NODE_ENV: test

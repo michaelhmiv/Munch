@@ -338,9 +338,9 @@ function toggleRow(name, title, description, checked) {
     return `<label class="settings-toggle-row"><span><strong>${esc(title)}</strong><small>${esc(description)}</small></span><span class="switch"><input type="checkbox" name="${esc(name)}" ${checked ? "checked" : ""}><span aria-hidden="true"></span></span></label>`;
 }
 
-function nutrientInput(name, label, value, unit, options = {}) {
+function targetTile(name, label, value, unit, options = {}) {
     const step = options.step || "0.1";
-    return `<label class="settings-field compact"><span>${esc(label)}</span><div class="input-with-unit"><input name="${esc(name)}" type="number" min="0" step="${esc(step)}" value="${value == null ? "" : esc(value)}" inputmode="decimal"><span>${esc(unit)}</span></div></label>`;
+    return `<label class="target-tile"><span class="target-tile-label">${esc(label)}</span><span class="target-tile-value"><input name="${esc(name)}" type="number" min="0" step="${esc(step)}" value="${value == null ? "" : esc(value)}" inputmode="decimal" aria-label="${esc(label)}"><small>${esc(unit)}</small></span></label>`;
 }
 
 function goalsPage(data) {
@@ -354,7 +354,7 @@ function goalsPage(data) {
                   .replace(/\.0$/, "");
     return settingsShell(
         "settings-goals",
-        `${sectionHeading("Nutrition", "Nutrition targets", "These are targets you choose. Munch stores and compares against them; it does not prescribe medical or dietary goals.")}<form id="settings-goals-form" class="settings-stack">${settingGroup("Daily energy & macros", "Leave any field blank if you do not want a target for it.", `<div class="settings-form-grid">${nutrientInput("daily_calories", "Calories", goals.daily_calories, "kcal", { step: "1" })}${nutrientInput("daily_protein_g", "Protein", goals.daily_protein_g, "g")}${nutrientInput("daily_carbs_g", "Carbohydrates", goals.daily_carbs_g, "g")}${nutrientInput("daily_fat_g", "Fat", goals.daily_fat_g, "g")}</div>`)}${settingGroup("Additional targets", "Optional targets remain separate from the primary macro summary.", `<div class="settings-form-grid">${nutrientInput("daily_fiber_g", "Fiber", goals.daily_fiber_g, "g")}${nutrientInput("daily_sugar_g", "Sugar", goals.daily_sugar_g, "g")}${nutrientInput("daily_water_ml", "Water", goals.daily_water_ml, "mL", { step: "1" })}${nutrientInput("daily_alcohol_g", "Alcohol", goals.daily_alcohol_g, "g")}</div><div class="settings-form-grid settings-form-grid-single spacer-top"><label class="settings-field compact"><span>Target weight</span><small>Optional. Uses your current display unit.</small><div class="input-with-unit"><input name="target_weight" type="number" min="1" step="0.1" value="${esc(targetWeight)}" inputmode="decimal"><span>${esc(unit)}</span></div><input type="hidden" name="unit" value="${esc(unit)}"></label></div>`)}<div class="settings-savebar"><span class="settings-save-status" role="status" aria-live="polite"></span><button class="button button-primary" type="submit">Preview target changes</button><button class="button button-secondary" type="button" data-action="guidance-preferences">Guidance preferences</button></div></form><section class="panel spacer-top" id="goal-guidance-review"><p>Loading goal review and history…</p></section><section class="panel spacer-top" id="goal-change-preview" aria-live="polite"></section>`,
+        `${sectionHeading("Nutrition", "Nutrition targets", "These are targets you choose. Munch stores and compares against them; it does not prescribe medical or dietary goals.")}<form id="settings-goals-form" class="settings-stack">${settingGroup("Daily energy & macros", "Leave any field blank if you do not want a target for it.", `<div class="targets-grid">${targetTile("daily_calories", "Calories", goals.daily_calories, "kcal", { step: "1" })}${targetTile("daily_protein_g", "Protein", goals.daily_protein_g, "g")}${targetTile("daily_carbs_g", "Carbohydrates", goals.daily_carbs_g, "g")}${targetTile("daily_fat_g", "Fat", goals.daily_fat_g, "g")}</div>`)}${settingGroup("Additional targets", "Optional targets remain separate from the primary macro summary.", `<div class="targets-grid">${targetTile("daily_fiber_g", "Fiber", goals.daily_fiber_g, "g")}${targetTile("daily_sugar_g", "Sugar", goals.daily_sugar_g, "g")}${targetTile("daily_water_ml", "Water", goals.daily_water_ml, "mL", { step: "1" })}${targetTile("daily_alcohol_g", "Alcohol", goals.daily_alcohol_g, "g")}</div><label class="target-tile target-tile-wide spacer-top"><span class="target-tile-label">Target weight</span><span class="target-tile-note">Optional. Uses your current display unit.</span><span class="target-tile-value"><input name="target_weight" type="number" min="1" step="0.1" value="${esc(targetWeight)}" inputmode="decimal" aria-label="Target weight"><small>${esc(unit)}</small></span><input type="hidden" name="unit" value="${esc(unit)}"></label>`)}${settingGroup("More nutrients", "Tracked from your food data. Leave blank for no target.", `<div class="targets-grid">${targetTile("daily_sodium_mg", "Sodium", goals.daily_sodium_mg, "mg", { step: "1" })}${targetTile("daily_saturated_fat_g", "Saturated fat", goals.daily_saturated_fat_g, "g")}${targetTile("daily_cholesterol_mg", "Cholesterol", goals.daily_cholesterol_mg, "mg", { step: "1" })}${targetTile("daily_potassium_mg", "Potassium", goals.daily_potassium_mg, "mg", { step: "1" })}</div>`)}<div class="settings-savebar"><span class="settings-save-status" role="status" aria-live="polite"></span><button class="button button-primary" type="submit">Preview target changes</button><button class="button button-secondary" type="button" data-action="guidance-preferences">Guidance preferences</button></div></form><section class="panel spacer-top" id="goal-guidance-review"><p>Loading goal review and history…</p></section><section class="panel spacer-top" id="goal-change-preview" aria-live="polite"></section>`,
     );
 }
 
@@ -1056,6 +1056,10 @@ export async function handleAccountSubmit(form, ctx) {
                     "daily_fiber_g",
                     "daily_sugar_g",
                     "daily_alcohol_g",
+                    "daily_sodium_mg",
+                    "daily_saturated_fat_g",
+                    "daily_cholesterol_mg",
+                    "daily_potassium_mg",
                     "daily_water_ml",
                 ].map((key) => [
                     key,
@@ -1091,6 +1095,10 @@ export async function handleAccountSubmit(form, ctx) {
                     daily_fiber_g: "Fiber",
                     daily_sugar_g: "Sugar",
                     daily_alcohol_g: "Alcohol",
+                    daily_sodium_mg: "Sodium",
+                    daily_saturated_fat_g: "Saturated fat",
+                    daily_cholesterol_mg: "Cholesterol",
+                    daily_potassium_mg: "Potassium",
                     daily_water_ml: "Water",
                     target_weight_g: "Target weight",
                 };

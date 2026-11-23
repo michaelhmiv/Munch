@@ -1107,6 +1107,14 @@ const CHART_CSS_SURFACES = new Map<string, string>([
         ".recipe-portion-picker",
         "recorded exception: portion-picker labels in the chart grammar's sage/chart ink; text only (P3, no value changes)",
     ],
+    [
+        ".target-tile-label",
+        "recorded exception: Nutrition targets tiles borrow the Today macro-tile grammar (2026-11-23); the label is the tile grammar's sage, text only (P3, no value changes)",
+    ],
+    [
+        ".target-tile-value",
+        "recorded exception: Nutrition targets tile unit text in the tile grammar's sage; text only (P3, no value changes)",
+    ],
 ]);
 
 /** (g) Chart palette in JS is confined to the Trends chart maps. */

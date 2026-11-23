@@ -90,7 +90,9 @@ export async function exportAccountData(
             tx<JsonRecord[]>`
                 select daily_calories, daily_protein_g, daily_carbs_g,
                        daily_fat_g, daily_fiber_g, daily_sugar_g,
-                       daily_alcohol_g, daily_water_ml, target_weight_g, updated_at
+                       daily_alcohol_g, daily_sodium_mg, daily_saturated_fat_g,
+                       daily_cholesterol_mg, daily_potassium_mg,
+                       daily_water_ml, target_weight_g, updated_at
                 from munch.nutrition_goals where user_id = ${userId}
             `,
             tx<JsonRecord[]>`

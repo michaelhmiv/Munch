@@ -185,6 +185,42 @@ describe("aggregateTodayRange", () => {
         expect(withSodiumGoal.micros.sodium.direction).toBe("limit");
     });
 
+    test("micro goals: saturated fat, potassium, cholesterol light up from their daily_* fields", () => {
+        // Untargeted: averages exist (two item-carrying days) but no
+        // delta and no period target for any of the three.
+        const untargeted = aggregateTodayRange(week, goals);
+        expect(untargeted.micros.saturatedFat.averageDelta).toBeNull();
+        expect(untargeted.micros.saturatedFat.periodTarget).toBeNull();
+        expect(untargeted.micros.potassium.averageDelta).toBeNull();
+        expect(untargeted.micros.cholesterol.averageDelta).toBeNull();
+
+        const targeted = aggregateTodayRange(week, {
+            ...goals,
+            daily_saturated_fat_g: 20,
+            daily_potassium_mg: 3000,
+            daily_cholesterol_mg: 250,
+        });
+        // Saturated fat: 20 + 30 over 4 logged days = 12.5/day vs a
+        // 20 g limit; period target 20 × 5 calendar days.
+        expect(targeted.micros.saturatedFat.total).toBe(50);
+        expect(targeted.micros.saturatedFat.dailyAverage).toBe(12.5);
+        expect(targeted.micros.saturatedFat.periodTarget).toBe(100);
+        expect(targeted.micros.saturatedFat.averageDelta).toBe(-7.5);
+        expect(targeted.micros.saturatedFat.direction).toBe("limit");
+        // Potassium: 3000 + 2500 = 5500; 1375/day vs a 3000 mg floor.
+        expect(targeted.micros.potassium.total).toBe(5500);
+        expect(targeted.micros.potassium.dailyAverage).toBe(1375);
+        expect(targeted.micros.potassium.periodTarget).toBe(15000);
+        expect(targeted.micros.potassium.averageDelta).toBe(-1625);
+        expect(targeted.micros.potassium.direction).toBe("reach");
+        // Cholesterol: 200 + 260 = 460; 115/day vs a 250 mg limit.
+        expect(targeted.micros.cholesterol.total).toBe(460);
+        expect(targeted.micros.cholesterol.dailyAverage).toBe(115);
+        expect(targeted.micros.cholesterol.periodTarget).toBe(1250);
+        expect(targeted.micros.cholesterol.averageDelta).toBe(-135);
+        expect(targeted.micros.cholesterol.direction).toBe("limit");
+    });
+
     test("alcohol is a meal-level limit micro, targeted from daily_alcohol_g", () => {
         const days: RangeDayInput[] = [
             {
