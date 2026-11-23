@@ -134,11 +134,14 @@ export interface RangeGoalsInput {
     daily_sugar_g?: number | null;
     daily_alcohol_g?: number | null;
     daily_water_ml?: number | null;
-    // Future opt-in micro goals (a follow-on slice) arrive as more
-    // daily_* fields; MICRO_FIELDS below reads its goal key from
-    // this same shape, so a new target lights up with no code change
-    // beyond naming the field here.
+    // Micro goals (shipped 2026-11-23 alongside daily_sodium_mg):
+    // MICRO_FIELDS below reads its goal key from this same shape, so
+    // a target lights up with no code change beyond naming the field
+    // here.
     daily_sodium_mg?: number | null;
+    daily_saturated_fat_g?: number | null;
+    daily_cholesterol_mg?: number | null;
+    daily_potassium_mg?: number | null;
 }
 
 const MACRO_FIELDS = {
@@ -168,9 +171,21 @@ const MICRO_FIELDS = {
         goal: "daily_sodium_mg",
         direction: "limit",
     },
-    saturatedFat: { item: "saturatedFatG", goal: null, direction: "limit" },
-    potassium: { item: "potassiumMg", goal: null, direction: "reach" },
-    cholesterol: { item: "cholesterolMg", goal: null, direction: "limit" },
+    saturatedFat: {
+        item: "saturatedFatG",
+        goal: "daily_saturated_fat_g",
+        direction: "limit",
+    },
+    potassium: {
+        item: "potassiumMg",
+        goal: "daily_potassium_mg",
+        direction: "reach",
+    },
+    cholesterol: {
+        item: "cholesterolMg",
+        goal: "daily_cholesterol_mg",
+        direction: "limit",
+    },
     alcohol: { meal: "alcohol_g", goal: "daily_alcohol_g", direction: "limit" },
 } as const;
 

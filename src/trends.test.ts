@@ -17,6 +17,8 @@ import {
     rollingAverage,
     slopePerWeek,
     trendsCatalogData,
+    trendsReferenceFor,
+    TRENDS_NUTRIENTS,
     DEFAULT_TRENDS_LAYOUT,
     type TrendsCardContext,
     type TrendsCardRef,
@@ -85,6 +87,10 @@ function goals(partial: Partial<NutritionGoals>): NutritionGoals {
         daily_fiber_g: null,
         daily_sugar_g: null,
         daily_alcohol_g: null,
+        daily_sodium_mg: null,
+        daily_saturated_fat_g: null,
+        daily_cholesterol_mg: null,
+        daily_potassium_mg: null,
         daily_water_ml: null,
         target_weight_g: null,
         updated_at: "2026-11-01T00:00:00Z",
@@ -143,6 +149,49 @@ function card(
 }
 
 // ------------------------------------------------------------- catalog
+
+describe("micro target references (2026-11-23)", () => {
+    const nutrient = (key: string) =>
+        TRENDS_NUTRIENTS.find((n) => n.key === key)!;
+
+    test("a set micro goal wins over the FDA reference on its card", () => {
+        expect(
+            trendsReferenceFor(
+                nutrient("sodium_mg"),
+                goals({ daily_sodium_mg: 1800 }),
+            ),
+        ).toEqual({ value: 1800, source: null });
+        expect(
+            trendsReferenceFor(
+                nutrient("potassium_mg"),
+                goals({ daily_potassium_mg: 4000 }),
+            ),
+        ).toEqual({ value: 4000, source: null });
+        expect(
+            trendsReferenceFor(
+                nutrient("saturated_fat_g"),
+                goals({ daily_saturated_fat_g: 15 }),
+            ),
+        ).toEqual({ value: 15, source: null });
+        expect(
+            trendsReferenceFor(
+                nutrient("cholesterol_mg"),
+                goals({ daily_cholesterol_mg: 200 }),
+            ),
+        ).toEqual({ value: 200, source: null });
+    });
+
+    test("without a goal the labeled FDA reference still stands", () => {
+        expect(trendsReferenceFor(nutrient("sodium_mg"), goals({}))).toEqual({
+            value: 2300,
+            source: "FDA daily limit",
+        });
+        expect(trendsReferenceFor(nutrient("sodium_mg"), null)).toEqual({
+            value: 2300,
+            source: "FDA daily limit",
+        });
+    });
+});
 
 describe("catalog guardrails (T4)", () => {
     test("the bar chart never offers weight; the trend line does", () => {

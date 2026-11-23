@@ -66,6 +66,10 @@ export interface NutritionGoals {
     daily_fiber_g: number | null;
     daily_sugar_g: number | null;
     daily_alcohol_g: number | null;
+    daily_sodium_mg: number | null;
+    daily_saturated_fat_g: number | null;
+    daily_cholesterol_mg: number | null;
+    daily_potassium_mg: number | null;
     daily_water_ml: number | null;
     target_weight_g: number | null;
     updated_at: string;
@@ -79,6 +83,10 @@ export interface NutritionGoalsInput {
     daily_fiber_g?: number | null;
     daily_sugar_g?: number | null;
     daily_alcohol_g?: number | null;
+    daily_sodium_mg?: number | null;
+    daily_saturated_fat_g?: number | null;
+    daily_cholesterol_mg?: number | null;
+    daily_potassium_mg?: number | null;
     daily_water_ml?: number | null;
     target_weight_g?: number | null;
 }

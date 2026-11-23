@@ -103,7 +103,7 @@ describe("goals context assembly", () => {
         expect(context.never_suggest).toEqual(["cilantro", "olives"]);
     });
 
-    test("numeric targets ride along in the five-field shape", () => {
+    test("numeric targets ride along in the nine-field shape", () => {
         const context = buildGoalsContext({
             targets: {
                 daily_calories: 2100,
@@ -113,6 +113,10 @@ describe("goals context assembly", () => {
                 daily_fiber_g: 30,
                 daily_sugar_g: 50,
                 daily_alcohol_g: null,
+                daily_sodium_mg: 2300,
+                daily_saturated_fat_g: 20,
+                daily_cholesterol_mg: null,
+                daily_potassium_mg: 3500,
                 daily_water_ml: null,
                 target_weight_g: null,
             },
@@ -123,6 +127,10 @@ describe("goals context assembly", () => {
             daily_carbs_g: null,
             daily_fat_g: 70,
             daily_fiber_g: 30,
+            daily_sodium_mg: 2300,
+            daily_saturated_fat_g: 20,
+            daily_cholesterol_mg: null,
+            daily_potassium_mg: 3500,
         });
     });
 });

@@ -35,6 +35,10 @@ export interface ChatContextSummary {
         daily_carbs_g: number | null;
         daily_fat_g: number | null;
         daily_fiber_g: number | null;
+        daily_sodium_mg: number | null;
+        daily_saturated_fat_g: number | null;
+        daily_cholesterol_mg: number | null;
+        daily_potassium_mg: number | null;
     } | null;
     today: {
         totals: {
@@ -153,6 +157,10 @@ export async function assembleChatContext(
                   daily_carbs_g: goals.daily_carbs_g ?? null,
                   daily_fat_g: goals.daily_fat_g ?? null,
                   daily_fiber_g: goals.daily_fiber_g ?? null,
+                  daily_sodium_mg: goals.daily_sodium_mg ?? null,
+                  daily_saturated_fat_g: goals.daily_saturated_fat_g ?? null,
+                  daily_cholesterol_mg: goals.daily_cholesterol_mg ?? null,
+                  daily_potassium_mg: goals.daily_potassium_mg ?? null,
               }
             : null,
         today: today ? { totals: today.totals } : null,

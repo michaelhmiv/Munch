@@ -78,12 +78,24 @@ await upsertNutritionGoals(alpha.userId, {
     daily_fiber_g: 30,
     daily_sugar_g: 60,
     daily_alcohol_g: 0,
+    daily_sodium_mg: 2300.6,
+    daily_saturated_fat_g: 20.5,
+    daily_cholesterol_mg: 300,
+    daily_potassium_mg: 3500,
     daily_water_ml: 3000.4,
     target_weight_g: 86_000,
 });
 const goals = await getNutritionGoals(alpha.userId);
 if (goals?.daily_calories !== 2200 || goals.daily_water_ml !== 3000) {
     throw new Error("Nutrition goal integer normalization failed");
+}
+if (
+    goals?.daily_sodium_mg !== 2301 ||
+    goals?.daily_saturated_fat_g !== 20.5 ||
+    goals?.daily_cholesterol_mg !== 300 ||
+    goals?.daily_potassium_mg !== 3500
+) {
+    throw new Error("Micro goal round-trip failed");
 }
 
 const mealInput = {

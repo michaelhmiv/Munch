@@ -12,6 +12,10 @@ interface NutritionGoalsRow {
     daily_fiber_g: number | string | null;
     daily_sugar_g: number | string | null;
     daily_alcohol_g: number | string | null;
+    daily_sodium_mg: number | string | null;
+    daily_saturated_fat_g: number | string | null;
+    daily_cholesterol_mg: number | string | null;
+    daily_potassium_mg: number | string | null;
     daily_water_ml: number | string | null;
     target_weight_g: number | string | null;
     updated_at: Date | string;
@@ -27,6 +31,10 @@ function mapGoals(row: NutritionGoalsRow): NutritionGoals {
         daily_fiber_g: nullableNumber(row.daily_fiber_g),
         daily_sugar_g: nullableNumber(row.daily_sugar_g),
         daily_alcohol_g: nullableNumber(row.daily_alcohol_g),
+        daily_sodium_mg: nullableNumber(row.daily_sodium_mg),
+        daily_saturated_fat_g: nullableNumber(row.daily_saturated_fat_g),
+        daily_cholesterol_mg: nullableNumber(row.daily_cholesterol_mg),
+        daily_potassium_mg: nullableNumber(row.daily_potassium_mg),
         daily_water_ml: nullableNumber(row.daily_water_ml),
         target_weight_g: nullableNumber(row.target_weight_g),
         updated_at: isoTimestamp(row.updated_at),
@@ -46,6 +54,8 @@ export async function upsertNutritionGoals(
         const beforeRows = await tx<Array<NutritionGoalsRow>>`
             select user_id, daily_calories, daily_protein_g, daily_carbs_g,
                    daily_fat_g, daily_fiber_g, daily_sugar_g, daily_alcohol_g,
+                   daily_sodium_mg, daily_saturated_fat_g,
+                   daily_cholesterol_mg, daily_potassium_mg,
                    daily_water_ml, target_weight_g, updated_at
             from munch.nutrition_goals where user_id = ${userId} for update
         `;
@@ -60,6 +70,10 @@ export async function upsertNutritionGoals(
                 daily_fiber_g,
                 daily_sugar_g,
                 daily_alcohol_g,
+                daily_sodium_mg,
+                daily_saturated_fat_g,
+                daily_cholesterol_mg,
+                daily_potassium_mg,
                 daily_water_ml,
                 target_weight_g,
                 updated_at
@@ -72,6 +86,10 @@ export async function upsertNutritionGoals(
                 ${input.daily_fiber_g ?? null},
                 ${input.daily_sugar_g ?? null},
                 ${input.daily_alcohol_g ?? null},
+                ${input.daily_sodium_mg == null ? null : toStoredInteger(input.daily_sodium_mg)},
+                ${input.daily_saturated_fat_g ?? null},
+                ${input.daily_cholesterol_mg == null ? null : toStoredInteger(input.daily_cholesterol_mg)},
+                ${input.daily_potassium_mg == null ? null : toStoredInteger(input.daily_potassium_mg)},
                 ${input.daily_water_ml == null ? null : toStoredInteger(input.daily_water_ml)},
                 ${input.target_weight_g ?? null},
                 now()
@@ -84,6 +102,10 @@ export async function upsertNutritionGoals(
                 daily_fiber_g = excluded.daily_fiber_g,
                 daily_sugar_g = excluded.daily_sugar_g,
                 daily_alcohol_g = excluded.daily_alcohol_g,
+                daily_sodium_mg = excluded.daily_sodium_mg,
+                daily_saturated_fat_g = excluded.daily_saturated_fat_g,
+                daily_cholesterol_mg = excluded.daily_cholesterol_mg,
+                daily_potassium_mg = excluded.daily_potassium_mg,
                 daily_water_ml = excluded.daily_water_ml,
                 target_weight_g = excluded.target_weight_g,
                 updated_at = now()
@@ -96,6 +118,10 @@ export async function upsertNutritionGoals(
                 daily_fiber_g,
                 daily_sugar_g,
                 daily_alcohol_g,
+                daily_sodium_mg,
+                daily_saturated_fat_g,
+                daily_cholesterol_mg,
+                daily_potassium_mg,
                 daily_water_ml,
                 target_weight_g,
                 updated_at
@@ -158,6 +184,10 @@ function emptyTargets() {
         daily_fiber_g: null,
         daily_sugar_g: null,
         daily_alcohol_g: null,
+        daily_sodium_mg: null,
+        daily_saturated_fat_g: null,
+        daily_cholesterol_mg: null,
+        daily_potassium_mg: null,
         daily_water_ml: null,
         target_weight_g: null,
     };
@@ -172,6 +202,10 @@ function targetsOf(goals: NutritionGoals) {
         daily_fiber_g: goals.daily_fiber_g,
         daily_sugar_g: goals.daily_sugar_g,
         daily_alcohol_g: goals.daily_alcohol_g,
+        daily_sodium_mg: goals.daily_sodium_mg,
+        daily_saturated_fat_g: goals.daily_saturated_fat_g,
+        daily_cholesterol_mg: goals.daily_cholesterol_mg,
+        daily_potassium_mg: goals.daily_potassium_mg,
         daily_water_ml: goals.daily_water_ml,
         target_weight_g: goals.target_weight_g,
     };
@@ -191,6 +225,10 @@ export async function getNutritionGoals(
                 daily_fiber_g,
                 daily_sugar_g,
                 daily_alcohol_g,
+                daily_sodium_mg,
+                daily_saturated_fat_g,
+                daily_cholesterol_mg,
+                daily_potassium_mg,
                 daily_water_ml,
                 target_weight_g,
                 updated_at

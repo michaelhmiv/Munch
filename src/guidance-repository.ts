@@ -128,6 +128,10 @@ function goalsToTargets(row: Record<string, unknown> | null): GoalTargets {
         daily_fiber_g: numberOrNull(row?.daily_fiber_g),
         daily_sugar_g: numberOrNull(row?.daily_sugar_g),
         daily_alcohol_g: numberOrNull(row?.daily_alcohol_g),
+        daily_sodium_mg: numberOrNull(row?.daily_sodium_mg),
+        daily_saturated_fat_g: numberOrNull(row?.daily_saturated_fat_g),
+        daily_cholesterol_mg: numberOrNull(row?.daily_cholesterol_mg),
+        daily_potassium_mg: numberOrNull(row?.daily_potassium_mg),
         daily_water_ml: numberOrNull(row?.daily_water_ml),
         target_weight_g: numberOrNull(row?.target_weight_g),
     };
@@ -186,8 +190,9 @@ async function currentGoalsInTransaction(
 ) {
     const rows = await tx<Array<Record<string, unknown>>>`
         select daily_calories, daily_protein_g, daily_carbs_g, daily_fat_g,
-               daily_fiber_g, daily_sugar_g, daily_alcohol_g, daily_water_ml,
-               target_weight_g, updated_at
+               daily_fiber_g, daily_sugar_g, daily_alcohol_g, daily_sodium_mg,
+               daily_saturated_fat_g, daily_cholesterol_mg, daily_potassium_mg,
+               daily_water_ml, target_weight_g, updated_at
         from munch.nutrition_goals where user_id = ${userId} for update
     `;
     return rows[0] ?? null;
@@ -214,6 +219,19 @@ function normalizeGoalTargets(input: unknown): GoalTargets {
         daily_fiber_g: decimal(parsed.daily_fiber_g),
         daily_sugar_g: decimal(parsed.daily_sugar_g),
         daily_alcohol_g: decimal(parsed.daily_alcohol_g),
+        daily_sodium_mg:
+            parsed.daily_sodium_mg == null
+                ? null
+                : toStoredInteger(parsed.daily_sodium_mg),
+        daily_saturated_fat_g: decimal(parsed.daily_saturated_fat_g),
+        daily_cholesterol_mg:
+            parsed.daily_cholesterol_mg == null
+                ? null
+                : toStoredInteger(parsed.daily_cholesterol_mg),
+        daily_potassium_mg:
+            parsed.daily_potassium_mg == null
+                ? null
+                : toStoredInteger(parsed.daily_potassium_mg),
         daily_water_ml:
             parsed.daily_water_ml == null
                 ? null
@@ -352,12 +370,17 @@ async function updateGoalsInTransaction(
     const updatedRows = await tx<Array<Record<string, unknown>>>`
         insert into munch.nutrition_goals (
             user_id, daily_calories, daily_protein_g, daily_carbs_g, daily_fat_g,
-            daily_fiber_g, daily_sugar_g, daily_alcohol_g, daily_water_ml,
-            target_weight_g, updated_at
+            daily_fiber_g, daily_sugar_g, daily_alcohol_g, daily_sodium_mg,
+            daily_saturated_fat_g, daily_cholesterol_mg, daily_potassium_mg,
+            daily_water_ml, target_weight_g, updated_at
         ) values (
             ${userId}, ${targets.daily_calories == null ? null : toStoredInteger(targets.daily_calories)},
             ${targets.daily_protein_g}, ${targets.daily_carbs_g}, ${targets.daily_fat_g},
             ${targets.daily_fiber_g}, ${targets.daily_sugar_g}, ${targets.daily_alcohol_g},
+            ${targets.daily_sodium_mg == null ? null : toStoredInteger(targets.daily_sodium_mg)},
+            ${targets.daily_saturated_fat_g},
+            ${targets.daily_cholesterol_mg == null ? null : toStoredInteger(targets.daily_cholesterol_mg)},
+            ${targets.daily_potassium_mg == null ? null : toStoredInteger(targets.daily_potassium_mg)},
             ${targets.daily_water_ml == null ? null : toStoredInteger(targets.daily_water_ml)},
             ${targets.target_weight_g}, now()
         ) on conflict (user_id) do update set
@@ -368,11 +391,17 @@ async function updateGoalsInTransaction(
             daily_fiber_g = excluded.daily_fiber_g,
             daily_sugar_g = excluded.daily_sugar_g,
             daily_alcohol_g = excluded.daily_alcohol_g,
+            daily_sodium_mg = excluded.daily_sodium_mg,
+            daily_saturated_fat_g = excluded.daily_saturated_fat_g,
+            daily_cholesterol_mg = excluded.daily_cholesterol_mg,
+            daily_potassium_mg = excluded.daily_potassium_mg,
             daily_water_ml = excluded.daily_water_ml,
             target_weight_g = excluded.target_weight_g,
             updated_at = now()
         returning user_id, daily_calories, daily_protein_g, daily_carbs_g,
                   daily_fat_g, daily_fiber_g, daily_sugar_g, daily_alcohol_g,
+                  daily_sodium_mg, daily_saturated_fat_g,
+                  daily_cholesterol_mg, daily_potassium_mg,
                   daily_water_ml, target_weight_g, updated_at
     `;
     if (!updatedRows[0]) throw new Error("Failed to update nutrition goals");

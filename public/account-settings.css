@@ -925,3 +925,75 @@
         transition: none;
     }
 }
+
+/* Nutrition targets — Today-tile grammar (2026-11-23). The tile is the
+   field: it carries the only border and the input inside is borderless.
+   The input reset must beat the portal-wide .app-content input rule in
+   app-overrides.css, so its selector mirrors that rule's :not() chain
+   and adds the settings scope. The grid stays two columns at phone
+   width — unlike .settings-form-grid it never collapses. */
+.targets-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+.target-tile {
+    display: block;
+    background: #fffdf8;
+    border: 1px solid #d8cdb6;
+    border-radius: 12px;
+    padding: 10px 12px 9px;
+    min-height: 88px;
+    cursor: text;
+}
+.target-tile:focus-within {
+    border-color: #176b3a;
+    box-shadow: 0 0 0 3px rgba(23, 107, 58, 0.18);
+}
+.target-tile-label {
+    display: block;
+    font-size: 11.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #6e7462;
+    margin-bottom: 2px;
+}
+.target-tile-note {
+    display: block;
+    font-size: 12px;
+    color: #5d5344;
+    margin-bottom: 2px;
+}
+.target-tile-value {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+}
+.operate-view.settings-view
+    .target-tile
+    input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not(
+        [type="hidden"]
+    ) {
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    outline: none;
+    padding: 0;
+    margin: 0;
+    height: auto;
+    min-height: 0;
+    width: 6ch;
+    max-width: 100%;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 27px;
+    font-weight: 600;
+    line-height: 1.15;
+    color: #2e2a24;
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+.target-tile-value small {
+    font-size: 13.5px;
+    color: #6e7462;
+    font-weight: 400;
+}
