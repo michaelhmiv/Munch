@@ -91,6 +91,10 @@ const targetProposal = await previewGoalChange({
         daily_fiber_g: null,
         daily_sugar_g: null,
         daily_alcohol_g: null,
+        daily_sodium_mg: 2300.4,
+        daily_saturated_fat_g: 20.257,
+        daily_cholesterol_mg: null,
+        daily_potassium_mg: 3500,
         daily_water_ml: 2500.6,
         target_weight_g: null,
     },
@@ -98,7 +102,13 @@ const targetProposal = await previewGoalChange({
 });
 assert(
     (targetProposal.proposed_targets as Record<string, unknown>)
-        .daily_calories === 2101,
+        .daily_calories === 2101 &&
+        (targetProposal.proposed_targets as Record<string, unknown>)
+            .daily_sodium_mg === 2300 &&
+        (targetProposal.proposed_targets as Record<string, unknown>)
+            .daily_saturated_fat_g === 20.26 &&
+        (targetProposal.proposed_targets as Record<string, unknown>)
+            .daily_potassium_mg === 3500,
     "Goal preview did not normalize whole-number targets before confirmation",
 );
 await expectFailure(
