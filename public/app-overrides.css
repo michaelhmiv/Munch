@@ -459,6 +459,14 @@ dialog .auth-card {
     margin-top: 6px;
 }
 
+/* The food-row small rules set display (block in styles.css, inline in
+   .operate-view), which overrides the UA [hidden] rule — without this
+   guard the collapsed assumptions render anyway (found on device,
+   build 807). Same scoped-[hidden] pattern as .meal-usuals[hidden]. */
+.food-row .item-assumptions[hidden] {
+    display: none;
+}
+
 .food-audit-body .demo-source-row {
     display: flex;
     flex-wrap: wrap;
