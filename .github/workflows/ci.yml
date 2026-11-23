@@ -118,6 +118,8 @@ jobs:
         run: bun run db:migrate
       - name: Exercise Jev sweep findings payload persistence (jsonb object regression)
         run: bun test src/jev-sweep/findings.test.ts
+      - name: Exercise meal draft bulk creation (returned draft equals fresh read)
+        run: bun test src/meal-drafts/repository.test.ts
       - name: Verify Better Auth schema is current
         env:
           NODE_ENV: test
