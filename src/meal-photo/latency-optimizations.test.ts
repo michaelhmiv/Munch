@@ -19,7 +19,6 @@ import { needsPortionChoice, resolveMealPhotoPicks } from "./grounding.js";
 import {
     groundAndReviewMealPhotoItems,
     identifyWithMealPhotoGate,
-    needsDraftNumericReview,
 } from "./pipeline.js";
 import { MealPhotoNoFoodError, type MealPhotoVisionItem } from "./vision.js";
 
@@ -876,70 +875,6 @@ describe("meal-photo latency optimizations", () => {
         });
         expect(detailsProviderCalls).toBe(1);
         expect(hydrated?.portions).toHaveLength(2);
-    });
-
-    test("needsDraftNumericReview skips exact weight-scaled USDA generics in normal bounds, but keeps unit conversions and outliers reviewed", () => {
-        const base = {
-            vision: {
-                name: "grilled chicken breast",
-                cooking_method: "grilled",
-                quantity: 160,
-                unit: "g",
-                portion_confidence: 0.9,
-                assumptions: [],
-            },
-            draftItem: {
-                name: "Chicken breast, grilled",
-                quantity: 160,
-                portionLabel: "160 g",
-                gramWeight: 160,
-                nutrients: { calories: 264, protein_g: 49.6 },
-                sourceType: "usda" as const,
-                provider: "usda" as const,
-                providerFoodId: "2707152",
-                confidence: 0.9,
-                assumptions: [],
-                sourceSnapshot: { selected_portion_id: "100g" },
-            },
-            groundingSource: "USDA" as const,
-            grounded: true,
-            estimated: false,
-            candidateId: "usda:2707152",
-            candidate: candidate(),
-            tieBreakUsed: true,
-            needsQuestion: false,
-            question: null,
-        };
-
-        expect(needsDraftNumericReview(base)).toBe(false);
-        expect(
-            needsDraftNumericReview({
-                ...base,
-                vision: { ...base.vision, quantity: 1, unit: "cup" },
-            }),
-        ).toBe(true);
-        expect(
-            needsDraftNumericReview({
-                ...base,
-                candidate: candidate({ dataKind: "packaged" }),
-            }),
-        ).toBe(true);
-        expect(
-            needsDraftNumericReview({
-                ...base,
-                draftItem: { ...base.draftItem, nutrients: { calories: 1500 } },
-            }),
-        ).toBe(true);
-        expect(
-            needsDraftNumericReview({
-                ...base,
-                draftItem: {
-                    ...base.draftItem,
-                    gramWeight: 100,
-                    nutrients: { calories: 950 },
-                },
-            }),
-        ).toBe(true);
     });
 
     test("cold-miss details() hydrates USDA household portions before falling back to model estimate", async () => {

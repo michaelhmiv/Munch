@@ -776,7 +776,7 @@ export async function openInstalledSubscriptionManagement() {
 
 export async function takeInstalledPhoto() {
     return Camera.takePhoto({
-        quality: 85,
+        quality: 88,
         targetWidth: 1568,
         targetHeight: 1568,
         correctOrientation: true,
@@ -788,7 +788,7 @@ export async function takeInstalledPhoto() {
 
 export async function chooseInstalledPhoto() {
     const result = await Camera.chooseFromGallery({
-        quality: 85,
+        quality: 88,
         targetWidth: 1568,
         targetHeight: 1568,
         correctOrientation: true,
@@ -802,7 +802,7 @@ export async function chooseInstalledPhoto() {
 /** Multi-select gallery pick for multi-photo surfaces (cook photos). */
 export async function chooseInstalledPhotos() {
     const result = await Camera.chooseFromGallery({
-        quality: 85,
+        quality: 88,
         targetWidth: 1568,
         targetHeight: 1568,
         correctOrientation: true,

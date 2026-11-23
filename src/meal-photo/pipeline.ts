@@ -1,11 +1,9 @@
 import {
-    impliedKcalPer100g,
     reviewDraftNumbers,
     type DraftReviewDependencies,
     type DraftReviewOutcome,
 } from "../decisions/draft-review.js";
 import type { MealPhotoGateVerdict } from "../decisions/gate.js";
-import { portionUnitKind } from "../food-providers/portions.js";
 import { blockingQuestionKey } from "../meal-drafts/blocking.js";
 import {
     createMealDraftWithItemsAndQuestions,
@@ -237,58 +235,6 @@ export function applyDraftReviewHandoff(
     });
 }
 
-export const A3_SKIP_MAX_GRAMS = 1_000;
-export const A3_SKIP_MAX_KCAL = 1_200;
-export const A3_SKIP_MAX_KCAL_PER_100G = 900;
-
-/**
- * Conservative deterministic pre-filter for A3 photo-draft numeric
- * review (analogous to `selectBulkOutlierCandidates` for bulk imports).
- * A3 catches wrong-for-this-food portion conversions ("1 cup" of olive
- * oil at salad grams, beverage at solid grams, condiment at entrée
- * portions). An item weighed directly in a weight unit (g, oz, kg, lb)
- * against a USDA generic's `100g` panel undergoes ZERO portion-unit
- * conversion, so when its grams, total calories, and implied kcal/100g
- * sit within ordinary physical bounds it does not need an extra
- * Decisions round-trip. Every non-weight unit conversion, branded/OFF
- * item, high-calorie item (>1,200 kcal or >1,000 g), or density outlier
- * (>900 kcal/100 g) is still reviewed by A3.
- */
-export function needsDraftNumericReview(entry: GroundedMealPhotoItem): boolean {
-    if (!entry.grounded) return false;
-    if (entry.groundingSource !== "USDA") return true;
-    if (entry.candidate?.dataKind !== "generic") return true;
-    if (portionUnitKind(entry.vision.unit) !== "weight") return true;
-    const snapshot = entry.draftItem.sourceSnapshot as
-        { selected_portion_id?: unknown } | undefined;
-    if (snapshot?.selected_portion_id !== "100g") return true;
-    const grams = entry.draftItem.gramWeight ?? null;
-    const kcal = entry.draftItem.nutrients.calories ?? null;
-    if (
-        grams === null ||
-        kcal === null ||
-        !Number.isFinite(grams) ||
-        !Number.isFinite(kcal) ||
-        grams <= 0 ||
-        grams > A3_SKIP_MAX_GRAMS ||
-        kcal < 0 ||
-        kcal > A3_SKIP_MAX_KCAL
-    ) {
-        return true;
-    }
-    const density = impliedKcalPer100g({
-        foodName: entry.draftItem.name,
-        portionLabel:
-            entry.draftItem.portionLabel ??
-            `${entry.vision.quantity} ${entry.vision.unit}`,
-        grams,
-        kcal,
-        groundingSource: entry.groundingSource,
-    });
-    if (density === null || density > A3_SKIP_MAX_KCAL_PER_100G) return true;
-    return false;
-}
-
 /**
  * Run Stage 4c (model estimate for ungrounded items) and Stage 5 A3
  * (numeric plausibility review for grounded items) in parallel — they
@@ -310,12 +256,11 @@ export async function groundAndReviewMealPhotoItems(input: {
         timings: groundingTimings,
     } = await resolveMealPhotoPicks(input.items, input.groundingDeps);
 
-    // Pre-build grounded items (without estimates yet) to derive the exact
-    // reviewable subset for A3 numeric review while Stage 4c runs in parallel.
+    // Pre-build grounded items (without estimates yet) so A3 numeric
+    // review can run against the full grounded set while Stage 4c runs
+    // in parallel. Owner ruling (2026-11-23): A3 reviews EVERY grounded
+    // item — no deterministic pre-filter narrows the seat's coverage.
     const preliminary = finalizeGroundedMealPhotoItems(picks, new Map());
-    const reviewableIndices = preliminary
-        .map((entry, index) => (needsDraftNumericReview(entry) ? index : -1))
-        .filter((index) => index >= 0);
 
     let estimateMs = 0;
     let draftReviewMs = 0;
@@ -345,18 +290,15 @@ export async function groundAndReviewMealPhotoItems(input: {
         const startedAt = Date.now();
         try {
             return await reviewDraftNumbers(
-                reviewableIndices.map((index) => {
-                    const entry = preliminary[index]!;
-                    return {
-                        foodName: entry.draftItem.name,
-                        portionLabel:
-                            entry.draftItem.portionLabel ??
-                            `${entry.vision.quantity} ${entry.vision.unit}`,
-                        grams: entry.draftItem.gramWeight ?? null,
-                        kcal: entry.draftItem.nutrients.calories ?? null,
-                        groundingSource: entry.groundingSource,
-                    };
-                }),
+                preliminary.map((entry) => ({
+                    foodName: entry.draftItem.name,
+                    portionLabel:
+                        entry.draftItem.portionLabel ??
+                        `${entry.vision.quantity} ${entry.vision.unit}`,
+                    grams: entry.draftItem.gramWeight ?? null,
+                    kcal: entry.draftItem.nutrients.calories ?? null,
+                    groundingSource: entry.groundingSource,
+                })),
                 input.draftReviewDeps ?? {},
             );
         } finally {
@@ -374,21 +316,11 @@ export async function groundAndReviewMealPhotoItems(input: {
             ? finalizeGroundedMealPhotoItems(picks, estimates)
             : preliminary;
 
-    // The seat's verdict indices are positions in the reviewable
-    // list; remap them to draft positions before the handoff.
-    const remappedReview: DraftReviewOutcome =
-        review.status === "reviewed"
-            ? {
-                  ...review,
-                  verdicts: review.verdicts.map((verdict) => ({
-                      ...verdict,
-                      index: reviewableIndices[verdict.index]!,
-                  })),
-              }
-            : review;
+    // The seat's verdict indices are draft positions (the review ran
+    // over the full preliminary list), so they feed the handoff as-is.
     const flaggedIndices =
-        remappedReview.status === "reviewed"
-            ? remappedReview.verdicts
+        review.status === "reviewed"
+            ? review.verdicts
                   .filter((verdict) => verdict.flagged)
                   .map((verdict) => verdict.index)
             : [];
@@ -423,7 +355,7 @@ export async function groundAndReviewMealPhotoItems(input: {
     }
     const grounded = applyDraftReviewHandoff(
         groundedRaw,
-        remappedReview,
+        review,
         flagEstimates,
     );
     return {
