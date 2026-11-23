@@ -159,6 +159,20 @@ export function isStrongLocalMatch(
     );
 }
 
+export const LOCAL_GENERIC_SHORT_CIRCUIT_MIN = 5;
+
+export function genericLocalSatisfies(
+    query: string,
+    candidates: FoodCandidate[],
+    limit: number,
+): boolean {
+    const generics = candidates.filter(
+        (candidate) => candidate.dataKind === "generic",
+    );
+    const minRequired = Math.min(limit, LOCAL_GENERIC_SHORT_CIRCUIT_MIN);
+    return generics.length >= minRequired && localCoversQuery(query, generics);
+}
+
 function dedupe(candidates: FoodCandidate[]): FoodCandidate[] {
     const seen = new Set<string>();
     return candidates.filter((candidate) => {
@@ -177,6 +191,9 @@ function staleCandidates(hits: CatalogHit[]): FoodCandidate[] {
     return hits.filter((hit) => hit.stale).map((hit) => hit.candidate);
 }
 
+const HOT_SEARCH_CACHE_MAX_ENTRIES = 500;
+const HOT_SEARCH_CACHE_TTL_MS = 5 * 60 * 1_000;
+
 export class FoodSearchService {
     private readonly config = foodCatalogConfig();
     private readonly catalog: FoodCatalogRepository;
@@ -189,6 +206,10 @@ export class FoodSearchService {
         Promise<AggregatedFoodSearchResult>
     >();
     private readonly inFlightRefreshes = new Set<string>();
+    private readonly hotSearchCache = new Map<
+        string,
+        { expiresAt: number; result: AggregatedFoodSearchResult }
+    >();
 
     constructor(
         private readonly registry = new FoodProviderRegistry([
@@ -204,17 +225,62 @@ export class FoodSearchService {
         this.catalog = catalog ?? new FoodCatalogRepository(this.config);
     }
 
+    private readHotSearch(key: string): AggregatedFoodSearchResult | null {
+        const entry = this.hotSearchCache.get(key);
+        if (!entry) return null;
+        if (entry.expiresAt <= Date.now()) {
+            this.hotSearchCache.delete(key);
+            return null;
+        }
+        this.hotSearchCache.delete(key);
+        this.hotSearchCache.set(key, entry);
+        return {
+            candidates: [...entry.result.candidates],
+            failures: [...entry.result.failures],
+        };
+    }
+
+    private writeHotSearch(
+        key: string,
+        result: AggregatedFoodSearchResult,
+    ): void {
+        if (result.candidates.length === 0 || result.failures.length > 0) {
+            return;
+        }
+        if (this.hotSearchCache.has(key)) {
+            this.hotSearchCache.delete(key);
+        } else if (this.hotSearchCache.size >= HOT_SEARCH_CACHE_MAX_ENTRIES) {
+            const oldest = this.hotSearchCache.keys().next().value;
+            if (oldest !== undefined) this.hotSearchCache.delete(oldest);
+        }
+        this.hotSearchCache.set(key, {
+            expiresAt: Date.now() + HOT_SEARCH_CACHE_TTL_MS,
+            result: {
+                candidates: [...result.candidates],
+                failures: [],
+            },
+        });
+    }
+
     async search(
         query: string,
         limit = 10,
-        options?: { preferGeneric?: boolean },
+        options?: { preferGeneric?: boolean; deferWriteBack?: boolean },
     ): Promise<AggregatedFoodSearchResult> {
         const canonicalQuery = canonicalizeFoodSearchQuery(query);
         const normalized = normalizeFoodText(canonicalQuery);
         if (!normalized) return { candidates: [], failures: [] };
         const boundedLimit = Math.max(1, Math.min(50, limit));
         const preferGeneric = options?.preferGeneric === true;
+        const deferWriteBack = options?.deferWriteBack === true;
         const key = `${normalized}\u0000${boundedLimit}\u0000${preferGeneric ? "g" : "a"}`;
+        const hot = this.readHotSearch(key);
+        if (hot) {
+            console.info(
+                `[food_resolution] operation=search resolution_layer=memory_cache local_count=${hot.candidates.length} total_ms=0`,
+            );
+            return hot;
+        }
         const existing = this.inFlightSearches.get(key);
         if (existing) {
             console.info(
@@ -226,9 +292,15 @@ export class FoodSearchService {
             normalized,
             boundedLimit,
             preferGeneric,
-        ).finally(() => {
-            this.inFlightSearches.delete(key);
-        });
+            deferWriteBack,
+        )
+            .then((result) => {
+                this.writeHotSearch(key, result);
+                return result;
+            })
+            .finally(() => {
+                this.inFlightSearches.delete(key);
+            });
         this.inFlightSearches.set(key, pending);
         return pending;
     }
@@ -237,6 +309,7 @@ export class FoodSearchService {
         normalized: string,
         boundedLimit: number,
         preferGeneric: boolean,
+        deferWriteBack: boolean,
     ): Promise<AggregatedFoodSearchResult> {
         const startedAt = performance.now();
 
@@ -255,10 +328,17 @@ export class FoodSearchService {
                 freshCandidates(cachedHits),
             );
             const strongCached = isStrongLocalMatch(normalized, cachedFresh[0]);
-            if (strongCached || cachedFresh.length >= boundedLimit) {
+            const cachedGenericSatisfies =
+                preferGeneric &&
+                genericLocalSatisfies(normalized, cachedFresh, boundedLimit);
+            if (
+                strongCached ||
+                cachedFresh.length >= boundedLimit ||
+                cachedGenericSatisfies
+            ) {
                 this.scheduleStaleRefresh(cachedStale);
                 console.info(
-                    `[food_resolution] operation=search resolution_layer=query_cache local_count=${cachedFresh.length} query_cache_ms=${queryCacheMs} total_ms=${Math.round(performance.now() - startedAt)} reason=${strongCached ? "strong_exact_match" : "result_limit_satisfied"}`,
+                    `[food_resolution] operation=search resolution_layer=query_cache local_count=${cachedFresh.length} query_cache_ms=${queryCacheMs} total_ms=${Math.round(performance.now() - startedAt)} reason=${strongCached ? "strong_exact_match" : cachedGenericSatisfies ? "generic_local_satisfied" : "result_limit_satisfied"}`,
                 );
                 return {
                     candidates: cachedFresh.slice(0, boundedLimit),
@@ -282,11 +362,16 @@ export class FoodSearchService {
         // the background — the search itself never waits on it.
         this.scheduleStaleRefresh(stale);
         const strongLocal = isStrongLocalMatch(normalized, local[0]);
+        const localGenericSatisfies =
+            preferGeneric &&
+            genericLocalSatisfies(normalized, local, boundedLimit);
         const localSatisfies =
-            local.length >= boundedLimit && localCoversQuery(normalized, local);
+            (local.length >= boundedLimit &&
+                localCoversQuery(normalized, local)) ||
+            localGenericSatisfies;
         if (strongLocal || localSatisfies) {
             console.info(
-                `[food_resolution] operation=search resolution_layer=local_cache local_count=${local.length} stale_count=${stale.length} query_cache_ms=${queryCacheMs} local_ms=${localMs} total_ms=${Math.round(performance.now() - startedAt)} reason=${strongLocal ? "strong_exact_match" : "result_limit_satisfied"}`,
+                `[food_resolution] operation=search resolution_layer=local_cache local_count=${local.length} stale_count=${stale.length} query_cache_ms=${queryCacheMs} local_ms=${localMs} total_ms=${Math.round(performance.now() - startedAt)} reason=${strongLocal ? "strong_exact_match" : localGenericSatisfies ? "generic_local_satisfied" : "result_limit_satisfied"}`,
             );
             return { candidates: local.slice(0, boundedLimit), failures: [] };
         }
@@ -320,19 +405,30 @@ export class FoodSearchService {
             { query: normalized },
             dedupe([...local, ...result.candidates]),
         ).slice(0, boundedLimit);
-        if (result.candidates.length > 0 && combined.length > 0) {
-            // Phase 2, item 4: provider write-back (upsert + recordSearch)
-            // as a single transaction on the miss path.
-            await this.catalog.upsertAndRecordSearch(
-                result.candidates,
-                normalized,
-                combined,
-            );
-            console.info(
-                `[food_catalog] provider_write operation=search count=${result.candidates.length}`,
-            );
-        } else if (combined.length > 0) {
-            await this.catalog.recordSearch(normalized, combined);
+        const writeBack = async () => {
+            if (result.candidates.length > 0 && combined.length > 0) {
+                // Phase 2, item 4: provider write-back (upsert + recordSearch)
+                // as a single transaction on the miss path.
+                await this.catalog.upsertAndRecordSearch(
+                    result.candidates,
+                    normalized,
+                    combined,
+                );
+                console.info(
+                    `[food_catalog] provider_write operation=search count=${result.candidates.length}`,
+                );
+            } else if (combined.length > 0) {
+                await this.catalog.recordSearch(normalized, combined);
+            }
+        };
+        if (deferWriteBack) {
+            void writeBack().catch((error) => {
+                console.warn(
+                    `[food_catalog] deferred_write_failed operation=search code=${error instanceof Error ? error.name : "unknown"}`,
+                );
+            });
+        } else {
+            await writeBack();
         }
 
         if (
@@ -357,14 +453,25 @@ export class FoodSearchService {
             // repeats skip providers until the negative TTL expires.
             // Never recorded on provider failures — an outage is not a
             // verified miss (same rule barcode/details already follow).
-            await this.catalog.recordNegative(
-                "search",
-                normalized,
-                "aggregate",
-            );
-            console.info(
-                `[food_catalog] negative_write operation=search total_ms=${Math.round(performance.now() - startedAt)}`,
-            );
+            const recordNeg = async () => {
+                await this.catalog.recordNegative(
+                    "search",
+                    normalized,
+                    "aggregate",
+                );
+                console.info(
+                    `[food_catalog] negative_write operation=search total_ms=${Math.round(performance.now() - startedAt)}`,
+                );
+            };
+            if (deferWriteBack) {
+                void recordNeg().catch((error) => {
+                    console.warn(
+                        `[food_catalog] deferred_negative_write_failed operation=search code=${error instanceof Error ? error.name : "unknown"}`,
+                    );
+                });
+            } else {
+                await recordNeg();
+            }
         }
 
         console.info(
@@ -407,14 +514,23 @@ export class FoodSearchService {
         }
     }
 
-    async details(candidateId: string): Promise<FoodCandidate | null> {
+    async details(
+        candidateId: string,
+        options?: { requirePortions?: boolean; deferWriteBack?: boolean },
+    ): Promise<FoodCandidate | null> {
         const decoded = decodeFoodCandidateId(candidateId);
         if (!decoded) return null;
+        const requirePortions = options?.requirePortions === true;
+        const deferWriteBack = options?.deferWriteBack === true;
         const local = await this.catalog.findByProviderId(
             decoded.provider,
             decoded.providerFoodId,
         );
-        if (local && !local.stale) {
+        if (
+            local &&
+            !local.stale &&
+            (!requirePortions || local.candidate.portions.length > 1)
+        ) {
             console.info(
                 `[food_catalog] local_hit operation=details provider=${decoded.provider}`,
             );
@@ -439,17 +555,30 @@ export class FoodSearchService {
                 providerFoodId: decoded.providerFoodId,
             });
             if (candidate) {
-                await this.catalog.upsert(candidate);
-                console.info(
-                    `[food_catalog] provider_write operation=details provider=${decoded.provider}`,
-                );
+                const persist = async () => {
+                    await this.catalog.upsert(candidate);
+                    console.info(
+                        `[food_catalog] provider_write operation=details provider=${decoded.provider}`,
+                    );
+                };
+                if (deferWriteBack) {
+                    void persist().catch((error) => {
+                        console.warn(
+                            `[food_catalog] deferred_details_write_failed provider=${decoded.provider} code=${error instanceof Error ? error.name : "unknown"}`,
+                        );
+                    });
+                } else {
+                    await persist();
+                }
                 return candidate;
             }
-            await this.catalog.recordNegative(
-                "details",
-                decoded.providerFoodId,
-                decoded.provider,
-            );
+            if (!deferWriteBack) {
+                await this.catalog.recordNegative(
+                    "details",
+                    decoded.providerFoodId,
+                    decoded.provider,
+                );
+            }
             return local?.candidate ?? null;
         } catch (error) {
             if (local && this.config.staleOnError) {

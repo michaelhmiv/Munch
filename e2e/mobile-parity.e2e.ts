@@ -1766,7 +1766,11 @@ function fixtureJson(pathname: string, method: string): unknown | undefined {
         return { url: `${baseURL}/website-portal-fixture` };
     }
     if (pathname === "/api/app/meal-photo" && method === "POST") {
-        return { draft: { id: "fixture-photo-draft" } };
+        // The real POST /api/app/meal-photo returns the FULL serialized
+        // draft (serializeMealDraftForApp), and the client now opens the
+        // review from that body without a follow-up GET — the stub must
+        // serve the same contract, not an id-only shell.
+        return { draft: photoDraftFixture() };
     }
     if (
         pathname === "/api/app/meal-drafts/fixture-photo-draft/add-text" &&

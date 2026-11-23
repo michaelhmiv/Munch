@@ -121,16 +121,14 @@ export class FoodProviderRegistry {
         this.health.set(provider, { consecutiveFailures, openUntil });
     }
 
-    async search(input: FoodSearchInput): Promise<AggregatedFoodSearchResult> {
-        const query = input.query.trim();
-        if (!query) return { candidates: [], failures: [] };
-        const limit = Math.max(1, Math.min(50, input.limit ?? 10));
-        const failures: FoodProviderFailure[] = [];
-        const providers = [...this.providers.values()].filter((provider) => {
-            if (!this.circuitOpen(provider.name)) return true;
-            failures.push(this.circuitFailure(provider.name));
-            return false;
-        });
+    private async runProviderSearches(
+        providers: FoodProvider[],
+        input: FoodSearchInput,
+        query: string,
+        limit: number,
+        candidates: FoodCandidate[],
+        failures: FoodProviderFailure[],
+    ): Promise<void> {
         const settled = await Promise.allSettled(
             providers.map(
                 async (
@@ -156,7 +154,6 @@ export class FoodProviderRegistry {
             ),
         );
 
-        const candidates: FoodCandidate[] = [];
         for (const result of settled) {
             if (result.status === "fulfilled") {
                 candidates.push(...result.value.value);
@@ -170,6 +167,72 @@ export class FoodProviderRegistry {
                 retryAfterSeconds: error.retryAfterSeconds,
             });
         }
+    }
+
+    async search(input: FoodSearchInput): Promise<AggregatedFoodSearchResult> {
+        const query = input.query.trim();
+        if (!query) return { candidates: [], failures: [] };
+        const limit = Math.max(1, Math.min(50, input.limit ?? 10));
+        const failures: FoodProviderFailure[] = [];
+        const providers = [...this.providers.values()].filter((provider) => {
+            if (!this.circuitOpen(provider.name)) return true;
+            failures.push(this.circuitFailure(provider.name));
+            return false;
+        });
+        const candidates: FoodCandidate[] = [];
+
+        // When preferGeneric is requested (photo grounding lane), query
+        // generic-capable providers (USDA) first. Open Food Facts carries
+        // only packaged products and frequently takes 1.5–2.5 s; skip it
+        // once USDA already supplies enough generic matches, falling back
+        // to packaged providers only when generic coverage is sparse.
+        if (input.preferGeneric) {
+            const genericProviders = providers.filter(
+                (provider) => provider.name === "usda",
+            );
+            const packagedProviders = providers.filter(
+                (provider) => provider.name !== "usda",
+            );
+            if (genericProviders.length > 0 && packagedProviders.length > 0) {
+                await this.runProviderSearches(
+                    genericProviders,
+                    input,
+                    query,
+                    limit,
+                    candidates,
+                    failures,
+                );
+                const genericCount = candidates.filter(
+                    (candidate) => candidate.dataKind === "generic",
+                ).length;
+                if (genericCount < Math.min(limit, 3)) {
+                    await this.runProviderSearches(
+                        packagedProviders,
+                        input,
+                        query,
+                        limit,
+                        candidates,
+                        failures,
+                    );
+                }
+                return {
+                    candidates: rankCandidates({ query }, candidates).slice(
+                        0,
+                        limit,
+                    ),
+                    failures,
+                };
+            }
+        }
+
+        await this.runProviderSearches(
+            providers,
+            input,
+            query,
+            limit,
+            candidates,
+            failures,
+        );
 
         return {
             candidates: rankCandidates({ query }, candidates).slice(0, limit),

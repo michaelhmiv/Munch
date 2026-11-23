@@ -189,23 +189,31 @@ export async function reviewDraftNumbers(
         const verdicts: DraftReviewItemVerdict[] = [];
         let model: string | null = null;
         let totalCost: number | null = null;
-        let durationMs = 0;
         // Indexed chunks so verdict indices stay in draft order. In
         // the normal case (<= 8 grounded items) this is exactly ONE
-        // batched call for the whole draft.
+        // batched call; larger drafts chunk concurrently (matching S2).
         const indexed = items.map((item, index) => ({ item, index }));
-        for (const group of chunk(indexed, MAX_QUESTIONS_PER_CALL)) {
-            const groupItems = group.map((entry) => entry.item);
-            const call = await callDecisionsWithFallback(config, {
-                seat: "draft_review",
-                timeoutMs: config.draftReviewTimeoutMs,
-                includeImageHeader: false,
-                fetcher: dependencies.fetcher,
-                state: buildDraftReviewState(groupItems),
-                questions: draftReviewQuestions(groupItems),
-            });
+        const chunkStartedAt = Date.now();
+        const chunkResults = await Promise.all(
+            chunk(indexed, MAX_QUESTIONS_PER_CALL).map(async (group) => {
+                const groupItems = group.map((entry) => entry.item);
+                const call = await callDecisionsWithFallback(config, {
+                    seat: "draft_review",
+                    timeoutMs: config.draftReviewTimeoutMs,
+                    includeImageHeader: false,
+                    fetcher: dependencies.fetcher,
+                    state: buildDraftReviewState(groupItems),
+                    questions: draftReviewQuestions(groupItems),
+                });
+                return { group, call };
+            }),
+        );
+        const durationMs =
+            chunkResults.length === 1
+                ? chunkResults[0]!.call.durationMs
+                : Math.max(0, Date.now() - chunkStartedAt);
+        for (const { group, call } of chunkResults) {
             model = call.model;
-            durationMs += call.durationMs;
             if (call.reportedCostUsd !== null) {
                 totalCost = (totalCost ?? 0) + call.reportedCostUsd;
             }

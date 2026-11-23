@@ -64,6 +64,117 @@ export const PHOTO_GROUNDING_PORTION_INSTRUCTION =
     "count or size portion that matches the amount over a volume measure " +
     "for whole foods.";
 
+export const DECIDER_CACHE_TTL_MS = 15 * 60 * 1_000;
+export const DECIDER_CACHE_MAX_ENTRIES = 1_000;
+
+interface CacheEntry<T> {
+    value: T;
+    expiresAt: number;
+}
+
+/**
+ * Bounded LRU/TTL cache for deterministic S2 Decisions choices over
+ * identical (food, shortlist) inputs. Avoids repeating the same Jev
+ * pick/portion round-trip across meals for common staples ("grilled
+ * chicken breast", "cooked white rice", "fried egg", "olive oil").
+ */
+export class DeciderChoiceCache {
+    private readonly candidates = new Map<
+        string,
+        CacheEntry<MealPhotoCandidateChoice>
+    >();
+    private readonly portions = new Map<
+        string,
+        CacheEntry<MealPhotoPortionChoice>
+    >();
+
+    constructor(
+        private readonly maxEntries = DECIDER_CACHE_MAX_ENTRIES,
+        private readonly ttlMs = DECIDER_CACHE_TTL_MS,
+        private readonly now: () => number = Date.now,
+    ) {}
+
+    private read<T>(map: Map<string, CacheEntry<T>>, key: string): T | null {
+        const entry = map.get(key);
+        if (!entry) return null;
+        if (entry.expiresAt <= this.now()) {
+            map.delete(key);
+            return null;
+        }
+        // Refresh recency for LRU ordering.
+        map.delete(key);
+        map.set(key, entry);
+        return entry.value;
+    }
+
+    private write<T>(
+        map: Map<string, CacheEntry<T>>,
+        key: string,
+        value: T,
+    ): void {
+        if (map.has(key)) {
+            map.delete(key);
+        } else if (map.size >= this.maxEntries) {
+            const oldest = map.keys().next().value;
+            if (oldest !== undefined) map.delete(oldest);
+        }
+        map.set(key, { value, expiresAt: this.now() + this.ttlMs });
+    }
+
+    getCandidate(key: string): MealPhotoCandidateChoice | null {
+        return this.read(this.candidates, key);
+    }
+
+    setCandidate(key: string, value: MealPhotoCandidateChoice): void {
+        this.write(this.candidates, key, value);
+    }
+
+    getPortion(key: string): MealPhotoPortionChoice | null {
+        return this.read(this.portions, key);
+    }
+
+    setPortion(key: string, value: MealPhotoPortionChoice): void {
+        this.write(this.portions, key, value);
+    }
+
+    clear(): void {
+        this.candidates.clear();
+        this.portions.clear();
+    }
+
+    get size(): number {
+        return this.candidates.size + this.portions.size;
+    }
+}
+
+export const defaultDeciderCache = new DeciderChoiceCache();
+
+function normalizeCacheToken(value: string | null | undefined): string {
+    return (value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+export function candidateChoiceCacheKey(
+    seat: "decider" | "match",
+    request: MealPhotoCandidateChoiceRequest,
+): string {
+    return [
+        seat,
+        normalizeCacheToken(request.itemName),
+        normalizeCacheToken(request.cookingMethod),
+        request.candidates.map((candidate) => candidate.candidateId).join(","),
+    ].join("\u0000");
+}
+
+export function portionChoiceCacheKey(
+    request: MealPhotoPortionChoiceRequest,
+): string {
+    return [
+        normalizeCacheToken(request.foodName),
+        normalizeCacheToken(request.photographedAmount),
+        request.portions.map((portion) => portion.id).join(","),
+    ].join("\u0000");
+}
+
 export interface DecisionsDeciderDependencies {
     fetcher?: DecisionsFetcher;
     /** Test/drill seam: supply a config instead of reading the env. */
@@ -73,6 +184,11 @@ export interface DecisionsDeciderDependencies {
      * distinguishable in the Decisions logs while riding the exact
      * same adapter, state shape, and chain. */
     seat?: "decider" | "match";
+    /** Optional cache override (`null` disables caching). Defaults to
+     * `defaultDeciderCache` in production (when no custom `fetcher` is
+     * injected) and disabled when tests inject a custom `fetcher` so
+     * unit tests stay isolated unless they explicitly pass a cache. */
+    cache?: DeciderChoiceCache | null;
 }
 
 function buildDeciderQuestions(
@@ -251,6 +367,15 @@ function photoGroundingModelsFor(config: DecisionsConfig): string[] {
     );
 }
 
+function activeDeciderCache(
+    dependencies: DecisionsDeciderDependencies,
+): DeciderChoiceCache | null {
+    if (dependencies.cache !== undefined) return dependencies.cache;
+    // Production (default fetch) uses the shared cache; tests injecting a
+    // mock fetcher stay isolated unless they explicitly supply `cache`.
+    return dependencies.fetcher ? null : defaultDeciderCache;
+}
+
 /**
  * The Decisions-API implementation of the chooseCandidates contract.
  * Throws (DecisionsChainExhaustedError) when the whole model chain is
@@ -262,16 +387,35 @@ export async function chooseCandidatesViaDecisions(
     dependencies: DecisionsDeciderDependencies = {},
 ): Promise<Map<string, MealPhotoCandidateChoice>> {
     const seat = dependencies.seat ?? "decider";
-    const chunks: MealPhotoCandidateChoiceRequest[][] = [];
+    const cache = activeDeciderCache(dependencies);
+    const result = new Map<string, MealPhotoCandidateChoice>();
+    const uncached: Array<{
+        request: MealPhotoCandidateChoiceRequest;
+        cacheKey: string;
+    }> = [];
+    for (const request of requests) {
+        const cacheKey = candidateChoiceCacheKey(seat, request);
+        const hit = cache?.getCandidate(cacheKey) ?? null;
+        if (hit) {
+            result.set(request.key, hit);
+        } else {
+            uncached.push({ request, cacheKey });
+        }
+    }
+    if (uncached.length === 0) return result;
+    const chunks: Array<
+        Array<{ request: MealPhotoCandidateChoiceRequest; cacheKey: string }>
+    > = [];
     for (
         let offset = 0;
-        offset < requests.length;
+        offset < uncached.length;
         offset += MAX_QUESTIONS_PER_CALL
     ) {
-        chunks.push(requests.slice(offset, offset + MAX_QUESTIONS_PER_CALL));
+        chunks.push(uncached.slice(offset, offset + MAX_QUESTIONS_PER_CALL));
     }
     const chunkResults = await Promise.all(
         chunks.map(async (chunk) => {
+            const chunkReqs = chunk.map((entry) => entry.request);
             const call = await callDecisionsWithFallback(config, {
                 seat,
                 timeoutMs:
@@ -280,19 +424,26 @@ export async function chooseCandidatesViaDecisions(
                         : config.deciderTimeoutMs,
                 includeImageHeader: false,
                 fetcher: dependencies.fetcher,
-                state: buildDeciderState(chunk, seat),
-                questions: buildDeciderQuestions(chunk, seat),
+                state: buildDeciderState(chunkReqs, seat),
+                questions: buildDeciderQuestions(chunkReqs, seat),
                 ...(seat === "decider"
                     ? { models: photoGroundingModelsFor(config) }
                     : {}),
             });
-            return mapDeciderAnswers(chunk, call.answers);
+            return {
+                chunk,
+                answers: mapDeciderAnswers(chunkReqs, call.answers),
+            };
         }),
     );
-    const result = new Map<string, MealPhotoCandidateChoice>();
-    for (const chunkResult of chunkResults) {
-        for (const [key, choice] of chunkResult) {
+    for (const { chunk, answers } of chunkResults) {
+        const cacheKeyByRequestKey = new Map(
+            chunk.map((entry) => [entry.request.key, entry.cacheKey]),
+        );
+        for (const [key, choice] of answers) {
             result.set(key, choice);
+            const cacheKey = cacheKeyByRequestKey.get(key);
+            if (cache && cacheKey) cache.setCandidate(cacheKey, choice);
         }
     }
     return result;
@@ -311,32 +462,58 @@ export async function choosePortionsViaDecisions(
 ): Promise<Map<string, MealPhotoPortionChoice>> {
     const usable = requests.filter((request) => request.portions.length > 0);
     if (usable.length === 0) return new Map();
-    const chunks: MealPhotoPortionChoiceRequest[][] = [];
+    const cache = activeDeciderCache(dependencies);
+    const result = new Map<string, MealPhotoPortionChoice>();
+    const uncached: Array<{
+        request: MealPhotoPortionChoiceRequest;
+        cacheKey: string;
+    }> = [];
+    for (const request of usable) {
+        const cacheKey = portionChoiceCacheKey(request);
+        const hit = cache?.getPortion(cacheKey) ?? null;
+        if (hit) {
+            result.set(request.key, hit);
+        } else {
+            uncached.push({ request, cacheKey });
+        }
+    }
+    if (uncached.length === 0) return result;
+    const chunks: Array<
+        Array<{ request: MealPhotoPortionChoiceRequest; cacheKey: string }>
+    > = [];
     for (
         let offset = 0;
-        offset < usable.length;
+        offset < uncached.length;
         offset += MAX_QUESTIONS_PER_CALL
     ) {
-        chunks.push(usable.slice(offset, offset + MAX_QUESTIONS_PER_CALL));
+        chunks.push(uncached.slice(offset, offset + MAX_QUESTIONS_PER_CALL));
     }
     const chunkResults = await Promise.all(
         chunks.map(async (chunk) => {
+            const chunkReqs = chunk.map((entry) => entry.request);
             const call = await callDecisionsWithFallback(config, {
                 seat: "decider",
                 timeoutMs: config.deciderTimeoutMs,
                 includeImageHeader: false,
                 fetcher: dependencies.fetcher,
-                state: buildPortionState(chunk),
-                questions: buildPortionQuestions(chunk),
+                state: buildPortionState(chunkReqs),
+                questions: buildPortionQuestions(chunkReqs),
                 models: photoGroundingModelsFor(config),
             });
-            return mapPortionAnswers(chunk, call.answers);
+            return {
+                chunk,
+                answers: mapPortionAnswers(chunkReqs, call.answers),
+            };
         }),
     );
-    const result = new Map<string, MealPhotoPortionChoice>();
-    for (const chunkResult of chunkResults) {
-        for (const [key, choice] of chunkResult) {
+    for (const { chunk, answers } of chunkResults) {
+        const cacheKeyByRequestKey = new Map(
+            chunk.map((entry) => [entry.request.key, entry.cacheKey]),
+        );
+        for (const [key, choice] of answers) {
             result.set(key, choice);
+            const cacheKey = cacheKeyByRequestKey.get(key);
+            if (cache && cacheKey) cache.setPortion(cacheKey, choice);
         }
     }
     return result;
@@ -367,6 +544,7 @@ export async function chooseCandidatesForMealPhoto(
     try {
         return await chooseCandidatesViaDecisions(requests, config, {
             fetcher: dependencies.fetcher,
+            cache: dependencies.cache,
         });
     } catch (error) {
         console.info(
@@ -399,6 +577,7 @@ export async function choosePortionsForMealPhoto(
     try {
         return await choosePortionsViaDecisions(requests, config, {
             fetcher: dependencies.fetcher,
+            cache: dependencies.cache,
         });
     } catch (error) {
         console.info(

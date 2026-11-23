@@ -8006,7 +8006,7 @@ async function lookupDraftFoodBarcode() {
     renderDraftFoodResults({ ...data, savedFoods: [], recentMealItems: [] });
 }
 
-async function openMealDraft(id) {
+async function openMealDraft(id, { initialDraft = null } = {}) {
     window.clearTimeout(mealDraftReview.searchTimer);
     mealDraftReview.searchController?.abort();
     mealDraftReview.searchSeq = (mealDraftReview.searchSeq || 0) + 1;
@@ -8023,20 +8023,26 @@ async function openMealDraft(id) {
     mealDraftReview.suppressSnapshot = true;
     openDialog(
         "Review meal draft",
-        `<div id="meal-draft-review"><div class="skeleton" style="width:min(70vw,320px);height:54px"></div><p class="sr-only" role="status">Loading draft…</p></div>`,
+        initialDraft
+            ? `<div id="meal-draft-review"></div>`
+            : `<div id="meal-draft-review"><div class="skeleton" style="width:min(70vw,320px);height:54px"></div><p class="sr-only" role="status">Loading draft…</p></div>`,
     );
-    const data = await api(`/api/app/meal-drafts/${encodeURIComponent(id)}`, {
-        keepPrevious: true,
-    });
-    renderMealDraftReview(data.draft);
-    const storedEdits = readMealDraftReviewEdits(data.draft?.id);
+    const draft =
+        initialDraft ??
+        (
+            await api(`/api/app/meal-drafts/${encodeURIComponent(id)}`, {
+                keepPrevious: true,
+            })
+        ).draft;
+    renderMealDraftReview(draft);
+    const storedEdits = readMealDraftReviewEdits(draft?.id);
     if (storedEdits) {
         if (storedEdits.pendingManual?.length) {
             mealDraftReview.pendingManual = storedEdits.pendingManual;
             mealDraftReview.suppressSnapshot = true;
-            renderMealDraftReview(data.draft);
+            renderMealDraftReview(draft);
         }
-        applyDraftUnsavedEdits(storedEdits, data.draft);
+        applyDraftUnsavedEdits(storedEdits, draft);
         for (const key of storedEdits.dirtyItems || []) {
             mealDraftReview.dirtyItems.add(key);
         }
@@ -8210,15 +8216,13 @@ async function submitMealPhoto(sourceFiles = null) {
         // the server answered in 276 ms. Reported as client_prepare_ms;
         // the server only ever logs it, never acts on it.
         const prepareStartedAt = Date.now();
-        const preparedFiles = [];
-        for (const file of selected) {
-            const prepared = await downscaleImageFile(file);
-            if (prepared.size > 8 * 1024 * 1024) {
-                return say(
-                    "One photo is over the 8 MB limit — choose a smaller one.",
-                );
-            }
-            preparedFiles.push(prepared);
+        const preparedFiles = await Promise.all(
+            selected.map((file) => downscaleImageFile(file)),
+        );
+        if (preparedFiles.some((prepared) => prepared.size > 8 * 1024 * 1024)) {
+            return say(
+                "One photo is over the 8 MB limit — choose a smaller one.",
+            );
         }
         const clientPrepareMs = Math.max(0, Date.now() - prepareStartedAt);
         const form = new FormData();
@@ -8264,7 +8268,9 @@ async function submitMealPhoto(sourceFiles = null) {
                 draftId: result.draft.id,
                 files: preparedFiles,
             };
-            await openMealDraft(result.draft.id);
+            await openMealDraft(result.draft.id, {
+                initialDraft: result.draft,
+            });
         } finally {
             for (const timer of stageTimers) clearTimeout(timer);
         }
@@ -8328,10 +8334,9 @@ async function addDraftPhotos(rawFiles) {
         toast("Up to 3 photos per meal.", "error");
         return;
     }
-    const prepared = [];
-    for (const file of rawFiles.slice(0, room)) {
-        prepared.push(await downscaleImageFile(file));
-    }
+    const prepared = await Promise.all(
+        rawFiles.slice(0, room).map((file) => downscaleImageFile(file)),
+    );
     if (rawFiles.length > room) {
         toast("Up to 3 photos per meal — extra photos were left off.");
     }
