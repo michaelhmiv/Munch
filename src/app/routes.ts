@@ -60,7 +60,10 @@ import {
 import { estimateMealPhotoNutrients } from "../meal-photo/estimate.js";
 import { addTextToPhotoDraft } from "../meal-photo/draft-add.js";
 import { parseDraftAddTextWithModel } from "../meal-photo/draft-add-parse.js";
-import { createMealPhotoDraft } from "../meal-photo/pipeline.js";
+import {
+    createMealPhotoDraft,
+    identifyWithMealPhotoGate,
+} from "../meal-photo/pipeline.js";
 import {
     identifyMealPhotoFromImages,
     mealPhotoVisionConfig,
@@ -2098,34 +2101,30 @@ export function createAppRouter(): Hono {
             console.info(
                 `[meal_photo] phase=receive status=success bytes=${totalBytes} photo_count=${images.length} duration_ms=${Math.max(0, Date.now() - requestStartedAt)}${clientPrepareMsLogField(formField(form.client_prepare_ms))}`,
             );
-            // S1 front-door gate (model-integration brief): one
-            // Decisions-API call before the Ember identifier. Ships
-            // OFF behind MUNCH_JEV_ENABLED; fail-open on any doubt —
-            // the only action is a confident not-food verdict, thrown
-            // as MealPhotoNoFoodError so the catch below serializes it
-            // exactly like an identifier no-food result.
+            // S1 front-door gate (model-integration brief) runs in
+            // parallel with Ember identification so it adds zero latency
+            // on food photos while immediately aborting identification on
+            // a confident not-food verdict. Ships OFF behind
+            // MUNCH_JEV_ENABLED; fail-open on any doubt.
             const decisionsCfg = decisionsConfig();
             const firstImage = images[0];
-            if (decisionsCfg?.gateEnabled && firstImage) {
-                // The gate is a front-door food/non-food check on
-                // the MEAL; it reads the first photo only — later
-                // photos are angles of the same meal, and one Jev
-                // call per meal keeps the door cheap.
-                const gate = await evaluateMealPhotoGate(
-                    {
-                        mimeType: firstImage.mimeType,
-                        bytes: firstImage.bytes,
-                    },
-                    decisionsCfg,
-                );
-                if (gate.action === "no_food") {
-                    throw new MealPhotoNoFoodError();
-                }
-            }
-            const vision = await identifyMealPhotoFromImages(
-                images,
-                visionConfig,
-            );
+            const vision = await identifyWithMealPhotoGate({
+                runGate:
+                    decisionsCfg?.gateEnabled && firstImage
+                        ? () =>
+                              evaluateMealPhotoGate(
+                                  {
+                                      mimeType: firstImage.mimeType,
+                                      bytes: firstImage.bytes,
+                                  },
+                                  decisionsCfg,
+                              )
+                        : undefined,
+                runIdentify: (signal) =>
+                    identifyMealPhotoFromImages(images, visionConfig, {
+                        signal,
+                    }),
+            });
             const draftStartedAt = Date.now();
             const foodSearch = getFoodSearchService();
             const result = await createMealPhotoDraft({
@@ -2139,6 +2138,11 @@ export function createAppRouter(): Hono {
                 groundingDeps: {
                     search: (query, limit, options) =>
                         foodSearch.search(query, limit, options),
+                    details: (candidateId) =>
+                        foodSearch.details(candidateId, {
+                            requirePortions: true,
+                            deferWriteBack: true,
+                        }),
                     chooseCandidates: (requests) =>
                         chooseCandidatesForMealPhoto(requests, visionConfig),
                     choosePortions: (requests) =>
@@ -2147,14 +2151,33 @@ export function createAppRouter(): Hono {
                         estimateMealPhotoNutrients(requests, visionConfig),
                 },
             });
+            // Enrich draft items with their already-fetched candidate
+            // portions in memory (0 DB/HTTP lookups) so the client can
+            // open the review immediately without a second GET round-trip.
+            const inMemoryCandidates = new Map(
+                result.grounded.flatMap((entry) =>
+                    entry.candidateId && entry.candidate
+                        ? [[entry.candidateId, entry.candidate] as const]
+                        : [],
+                ),
+            );
+            const enrichedDraft = await enrichMealDraftForApp(
+                result.draft,
+                async (candidateId) =>
+                    inMemoryCandidates.get(candidateId) ?? null,
+            );
+            const t = result.timings;
+            const timingFields = t
+                ? ` search_ms=${t.searchMs} decider_ms=${t.deciderMs} retry_ms=${t.retryMs} details_ms=${t.detailsMs} portion_ms=${t.portionMs} estimate_ms=${t.estimateMs} draft_review_ms=${t.draftReviewMs} flag_estimate_ms=${t.flagEstimateMs} db_ms=${t.dbMs}`
+                : "";
             console.info(
-                `[meal_photo] phase=draft_build status=success duration_ms=${Math.max(0, Date.now() - draftStartedAt)}`,
+                `[meal_photo] phase=draft_build status=success duration_ms=${Math.max(0, Date.now() - draftStartedAt)}${timingFields}`,
             );
             console.info(
                 `[meal_photo] phase=request status=success duration_ms=${Math.max(0, Date.now() - requestStartedAt)}`,
             );
             return privateJson(c, {
-                draft: serializeMealDraftForApp(result.draft),
+                draft: enrichedDraft,
                 transient_media: true,
                 photo_retained: false,
                 photo_count: images.length,

@@ -309,10 +309,17 @@ export async function createMealDraftWithItemsAndQuestions(input: {
     if (items.length > 100) {
         throw new Error("Draft item position must be an integer from 0 to 99");
     }
+    const initialStatus: MealDraft["status"] =
+        questions.length > 0
+            ? "awaiting_answers"
+            : items.length > 0
+              ? "awaiting_confirmation"
+              : "open";
     return withUserDatabase(input.userId, async (tx) => {
-        const rows = await tx<Array<{ id: string }>>`
+        const draftRows = await tx<Array<Record<string, unknown>>>`
             insert into munch.meal_drafts (
                 user_id,
+                status,
                 source_mode,
                 meal_type,
                 description,
@@ -321,6 +328,7 @@ export async function createMealDraftWithItemsAndQuestions(input: {
                 expires_at
             ) values (
                 ${input.userId},
+                ${initialStatus},
                 ${input.sourceMode},
                 ${input.mealType ?? null},
                 ${input.description?.trim() || null},
@@ -328,38 +336,101 @@ export async function createMealDraftWithItemsAndQuestions(input: {
                 ${input.notes?.trim() || null},
                 now() + (${expiresInHours}::text || ' hours')::interval
             )
-            returning id
+            returning *
         `;
-        const draftId = rows[0]!.id;
-        const itemIds: string[] = [];
-        for (const [position, item] of items.entries()) {
-            const itemRows = await tx<Array<{ id: string }>>`
+        const draftRow = draftRows[0];
+        if (!draftRow) throw new Error("Created draft could not be loaded");
+        const draftId = String(draftRow.id);
+        let itemRows: Array<Record<string, unknown>> = [];
+        if (items.length > 0) {
+            const itemPayloads = items.map((item, position) => ({
+                position,
+                item_payload: item,
+            }));
+            itemRows = await tx<Array<Record<string, unknown>>>`
                 insert into munch.meal_draft_items (
                     draft_id, user_id, position, item_payload
-                ) values (
-                    ${draftId}, ${input.userId}, ${position},
-                    ${item}::jsonb
                 )
-                returning id
+                select
+                    ${draftId},
+                    ${input.userId},
+                    row.position,
+                    row.item_payload
+                from jsonb_to_recordset(${itemPayloads}::jsonb)
+                    as row(position integer, item_payload jsonb)
+                returning *
             `;
-            itemIds.push(itemRows[0]!.id);
+            itemRows.sort((a, b) => Number(a.position) - Number(b.position));
         }
-        for (const question of questions) {
-            await tx`
+        const itemIdByPosition = new Map<number, string>(
+            itemRows.map((row) => [Number(row.position), String(row.id)]),
+        );
+        let questionRows: Array<Record<string, unknown>> = [];
+        if (questions.length > 0) {
+            const questionPayloads = questions.map((question) => ({
+                item_id:
+                    question.itemPosition !== undefined
+                        ? (itemIdByPosition.get(question.itemPosition) ?? null)
+                        : null,
+                question_key: question.key,
+                prompt: question.prompt,
+                impact_score: question.score,
+            }));
+            questionRows = await tx<Array<Record<string, unknown>>>`
                 insert into munch.meal_draft_questions (
                     draft_id, user_id, item_id, question_key, prompt,
                     impact_score
-                ) values (
-                    ${draftId}, ${input.userId},
-                    ${question.itemPosition !== undefined ? itemIds[question.itemPosition]! : null},
-                    ${question.key}, ${question.prompt}, ${question.score}
                 )
+                select
+                    ${draftId},
+                    ${input.userId},
+                    nullif(row.item_id, '')::uuid,
+                    row.question_key,
+                    row.prompt,
+                    row.impact_score
+                from jsonb_to_recordset(${questionPayloads}::jsonb)
+                    as row(
+                        item_id text,
+                        question_key text,
+                        prompt text,
+                        impact_score integer
+                    )
+                returning *
             `;
+            questionRows.sort(
+                (a, b) =>
+                    Number(b.impact_score) - Number(a.impact_score) ||
+                    new Date(String(a.created_at)).getTime() -
+                        new Date(String(b.created_at)).getTime(),
+            );
         }
-        await refreshStatus(tx, draftId);
-        const draft = await loadDraft(tx, draftId);
-        if (!draft) throw new Error("Created draft could not be loaded");
-        return draft;
+        return {
+            id: draftId,
+            userId: String(draftRow.user_id),
+            status: draftRow.status as MealDraft["status"],
+            sourceMode: draftRow.source_mode as MealDraftSourceMode,
+            mealType:
+                draftRow.meal_type == null
+                    ? null
+                    : (String(draftRow.meal_type) as MealDraft["mealType"]),
+            description:
+                draftRow.description == null
+                    ? null
+                    : String(draftRow.description),
+            loggedAt:
+                draftRow.logged_at == null ? null : rowDate(draftRow.logged_at),
+            notes: draftRow.notes == null ? null : String(draftRow.notes),
+            version: Number(draftRow.version),
+            expiresAt: rowDate(draftRow.expires_at),
+            confirmedMealId:
+                draftRow.confirmed_meal_id == null
+                    ? null
+                    : String(draftRow.confirmed_meal_id),
+            createdAt: rowDate(draftRow.created_at),
+            updatedAt: rowDate(draftRow.updated_at),
+            items: itemRows.map(itemFromRow),
+            questions: questionRows.map(questionFromRow),
+        };
     });
 }
 

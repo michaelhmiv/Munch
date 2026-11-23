@@ -90,6 +90,8 @@ export interface GroundedMealPhotoItem {
      * step (not a provider). Mutually exclusive with `grounded`. */
     estimated: boolean;
     candidateId: string | null;
+    /** Picked provider candidate kept in memory for zero-I/O app response enrichment. */
+    candidate?: FoodCandidate | null;
     tieBreakUsed: boolean;
     needsQuestion: boolean;
     question: MealPhotoDraftQuestionSpec | null;
@@ -97,6 +99,11 @@ export interface GroundedMealPhotoItem {
 
 export interface MealPhotoGroundingDeps {
     search: Pick<FoodSearchService, "search">["search"];
+    /** Optional food-details loader used on cold misses when a picked
+     * search-summary candidate lacks household portions for a non-weight
+     * photographed unit (e.g. "1 tbsp", "2 piece") — faster and more
+     * accurate than dropping straight to the model-estimate LLM. */
+    details?: (candidateId: string) => Promise<FoodCandidate | null>;
     chooseCandidates?: (
         requests: MealPhotoCandidateChoiceRequest[],
     ) => Promise<Map<string, MealPhotoCandidateChoice>>;
@@ -721,22 +728,125 @@ export function rankMealPhotoCandidates(
     return result;
 }
 
-export async function groundMealPhotoItems(
+export interface MealPhotoGroundingPick {
+    vision: MealPhotoVisionItem;
+    index: number;
+    key: string;
+    candidate: FoodCandidate | undefined;
+    resolution: PortionResolution | null;
+    tieBreakUsed: boolean;
+    countMismatch: boolean;
+}
+
+export interface MealPhotoGroundingTimings {
+    searchMs: number;
+    deciderMs: number;
+    retryMs: number;
+    detailsMs: number;
+    portionMs: number;
+}
+
+export interface ResolvedMealPhotoPicks {
+    picks: MealPhotoGroundingPick[];
+    estimateRequests: MealPhotoEstimateRequest[];
+    timings: MealPhotoGroundingTimings;
+}
+
+/**
+ * Decide whether a picked candidate actually benefits from a Decisions
+ * `choosePortions` call. Skipping items that cannot gain from it avoids
+ * an unnecessary serial Decisions round-trip:
+ * - Candidates with <= 1 real portion have nothing to choose between.
+ * - Weight vision units (g, oz, kg, lb, mg) against a candidate carrying
+ *   `nutrientsPer100g` scale deterministically to the exact gram weight;
+ *   selecting a household portion yields the exact same nutrition plus an
+ *   extraneous assumption string.
+ * - Candidates carrying exactly ONE portion with the exact same normalized
+ *   unit as the photographed amount (e.g. "1 tbsp" against a single "tbsp"
+ *   portion) resolve unambiguously via `resolveGroundedPortion`.
+ */
+export function needsPortionChoice(
+    vision: MealPhotoVisionItem,
+    candidate: FoodCandidate,
+    portions: FoodCandidate["portions"],
+): boolean {
+    if (portions.length <= 1) return false;
+    const visionUnit = normalizePortionUnit(vision.unit);
+    if (
+        WEIGHT_TO_GRAMS[visionUnit] !== undefined &&
+        candidate.nutrientsPer100g !== undefined
+    ) {
+        return false;
+    }
+    const visionKind = portionUnitKind(vision.unit);
+    const exactUnitMatches = portions.filter(
+        (portion) => normalizePortionUnit(portion.unit) === visionUnit,
+    );
+    if (exactUnitMatches.length === 1) {
+        const match = exactUnitMatches[0]!;
+        const factor = vision.quantity / match.amount;
+        if (
+            !(
+                visionKind === "count" &&
+                portionUnitKind(match.unit) === "weight"
+            ) &&
+            (visionKind !== "other" || factor <= MAX_GENERIC_PORTION_FACTOR)
+        ) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * Stages 3–4b-iii: search, candidate selection, bounded refinement retry,
+ * and portion resolution. Separated from Stage 4c (`estimateNutrients`) so
+ * `createMealPhotoDraft` can overlap model estimation for ungrounded items
+ * with A3 numeric plausibility review for grounded items.
+ */
+export async function resolveMealPhotoPicks(
     items: MealPhotoVisionItem[],
     deps: MealPhotoGroundingDeps,
-): Promise<GroundedMealPhotoItem[]> {
+): Promise<ResolvedMealPhotoPicks> {
     // Stage 3: deeper canonical search per item (25–50 fetched, generic
     // Foundation / SR Legacy / Survey prioritized ahead of branded noise).
+    // When an item returns zero candidates on its first query and has a
+    // refinement query, fetch the refinement right here so it joins the
+    // first batched decider call instead of forcing a serial retry wave.
+    const searchStartedAt = Date.now();
     const searched = await Promise.all(
         items.map(async (vision) => {
             const query = vision.name.trim();
             const result = await deps.search(query, GROUNDING_RETRIEVAL_LIMIT, {
                 preferGeneric: true,
+                deferWriteBack: true,
             });
-            const ranked = rankMealPhotoCandidates(vision, result.candidates);
-            return { vision, query, ranked };
+            let ranked = rankMealPhotoCandidates(vision, result.candidates);
+            let preRetried = false;
+            if (ranked.length === 0) {
+                const refinedQuery = buildRefinementQuery(vision, query);
+                if (refinedQuery) {
+                    preRetried = true;
+                    try {
+                        const retryResult = await deps.search(
+                            refinedQuery,
+                            GROUNDING_RETRIEVAL_LIMIT,
+                            { preferGeneric: true, deferWriteBack: true },
+                        );
+                        ranked = rankMealPhotoCandidates(
+                            vision,
+                            retryResult.candidates,
+                            refinedQuery,
+                        );
+                    } catch {
+                        ranked = [];
+                    }
+                }
+            }
+            return { vision, query, ranked, preRetried };
         }),
     );
+    const searchMs = Math.max(0, Date.now() - searchStartedAt);
 
     // Stage 4a: ONE batched decider pick call for EVERY photo item that
     // returned candidates (replaces the legacy `isAmbiguous` gate).
@@ -755,7 +865,9 @@ export async function groundMealPhotoItems(
     }
     let choices = new Map<string, MealPhotoCandidateChoice>();
     let deciderFailed = false;
+    let deciderMs = 0;
     if (pickRequests.length > 0 && deps.chooseCandidates) {
+        const deciderStartedAt = Date.now();
         try {
             choices = await deps.chooseCandidates(pickRequests);
         } catch {
@@ -763,6 +875,7 @@ export async function groundMealPhotoItems(
             deciderFailed = true;
             choices = new Map();
         }
+        deciderMs = Math.max(0, Date.now() - deciderStartedAt);
     }
 
     // Stage 4a-retry: code-driven refinement retry (at most ONCE per item)
@@ -771,9 +884,11 @@ export async function groundMealPhotoItems(
     // loop — code constructs the refined query (name + cooking method /
     // "cooked") and, when fresh candidates arrive, consults the decider
     // once more before falling back to the estimate path.
+    let retryMs = 0;
     if (!deciderFailed) {
         const retryTargets: Array<{ index: number; refinedQuery: string }> = [];
-        searched.forEach(({ vision, query, ranked }, index) => {
+        searched.forEach(({ vision, query, ranked, preRetried }, index) => {
+            if (preRetried) return;
             const key = `item:${index}`;
             const choice = choices.get(key);
             const deciderAbstained =
@@ -792,13 +907,14 @@ export async function groundMealPhotoItems(
         });
 
         if (retryTargets.length > 0) {
+            const retryStartedAt = Date.now();
             const retryResults = await Promise.all(
                 retryTargets.map(async ({ index, refinedQuery }) => {
                     try {
                         const result = await deps.search(
                             refinedQuery,
                             GROUNDING_RETRIEVAL_LIMIT,
-                            { preferGeneric: true },
+                            { preferGeneric: true, deferWriteBack: true },
                         );
                         const retryRanked = rankMealPhotoCandidates(
                             searched[index]!.vision,
@@ -867,6 +983,7 @@ export async function groundMealPhotoItems(
                     // abstained — never force a wrong ground).
                 }
             }
+            retryMs = Math.max(0, Date.now() - retryStartedAt);
         }
     }
 
@@ -894,15 +1011,59 @@ export async function groundMealPhotoItems(
         return { vision, ranked, index, key, candidate, tieBreakUsed };
     });
 
-    // Stage 4b-ii: ONE batched portion choice call for all picked
-    // candidates, offering ONLY each candidate's REAL portions.
+    // Stage 4b-i.5: cold-miss portion hydration. Live USDA /foods/search
+    // summary rows carry only per-100 g values (no household portions like
+    // "1 tbsp" or "1 egg"). When a non-weight photographed item picked a
+    // single-portion summary that cannot resolve deterministically, fetch
+    // its full provider details (~300 ms, parallel) rather than dropping
+    // straight to a ~1.4 s model_estimate LLM call.
+    let detailsMs = 0;
+    if (deps.details) {
+        const needsDetails = selectedCandidates.filter(
+            (entry) =>
+                entry.candidate !== undefined &&
+                WEIGHT_TO_GRAMS[normalizePortionUnit(entry.vision.unit)] ===
+                    undefined &&
+                realPortionOptions(entry.candidate).length <= 1 &&
+                resolveGroundedPortion(entry.vision, entry.candidate) === null,
+        );
+        if (needsDetails.length > 0) {
+            const detailsStartedAt = Date.now();
+            await Promise.all(
+                needsDetails.map(async (entry) => {
+                    try {
+                        const detailed = await deps.details!(
+                            encodeFoodCandidateId(entry.candidate!),
+                        );
+                        if (
+                            detailed &&
+                            detailed.portions.length >
+                                entry.candidate!.portions.length
+                        ) {
+                            entry.candidate = detailed;
+                        }
+                    } catch {
+                        // Fail open to the summary candidate.
+                    }
+                }),
+            );
+            detailsMs = Math.max(0, Date.now() - detailsStartedAt);
+        }
+    }
+
+    // Stage 4b-ii: ONE batched portion choice call for picked candidates
+    // that actually have multiple real portions to choose between (skips
+    // single-portion candidates and exact weight-unit items with per-100g).
     let portionChoices = new Map<string, MealPhotoPortionChoice>();
+    let portionMs = 0;
     if (deps.choosePortions && !deciderFailed) {
         const portionRequests: MealPhotoPortionChoiceRequest[] = [];
         for (const entry of selectedCandidates) {
             if (!entry.candidate) continue;
             const portions = realPortionOptions(entry.candidate);
-            if (portions.length === 0) continue;
+            if (!needsPortionChoice(entry.vision, entry.candidate, portions)) {
+                continue;
+            }
             portionRequests.push({
                 key: entry.key,
                 foodName: entry.candidate.name,
@@ -916,6 +1077,7 @@ export async function groundMealPhotoItems(
             });
         }
         if (portionRequests.length > 0) {
+            const portionStartedAt = Date.now();
             try {
                 portionChoices = await deps.choosePortions(portionRequests);
             } catch {
@@ -923,13 +1085,14 @@ export async function groundMealPhotoItems(
                 // `resolveGroundedPortion`.
                 portionChoices = new Map();
             }
+            portionMs = Math.max(0, Date.now() - portionStartedAt);
         }
     }
 
     // Stage 4b-iii: validate & scale each picked candidate's portion,
     // falling back to deterministic `resolveGroundedPortion` whenever
     // the portion choice is absent, unknown, or dimensionally invalid.
-    const picks = selectedCandidates.map(
+    const picks: MealPhotoGroundingPick[] = selectedCandidates.map(
         ({ vision, ranked, index, key, candidate, tieBreakUsed }) => {
             const chosenPortion = portionChoices.get(key);
             let resolution: PortionResolution | null = null;
@@ -973,7 +1136,6 @@ export async function groundMealPhotoItems(
         },
     );
 
-    // Stage 4c: labelled model-estimate fallback for ungrounded items.
     const estimateRequests: MealPhotoEstimateRequest[] = picks
         .filter((pick) => !(pick.candidate && pick.resolution))
         .map((pick) => ({
@@ -985,18 +1147,22 @@ export async function groundMealPhotoItems(
             assumptions: [...pick.vision.assumptions],
             ...(pick.countMismatch ? { gramWeightNeeded: true } : {}),
         }));
-    let estimates = new Map<string, MealPhotoEstimate>();
-    if (estimateRequests.length > 0 && deps.estimateNutrients) {
-        try {
-            estimates = await deps.estimateNutrients(estimateRequests);
-        } catch {
-            estimates = new Map();
-        }
-    }
 
-    // Stage 4d: build draft items. Nutrition from the picked provider
-    // candidate, else from the labelled estimate, else nothing at all
-    // plus a blocking question — never silently empty.
+    return {
+        picks,
+        estimateRequests,
+        timings: { searchMs, deciderMs, retryMs, detailsMs, portionMs },
+    };
+}
+
+/**
+ * Stage 4d: build final draft items from resolved picks plus any
+ * labelled model estimates. Pure transformation (no I/O).
+ */
+export function finalizeGroundedMealPhotoItems(
+    picks: MealPhotoGroundingPick[],
+    estimates: Map<string, MealPhotoEstimate>,
+): GroundedMealPhotoItem[] {
     return picks.map(
         ({
             vision,
@@ -1056,6 +1222,7 @@ export async function groundMealPhotoItems(
                     grounded: true,
                     estimated: false,
                     candidateId: encodeFoodCandidateId(candidate),
+                    candidate,
                     tieBreakUsed,
                     needsQuestion: portionQuestion !== null,
                     question: portionQuestion,
@@ -1128,6 +1295,7 @@ export async function groundMealPhotoItems(
                     grounded: false,
                     estimated: true,
                     candidateId: null,
+                    candidate: null,
                     tieBreakUsed,
                     needsQuestion: question !== null,
                     question,
@@ -1161,10 +1329,31 @@ export async function groundMealPhotoItems(
                 grounded: false,
                 estimated: false,
                 candidateId: null,
+                candidate: null,
                 tieBreakUsed,
                 needsQuestion: true,
                 question: blocking,
             };
         },
     );
+}
+
+export async function groundMealPhotoItems(
+    items: MealPhotoVisionItem[],
+    deps: MealPhotoGroundingDeps,
+): Promise<GroundedMealPhotoItem[]> {
+    const { picks, estimateRequests } = await resolveMealPhotoPicks(
+        items,
+        deps,
+    );
+    // Stage 4c: labelled model-estimate fallback for ungrounded items.
+    let estimates = new Map<string, MealPhotoEstimate>();
+    if (estimateRequests.length > 0 && deps.estimateNutrients) {
+        try {
+            estimates = await deps.estimateNutrients(estimateRequests);
+        } catch {
+            estimates = new Map();
+        }
+    }
+    return finalizeGroundedMealPhotoItems(picks, estimates);
 }

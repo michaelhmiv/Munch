@@ -126,6 +126,8 @@ export interface MealPhotoVisionDependencies {
         input: RequestInfo | URL,
         init?: RequestInit,
     ) => Promise<Response>;
+    /** Optional caller abort signal (e.g. parallel S1 gate rejected non-food). */
+    signal?: AbortSignal;
 }
 
 /** Thrown when the photo contains no identifiable food (brief §3:
@@ -260,9 +262,17 @@ async function postCompletion(
     config: MealPhotoVisionConfig,
     fetcher: NonNullable<MealPhotoVisionDependencies["fetcher"]>,
     body: Record<string, unknown>,
+    callerSignal?: AbortSignal,
 ): Promise<unknown> {
+    if (callerSignal?.aborted) {
+        throw callerSignal.reason instanceof Error
+            ? callerSignal.reason
+            : new Error("Meal photo request aborted");
+    }
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+    const onCallerAbort = () => controller.abort(callerSignal?.reason);
+    callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
     try {
         const response = await fetcher(`${config.baseUrl}/chat/completions`, {
             method: "POST",
@@ -283,6 +293,7 @@ async function postCompletion(
         return (await response.json()) as any;
     } finally {
         clearTimeout(timeout);
+        callerSignal?.removeEventListener("abort", onCallerAbort);
     }
 }
 
@@ -326,6 +337,7 @@ export async function identifyMealPhotoFromImages(
     }
     const startedAt = Date.now();
     const fetcher = dependencies.fetcher ?? fetch;
+    const callerSignal = dependencies.signal;
     // Extension point: a size-reference prompt hint was A/B-tested
     // on 2026-11-12 and NOT adopted (Ember already uses in-frame
     // references unprompted). If a future eval reverses that, its
@@ -334,6 +346,13 @@ export async function identifyMealPhotoFromImages(
         images.length > 1
             ? `${IDENTIFY_PROMPT} ${MULTI_PHOTO_DEDUPE_INSTRUCTION}`
             : IDENTIFY_PROMPT;
+    // Base64-encode once per request rather than repeating on retries/fallbacks.
+    const imageParts = images.map((image) => ({
+        type: "image_url",
+        image_url: {
+            url: `data:${image.mimeType};base64,${Buffer.from(image.bytes).toString("base64")}`,
+        },
+    }));
     const models = config.models?.length ? config.models : [config.model];
     let callsUsed = 0;
     const buildRequestBody = (model: string) => ({
@@ -359,15 +378,7 @@ export async function identifyMealPhotoFromImages(
             },
             {
                 role: "user",
-                content: [
-                    { type: "text", text: prompt },
-                    ...images.map((image) => ({
-                        type: "image_url",
-                        image_url: {
-                            url: `data:${image.mimeType};base64,${Buffer.from(image.bytes).toString("base64")}`,
-                        },
-                    })),
-                ],
+                content: [{ type: "text", text: prompt }, ...imageParts],
             },
         ],
     });
@@ -378,6 +389,11 @@ export async function identifyMealPhotoFromImages(
     const attempt = async (
         model: string,
     ): Promise<AiAttemptOutcome<MealPhotoVisionResult>> => {
+        if (callerSignal?.aborted) {
+            throw callerSignal.reason instanceof Error
+                ? callerSignal.reason
+                : new Error("Meal photo request aborted");
+        }
         callsUsed += 1;
         let payload: unknown;
         try {
@@ -385,8 +401,10 @@ export async function identifyMealPhotoFromImages(
                 config,
                 fetcher,
                 buildRequestBody(model) as unknown as Record<string, unknown>,
+                callerSignal,
             );
         } catch (error) {
+            if (callerSignal?.aborted) throw error;
             return { ok: false, failure: classifyAiProviderError(error) };
         }
         const text = responseText(

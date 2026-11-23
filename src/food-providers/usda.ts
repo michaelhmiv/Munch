@@ -460,19 +460,44 @@ export class UsdaFoodDataCentralProvider implements FoodProvider {
         ] as const;
 
         if (input.preferGeneric) {
-            let generic = await this.postSearch(query, limit, {
+            // Shortlist shown to the decider is at most 10 candidates;
+            // once the generic pass already fills that shortlist, skip
+            // the extra serial branded fallback call.
+            const sufficientGeneric = Math.min(limit, 10);
+            const generic = await this.postSearch(query, limit, {
                 requireAllWords: multiWord,
                 dataType: genericTypes,
                 signal: input.signal,
             });
-            if (generic.length === 0 && multiWord) {
-                generic = await this.postSearch(query, limit, {
-                    requireAllWords: false,
-                    dataType: genericTypes,
-                    signal: input.signal,
-                });
+            if (generic.length >= sufficientGeneric) {
+                return generic.slice(0, limit);
             }
-            if (generic.length >= limit) return generic.slice(0, limit);
+            if (generic.length === 0 && multiWord) {
+                // Run relaxed-generic and unfiltered fallback in parallel
+                // instead of two serial HTTP round-trips.
+                const [relaxedGeneric, fallback] = await Promise.all([
+                    this.postSearch(query, limit, {
+                        requireAllWords: false,
+                        dataType: genericTypes,
+                        signal: input.signal,
+                    }),
+                    this.postSearch(query, limit, {
+                        requireAllWords: true,
+                        signal: input.signal,
+                    }),
+                ]);
+                const seen = new Set(
+                    relaxedGeneric.map((item) => item.providerFoodId),
+                );
+                const merged = [...relaxedGeneric];
+                for (const candidate of fallback) {
+                    if (!seen.has(candidate.providerFoodId)) {
+                        seen.add(candidate.providerFoodId);
+                        merged.push(candidate);
+                    }
+                }
+                return merged.slice(0, limit);
+            }
             const fallback = await this.postSearch(query, limit, {
                 requireAllWords: multiWord,
                 signal: input.signal,

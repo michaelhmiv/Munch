@@ -158,9 +158,12 @@ async function captureFrom(control, source) {
             if (result) files.push(await fileFromNativeResult(result, "photo"));
         } else if (multiple) {
             const results = await chooseInstalledPhotos();
-            for (const result of results ?? []) {
-                files.push(await fileFromNativeResult(result, "photo"));
-            }
+            const fetched = await Promise.all(
+                (results ?? []).map((result) =>
+                    fileFromNativeResult(result, "photo"),
+                ),
+            );
+            files.push(...fetched);
         } else {
             const result = await chooseInstalledPhoto();
             if (result) files.push(await fileFromNativeResult(result, "photo"));
